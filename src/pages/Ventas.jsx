@@ -24,8 +24,9 @@ export default function Ventas() {
 
   const loadVentas = async () => {
     try {
-      const data = await ventasApi.getAll();
-      setVentas(data);
+      const response = await ventasApi.getAll();
+      const data = response.data || response;
+      setVentas(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -35,12 +36,15 @@ export default function Ventas() {
 
   const openModal = async () => {
     try {
-      const [pacasData, clientesData] = await Promise.all([
+      const [pacasRes, clientesRes] = await Promise.all([
         pacasApi.getAll({ estado: 'disponible' }),
         clientesApi.getAll({ estado: 'activo' })
       ]);
-      setPacasDisponibles(pacasData);
-      setClientes(clientesData);
+      const pacasData = pacasRes.data || pacasRes;
+      const clientesData = clientesRes.data || clientesRes;
+      
+      setPacasDisponibles(Array.isArray(pacasData) ? pacasData : []);
+      setClientes(Array.isArray(clientesData) ? clientesData : []);
       setFormData({
         cliente_id: '',
         tipo_pago: 'contado',
