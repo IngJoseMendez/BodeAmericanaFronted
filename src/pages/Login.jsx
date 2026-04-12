@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Card, CardBody, Button, Input } from '../components/common';
-import { Package, Lock, User } from 'lucide-react';
+import { Card, CardBody, Button } from '../components/common';
+import { Package, Lock, User, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -64,13 +65,20 @@ export default function Login() {
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="Contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                  className="w-full pl-12 pr-12 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
 
               <Button 
@@ -85,9 +93,8 @@ export default function Login() {
 
             <div className="mt-6 pt-4 border-t border-border/50">
               <p className="text-xs text-muted text-center">
-                Credenciales de prueba:<br />
-                admin / admin123<br />
-                vendedor / venta123
+                Credenciales:<br />
+                admin / Admin@2024
               </p>
             </div>
           </CardBody>
