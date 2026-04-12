@@ -29,13 +29,9 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     const data = await authApi.login({ username, password });
-    const token = data.accessToken || data.token;
-    setToken(token);
+    setToken(data.token);
     setUsuario(data.usuario);
-    localStorage.setItem('token', token);
-    if (data.refreshToken) {
-      localStorage.setItem('refreshToken', data.refreshToken);
-    }
+    localStorage.setItem('token', data.token);
     return data;
   };
 
@@ -43,7 +39,6 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUsuario(null);
     localStorage.removeItem('token');
-    window.location.href = '/login';
   };
 
   const tieneRol = (roles) => {

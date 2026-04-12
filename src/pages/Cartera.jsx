@@ -131,56 +131,52 @@ export default function Cartera() {
 
   return (
     <Layout title="Cartera" subtitle="Estado de cuentas por cobrar" actions={
-      <div className="flex items-center gap-2">
-        <Button onClick={openPagoModal} variant="secondary" size="sm">
-          <Plus size={16} className="mr-1" />
-          <span className="hidden sm:inline">Registrar Abono</span>
-          <span className="sm:hidden">Abono</span>
-        </Button>
-      </div>
+      <Button onClick={openPagoModal} variant="secondary">
+        <Plus size={18} className="mr-1" /> Registrar Abono
+      </Button>
     }>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {error && (
           <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
         )}
 
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : cartera.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">No hay cartera</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {cartera.map((c) => (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {loading ? (
+            <div className="col-span-3 flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : cartera.length === 0 ? (
+            <div className="col-span-3 text-center py-8 text-gray-400">No hay cartera</div>
+          ) : (
+            cartera.map((c) => (
               <Card key={c.id} hover className="animate-fade-in" onClick={() => openDetalle(c.id)}>
                 <CardBody>
                   <div className="flex items-start justify-between mb-3">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-display text-lg text-primary truncate">{c.nombre}</h3>
+                    <div>
+                      <h3 className="font-display text-lg text-primary">{c.nombre}</h3>
                       <p className="text-sm text-gray-500">{c.ciudad || 'Sin ciudad'}</p>
                     </div>
-                    <Badge variant={c.tipo_cliente} className="ml-2 flex-shrink-0">{c.tipo_cliente}</Badge>
+                    <Badge variant={c.tipo_cliente}>{c.tipo_cliente}</Badge>
                   </div>
                   <div className="space-y-2 pt-3 border-t border-gray-100">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Total Vendido</span>
-                      <span className="text-primary font-medium">{formatCurrency(c.total_vendido)}</span>
+                      <span className="text-primary">{formatCurrency(c.total_vendido)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Total Abonado</span>
-                      <span className="text-success font-medium">{formatCurrency(c.total_abonado)}</span>
+                      <span className="text-success">{formatCurrency(c.total_abonado)}</span>
                     </div>
                     <div className="flex justify-between pt-2 border-t border-gray-100">
-                      <span className="font-medium text-sm">Saldo Pendiente</span>
+                      <span className="font-medium">Saldo Pendiente</span>
                       <span className="font-display text-lg text-accent">{formatCurrency(c.saldo_pendiente)}</span>
                     </div>
                   </div>
                 </CardBody>
               </Card>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
 
       <Modal isOpen={!!detalleCliente} onClose={() => setDetalleCliente(null)} title={detalleCliente?.cliente?.nombre} size="lg">

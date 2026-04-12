@@ -1,22 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, Badge, Input } from '../components/common';
+import { Card, CardBody, Button, useToast, Badge } from '../components/common';
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw } from 'lucide-react';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
-};
-
-const getCurrentMonthDates = () => {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    fecha_inicio: start.toISOString().split('T')[0],
-    fecha_fin: end.toISOString().split('T')[0]
-  };
 };
 
 export default function Reportes() {
@@ -27,32 +17,26 @@ export default function Reportes() {
   const [pacasVendidas, setPacasVendidas] = useState([]);
   const [ganancias, setGanancias] = useState([]);
   const [deudores, setDeudores] = useState([]);
-  const [fechaInicio, setFechaInicio] = useState('');
-  const [fechaFin, setFechaFin] = useState('');
   const { addToast } = useToast();
 
   useEffect(() => {
-    const dates = getCurrentMonthDates();
-    setFechaInicio(dates.fecha_inicio);
-    setFechaFin(dates.fecha_fin);
-    loadReportes(dates.fecha_inicio, dates.fecha_fin);
+    loadReportes();
   }, []);
 
-  const loadReportes = async (inicio = fechaInicio, fin = fechaFin) => {
-    if (!inicio || !fin) return;
+  const loadReportes = async () => {
     setLoading(true);
     try {
       const [reporteData, mesData] = await Promise.all([
-        reportesApi.getCustom(inicio, fin),
-        Promise.resolve({ fecha_inicio: inicio, fecha_fin: fin, mes_nombre: 'Personalizado' })
+        reportesApi.getMensual(),
+        reportesApi.getMesActual()
       ]);
       
       setReporteMensual(reporteData);
       setMesActual(mesData);
       
       const [pacasData, gananciaData, deudoresData] = await Promise.all([
-        dashboardApi.getPacasVendidas({ fecha_inicio: inicio, fecha_fin: fin }),
-        dashboardApi.getGanancia({ fecha_inicio: inicio, fecha_fin: fin }),
+        dashboardApi.getPacasVendidas({}),
+        dashboardApi.getGanancia({}),
         carteraApi.getDeudores()
       ]);
 
@@ -64,11 +48,6 @@ export default function Reportes() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDateChange = (e) => {
-    e.preventDefault();
-    loadReportes(fechaInicio, fechaFin);
   };
 
   const downloadExcel = async () => {
@@ -396,44 +375,35 @@ export default function Reportes() {
         {/* Reporte Mensual Automatizado */}
         <Card className="border-2 border-secondary/20">
           <CardBody>
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-xl bg-secondary/15">
                   <FileText className="w-6 h-6 text-secondary" />
                 </div>
                 <div>
-                  <h3 className="font-display text-xl text-primary">Reportes</h3>
+                  <h3 className="font-display text-xl text-primary">Reporte Mensual</h3>
                   <p className="text-sm text-muted">
-                    Período: {fechaInicio} al {fechaFin}
+                    Período: {mesActual?.fecha_inicio} al {mesActual?.fecha_fin}
                   </p>
                 </div>
               </div>
-              <form onSubmit={handleDateChange} className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="date"
-                  value={fechaInicio}
-                  onChange={(e) => setFechaInicio(e.target.value)}
-                  className="w-36"
-                />
-                <span className="text-muted">a</span>
-                <Input
-                  type="date"
-                  value={fechaFin}
-                  onChange={(e) => setFechaFin(e.target.value)}
-                  className="w-36"
-                />
-                <Button type="submit" variant="ghost" size="sm" icon={Calendar}>
-                  Filtrar
-                </Button>
+              <div className="flex gap-2">
                 <Button 
                   variant="secondary" 
                   onClick={downloadExcel}
                   loading={loadingGeneral}
                   icon={Download}
                 >
-                  Excel
+                  Descargar Excel
                 </Button>
-              </form>
+                <Button 
+                  variant="ghost" 
+                  onClick={loadReportes}
+                  icon={RefreshCw}
+                >
+                  Actualizar
+                </Button>
+              </div>
             </div>
 
             {loading ? (
