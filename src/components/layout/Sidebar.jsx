@@ -6,8 +6,6 @@ import {
   ShoppingCart, 
   Wallet, 
   FileText,
-  Menu,
-  X,
   Sparkles
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -45,13 +43,6 @@ export function Sidebar({ isOpen, onToggle }) {
 
   return (
     <>
-      <button
-        onClick={onToggle}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 rounded-2xl bg-surface shadow-lg hover:shadow-xl transition-all"
-      >
-        {isOpen ? <X size={20} /> : <Menu size={20} />}
-      </button>
-
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-40
