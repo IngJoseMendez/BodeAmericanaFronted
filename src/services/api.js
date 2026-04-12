@@ -1,6 +1,14 @@
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://bodeamericana-production.up.railway.app/api';
+
+const getToken = () => localStorage.getItem('token');
 
 const handleResponse = async (response) => {
+  if (response.status === 401) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+    throw new Error('Sesión expirada');
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Error desconocido' }));
     throw new Error(error.error || 'Error en la solicitud');
@@ -8,16 +16,27 @@ const handleResponse = async (response) => {
   return response.json();
 };
 
+const getHeaders = () => {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 export const api = {
   async get(endpoint) {
-    const response = await fetch(`${API_BASE}${endpoint}`);
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      headers: getHeaders(),
+    });
     return handleResponse(response);
   },
 
   async post(endpoint, data) {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(response);
@@ -26,7 +45,7 @@ export const api = {
   async put(endpoint, data) {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse(response);
@@ -35,6 +54,7 @@ export const api = {
   async delete(endpoint) {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
     return handleResponse(response);
   },
@@ -217,6 +237,9 @@ export const reportesApi = {
   },
   getMesActual() {
     return api.get('/reportes/mes-actual');
+  },
+  getCustom(fecha_inicio, fecha_fin) {
+    return api.get(`/reportes/custom?fecha_inicio=${fecha_inicio}&fecha_fin=${fecha_fin}`);
   },
   downloadCSV() {
     return api.get('/reportes/mensual/csv');
