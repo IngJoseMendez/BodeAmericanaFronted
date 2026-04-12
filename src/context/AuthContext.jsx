@@ -29,9 +29,10 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     const data = await authApi.login({ username, password });
-    setToken(data.token);
+    const token = data.accessToken || data.token;
+    setToken(token);
     setUsuario(data.usuario);
-    localStorage.setItem('token', data.token);
+    localStorage.setItem('token', token);
     return data;
   };
 
@@ -39,6 +40,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUsuario(null);
     localStorage.removeItem('token');
+    window.location.href = '/login';
   };
 
   const tieneRol = (roles) => {
