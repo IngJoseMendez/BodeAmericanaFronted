@@ -19,16 +19,16 @@ if errorlevel 1 (
 ) else (
    git add .
    git commit -m "%commit_msg%"
-   git push origin master
+   git push origin main
    echo Push del backend completado.
 )
 cd ..
 
 echo.
-echo [2/2] Verificando e subiendo Frontend (carpeta raiz y submódulo)...
+echo [2/2] Verificando e subiendo Frontend (carpeta raiz)...
 git add .
 git commit -m "%commit_msg%"
-git push origin master:main
+git push origin main
 echo Push del frontend completado.
 
 echo.
