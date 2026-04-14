@@ -3,8 +3,8 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
 import { carteraApi, clientesApi, pagosApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
-import * as XLSX from 'xlsx';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet } from 'lucide-react';
 
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
@@ -88,41 +88,285 @@ export default function Cartera() {
     try {
       const data = await carteraApi.exportOne(clienteId);
       
-      const ws = XLSX.utils.book_new();
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Bodega Americana';
+      wb.created = new Date();
       
-      const datos = data.movimientos.map((m, idx) => ({
-        '#': idx + 1,
-        'Fecha': new Date(m.fecha).toLocaleDateString('es-MX'),
-        'Tipo': m.tipo,
-        'Descripción': m.descripcion,
-        'Monto': m.tipo === 'VENTA' ? m.monto : m.monto,
-        'Método de Pago': m.metodo_pago || '-',
-        'Referencia': m.referencia || '-',
-        'Saldo Final': m.saldo
-      }));
-
-      const hojaDatos = XLSX.utils.json_to_sheet(datos);
-      XLSX.utils.book_append_sheet(ws, hojaDatos, 'Movimientos');
-
-      const resumen = [
-        { 'Campo': 'Cliente', 'Valor': data.cliente.nombre },
-        { 'Campo': 'Teléfono', 'Valor': data.cliente.telefono || '-' },
-        { 'Campo': 'Dirección', 'Valor': data.cliente.direccion || '-' },
-        { 'Campo': 'Ciudad', 'Valor': data.cliente.ciudad || '-' },
-        { 'Campo': 'Tipo Cliente', 'Valor': data.cliente.tipo_cliente },
-        { 'Campo': '', 'Valor': '' },
-        { 'Campo': 'Total Vendido', 'Valor': formatCurrency(data.total_vendido) },
-        { 'Campo': 'Total Abonado', 'Valor': formatCurrency(data.total_abonado) },
-        { 'Campo': 'SALDO PENDIENTE', 'Valor': formatCurrency(data.saldo_pendiente) },
+      const primaryColor = '1a1a2e';
+      const secondaryColor = 'd4a373';
+      const accentColor = 'bc4749';
+      const successColor = '6a994e';
+      
+      const fmt = (val) => formatCurrency(val);
+      
+      const ws = wb.addWorksheet('Estado de Cuenta');
+      ws.properties.tabColor = secondaryColor;
+      
+      ws.mergeCells('A1:G1');
+      const titleCell = ws.getCell('A1');
+      titleCell.value = '📦 BODEGA AMERICANA - Estado de Cuenta';
+      titleCell.font = { size: 18, bold: true, color: { argb: 'FFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(1).height = 30;
+      
+      ws.mergeCells('A2:G2');
+      ws.getCell('A2').value = data.cliente.nombre;
+      ws.getCell('A2').font = { size: 14, bold: true, color: { argb: primaryColor } };
+      ws.getCell('A2').alignment = { horizontal: 'center' };
+      
+      ws.mergeCells('A3:G3');
+      ws.getCell('A3').value = `Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      ws.getCell('A3').font = { size: 10, italic: true, color: { argb: '666666' } };
+      ws.getCell('A3').alignment = { horizontal: 'center' };
+      
+      ws.getColumn(1).width = 14;
+      ws.getColumn(2).width = 12;
+      ws.getColumn(3).width = 25;
+      ws.getColumn(4).width = 14;
+      ws.getColumn(5).width = 14;
+      ws.getColumn(6).width = 16;
+      ws.getColumn(7).width = 14;
+      
+      let row = 5;
+      
+      ws.getCell(`A${row}`).value = 'Información del Cliente';
+      ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+      ws.mergeCells(`A${row}:G${row}`);
+      ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
+      row++;
+      
+      const infoFields = [
+        ['Teléfono:', data.cliente.telefono || '-', 'Ciudad:', data.cliente.ciudad || '-'],
+        ['Dirección:', data.cliente.direccion || '-', 'Tipo:', data.cliente.tipo_cliente?.toUpperCase() || '-'],
       ];
       
-      const hojaResumen = XLSX.utils.json_to_sheet(resumen);
-      XLSX.utils.book_append_sheet(ws, hojaResumen, 'Resumen');
-
-      const nombreArchivo = `cartera_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(ws, nombreArchivo);
+      for (const [label1, val1, label2, val2] of infoFields) {
+        ws.getCell(`A${row}`).value = label1;
+        ws.getCell(`A${row}`).font = { bold: true };
+        ws.getCell(`B${row}`).value = val1;
+        ws.getCell(`C${row}`).value = label2;
+        ws.getCell(`C${row}`).font = { bold: true };
+        ws.getCell(`D${row}`).value = val2;
+        ws.mergeCells(`B${row}:B${row}`);
+        ws.mergeCells(`D${row}:G${row}`);
+        row++;
+      }
+      
+      row++;
+      
+      ws.getCell(`A${row}`).value = 'Resumen de Cuenta';
+      ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondaryColor } };
+      ws.mergeCells(`A${row}:G${row}`);
+      ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
+      row++;
+      
+      const kpis = [
+        { label: 'Total Vendido', value: data.total_vendido, color: primaryColor },
+        { label: 'Total Abonado', value: data.total_abonado, color: successColor },
+        { label: 'SALDO PENDIENTE', value: data.saldo_pendiente, color: accentColor },
+      ];
+      
+      for (const kpi of kpis) {
+        ws.getCell(`A${row}`).value = kpi.label;
+        ws.getCell(`A${row}`).font = { bold: true, size: 11 };
+        ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'f5f5f5' } };
+        
+        ws.getCell(`B${row}`).value = kpi.value;
+        ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: kpi.color } };
+        ws.getCell(`B${row}`).numFmt = '$#,##0.00';
+        ws.getCell(`B${row}`).alignment = { horizontal: 'right' };
+        ws.mergeCells(`B${row}:G${row}`);
+        row++;
+      }
+      
+      row++;
+      
+      ws.getCell(`A${row}`).value = 'Movimientos';
+      ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+      ws.mergeCells(`A${row}:G${row}`);
+      ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
+      row++;
+      
+      const headers = ['Fecha', 'Tipo', 'Descripción', 'Monto', 'Método', 'Referencia', 'Saldo'];
+      headers.forEach((h, i) => {
+        const cell = ws.getCell(`${String.fromCharCode(65 + i)}${row}`);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+        cell.alignment = { horizontal: 'center' };
+      });
+      row++;
+      
+      for (const m of data.movimientos) {
+        const esVenta = m.tipo === 'VENTA';
+        ws.getCell(`A${row}`).value = new Date(m.fecha);
+        ws.getCell(`A${row}`).numFmt = 'dd/mm/yyyy';
+        
+        ws.getCell(`B${row}`).value = m.tipo;
+        ws.getCell(`B${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
+        
+        ws.getCell(`C${row}`).value = m.descripcion;
+        
+        ws.getCell(`D${row}`).value = parseFloat(m.monto);
+        ws.getCell(`D${row}`).numFmt = '$#,##0.00';
+        ws.getCell(`D${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
+        ws.getCell(`D${row}`).alignment = { horizontal: 'right' };
+        
+        ws.getCell(`E${row}`).value = m.metodo_pago || '-';
+        ws.getCell(`F${row}`).value = m.referencia || '-';
+        
+        ws.getCell(`G${row}`).value = parseFloat(m.saldo);
+        ws.getCell(`G${row}`).numFmt = '$#,##0.00';
+        ws.getCell(`G${row}`).font = { bold: true };
+        ws.getCell(`G${row}`).alignment = { horizontal: 'right' };
+        
+        row++;
+      }
+      
+      row++;
+      ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-MX')}`;
+      ws.getCell(`A${row}`).font = { size: 9, italic: true, color: { argb: '999999' } };
+      ws.mergeCells(`A${row}:G${row}`);
+      
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Estado_Cuenta_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.click();
+      
+      addToast('Excel descargado correctamente', 'success');
     } catch (err) {
       setError('Error al exportar: ' + err.message);
+    }
+  };
+  
+  const exportarPDF = async (clienteId, clienteNombre) => {
+    try {
+      const data = await carteraApi.exportOne(clienteId);
+      
+      const contenido = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Estado de Cuenta - ${data.cliente.nombre}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #1a1a2e; }
+            .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #d4a373; }
+            .header h1 { color: #1a1a2e; font-size: 24px; margin-bottom: 5px; }
+            .header .subtitle { color: #666; font-size: 14px; }
+            .info-cliente { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+            .info-cliente h3 { color: #d4a373; margin-bottom: 10px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            .info-grid span { font-size: 13px; }
+            .info-grid strong { color: #333; }
+            .resumen { background: #1a1a2e; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .resumen h3 { color: #d4a373; margin-bottom: 15px; }
+            .resumen-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; }
+            .resumen-item .label { font-size: 12px; opacity: 0.8; }
+            .resumen-item .value { font-size: 20px; font-weight: bold; }
+            .resumen-item.total .value { color: #d4a373; }
+            .resumen-item.abonado .value { color: #6a994e; }
+            .resumen-item.pendiente .value { color: #bc4749; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #1a1a2e; color: white; padding: 12px; text-align: left; font-size: 12px; }
+            td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 12px; }
+            tr.venta td { color: #1a1a2e; }
+            tr.abono td { color: #6a994e; }
+            tr.venta td:nth-child(4) { font-weight: bold; }
+            tr.abono td:nth-child(4) { font-weight: bold; }
+            .saldo-col { text-align: right; font-weight: bold; }
+            .footer { margin-top: 30px; text-align: center; color: #999; font-size: 10px; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>📦 BODEGA AMERICANA</h1>
+            <div class="subtitle">Estado de Cuenta</div>
+          </div>
+          
+          <div class="info-cliente">
+            <h3>Información del Cliente</h3>
+            <div class="info-grid">
+              <span><strong>Nombre:</strong> ${data.cliente.nombre}</span>
+              <span><strong>Teléfono:</strong> ${data.cliente.telefono || '-'}</span>
+              <span><strong>Ciudad:</strong> ${data.cliente.ciudad || '-'}</span>
+              <span><strong>Tipo:</strong> ${data.cliente.tipo_cliente || '-'}</span>
+              <span><strong>Dirección:</strong> ${data.cliente.direccion || '-'}</span>
+            </div>
+          </div>
+          
+          <div class="resumen">
+            <h3>Resumen de Cuenta</h3>
+            <div class="resumen-grid">
+              <div class="resumen-item total">
+                <div class="label">Total Vendido</div>
+                <div class="value">${formatCurrency(data.total_vendido)}</div>
+              </div>
+              <div class="resumen-item abonado">
+                <div class="label">Total Abonado</div>
+                <div class="value">${formatCurrency(data.total_abonado)}</div>
+              </div>
+              <div class="resumen-item pendiente">
+                <div class="label">Saldo Pendiente</div>
+                <div class="value">${formatCurrency(data.saldo_pendiente)}</div>
+              </div>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Descripción</th>
+                <th style="text-align:right">Monto</th>
+                <th>Método</th>
+                <th>Referencia</th>
+                <th style="text-align:right">Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.movimientos.map(m => `
+                <tr class="${m.tipo === 'VENTA' ? 'venta' : 'abono'}">
+                  <td>${new Date(m.fecha).toLocaleDateString('es-MX')}</td>
+                  <td>${m.tipo}</td>
+                  <td>${m.descripcion}</td>
+                  <td style="text-align:right">${m.tipo === 'VENTA' ? '+' : '-'}${formatCurrency(m.monto)}</td>
+                  <td>${m.metodo_pago || '-'}</td>
+                  <td>${m.referencia || '-'}</td>
+                  <td class="saldo-col">${formatCurrency(m.saldo)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            Documento generado el ${new Date().toLocaleString('es-MX')}
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(contenido);
+      printWindow.document.close();
+      printWindow.focus();
+      
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+      
+      addToast('PDF listo para imprimir', 'success');
+    } catch (err) {
+      setError('Error al exportar PDF: ' + err.message);
     }
   };
 
@@ -230,13 +474,22 @@ export default function Cartera() {
             </div>
 
             <div className="flex justify-between pt-2">
-              <Button 
-                variant="secondary" 
-                onClick={() => exportarExcel(detalleCliente.cliente.id, detalleCliente.cliente.nombre)}
-                icon={Download}
-              >
-                Exportar Excel
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => exportarExcel(detalleCliente.cliente.id, detalleCliente.cliente.nombre)}
+                  icon={FileSpreadsheet}
+                >
+                  Excel
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  onClick={() => exportarPDF(detalleCliente.cliente.id, detalleCliente.cliente.nombre)}
+                  icon={Download}
+                >
+                  PDF
+                </Button>
+              </div>
               <Button variant="ghost" onClick={() => setDetalleCliente(null)}>Cerrar</Button>
             </div>
           </div>
