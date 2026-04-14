@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
 import { carteraApi, clientesApi, pagosApi } from '../services/api';
@@ -17,9 +17,22 @@ export default function Cartera() {
   });
   const [clientes, setClientes] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
+  const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
+  const clienteListRef = useRef(null);
   const { addToast } = useToast();
+
+  // Cerrar lista de clientes al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (clienteListRef.current && !clienteListRef.current.contains(event.target)) {
+        setShowClienteList(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     loadCartera();
@@ -538,7 +551,7 @@ export default function Cartera() {
           {error && <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>}
 
           {/* Selector de cliente con búsqueda */}
-          <div>
+          <div className="relative" ref={clienteListRef}>
             <label className="block text-sm font-medium text-primary mb-1">
               Cliente <span className="text-error">*</span>
             </label>
@@ -551,53 +564,59 @@ export default function Cartera() {
                 placeholder="Buscar cliente por nombre..."
                 value={clienteSearch}
                 onChange={(e) => setClienteSearch(e.target.value)}
+                onFocus={() => clienteSearch && setShowClienteList(true)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
               />
             </div>
             
-            {/* Lista de clientes filtrados */}
-            <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl">
-              {clientes
-                .filter(c => 
-                  !clienteSearch || 
-                  c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
-                  c.ciudad?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
-                  c.telefono?.toLowerCase().includes(clienteSearch.toLowerCase())
-                )
-                .slice(0, 10)
-                .map(c => (
-                  <div
-                    key={c.id}
-                    onClick={() => {
-                      setFormData({ ...formData, cliente_id: c.id });
-                      setClienteSearch(c.nombre);
-                    }}
-                    className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
-                      formData.cliente_id === c.id ? 'bg-secondary/10' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-gray-100 rounded-lg">
-                        <User className="w-4 h-4 text-gray-500" />
+            {/* Lista de clientes filtrados - solo mostrar si hay texto y está enabled */}
+            {clienteSearch && (
+              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {clientes
+                  .filter(c => 
+                    c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+                    c.ciudad?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+                    c.telefono?.toLowerCase().includes(clienteSearch.toLowerCase())
+                  )
+                  .slice(0, 10)
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setFormData({ ...formData, cliente_id: c.id });
+                        setClienteSearch(c.nombre);
+                        setShowClienteList(false);
+                      }}
+                      className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
+                        formData.cliente_id === c.id ? 'bg-secondary/10' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-gray-100 rounded-lg">
+                          <User className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{c.nombre}</p>
+                          <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                        </div>
+                        {formData.cliente_id === c.id && (
+                          <span className="text-success text-xs">✓</span>
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{c.nombre}</p>
-                        <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
-                      </div>
-                      {formData.cliente_id === c.id && (
-                        <span className="text-success text-xs">✓</span>
-                      )}
                     </div>
+                  ))}
+                {clientes.filter(c => 
+                  c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+                  c.ciudad?.toLowerCase().includes(clienteSearch.toLowerCase())
+                ).length === 0 && (
+                  <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                    No se encontraron clientes
                   </div>
-                ))}
-              {clientes.filter(c => !clienteSearch || c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase())).length === 0 && (
-                <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                  No se encontraron clientes
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
             
-            {formData.cliente_id && (
+            {formData.cliente_id && !clienteSearch && (
               <p className="text-xs text-success mt-2 flex items-center gap-1">
                 <span>✓</span> Cliente seleccionado
               </p>

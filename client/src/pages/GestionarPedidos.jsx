@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Badge, Button, Modal, useToast } from '../components/common';
 import { pedidosApi, clientesApi } from '../services/api';
@@ -15,7 +15,19 @@ export default function GestionarPedidos() {
   const [showClienteList, setShowClienteList] = useState(false);
   const [detallePedido, setDetallePedido] = useState(null);
   const [modalDetalle, setModalDetalle] = useState(false);
+  const clienteListRef = useRef(null);
   const { addToast } = useToast();
+
+  // Cerrar lista de clientes al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (clienteListRef.current && !clienteListRef.current.contains(event.target)) {
+        setShowClienteList(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     loadPedidos();
@@ -66,6 +78,7 @@ export default function GestionarPedidos() {
   const limpiarFiltroCliente = () => {
     setFiltroCliente('');
     setSearchCliente('');
+    setShowClienteList(false);
     setPedidos(pedidosOriginal);
   };
 
@@ -135,7 +148,7 @@ export default function GestionarPedidos() {
           <CardBody>
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Filtro Cliente */}
-              <div className="flex-1 relative">
+              <div className="flex-1 relative" ref={clienteListRef}>
                 <label className="block text-sm font-medium text-primary mb-1">Cliente</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -145,12 +158,11 @@ export default function GestionarPedidos() {
                     value={searchCliente}
                     onChange={(e) => {
                       setSearchCliente(e.target.value);
-                      setShowClienteList(true);
                       if (!e.target.value) {
                         limpiarFiltroCliente();
                       }
                     }}
-                    onFocus={() => setShowClienteList(true)}
+                    onFocus={() => searchCliente && setShowClienteList(true)}
                     className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                   />
                   {searchCliente && (
@@ -163,8 +175,8 @@ export default function GestionarPedidos() {
                   )}
                 </div>
                 
-                {/* Lista desplegable de clientes */}
-                {showClienteList && (
+                {/* Lista desplegable de clientes - solo mostrar si hay texto */}
+                {searchCliente && (
                   <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {clientesFiltrados.length > 0 ? (
                       clientesFiltrados.slice(0, 10).map(cliente => (
