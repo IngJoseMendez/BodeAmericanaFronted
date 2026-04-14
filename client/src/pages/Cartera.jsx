@@ -4,10 +4,11 @@ import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '.
 import { carteraApi, clientesApi, pagosApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, User, X } from 'lucide-react';
 
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
+  const [carteraOriginal, setCarteraOriginal] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [detalleCliente, setDetalleCliente] = useState(null);
@@ -15,6 +16,8 @@ export default function Cartera() {
     cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', referencia: ''
   });
   const [clientes, setClientes] = useState([]);
+  const [clienteSearch, setClienteSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
   const { addToast } = useToast();
 
@@ -22,10 +25,24 @@ export default function Cartera() {
     loadCartera();
   }, []);
 
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setCartera(carteraOriginal);
+    } else {
+      const filtered = carteraOriginal.filter(c => 
+        c.nombre?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.ciudad?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.telefono?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setCartera(filtered);
+    }
+  }, [searchQuery, carteraOriginal]);
+
   const loadCartera = async () => {
     try {
       const data = await carteraApi.getAll();
       setCartera(data);
+      setCarteraOriginal(data);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -385,6 +402,26 @@ export default function Cartera() {
           <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
         )}
 
+        {/* Barra de búsqueda */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar cliente por nombre, ciudad o teléfono..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {loading ? (
             <div className="col-span-3 flex justify-center py-8">
@@ -500,13 +537,72 @@ export default function Cartera() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>}
 
-          <Select
-            label="Cliente"
-            value={formData.cliente_id}
-            onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
-            options={[{ value: '', label: 'Seleccionar...' }, ...clientes.map(c => ({ value: c.id, label: c.nombre }))]}
-            required
-          />
+          {/* Selector de cliente con búsqueda */}
+          <div>
+            <label className="block text-sm font-medium text-primary mb-1">
+              Cliente <span className="text-error">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Buscar cliente por nombre..."
+                value={clienteSearch}
+                onChange={(e) => setClienteSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+              />
+            </div>
+            
+            {/* Lista de clientes filtrados */}
+            <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-xl">
+              {clientes
+                .filter(c => 
+                  !clienteSearch || 
+                  c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+                  c.ciudad?.toLowerCase().includes(clienteSearch.toLowerCase()) ||
+                  c.telefono?.toLowerCase().includes(clienteSearch.toLowerCase())
+                )
+                .slice(0, 10)
+                .map(c => (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setFormData({ ...formData, cliente_id: c.id });
+                      setClienteSearch(c.nombre);
+                    }}
+                    className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
+                      formData.cliente_id === c.id ? 'bg-secondary/10' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-gray-100 rounded-lg">
+                        <User className="w-4 h-4 text-gray-500" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{c.nombre}</p>
+                        <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                      </div>
+                      {formData.cliente_id === c.id && (
+                        <span className="text-success text-xs">✓</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              {clientes.filter(c => !clienteSearch || c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase())).length === 0 && (
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                  No se encontraron clientes
+                </div>
+              )}
+            </div>
+            
+            {formData.cliente_id && (
+              <p className="text-xs text-success mt-2 flex items-center gap-1">
+                <span>✓</span> Cliente seleccionado
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Input

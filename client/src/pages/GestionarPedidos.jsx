@@ -1,20 +1,39 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Badge, Button, Modal, useToast } from '../components/common';
-import { pedidosApi } from '../services/api';
-import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { pedidosApi, clientesApi } from '../services/api';
+import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User } from 'lucide-react';
 
 export default function GestionarPedidos() {
   const [pedidos, setPedidos] = useState([]);
+  const [pedidosOriginal, setPedidosOriginal] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [searchCliente, setSearchCliente] = useState('');
+  const [showClienteList, setShowClienteList] = useState(false);
   const [detallePedido, setDetallePedido] = useState(null);
   const [modalDetalle, setModalDetalle] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
     loadPedidos();
+    loadClientes();
   }, [filtroEstado]);
+
+  useEffect(() => {
+    filtrarPedidos();
+  }, [filtroCliente, pedidosOriginal]);
+
+  const loadClientes = async () => {
+    try {
+      const data = await clientesApi.getAll({ estado: 'activo' });
+      setClientes(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const loadPedidos = async () => {
     try {
@@ -22,12 +41,39 @@ export default function GestionarPedidos() {
       if (filtroEstado) params.estado = filtroEstado;
       const data = await pedidosApi.getAll(params);
       setPedidos(data);
+      setPedidosOriginal(data);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
   };
+
+  const filtrarPedidos = () => {
+    if (!filtroCliente) {
+      setPedidos(pedidosOriginal);
+    } else {
+      setPedidos(pedidosOriginal.filter(p => p.cliente_id === filtroCliente));
+    }
+  };
+
+  const seleccionarCliente = (cliente) => {
+    setFiltroCliente(cliente.id);
+    setSearchCliente(cliente.nombre);
+    setShowClienteList(false);
+  };
+
+  const limpiarFiltroCliente = () => {
+    setFiltroCliente('');
+    setSearchCliente('');
+    setPedidos(pedidosOriginal);
+  };
+
+  const clientesFiltrados = clientes.filter(c => 
+    !searchCliente || 
+    c.nombre?.toLowerCase().includes(searchCliente.toLowerCase()) ||
+    c.ciudad?.toLowerCase().includes(searchCliente.toLowerCase())
+  );
 
   const verDetalles = async (pedido) => {
     try {
@@ -84,19 +130,122 @@ export default function GestionarPedidos() {
   return (
     <Layout title="Gestionar Pedidos" subtitle="Aprobar o rechazar pedidos de clientes">
       <div className="space-y-4">
-        <div className="flex gap-2">
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="px-4 py-3 rounded-xl border border-border bg-white"
-          >
-            <option value="">Todos los estados</option>
-            <option value="pendiente">Pendientes</option>
-            <option value="aprobado">Aprobados</option>
-            <option value="rechazado">Rechazados</option>
-            <option value="convertido">Convertidos</option>
-          </select>
-        </div>
+        {/* Filtros */}
+        <Card>
+          <CardBody>
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Filtro Cliente */}
+              <div className="flex-1 relative">
+                <label className="block text-sm font-medium text-primary mb-1">Cliente</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={searchCliente}
+                    onChange={(e) => {
+                      setSearchCliente(e.target.value);
+                      setShowClienteList(true);
+                      if (!e.target.value) {
+                        limpiarFiltroCliente();
+                      }
+                    }}
+                    onFocus={() => setShowClienteList(true)}
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                  />
+                  {searchCliente && (
+                    <button
+                      onClick={limpiarFiltroCliente}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+                </div>
+                
+                {/* Lista desplegable de clientes */}
+                {showClienteList && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                    {clientesFiltrados.length > 0 ? (
+                      clientesFiltrados.slice(0, 10).map(cliente => (
+                        <div
+                          key={cliente.id}
+                          onClick={() => seleccionarCliente(cliente)}
+                          className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
+                            filtroCliente === cliente.id ? 'bg-secondary/10' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 rounded-lg">
+                              <User className="w-4 h-4 text-gray-500" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{cliente.nombre}</p>
+                              <p className="text-xs text-gray-500">{cliente.ciudad || 'Sin ciudad'}</p>
+                            </div>
+                            {filtroCliente === cliente.id && (
+                              <span className="text-success text-xs">✓</span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                        No se encontraron clientes
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Filtro Estado */}
+              <div className="w-full lg:w-48">
+                <label className="block text-sm font-medium text-primary mb-1">Estado</label>
+                <select
+                  value={filtroEstado}
+                  onChange={(e) => setFiltroEstado(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                >
+                  <option value="">Todos</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="aprobado">Aprobados</option>
+                  <option value="rechazado">Rechazados</option>
+                  <option value="convertido">Convertidos</option>
+                </select>
+              </div>
+
+              {/* Contador */}
+              <div className="flex items-end">
+                <div className="px-4 py-2.5 bg-gray-100 rounded-xl text-center">
+                  <p className="text-2xl font-bold text-primary">{pedidos.length}</p>
+                  <p className="text-xs text-gray-500">pedidos</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tags de filtros activos */}
+            {(filtroCliente || filtroEstado) && (
+              <div className="flex gap-2 mt-3">
+                {filtroCliente && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-secondary/10 text-secondary text-sm rounded-full">
+                    Cliente: {searchCliente}
+                    <button onClick={limpiarFiltroCliente} className="hover:text-secondary">
+                      <X size={14} />
+                    </button>
+                  </span>
+                )}
+                {filtroEstado && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded-full capitalize">
+                    Estado: {filtroEstado}
+                    <button onClick={() => setFiltroEstado('')} className="hover:text-gray-900">
+                      <X size={14} />
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
+          </CardBody>
+        </Card>
 
         {loading ? (
           <Card><CardBody className="text-center text-muted">Cargando...</CardBody></Card>
