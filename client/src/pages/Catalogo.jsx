@@ -56,7 +56,7 @@ export default function Catalogo() {
     if (seleccionadas.find(s => s.id === paca.id)) {
       setSeleccionadas(seleccionadas.filter(s => s.id !== paca.id));
     } else {
-      setSeleccionadas([...seleccionadas, { id: paca.id, precio_venta: paca.precio_venta }]);
+      setSeleccionadas([...seleccionadas, { id: paca.id, precio_venta: parseFloat(paca.precio_venta) }]);
     }
   };
 
