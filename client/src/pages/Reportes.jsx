@@ -375,36 +375,39 @@ export default function Reportes() {
         {/* Reporte Mensual Automatizado */}
         <Card className="border-2 border-secondary/20">
           <CardBody>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-secondary/15">
-                  <FileText className="w-6 h-6 text-secondary" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 sm:p-3 rounded-xl bg-secondary/15 flex-shrink-0">
+                    <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-secondary" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-lg sm:text-xl text-primary truncate">Reporte Mensual</h3>
+                    <p className="text-xs sm:text-sm text-muted truncate">
+                      Período: {mesActual?.fecha_inicio} al {mesActual?.fecha_fin}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-display text-xl text-primary">Reporte Mensual</h3>
-                  <p className="text-sm text-muted">
-                    Período: {mesActual?.fecha_inicio} al {mesActual?.fecha_fin}
-                  </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button 
+                    variant="secondary" 
+                    onClick={downloadExcel}
+                    loading={loadingGeneral}
+                    icon={Download}
+                    className="text-xs sm:text-sm"
+                  >
+                    <span className="hidden sm:inline">Descargar Excel</span>
+                    <span className="sm:hidden">Excel</span>
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={loadReportes}
+                    icon={RefreshCw}
+                    className="text-xs sm:text-sm"
+                  >
+                    Actualizar
+                  </Button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Button 
-                  variant="secondary" 
-                  onClick={downloadExcel}
-                  loading={loadingGeneral}
-                  icon={Download}
-                >
-                  Descargar Excel
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  onClick={loadReportes}
-                  icon={RefreshCw}
-                >
-                  Actualizar
-                </Button>
-              </div>
-            </div>
 
             {loading ? (
               <div className="flex items-center justify-center py-8">
@@ -413,30 +416,42 @@ export default function Reportes() {
             ) : reporteMensual ? (
               <div className="space-y-4">
                 {/* Resumen Ejecutivo */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <div className="p-4 bg-success/10 rounded-xl text-center">
-                    <p className="text-2xl font-display text-success">{reporteMensual.resumen_ejecutivo?.total_ventas || 0}</p>
-                    <p className="text-xs text-muted">Ventas</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+                  <div className="p-3 sm:p-4 bg-success/10 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-success truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.total_ventas || 0)}>
+                      {reporteMensual.resumen_ejecutivo?.total_ventas || 0}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Ventas</p>
                   </div>
-                  <div className="p-4 bg-primary/10 rounded-xl text-center">
-                    <p className="text-2xl font-display text-primary">{formatCurrency(reporteMensual.resumen_ejecutivo?.monto_total_ventas)}</p>
-                    <p className="text-xs text-muted">Monto Total</p>
+                  <div className="p-3 sm:p-4 bg-primary/10 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.monto_total_ventas)}>
+                      {formatCurrency(reporteMensual.resumen_ejecutivo?.monto_total_ventas)}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Monto Total</p>
                   </div>
-                  <div className="p-4 bg-secondary/15 rounded-xl text-center">
-                    <p className="text-2xl font-display text-primary">{formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}</p>
-                    <p className="text-xs text-muted">Ganancia</p>
+                  <div className="p-3 sm:p-4 bg-secondary/15 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}>
+                      {formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Ganancia</p>
                   </div>
-                  <div className="p-4 bg-accent/10 rounded-xl text-center">
-                    <p className="text-2xl font-display text-accent">{formatCurrency(reporteMensual.resumen_ejecutivo?.saldo_cartera)}</p>
-                    <p className="text-xs text-muted">Cartera</p>
+                  <div className="p-3 sm:p-4 bg-accent/10 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-accent truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.saldo_cartera)}>
+                      {formatCurrency(reporteMensual.resumen_ejecutivo?.saldo_cartera)}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Cartera</p>
                   </div>
-                  <div className="p-4 bg-success/10 rounded-xl text-center">
-                    <p className="text-2xl font-display text-success">{reporteMensual.resumen_ejecutivo?.clientes_nuevos || 0}</p>
-                    <p className="text-xs text-muted">Clientes Nuevos</p>
+                  <div className="p-3 sm:p-4 bg-success/10 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-success truncate" title={String(reporteMensual.resumen_ejecutivo?.clientes_nuevos || 0)}>
+                      {reporteMensual.resumen_ejecutivo?.clientes_nuevos || 0}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Clientes Nuevos</p>
                   </div>
-                  <div className="p-4 bg-warning/10 rounded-xl text-center">
-                    <p className="text-2xl font-display text-warning">{reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0}</p>
-                    <p className="text-xs text-muted">Pacas Vendidas</p>
+                  <div className="p-3 sm:p-4 bg-warning/10 rounded-xl text-center min-w-0">
+                    <p className="text-lg sm:text-2xl font-display text-warning truncate" title={String(reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0)}>
+                      {reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Pacas Vendidas</p>
                   </div>
                 </div>
 
@@ -492,34 +507,40 @@ export default function Reportes() {
         </Card>
 
         {/* Reportes Generales */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           <Card hover className="animate-fade-in">
-            <CardBody>
+            <CardBody className="min-w-0">
               <div className="flex items-center gap-3 mb-2">
-                <Package className="w-5 h-5 text-success" />
-                <h4 className="font-medium text-primary">Pacas Vendidas</h4>
+                <Package className="w-5 h-5 text-success flex-shrink-0" />
+                <h4 className="font-medium text-primary truncate">Pacas Vendidas</h4>
               </div>
-              <p className="text-2xl font-display text-primary">{pacasVendidas.length}</p>
+              <p className="text-xl sm:text-2xl font-display text-primary truncate" title={String(pacasVendidas.length)}>
+                {pacasVendidas.length}
+              </p>
             </CardBody>
           </Card>
 
           <Card hover className="animate-fade-in stagger-1">
-            <CardBody>
+            <CardBody className="min-w-0">
               <div className="flex items-center gap-3 mb-2">
-                <TrendingUp className="w-5 h-5 text-secondary" />
-                <h4 className="font-medium text-primary">Total Vendido</h4>
+                <TrendingUp className="w-5 h-5 text-secondary flex-shrink-0" />
+                <h4 className="font-medium text-primary truncate">Total Vendido</h4>
               </div>
-              <p className="text-2xl font-display text-primary">{formatCurrency(totalVendido)}</p>
+              <p className="text-xl sm:text-2xl font-display text-primary truncate" title={formatCurrency(totalVendido)}>
+                {formatCurrency(totalVendido)}
+              </p>
             </CardBody>
           </Card>
 
           <Card hover className="animate-fade-in stagger-2">
-            <CardBody>
+            <CardBody className="min-w-0">
               <div className="flex items-center gap-3 mb-2">
-                <TrendingUp className="w-5 h-5 text-success" />
-                <h4 className="font-medium text-primary">Ganancia Neta</h4>
+                <TrendingUp className="w-5 h-5 text-success flex-shrink-0" />
+                <h4 className="font-medium text-primary truncate">Ganancia Neta</h4>
               </div>
-              <p className="text-2xl font-display text-success">{formatCurrency(totalGanancia)}</p>
+              <p className="text-xl sm:text-2xl font-display text-success truncate" title={formatCurrency(totalGanancia)}>
+                {formatCurrency(totalGanancia)}
+              </p>
             </CardBody>
           </Card>
         </div>
@@ -576,13 +597,15 @@ export default function Reportes() {
                   <div className="text-center py-4 text-muted">Sin deudores</div>
                 ) : (
                   deudores.map(c => (
-                    <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-primary">{c.nombre}</p>
-                        <p className="text-sm text-muted">{c.ciudad || 'Sin ciudad'}</p>
+                    <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg min-w-0">
+                      <div className="min-w-0 flex-1 mr-2">
+                        <p className="font-medium text-primary truncate">{c.nombre}</p>
+                        <p className="text-sm text-muted truncate">{c.ciudad || 'Sin ciudad'}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-display text-accent">{formatCurrency(c.saldo_pendiente)}</p>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-display text-accent text-sm sm:text-base" title={formatCurrency(c.saldo_pendiente)}>
+                          {formatCurrency(c.saldo_pendiente)}
+                        </p>
                       </div>
                     </div>
                   ))
