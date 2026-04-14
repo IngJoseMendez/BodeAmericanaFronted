@@ -68,12 +68,11 @@ export function Sidebar({ isOpen, onToggle }) {
       <aside
         ref={sidebarRef}
         className={`
-          sticky top-0 h-screen
-          w-72 min-h-screen bg-primary flex flex-col
-          transform transition-transform duration-300 ease-out z-40
+          fixed lg:sticky top-0 left-0 h-screen
+          w-72 bg-primary flex flex-col z-50
+          transition-transform duration-300 ease-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
-        onMouseEnter={() => setIsHoveringSidebar(true)}
-        onMouseLeave={() => setIsHoveringSidebar(false)}
       >
         {/* Header con gradiente decorativo */}
         <div className="relative p-6 border-b border-white/10 overflow-hidden">
@@ -122,6 +121,7 @@ export function Sidebar({ isOpen, onToggle }) {
                 <Link
                   key={item.path}
                   to={item.path}
+                  onClick={() => window.innerWidth < 1024 && onToggle?.()}
                   onMouseEnter={() => setHoveredItem(index)}
                   onMouseLeave={() => setHoveredItem(null)}
                   className={`

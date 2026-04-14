@@ -1,18 +1,16 @@
-import { useEffect, useState, useMemo, memo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
 import { pacasApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS, PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash, Package, Grid, List, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, Package, Eye, EyeOff } from 'lucide-react';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
-
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedValue(value), delay);
     return () => clearTimeout(handler);
   }, [value, delay]);
-
   return debouncedValue;
 }
 
@@ -32,7 +30,7 @@ export default function Pacas() {
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
   const { addToast } = useToast();
-  
+
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
@@ -46,12 +44,12 @@ export default function Pacas() {
       if (filtroEstado) params.estado = filtroEstado;
       if (filtroTipo) params.tipo = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
-      
+
       const [data, resumenData] = await Promise.all([
         pacasApi.getAll(params),
         pacasApi.getResumen()
       ]);
-      
+
       setPacas(data.data || data);
       setResumen(resumenData || []);
     } catch (err) {
@@ -74,7 +72,7 @@ export default function Pacas() {
         notas: formData.notas,
         cantidad: parseInt(formData.cantidad) || 1
       };
-      
+
       if (editando) {
         await pacasApi.update(editando.id, payload);
         addToast('Paca actualizada', 'success');
@@ -86,7 +84,7 @@ export default function Pacas() {
           addToast('Paca creada', 'success');
         }
       }
-      
+
       setModalOpen(false);
       resetForm();
       loadPacas();
@@ -114,6 +112,7 @@ export default function Pacas() {
     try {
       await pacasApi.delete(id);
       loadPacas();
+      addToast('Paca eliminada', 'success');
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -132,9 +131,8 @@ export default function Pacas() {
   const pacasAgrupadas = useMemo(() => {
     const grupos = {};
     pacas.forEach(paca => {
-      const key = pacasApi.getAll ? `${paca.tipo}-${paca.categoria}-${paca.precio_venta}` : pacas.id;
       if (!grupos[paca.tipo]) {
-        grupos[paca.tipo] = { tipo: paca.tipo, pacas: [], expandido: tiposExpandidos[paca.tipo] ?? true };
+        grupos[paca.tipo] = { tipo: pacac.tipo, pacas: [], expandido: tiposExpandidos[paca.tipo] ?? true };
       }
       grupos[paca.tipo].pacas.push(paca);
     });
@@ -148,102 +146,33 @@ export default function Pacas() {
   return (
     <Layout title="Inventario" subtitle={`${pacas.length} pacas`}>
       <div className="space-y-6">
-        {/* Resumen por tipo - Vista agrupada */}
-        {vistaAgrupada ? (
-          <div className="space-y-2">
-            {loading ? (
-              [...Array(4)].map((_, i) => (
-                <Card key={i} className="animate-pulse">
-                  <CardBody className="p-4">
-                    <div className="h-4 w-20 bg-gray-100 rounded" />
-                    <div className="h-6 w-12 bg-gray-100 rounded mt-2" />
-                  </CardBody>
-                </Card>
-              ))
-            ) : (
-              resumen.map((r, i) => (
-                <Card key={i} hover className="overflow-hidden">
-                  <div 
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-primary/5 transition-colors"
-                    onClick={() => { setFiltroTipo(r.tipo); setModalOpen(false); }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-secondary/10">
-                        <Layers className="w-5 h-5 text-secondary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-primary">{r.tipo}</p>
-                        <p className="text-xs text-muted">{r.categoria || 'Sin categoría'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-center">
-                        <p className="text-xs text-muted">Disp</p>
-                        <p className="font-bold text-success">{r.disponibles || 0}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted">Vend</p>
-                        <p className="font-bold text-accent">{r.vendidas || 0}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted">Total</p>
-                        <p className="font-bold text-primary">{r.cantidad || 0}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted">Valor</p>
-                        <p className="font-bold text-primary">{formatCurrency(r.precio_min)} - {formatCurrency(r.precio_max)}</p>
-                      </div>
-                    </div>
+        {/* Resumen stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {resumen.slice(0, 4).map((r, i) => (
+            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.tipo)}>
+              <CardBody className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-4 h-4 text-secondary" />
+                  <span className="font-medium text-sm">{r.tipo}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-muted">Disp</p>
+                    <p className="font-bold text-success">{parseInt(r.disponibles) || 0}</p>
                   </div>
-                </Card>
-              ))
-            )}
-          </div>
-        ) : (
-          /* Resumen en grid - Vista individual */
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {loading ? (
-              [...Array(4)].map((_, i) => (
-                <Card key={i} className="animate-pulse">
-                  <CardBody className="p-4">
-                    <div className="h-4 w-20 bg-gray-100 rounded" />
-                    <div className="h-6 w-12 bg-gray-100 rounded mt-2" />
-                  </CardBody>
-                </Card>
-              ))
-            ) : (
-              resumen.map((r, i) => (
-                <Card 
-                  key={i} 
-                  hover 
-                  className="cursor-pointer"
-                  onClick={() => { setFiltroTipo(r.tipo); setModalOpen(false); }}
-                >
-                  <CardBody className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Layers className="w-4 h-4 text-secondary" />
-                      <span className="font-medium text-sm">{r.tipo}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div>
-                        <p className="text-muted">Disp</p>
-                        <p className="font-bold text-success">{r.disponibles || 0}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted">Vend</p>
-                        <p className="font-bold text-accent">{r.vendidas || 0}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted">Total</p>
-                        <p className="font-bold text-primary">{r.cantidad || 0}</p>
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              ))
-            )}
-          </div>
-        )}
+                  <div>
+                    <p className="text-muted">Vend</p>
+                    <p className="font-bold text-accent">{parseInt(r.vendidas) || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted">Total</p>
+                    <p className="font-bold text-primary">{parseInt(r.cantidad) || 0}</p>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          ))}
+        </div>
 
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row gap-4">
@@ -254,7 +183,6 @@ export default function Pacas() {
               placeholder="Buscar por UUID o notas..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && loadPacas()}
               className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
             />
           </div>
@@ -262,17 +190,17 @@ export default function Pacas() {
             <div className="flex rounded-xl border border-border overflow-hidden">
               <button
                 onClick={() => setVistaAgrupada(true)}
-                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-primary' : 'bg-white text-muted hover:bg-gray-50'}`}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-primary font-medium' : 'bg-white text-muted hover:bg-gray-50'}`}
               >
                 <Grid size={16} />
                 <span className="hidden sm:inline">Agrupado</span>
               </button>
               <button
                 onClick={() => setVistaAgrupada(false)}
-                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-primary' : 'bg-white text-muted hover:bg-gray-50'}`}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-primary font-medium' : 'bg-white text-muted hover:bg-gray-50'}`}
               >
                 <List size={16} />
-                <span className="hidden sm:inline">Individual</span>
+                <span className="hidden sm:inline">Lista</span>
               </button>
             </div>
             <select
@@ -301,61 +229,148 @@ export default function Pacas() {
           <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
         )}
 
-        {/* Tabla */}
-        <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-primary/3 border-b border-border/50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {loading ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
-                ) : pacas.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No hay pacas</td></tr>
-                ) : (
-                  pacas.map((paca) => (
-                    <tr key={paca.id} className="hover:bg-primary/3 transition-colors">
-                      <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
-                      <td className="px-4 py-3 text-sm font-medium text-primary">{paca.tipo}</td>
-                      <td className="px-4 py-3 text-sm text-muted">{paca.categoria}</td>
-                      <td className="px-4 py-3 text-sm text-muted">{paca.peso} kg</td>
-                      <td className="px-4 py-3 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
-                      <td className="px-4 py-3 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
-                      <td className="px-4 py-3"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-1">
-                          <button onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
-                            <Edit2 size={16} />
-                          </button>
-                          <button onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" disabled={paca.estado === 'vendida'}>
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+        {/* Vista Agrupada */}
+        {vistaAgrupada ? (
+          <div className="space-y-3">
+            {loading ? (
+              [...Array(3)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardBody className="p-4"><div className="h-8 bg-gray-100 rounded" /></CardBody>
+                </Card>
+              ))
+            ) : pacasAgrupadas.map((grupo, idx) => (
+              <Card key={idx} className="overflow-hidden">
+                <div 
+                  className="flex items-center justify-between p-4 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
+                  onClick={() => toggleTipo(grupo.tipo)}
+                >
+                  <div className="flex items-center gap-3">
+                    {tiposExpandidos[grupo.tipo] ? (
+                      <ChevronDown className="w-5 h-5 text-muted" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-muted" />
+                    )}
+                    <Layers className="w-5 h-5 text-secondary" />
+                    <div>
+                      <p className="font-bold text-primary">{grupo.tipo}</p>
+                      <p className="text-xs text-muted">{grupo.pacas.length} pacas</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="text-center">
+                      <p className="text-xs text-muted">Disp</p>
+                      <p className="font-bold text-success">{grupo.pacas.filter(p => p.estado === 'disponible').length}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-muted">Vend</p>
+                      <p className="font-bold text-accent">{grupo.pacas.filter(p => p.estado === 'vendida').length}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-muted">Precio</p>
+                      <p className="font-bold text-primary">{formatCurrency(grupo.pacas[0]?.precio_venta)}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {tiposExpandidos[grupo.tipo] && (
+                  <div className="border-t border-border/50">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">UUID</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Categoría</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Peso</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Costo</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Precio</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Estado</th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-muted">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {grupo.pacas.map((paca) => (
+                          <tr key={paca.id} className="hover:bg-primary/3">
+                            <td className="px-4 py-2 text-xs text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
+                            <td className="px-4 py-2 text-sm text-muted">{paca.categoria}</td>
+                            <td className="px-4 py-2 text-sm text-muted">{paca.peso} kg</td>
+                            <td className="px-4 py-2 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
+                            <td className="px-4 py-2 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
+                            <td className="px-4 py-2"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
+                            <td className="px-4 py-2 text-right">
+                              <div className="flex justify-end gap-1">
+                                <button onClick={(e) => { e.stopPropagation(); handleEdit(paca); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5">
+                                  <Edit2 size={14} />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(paca.id); }} className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-accent/5" disabled={paca.estado === 'vendida'}>
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </Card>
+            ))}
           </div>
-        </Card>
+        ) : (
+          /* Vista Lista/Tabla */
+          <Card padding={false}>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-primary/3 border-b border-border/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {loading ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                  ) : pacas.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No hay pacas</td></tr>
+                  ) : (
+                    pacas.map((paca) => (
+                      <tr key={paca.id} className="hover:bg-primary/3 transition-colors">
+                        <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-primary">{paca.tipo}</td>
+                        <td className="px-4 py-3 text-sm text-muted">{paca.categoria}</td>
+                        <td className="px-4 py-3 text-sm text-muted">{paca.peso} kg</td>
+                        <td className="px-4 py-3 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
+                        <td className="px-4 py-3"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-1">
+                            <button onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
+                              <Edit2 size={16} />
+                            </button>
+                            <button onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" disabled={paca.estado === 'vendida'}>
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Paca' : 'Nueva Paca'}>
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
-          
+
           <div className="grid grid-cols-2 gap-4">
             <Select
               label="Tipo"
@@ -374,7 +389,7 @@ export default function Pacas() {
               required
             />
           </div>
-          
+
           <Input
             label="Peso (kg)"
             type="number"
@@ -385,7 +400,7 @@ export default function Pacas() {
             suffix="kg"
             required
           />
-          
+
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Costo Base"
@@ -422,14 +437,14 @@ export default function Pacas() {
               />
             </div>
           )}
-          
+
           <Input
             label="Notas"
             value={formData.notas}
             onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
             placeholder="Notas adicionales..."
           />
-          
+
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button type="submit" variant="secondary">
