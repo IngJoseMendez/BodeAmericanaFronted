@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, useToast } from '../components/common';
-import { carteraApi } from '../services/api';
+import { clienteApi } from '../services/api';
 import { Wallet, TrendingUp, TrendingDown, Loader } from 'lucide-react';
 
 export default function CarteraCliente() {
@@ -15,16 +15,13 @@ export default function CarteraCliente() {
 
   const loadCartera = async () => {
     try {
-      const data = await carteraApi.getDeudores();
-      if (data && data.length > 0) {
-        setCartera(data[0]);
-      } else {
-        setCartera({
-          total_vendido: 0,
-          total_abonado: 0,
-          saldo_pendiente: 0
-        });
-      }
+      const data = await clienteApi.getCartera();
+      setCartera({
+        total_vendido: data.total_vendido,
+        total_abonado: data.total_abonado,
+        saldo_pendiente: data.saldo_pendiente,
+        movimientos: data.movimientos
+      });
     } catch (err) {
       addToast(err.message, 'error');
     } finally {

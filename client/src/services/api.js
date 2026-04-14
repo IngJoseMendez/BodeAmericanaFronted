@@ -295,7 +295,7 @@ export const pedidosApi = {
 
 export const clienteApi = {
   getCartera() {
-    return api.get('/cartera');
+    return api.get('/cartera/mi-cartera');
   },
   getMisPedidos(params = {}) {
     const query = new URLSearchParams(params).toString();

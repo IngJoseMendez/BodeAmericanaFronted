@@ -28,7 +28,7 @@ echo.
 echo [2/2] Verificando e subiendo Frontend (carpeta raiz y submódulo)...
 git add .
 git commit -m "%commit_msg%"
-git push origin master
+git push origin master:main
 echo Push del frontend completado.
 
 echo.
