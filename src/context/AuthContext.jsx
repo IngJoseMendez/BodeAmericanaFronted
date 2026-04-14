@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/api';
 
 const AuthContext = createContext(null);
@@ -7,6 +8,7 @@ export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (token) {
@@ -40,7 +42,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUsuario(null);
     localStorage.removeItem('token');
-    window.location.href = '/login';
+    navigate('/login', { replace: true });
   };
 
   const tieneRol = (roles) => {
