@@ -81,9 +81,9 @@ export default function Login() {
                 </button>
               </div>
 
-              <Button 
-                type="submit" 
-                variant="secondary" 
+              <Button
+                type="submit"
+                variant="secondary"
                 className="w-full"
                 loading={loading}
               >
@@ -92,9 +92,6 @@ export default function Login() {
             </form>
 
             <div className="mt-6 pt-4 border-t border-border/50">
-              <p className="text-xs text-muted text-center">
-                Admin: admin / Admin@2024
-              </p>
               <p className="text-xs text-center mt-2">
                 ¿No tienes cuenta? <Link to="/registro" className="text-secondary hover:underline">Regístrate aquí</Link>
               </p>
