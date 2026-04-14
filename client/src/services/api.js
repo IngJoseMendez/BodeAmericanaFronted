@@ -58,6 +58,15 @@ export const api = {
     });
     return handleResponse(response);
   },
+
+  async patch(endpoint, data) {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
 };
 
 export const pacasApi = {
@@ -187,6 +196,9 @@ export const dashboardApi = {
     const query = new URLSearchParams(params).toString();
     return api.get(`/dashboard/ventas/ganancia${query ? `?${query}` : ''}`);
   },
+  getResumenGeneral() {
+    return api.get('/dashboard/metricas/resumen-general');
+  },
 };
 
 export const lotesApi = {
@@ -217,6 +229,9 @@ export const authApi = {
   login(credentials) {
     return api.post('/auth/login', credentials);
   },
+  registro(data) {
+    return api.post('/auth/registro', data);
+  },
   verificar() {
     return api.get('/auth/verificar');
   },
@@ -246,6 +261,35 @@ export const reportesApi = {
   },
   downloadJSON() {
     return api.get('/reportes/mensual/json');
+  },
+};
+
+export const catalogoApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/catalogo${query ? `?${query}` : ''}`);
+  },
+  getResumen() {
+    return api.get('/catalogo/resumen');
+  },
+};
+
+export const pedidosApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/pedidos${query ? `?${query}` : ''}`);
+  },
+  getOne(id) {
+    return api.get(`/pedidos/${id}`);
+  },
+  create(data) {
+    return api.post('/pedidos', data);
+  },
+  actualizar(id, data) {
+    return api.patch(`/pedidos/${id}`, data);
+  },
+  delete(id) {
+    return api.delete(`/pedidos/${id}`);
   },
 };
 

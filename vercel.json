@@ -1,7 +1,7 @@
 {
   "framework": "vite",
-  "buildCommand": "npm i && npx vite build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd client && npm install && npm run build",
+  "outputDirectory": "client/dist",
   "installCommand": "npm i",
   "headers": [
     {
