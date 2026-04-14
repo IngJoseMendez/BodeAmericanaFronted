@@ -353,3 +353,28 @@ export const analyticsApi = {
     return api.get(`/analytics/flujo-caja${query ? `?${query}` : ''}`);
   },
 };
+
+export const cotizacionesApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/cotizaciones${query ? `?${query}` : ''}`);
+  },
+  getOne(id) {
+    return api.get(`/cotizaciones/${id}`);
+  },
+  create(data) {
+    return api.post('/cotizaciones', data);
+  },
+  update(id, data) {
+    return api.put(`/cotizaciones/${id}`, data);
+  },
+  updateEstado(id, estado) {
+    return api.patch(`/cotizaciones/${id}/estado`, { estado });
+  },
+  delete(id) {
+    return api.delete(`/cotizaciones/${id}`);
+  },
+  convertirAVenta(id, vendedorId) {
+    return api.post(`/cotizaciones/${id}/convertir`, { vendedor_id: vendedorId });
+  },
+};

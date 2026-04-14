@@ -16,6 +16,7 @@ import GestionarPedidos from './pages/GestionarPedidos';
 import ClienteDashboard from './pages/ClienteDashboard';
 import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
 import Lotes from './pages/Lotes';
+import Cotizaciones from './pages/Cotizaciones';
 
 function AdminLayout() {
   return (
@@ -60,6 +61,7 @@ function RutasAdmin() {
       <Route path="/reportes" element={<Reportes />} />
       <Route path="/gestionar-pedidos" element={<GestionarPedidos />} />
       <Route path="/inteligencia-negocio" element={<InteligenciaDeNegocio />} />
+      <Route path="/cotizaciones" element={<Cotizaciones />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
