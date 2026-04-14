@@ -342,4 +342,14 @@ export const analyticsApi = {
   getDashboard() {
     return api.get('/analytics/dashboard');
   },
+  getQueComprar() {
+    return api.get('/analytics/que-comprar');
+  },
+  getRiesgoCartera() {
+    return api.get('/analytics/riesgo-cartera');
+  },
+  getFlujoCaja(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/analytics/flujo-caja${query ? `?${query}` : ''}`);
+  },
 };

@@ -9,7 +9,7 @@ import {
 import {
   TrendingUp, Users, Package, Zap, AlertTriangle, CheckCircle, Clock,
   DollarSign, ShoppingCart, ArrowUp, ArrowDown, Brain, Target, Award,
-  BarChart3, RefreshCw, Filter, Star
+  BarChart3, RefreshCw, Filter, Star, Info
 } from 'lucide-react';
 
 const formatCurrency = (value) => {
@@ -258,6 +258,9 @@ export default function InteligenciaDeNegocio() {
   const [predicciones, setPredicciones] = useState(null);
   const [recomendaciones, setRecomendaciones] = useState(null);
   const [dashboard, setDashboard] = useState(null);
+  const [queComprar, setQueComprar] = useState(null);
+  const [riesgoCartera, setRiesgoCartera] = useState(null);
+  const [flujoCaja, setFlujoCaja] = useState(null);
 
   useEffect(() => {
     loadAllData();
@@ -266,14 +269,17 @@ export default function InteligenciaDeNegocio() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [rotacionData, scoreData, lotesData, ventasData, prediccionesData, recomendacionesData, dashboardData] = await Promise.all([
+      const [rotacionData, scoreData, lotesData, ventasData, prediccionesData, recomendacionesData, dashboardData, queComprarData, riesgoData, flujoData] = await Promise.all([
         analyticsApi.getRotacion(),
         analyticsApi.getClientesScore(),
         analyticsApi.getLotes(),
         analyticsApi.getVentas({ periodo, dias: 30 }),
         analyticsApi.getPredicciones(),
         analyticsApi.getRecomendaciones(),
-        analyticsApi.getDashboard()
+        analyticsApi.getDashboard(),
+        analyticsApi.getQueComprar(),
+        analyticsApi.getRiesgoCartera(),
+        analyticsApi.getFlujoCaja({ semanas: 4 })
       ]);
 
       setRotacion(rotacionData);
@@ -283,6 +289,9 @@ export default function InteligenciaDeNegocio() {
       setPredicciones(prediccionesData);
       setRecomendaciones(recomendacionesData);
       setDashboard(dashboardData);
+      setQueComprar(queComprarData);
+      setRiesgoCartera(riesgoData);
+      setFlujoCaja(flujoData);
     } catch (err) {
       console.error('Error cargando analytics:', err);
     } finally {
@@ -297,6 +306,9 @@ export default function InteligenciaDeNegocio() {
     { id: 'lotes', label: 'Lotes', icon: Package },
     { id: 'ventas', label: 'Ventas', icon: TrendingUp },
     { id: 'predicciones', label: 'Predicciones', icon: Target },
+    { id: 'que-comprar', label: 'Qué Comprar', icon: ShoppingCart },
+    { id: 'riesgo', label: 'Riesgo Cartera', icon: AlertTriangle },
+    { id: 'flujo-caja', label: 'Flujo Caja', icon: DollarSign },
     { id: 'insights', label: 'Insights', icon: Award }
   ];
 
@@ -313,6 +325,20 @@ export default function InteligenciaDeNegocio() {
   return (
     <Layout title="Inteligencia de Negocio" subtitle="Analytics y Insights">
       <div className="space-y-6">
+        {/* Disclaimer */}
+        <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+          <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-blue-900">
+              ⚠️ Las predicciones son estimaciones basadas en datos históricos
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              No garantizan resultados futuros. Úsalas como guía, no como verdad absoluta.
+              Se requieren al menos 3-5 compras por cliente para predicciones confiables.
+            </p>
+          </div>
+        </div>
+
         {/* Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {tabs.map(tab => (
@@ -834,7 +860,7 @@ export default function InteligenciaDeNegocio() {
         {/* Predicciones */}
         {activeTab === 'predicciones' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 icon={Target}
                 label="Con Predicción"
@@ -856,7 +882,47 @@ export default function InteligenciaDeNegocio() {
                 subtext="fuera de patrón"
                 color="accent"
               />
+              <MetricCard
+                icon={CheckCircle}
+                label="Alta Confianza"
+                value={predicciones?.predicciones?.filter(p => p.prediccion?.confianza === 'alta')?.length || 0}
+                subtext="R² ≥ 80%"
+                color="success"
+              />
             </div>
+
+            {/* Leyenda de confianza */}
+            <Card className="bg-gray-50">
+              <CardBody>
+                <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
+                  <Info className="w-4 h-4" />
+                  Cómo interpretamos la confianza (R²)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="w-3 h-3 rounded-full bg-success mt-1 flex-shrink-0"></span>
+                    <div>
+                      <p className="font-medium text-success">Alta (R² ≥ 80%)</p>
+                      <p className="text-muted text-xs">Patrón muy consistente, predicción confiable</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-3 h-3 rounded-full bg-warning mt-1 flex-shrink-0"></span>
+                    <div>
+                      <p className="font-medium text-warning">Media (R² 50-79%)</p>
+                      <p className="text-muted text-xs">Patrón moderado, usar como guía</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="w-3 h-3 rounded-full bg-accent mt-1 flex-shrink-0"></span>
+                    <div>
+                      <p className="font-medium text-accent">Baja (R² &lt; 50%)</p>
+                      <p className="text-muted text-xs">Comportamiento irregular, tomar con cautela</p>
+                    </div>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
 
             <Card>
               <CardBody>
@@ -869,9 +935,20 @@ export default function InteligenciaDeNegocio() {
                           <ShoppingCart className="w-5 h-5 text-warning" />
                         </div>
                         <div>
-                          <p className="font-medium">{cliente.nombre}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{cliente.nombre}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              cliente.prediccion?.confianza === 'alta' ? 'bg-success/20 text-success' :
+                              cliente.prediccion?.confianza === 'media' ? 'bg-warning/20 text-warning' :
+                              'bg-accent/20 text-accent'
+                            }`}>
+                              {cliente.prediccion?.confianza === 'alta' ? '✓ Alta' :
+                               cliente.prediccion?.confianza === 'media' ? '~ Media' : '⚠ Baja'}
+                              {cliente.prediccion?.confianzaValor ? ` (${cliente.prediccion.confianzaValor}%)` : ''}
+                            </span>
+                          </div>
                           <p className="text-xs text-muted">
-                            Frecuencia: cada {cliente.prediccion.frecuenciaPromedio} días
+                            Frecuencia: cada {cliente.prediccion?.frecuenciaPromedio} días
                           </p>
                         </div>
                       </div>
@@ -991,6 +1068,387 @@ export default function InteligenciaDeNegocio() {
                 </Card>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Qué Comprar */}
+        {activeTab === 'que-comprar' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <MetricCard
+                icon={ShoppingCart}
+                label="Tipos Analizados"
+                value={queComprar?.analisis?.length || 0}
+                color="primary"
+              />
+              <MetricCard
+                icon={CheckCircle}
+                label="Recomendados"
+                value={queComprar?.comprar?.length || 0}
+                subtext="para comprar"
+                color="success"
+              />
+              <MetricCard
+                icon={AlertTriangle}
+                label="Evitar"
+                value={queComprar?.evitar?.length || 0}
+                subtext="no comprar"
+                color="accent"
+              />
+            </div>
+
+            {/* Recomendaciones principales */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border-2 border-success/30 bg-success/5">
+                <CardBody>
+                  <h3 className="font-display text-lg mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-6 h-6 text-success" />
+                    <span className="text-success">💰 Comprar Más</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {queComprar?.recomendaciones?.filter(r => r.tipo === 'compra')?.map((rec, i) => (
+                      <div key={i} className="p-4 bg-white rounded-xl border border-success/20">
+                        <p className="font-medium">{rec.mensaje}</p>
+                        {rec.detalles?.slice(0, 3).map((d, j) => (
+                          <div key={j} className="mt-2 flex justify-between text-sm">
+                            <span className="text-muted">{d.tipo}</span>
+                            <span className="font-medium">Score: {d.score_total}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {(!queComprar?.recomendaciones?.filter(r => r.tipo === 'compra')?.length) && (
+                      <p className="text-muted text-center py-4">No hay recomendaciones de compra aún</p>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card className="border-2 border-accent/30 bg-accent/5">
+                <CardBody>
+                  <h3 className="font-display text-lg mb-4 flex items-center gap-2">
+                    <AlertTriangle className="w-6 h-6 text-accent" />
+                    <span className="text-accent">⚠️ Evitar Comprar</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {queComprar?.recomendaciones?.filter(r => r.tipo === 'evitar')?.map((rec, i) => (
+                      <div key={i} className="p-4 bg-white rounded-xl border border-accent/20">
+                        <p className="font-medium">{rec.mensaje}</p>
+                        {rec.detalles?.slice(0, 3).map((d, j) => (
+                          <div key={j} className="mt-2 flex justify-between text-sm">
+                            <span className="text-muted">{d.tipo}</span>
+                            <span className="font-medium">Score: {d.score_total}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {(!queComprar?.recomendaciones?.filter(r => r.tipo === 'evitar')?.length) && (
+                      <p className="text-muted text-center py-4">No hay advertencias de compra</p>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+
+            {/* Análisis detallado */}
+            <Card>
+              <CardBody>
+                <h3 className="font-display text-lg mb-4">Análisis Detallado por Tipo</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Tipo</th>
+                        <th className="px-4 py-2 text-center">Disponibles</th>
+                        <th className="px-4 py-2 text-center">Vendidas</th>
+                        <th className="px-4 py-2 text-center">Días Inv.</th>
+                        <th className="px-4 py-2 text-center">Margen %</th>
+                        <th className="px-4 py-2 text-center">Score</th>
+                        <th className="px-4 py-2 text-center">Recomendación</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {queComprar?.analisis?.map((item, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium">{item.tipo}</td>
+                          <td className="px-4 py-2 text-center">{item.disponibles}</td>
+                          <td className="px-4 py-2 text-center">{item.unidades_vendidas || 0}</td>
+                          <td className="px-4 py-2 text-center">{Math.round(item.dias_promedio)}</td>
+                          <td className="px-4 py-2 text-center">{Math.round(item.margen_porcentaje)}%</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${
+                              item.score_total >= 70 ? 'bg-success/20 text-success' :
+                              item.score_total >= 40 ? 'bg-warning/20 text-warning' :
+                              'bg-accent/20 text-accent'
+                            }`}>
+                              {item.score_total}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <Badge
+                              variant={
+                                item.recomendacion === 'comprar' ? 'success' :
+                                item.recomendacion === 'evitar' ? 'error' : 'default'
+                              }
+                            >
+                              {item.recomendacion === 'comprar' ? 'Comprar' :
+                               item.recomendacion === 'evitar' ? 'Evitar' : 'Mantener'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
+        )}
+
+        {/* Riesgo Cartera */}
+        {activeTab === 'riesgo' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                icon={AlertTriangle}
+                label="Alto Riesgo"
+                value={riesgoCartera?.distribucion?.alto || 0}
+                subtext="clientes"
+                color="accent"
+              />
+              <MetricCard
+                icon={Clock}
+                label="Medio"
+                value={riesgoCartera?.distribucion?.medio || 0}
+                subtext="clientes"
+                color="warning"
+              />
+              <MetricCard
+                icon={CheckCircle}
+                label="Bajo"
+                value={riesgoCartera?.distribucion?.bajo || 0}
+                subtext="clientes"
+                color="success"
+              />
+              <MetricCard
+                icon={DollarSign}
+                label="Deuda Alto Riesgo"
+                value={formatCurrency(riesgoCartera?.resumen?.deuda_alto_riesgo || 0)}
+                color="accent"
+              />
+            </div>
+
+            <Card>
+              <CardBody>
+                <h3 className="font-display text-lg mb-4">Riesgo de Cartera - Clientes</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Cliente</th>
+                        <th className="px-4 py-2 text-left">Ciudad</th>
+                        <th className="px-4 py-2 text-right">Deuda</th>
+                        <th className="px-4 py-2 text-center">Días Atraso</th>
+                        <th className="px-4 py-2 text-center">Ratio Pago</th>
+                        <th className="px-4 py-2 text-center">Score</th>
+                        <th className="px-4 py-2 text-center">Nivel</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {riesgoCartera?.clientes?.map((cliente, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium">{cliente.nombre}</td>
+                          <td className="px-4 py-2 text-muted">{cliente.ciudad || '-'}</td>
+                          <td className="px-4 py-2 text-right font-medium">{formatCurrency(cliente.deuda_pendiente)}</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={cliente.dias_promedio_atraso > 15 ? 'text-accent font-medium' : ''}>
+                              {cliente.dias_promedio_atraso}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-center">{cliente.ratio_pago}%</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${
+                              cliente.nivel_riesgo === 'bajo' ? 'bg-success/20 text-success' :
+                              cliente.nivel_riesgo === 'medio' ? 'bg-warning/20 text-warning' :
+                              'bg-accent/20 text-accent'
+                            }`}>
+                              {cliente.score_riesgo}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <Badge
+                              variant={
+                                cliente.nivel_riesgo === 'bajo' ? 'success' :
+                                cliente.nivel_riesgo === 'medio' ? 'warning' : 'error'
+                              }
+                            >
+                              {cliente.nivel_riesgo === 'bajo' ? 'Bajo' :
+                               cliente.nivel_riesgo === 'medio' ? 'Medio' : 'Alto'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+
+            {/* Mensajes de riesgo */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border-2 border-accent/30">
+                <CardBody>
+                  <h3 className="font-display text-lg mb-3 text-accent">⚠️ Clientes Alto Riesgo</h3>
+                  <p className="text-sm text-muted mb-4">
+                    Deuda en riesgo: {formatCurrency(riesgoCartera?.resumen?.deuda_alto_riesgo || 0)} ({riesgoCartera?.resumen?.porcentaje_riesgo}%)
+                  </p>
+                  <div className="space-y-2">
+                    {riesgoCartera?.clientes?.filter(c => c.nivel_riesgo === 'alto')?.slice(0, 5).map((c, i) => (
+                      <div key={i} className="p-3 bg-accent/5 rounded-xl">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{c.nombre}</span>
+                          <span className="font-medium text-accent">{formatCurrency(c.deuda_pendiente)}</span>
+                        </div>
+                        <p className="text-xs text-muted">{c.mensaje}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card className="border-2 border-success/30">
+                <CardBody>
+                  <h3 className="font-display text-lg mb-3 text-success">✅ Clientes Confiables</h3>
+                  <p className="text-sm text-muted mb-4">
+                    Clientes con bajo riesgo de incumplimiento
+                  </p>
+                  <div className="space-y-2">
+                    {riesgoCartera?.clientes?.filter(c => c.nivel_riesgo === 'bajo')?.slice(0, 5).map((c, i) => (
+                      <div key={i} className="p-3 bg-success/5 rounded-xl">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{c.nombre}</span>
+                          <span className="font-medium text-success">{formatCurrency(c.deuda_pendiente)}</span>
+                        </div>
+                        <p className="text-xs text-muted">{c.mensaje}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* Flujo de Caja */}
+        {activeTab === 'flujo-caja' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                icon={DollarSign}
+                label="Deuda Total"
+                value={formatCurrency(flujoCaja?.resumen?.deuda_total_pendiente || 0)}
+                color="primary"
+              />
+              <MetricCard
+                icon={TrendingUp}
+                label="Entrada Estimada"
+                value={formatCurrency(flujoCaja?.resumen?.entrada_total_estimada || 0)}
+                color="success"
+              />
+              <MetricCard
+                icon={BarChart3}
+                label="Promedio Semanal"
+                value={formatCurrency(flujoCaja?.resumen?.promedio_semanal_historico || 0)}
+                color="info"
+              />
+              <MetricCard
+                icon={Target}
+                label="vs Promedio"
+                value={`${flujoCaja?.comparativo?.vs_promedio || 0}%`}
+                subtext={flujoCaja?.comparativo?.vs_promedio >= 0 ? 'arriba' : 'abajo'}
+                color={flujoCaja?.comparativo?.vs_promedio >= 0 ? 'success' : 'accent'}
+              />
+            </div>
+
+            {/* Proyección semanal */}
+            <Card>
+              <CardBody>
+                <h3 className="font-display text-lg mb-4">📅 Proyección de Entradas por Semana</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {flujoCaja?.flujos_por_semana?.map((semana, i) => (
+                    <div key={i} className={`p-4 rounded-xl border ${
+                      semana.entrada_estimada > 0 ? 'bg-success/5 border-success/30' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium">Semana {semana.semana}</span>
+                        <span className="text-xs text-muted">
+                          {new Date(semana.fecha_inicio).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                      <p className={`text-2xl font-display font-bold ${
+                        semana.entrada_estimada > 0 ? 'text-success' : 'text-muted'
+                      }`}>
+                        {formatCurrency(semana.entrada_estimada)}
+                      </p>
+                      <p className="text-xs text-muted mt-1">
+                        {semana.clientes?.length || 0} cliente(s)
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+
+            {/* Alertas */}
+            {flujoCaja?.alertas?.length > 0 && (
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-4">🔔 Alertas y Observaciones</h3>
+                  <div className="space-y-3">
+                    {flujoCaja.alertas.map((alerta, i) => (
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-xl ${
+                        alerta.tipo === 'advertencia' ? 'bg-warning/10 border border-warning/30' : 'bg-info/10 border border-info/30'
+                      }`}>
+                        {alerta.tipo === 'advertencia' ? (
+                          <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
+                        ) : (
+                          <TrendingUp className="w-5 h-5 text-info flex-shrink-0" />
+                        )}
+                        <p className="text-sm">{alerta.mensaje}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+
+            {/* Detalle de clientes por semana */}
+            <Card>
+              <CardBody>
+                <h3 className="font-display text-lg mb-4">Detalle de Pagos Esperados</h3>
+                <div className="space-y-4">
+                  {flujoCaja?.flujos_por_semana?.map((semana, i) => (
+                    <div key={i}>
+                      <h4 className="font-medium text-sm text-muted mb-2">
+                        Semana {semana.semana} ({semana.fecha_inicio} - {semana.fecha_fin})
+                      </h4>
+                      {semana.clientes?.length > 0 ? (
+                        <div className="space-y-2 ml-4">
+                          {semana.clientes.map((cliente, j) => (
+                            <div key={j} className="flex justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                              <span>{cliente.nombre}</span>
+                              <span className="font-medium">{formatCurrency(cliente.monto)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted ml-4">Sin pagos estimados</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
           </div>
         )}
       </div>
