@@ -132,12 +132,12 @@ export default function Pacas() {
     const grupos = {};
     pacas.forEach(paca => {
       if (!grupos[paca.tipo]) {
-        grupos[paca.tipo] = { tipo: pacac.tipo, pacas: [], expandido: tiposExpandidos[paca.tipo] ?? true };
+        grupos[paca.tipo] = { tipo: paca.tipo, pacas: [] };
       }
       grupos[paca.tipo].pacas.push(paca);
     });
     return Object.values(grupos).sort((a, b) => a.tipo.localeCompare(b.tipo));
-  }, [pacas, tiposExpandidos]);
+  }, [pacas]);
 
   const toggleTipo = (tipo) => {
     setTiposExpandidos(prev => ({ ...prev, [tipo]: !prev[tipo] }));
