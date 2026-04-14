@@ -14,10 +14,10 @@ export function Layout({ children, title, subtitle, actions }) {
   };
 
   return (
-    <div className="min-h-screen bg-cream bg-pattern flex">
+    <div className="flex min-h-screen bg-cream bg-pattern">
       <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
       
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col w-full">
         <header className="sticky top-0 z-20 bg-surface/80 backdrop-blur-md border-b border-border/50 px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-4">
             <button
@@ -46,7 +46,7 @@ export function Layout({ children, title, subtitle, actions }) {
             </div>
           </div>
         </header>
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

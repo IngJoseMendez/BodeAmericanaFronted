@@ -125,7 +125,8 @@ export default function Pacas() {
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+    const num = parseFloat(value) || 0;
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(num);
   };
 
   const pacasAgrupadas = useMemo(() => {

@@ -50,21 +50,6 @@ export function Sidebar({ isOpen, onToggle }) {
     }
   }, [isAdmin]);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (sidebarRef.current) {
-        const scrollTop = window.scrollY;
-        if (scrollTop > 0 && !isHoveringSidebar) {
-          sidebarRef.current.style.transform = `translateY(-${Math.min(scrollTop, 60)}px)`;
-        } else {
-          sidebarRef.current.style.transform = 'translateY(0)';
-        }
-      }
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [isHoveringSidebar]);
-
   const loadCounts = async () => {
     try {
       const data = await dashboardApi.getMetricas();
@@ -83,14 +68,12 @@ export function Sidebar({ isOpen, onToggle }) {
       <aside
         ref={sidebarRef}
         className={`
-          fixed lg:sticky top-0 inset-y-0 left-0 z-40
+          sticky top-0 h-screen
           w-72 min-h-screen bg-primary flex flex-col
-          transform transition-transform duration-300 ease-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          transform transition-transform duration-300 ease-out z-40
         `}
         onMouseEnter={() => setIsHoveringSidebar(true)}
         onMouseLeave={() => setIsHoveringSidebar(false)}
-        style={{ height: '100vh' }}
       >
         {/* Header con gradiente decorativo */}
         <div className="relative p-6 border-b border-white/10 overflow-hidden">
