@@ -1,8 +1,8 @@
 {
-  "buildCommand": "npx vite build",
+  "buildCommand": "./node_modules/.bin/vite build",
   "outputDirectory": "dist",
-  "framework": null,
-  "installCommand": "npm install",
+  "framework": "vite",
+  "installCommand": "npm install --prefer-offline",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
