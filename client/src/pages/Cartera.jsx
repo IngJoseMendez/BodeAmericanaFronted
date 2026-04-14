@@ -555,22 +555,54 @@ export default function Cartera() {
             <label className="block text-sm font-medium text-primary mb-1">
               Cliente <span className="text-error">*</span>
             </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Buscar cliente por nombre..."
-                value={clienteSearch}
-                onChange={(e) => setClienteSearch(e.target.value)}
-                onFocus={() => clienteSearch && setShowClienteList(true)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
-              />
-            </div>
             
-            {/* Lista de clientes filtrados - solo mostrar si hay texto y está enabled */}
-            {clienteSearch && (
+            {/* Si ya hay cliente seleccionado, mostrar tag */}
+            {formData.cliente_id ? (
+              <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+                <div className="p-2 bg-secondary/20 rounded-lg">
+                  <User className="w-4 h-4 text-secondary" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-sm text-secondary">
+                    {clientes.find(c => c.id === formData.cliente_id)?.nombre || 'Cliente'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {clientes.find(c => c.id === formData.cliente_id)?.ciudad || ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData({ ...formData, cliente_id: '' });
+                    setClienteSearch('');
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            ) : (
+              /* Si no hay cliente, mostrar buscador */
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente por nombre..."
+                  value={clienteSearch}
+                  onChange={(e) => {
+                    setClienteSearch(e.target.value);
+                    setShowClienteList(true);
+                  }}
+                  onFocus={() => clienteSearch && setShowClienteList(true)}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                />
+              </div>
+            )}
+            
+            {/* Lista de clientes filtrados - solo mostrar si hay texto y no hay cliente seleccionado */}
+            {!formData.cliente_id && clienteSearch && (
               <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                 {clientes
                   .filter(c => 
@@ -584,7 +616,7 @@ export default function Cartera() {
                       key={c.id}
                       onClick={() => {
                         setFormData({ ...formData, cliente_id: c.id });
-                        setClienteSearch(c.nombre);
+                        setClienteSearch('');
                         setShowClienteList(false);
                       }}
                       className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
@@ -599,9 +631,6 @@ export default function Cartera() {
                           <p className="font-medium text-sm">{c.nombre}</p>
                           <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
                         </div>
-                        {formData.cliente_id === c.id && (
-                          <span className="text-success text-xs">✓</span>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -614,12 +643,6 @@ export default function Cartera() {
                   </div>
                 )}
               </div>
-            )}
-            
-            {formData.cliente_id && !clienteSearch && (
-              <p className="text-xs text-success mt-2 flex items-center gap-1">
-                <span>✓</span> Cliente seleccionado
-              </p>
             )}
           </div>
 

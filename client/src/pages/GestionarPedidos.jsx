@@ -79,7 +79,6 @@ export default function GestionarPedidos() {
     setFiltroCliente('');
     setSearchCliente('');
     setShowClienteList(false);
-    setPedidos(pedidosOriginal);
   };
 
   const clientesFiltrados = clientes.filter(c => 
@@ -150,42 +149,51 @@ export default function GestionarPedidos() {
               {/* Filtro Cliente */}
               <div className="flex-1 relative" ref={clienteListRef}>
                 <label className="block text-sm font-medium text-primary mb-1">Cliente</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar cliente..."
-                    value={searchCliente}
-                    onChange={(e) => {
-                      setSearchCliente(e.target.value);
-                      if (!e.target.value) {
-                        limpiarFiltroCliente();
-                      }
-                    }}
-                    onFocus={() => searchCliente && setShowClienteList(true)}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
-                  />
-                  {searchCliente && (
+                
+                {/* Si ya hay cliente seleccionado, mostrar tag */}
+                {filtroCliente ? (
+                  <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+                    <div className="p-2 bg-secondary/20 rounded-lg">
+                      <User className="w-4 h-4 text-secondary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-secondary truncate">{searchCliente}</p>
+                    </div>
                     <button
+                      type="button"
                       onClick={limpiarFiltroCliente}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary flex-shrink-0"
                     >
                       <X size={18} />
                     </button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  /* Si no hay cliente, mostrar buscador */
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar cliente..."
+                      value={searchCliente}
+                      onChange={(e) => {
+                        setSearchCliente(e.target.value);
+                        setShowClienteList(true);
+                      }}
+                      onFocus={() => searchCliente && setShowClienteList(true)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                    />
+                  </div>
+                )}
                 
-                {/* Lista desplegable de clientes - solo mostrar si hay texto */}
-                {searchCliente && (
+                {/* Lista desplegable de clientes - solo mostrar si hay texto y no hay filtro */}
+                {!filtroCliente && searchCliente && (
                   <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {clientesFiltrados.length > 0 ? (
                       clientesFiltrados.slice(0, 10).map(cliente => (
                         <div
                           key={cliente.id}
                           onClick={() => seleccionarCliente(cliente)}
-                          className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
-                            filtroCliente === cliente.id ? 'bg-secondary/10' : ''
-                          }`}
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                         >
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-gray-100 rounded-lg">
@@ -195,9 +203,6 @@ export default function GestionarPedidos() {
                               <p className="font-medium text-sm">{cliente.nombre}</p>
                               <p className="text-xs text-gray-500">{cliente.ciudad || 'Sin ciudad'}</p>
                             </div>
-                            {filtroCliente === cliente.id && (
-                              <span className="text-success text-xs">✓</span>
-                            )}
                           </div>
                         </div>
                       ))
