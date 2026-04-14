@@ -9,7 +9,8 @@ import {
   Sparkles,
   ShoppingBag,
   Receipt,
-  ChevronRight
+  ChevronRight,
+  Brain
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -23,6 +24,7 @@ const adminNavItems = [
   { path: '/gestionar-pedidos', icon: Receipt, label: 'Pedidos' },
   { path: '/cartera', icon: Wallet, label: 'Cartera' },
   { path: '/reportes', icon: FileText, label: 'Reportes' },
+  { path: '/inteligencia-negocio', icon: Brain, label: 'Analytics' },
 ];
 
 const clienteNavItems = [

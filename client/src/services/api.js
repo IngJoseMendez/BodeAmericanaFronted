@@ -305,3 +305,29 @@ export const clienteApi = {
     return api.get('/ventas/reporte');
   },
 };
+
+export const analyticsApi = {
+  getRotacion() {
+    return api.get('/analytics/rotacion');
+  },
+  getClientesScore(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/analytics/clientes-score${query ? `?${query}` : ''}`);
+  },
+  getLotes() {
+    return api.get('/analytics/lotes');
+  },
+  getVentas(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/analytics/ventas${query ? `?${query}` : ''}`);
+  },
+  getPredicciones() {
+    return api.get('/analytics/predicciones');
+  },
+  getRecomendaciones() {
+    return api.get('/analytics/recomendaciones');
+  },
+  getDashboard() {
+    return api.get('/analytics/dashboard');
+  },
+};

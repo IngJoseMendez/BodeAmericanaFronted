@@ -14,6 +14,7 @@ import MisPedidos from './pages/MisPedidos';
 import CarteraCliente from './pages/CarteraCliente';
 import GestionarPedidos from './pages/GestionarPedidos';
 import ClienteDashboard from './pages/ClienteDashboard';
+import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
 
 function AdminLayout() {
   return (
@@ -56,6 +57,7 @@ function RutasAdmin() {
       <Route path="/cartera" element={<Cartera />} />
       <Route path="/reportes" element={<Reportes />} />
       <Route path="/gestionar-pedidos" element={<GestionarPedidos />} />
+      <Route path="/inteligencia-negocio" element={<InteligenciaDeNegocio />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
