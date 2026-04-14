@@ -15,6 +15,7 @@ import CarteraCliente from './pages/CarteraCliente';
 import GestionarPedidos from './pages/GestionarPedidos';
 import ClienteDashboard from './pages/ClienteDashboard';
 import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
+import Lotes from './pages/Lotes';
 
 function AdminLayout() {
   return (
@@ -52,6 +53,7 @@ function RutasAdmin() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/pacas" element={<Pacas />} />
+      <Route path="/lotes" element={<Lotes />} />
       <Route path="/clientes" element={<Clientes />} />
       <Route path="/ventas" element={<Ventas />} />
       <Route path="/cartera" element={<Cartera />} />

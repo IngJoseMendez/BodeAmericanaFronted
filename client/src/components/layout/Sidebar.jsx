@@ -10,7 +10,8 @@ import {
   ShoppingBag,
   Receipt,
   ChevronRight,
-  Brain
+  Brain,
+  Layers
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -19,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 const adminNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/pacas', icon: Package, label: 'Inventario', key: 'pacas' },
+  { path: '/lotes', icon: Layers, label: 'Lotes' },
   { path: '/clientes', icon: Users, label: 'Clientes', key: 'clientes' },
   { path: '/ventas', icon: ShoppingCart, label: 'Ventas', key: 'ventas' },
   { path: '/gestionar-pedidos', icon: Receipt, label: 'Pedidos' },

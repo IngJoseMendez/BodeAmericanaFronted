@@ -223,6 +223,18 @@ export const lotesApi = {
   getRentabilidad() {
     return api.get('/lotes/rentabilidad/resumen');
   },
+  agregarPacas(loteId, pacas) {
+    return api.post(`/lotes/${loteId}/pacas`, { pacas });
+  },
+  asignarPacas(loteId, pacaIds) {
+    return api.post(`/lotes/${loteId}/asignar`, { pacaIds });
+  },
+  desasignarPaca(loteId, pacaId) {
+    return api.delete(`/lotes/${loteId}/pacas/${pacaId}`);
+  },
+  getPacasSinLote() {
+    return api.get('/lotes/sin-lote');
+  },
 };
 
 export const authApi = {
