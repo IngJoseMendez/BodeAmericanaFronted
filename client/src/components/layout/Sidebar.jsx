@@ -8,9 +8,10 @@ import {
   FileText,
   Sparkles,
   ShoppingBag,
-  Receipt
+  Receipt,
+  ChevronRight
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -34,6 +35,9 @@ const clienteNavItems = [
 export function Sidebar({ isOpen, onToggle }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [counts, setCounts] = useState({});
+  const [hoveredItem, setHoveredItem] = useState(null);
+  const [isHoveringSidebar, setIsHoveringSidebar] = useState(false);
+  const sidebarRef = useRef(null);
   const { usuario, tieneRol } = useAuth();
 
   const isAdmin = tieneRol('admin') || tieneRol('vendedor');
@@ -44,6 +48,21 @@ export function Sidebar({ isOpen, onToggle }) {
       loadCounts();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (sidebarRef.current) {
+        const scrollTop = window.scrollY;
+        if (scrollTop > 0 && !isHoveringSidebar) {
+          sidebarRef.current.style.transform = `translateY(-${Math.min(scrollTop, 60)}px)`;
+        } else {
+          sidebarRef.current.style.transform = 'translateY(0)';
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isHoveringSidebar]);
 
   const loadCounts = async () => {
     try {
@@ -61,21 +80,27 @@ export function Sidebar({ isOpen, onToggle }) {
   return (
     <>
       <aside
+        ref={sidebarRef}
         className={`
-          fixed lg:static inset-y-0 left-0 z-40
-          w-72 bg-primary flex flex-col h-screen
+          fixed lg:sticky top-0 inset-y-0 left-0 z-40
+          w-72 min-h-screen bg-primary flex flex-col
           transform transition-transform duration-300 ease-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
+        onMouseEnter={() => setIsHoveringSidebar(true)}
+        onMouseLeave={() => setIsHoveringSidebar(false)}
+        style={{ height: '100vh' }}
       >
-        {/* Header */}
-        <div className="p-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
+        {/* Header con gradiente decorativo */}
+        <div className="relative p-6 border-b border-white/10 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-secondary/20 via-transparent to-accent/10"></div>
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-secondary/10 rounded-full blur-2xl"></div>
+          <div className="relative flex items-center gap-3">
             <div className="relative">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-lg">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-lg shadow-secondary/30">
                 <Sparkles className="w-6 h-6 text-white" />
               </div>
-              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-success rounded-full border-2 border-primary"></div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-primary animate-pulse"></div>
             </div>
             <div>
               <h1 className="text-xl font-display font-bold text-white tracking-tight">Bodega</h1>
@@ -85,66 +110,105 @@ export function Sidebar({ isOpen, onToggle }) {
         </div>
 
         {/* Search Bar */}
-        <div className="p-4">
-          <div className="relative">
+        <div className="relative px-4 py-3">
+          <div className="relative group">
+            <div className="absolute inset-0 bg-gradient-to-r from-secondary/20 to-accent/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             <input
               type="text"
-              placeholder="Buscar en el sistema..."
+              placeholder="Buscar..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-4 pr-10 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 font-medium focus:outline-none focus:bg-white/10 focus:border-secondary/50 transition-all"
+              className="relative w-full pl-4 pr-10 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 font-medium focus:outline-none focus:bg-white/10 focus:border-secondary/50 transition-all text-sm"
             />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          <p className="px-4 py-2 text-[10px] font-heading font-semibold text-white/30 uppercase tracking-wider">Menu</p>
-          {navItems.map((item, index) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={() => window.innerWidth < 1024 && onToggle()}
-              className={({ isActive }) => `
-                flex items-center justify-between px-4 py-3 rounded-xl
-                transition-all duration-200 group
-                ${isActive 
-                  ? 'bg-gradient-to-r from-secondary/20 to-transparent border-l-[3px] border-secondary text-white shadow-lg' 
-                  : 'text-white/60 hover:text-white hover:bg-white/5 border-l-[3px] border-transparent'
-                }
-              `}
-              style={{ animationDelay: `${index * 30}ms` }}
-            >
-              <div className="flex items-center gap-3">
-                <item.icon size={20} className="transition-transform group-hover:scale-110" />
-                <span className="font-medium text-sm">{item.label}</span>
-              </div>
-              {item.key && counts[item.key] !== undefined && (
-                <span className={`
-                  px-2.5 py-1 text-[11px] font-bold rounded-full
-                  ${navItems.findIndex(n => n.path) === index 
-                    ? 'bg-secondary text-primary' 
-                    : 'bg-white/10 text-white/60'
+        {/* Navigation con scroll independientes */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+          <p className="px-4 py-2 text-[10px] font-heading font-semibold text-white/30 uppercase tracking-wider">Menú</p>
+          <div className="space-y-1">
+            {navItems.map((item, index) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={() => window.innerWidth < 1024 && onToggle()}
+                onMouseEnter={() => setHoveredItem(index)}
+                onMouseLeave={() => setHoveredItem(null)}
+                className={({ isActive }) => `
+                  relative flex items-center justify-between px-4 py-2.5 rounded-xl
+                  transition-all duration-200 group overflow-hidden
+                  ${isActive 
+                    ? 'bg-gradient-to-r from-secondary/30 to-transparent text-white shadow-lg shadow-secondary/20' 
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
                   }
-                `}>
-                  {counts[item.key]}
-                </span>
-              )}
-            </NavLink>
-          ))}
+                `}
+              >
+                {/* Indicador activo */}
+                {isActive && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-secondary rounded-r-full"></div>
+                )}
+                
+                <div className="flex items-center gap-3 relative z-10">
+                  <div className={`
+                    p-2 rounded-lg transition-all duration-200
+                    ${isActive ? 'bg-secondary/20 text-secondary' : 'text-white/60 group-hover:text-white group-hover:bg-white/10'}
+                  `}>
+                    <item.icon size={18} />
+                  </div>
+                  <span className="font-medium text-sm">{item.label}</span>
+                </div>
+                
+                {item.key && counts[item.key] !== undefined && (
+                  <div className="relative z-10">
+                    <span className={`
+                      px-2 py-0.5 text-[11px] font-bold rounded-full transition-all duration-200
+                      ${isActive 
+                        ? 'bg-secondary text-primary' 
+                        : 'bg-white/10 text-white/60 group-hover:bg-white/20 group-hover:text-white'
+                      }
+                    `}>
+                      {counts[item.key]}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Hover effect */}
+                {hoveredItem === index && !isActive && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent"></div>
+                )}
+                
+                <ChevronRight 
+                  size={14} 
+                  className={`
+                    absolute right-2 opacity-0 transition-all duration-200
+                    ${hoveredItem === index ? 'opacity-100 translate-x-[-4px]' : ''}
+                  `} 
+                />
+              </NavLink>
+            ))}
+          </div>
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center text-white font-bold text-sm">
+        <div className="relative p-4 border-t border-white/10">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+          <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center text-white font-bold text-sm shadow-lg">
               {usuario?.nombre?.slice(0, 2)?.toUpperCase() || 'U'}
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">{usuario?.nombre || 'Usuario'}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">{usuario?.nombre || 'Usuario'}</p>
               <p className="text-[10px] text-white/40 capitalize">{usuario?.rol || 'Cliente'}</p>
             </div>
-            <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+              <span className="text-[10px] text-white/40">Online</span>
+            </div>
           </div>
         </div>
       </aside>

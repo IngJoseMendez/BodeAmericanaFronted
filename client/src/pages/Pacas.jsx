@@ -3,7 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
 import { pacasApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS, PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Layers, Hash, Package, Grid, List, ChevronDown, ChevronRight } from 'lucide-react';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -29,6 +29,8 @@ export default function Pacas() {
     tipo: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1
   });
   const [error, setError] = useState('');
+  const [vistaAgrupada, setVistaAgrupada] = useState(true);
+  const [tiposExpandidos, setTiposExpandidos] = useState({});
   const { addToast } = useToast();
   
   const debouncedSearch = useDebounce(search, 300);
@@ -126,52 +128,121 @@ export default function Pacas() {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
   };
 
+  const pacasAgrupadas = useMemo(() => {
+    const grupos = {};
+    pacas.forEach(paca => {
+      const key = pacasApi.getAll ? `${paca.tipo}-${paca.categoria}-${paca.precio_venta}` : pacas.id;
+      if (!grupos[paca.tipo]) {
+        grupos[paca.tipo] = { tipo: paca.tipo, pacas: [], expandido: tiposExpandidos[paca.tipo] ?? true };
+      }
+      grupos[paca.tipo].pacas.push(paca);
+    });
+    return Object.values(grupos).sort((a, b) => a.tipo.localeCompare(b.tipo));
+  }, [pacas, tiposExpandidos]);
+
+  const toggleTipo = (tipo) => {
+    setTiposExpandidos(prev => ({ ...prev, [tipo]: !prev[tipo] }));
+  };
+
   return (
     <Layout title="Inventario" subtitle={`${pacas.length} pacas`}>
       <div className="space-y-6">
-        {/* Resumen por tipo */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {loading ? (
-            [...Array(4)].map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <CardBody className="p-4">
-                  <div className="h-4 w-20 bg-gray-100 rounded" />
-                  <div className="h-6 w-12 bg-gray-100 rounded mt-2" />
-                </CardBody>
-              </Card>
-            ))
-          ) : (
-            resumen.map((r, i) => (
-              <Card 
-                key={i} 
-                hover 
-                className="cursor-pointer"
-                onClick={() => { setFiltroTipo(r.tipo); setModalOpen(false); }}
-              >
-                <CardBody className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Layers className="w-4 h-4 text-secondary" />
-                    <span className="font-medium text-sm">{r.tipo}</span>
+        {/* Resumen por tipo - Vista agrupada */}
+        {vistaAgrupada ? (
+          <div className="space-y-2">
+            {loading ? (
+              [...Array(4)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardBody className="p-4">
+                    <div className="h-4 w-20 bg-gray-100 rounded" />
+                    <div className="h-6 w-12 bg-gray-100 rounded mt-2" />
+                  </CardBody>
+                </Card>
+              ))
+            ) : (
+              resumen.map((r, i) => (
+                <Card key={i} hover className="overflow-hidden">
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-primary/5 transition-colors"
+                    onClick={() => { setFiltroTipo(r.tipo); setModalOpen(false); }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-secondary/10">
+                        <Layers className="w-5 h-5 text-secondary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-primary">{r.tipo}</p>
+                        <p className="text-xs text-muted">{r.categoria || 'Sin categoría'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-center">
+                        <p className="text-xs text-muted">Disp</p>
+                        <p className="font-bold text-success">{r.disponibles || 0}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted">Vend</p>
+                        <p className="font-bold text-accent">{r.vendidas || 0}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted">Total</p>
+                        <p className="font-bold text-primary">{r.cantidad || 0}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted">Valor</p>
+                        <p className="font-bold text-primary">{formatCurrency(r.precio_min)} - {formatCurrency(r.precio_max)}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted">Disp</p>
-                      <p className="font-bold text-success">{r.disponibles || 0}</p>
+                </Card>
+              ))
+            )}
+          </div>
+        ) : (
+          /* Resumen en grid - Vista individual */
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {loading ? (
+              [...Array(4)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardBody className="p-4">
+                    <div className="h-4 w-20 bg-gray-100 rounded" />
+                    <div className="h-6 w-12 bg-gray-100 rounded mt-2" />
+                  </CardBody>
+                </Card>
+              ))
+            ) : (
+              resumen.map((r, i) => (
+                <Card 
+                  key={i} 
+                  hover 
+                  className="cursor-pointer"
+                  onClick={() => { setFiltroTipo(r.tipo); setModalOpen(false); }}
+                >
+                  <CardBody className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Layers className="w-4 h-4 text-secondary" />
+                      <span className="font-medium text-sm">{r.tipo}</span>
                     </div>
-                    <div>
-                      <p className="text-muted">Vend</p>
-                      <p className="font-bold text-accent">{r.vendidas || 0}</p>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted">Disp</p>
+                        <p className="font-bold text-success">{r.disponibles || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted">Vend</p>
+                        <p className="font-bold text-accent">{r.vendidas || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted">Total</p>
+                        <p className="font-bold text-primary">{r.cantidad || 0}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-muted">Total</p>
-                      <p className="font-bold text-primary">{r.cantidad || 0}</p>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))
-          )}
-        </div>
+                  </CardBody>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row gap-4">
@@ -186,7 +257,23 @@ export default function Pacas() {
               className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
             />
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
+            <div className="flex rounded-xl border border-border overflow-hidden">
+              <button
+                onClick={() => setVistaAgrupada(true)}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-primary' : 'bg-white text-muted hover:bg-gray-50'}`}
+              >
+                <Grid size={16} />
+                <span className="hidden sm:inline">Agrupado</span>
+              </button>
+              <button
+                onClick={() => setVistaAgrupada(false)}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-primary' : 'bg-white text-muted hover:bg-gray-50'}`}
+              >
+                <List size={16} />
+                <span className="hidden sm:inline">Individual</span>
+              </button>
+            </div>
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
