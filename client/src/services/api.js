@@ -361,7 +361,17 @@ export const analyticsApi = {
   },
 };
 
+export const tiposPacaApi = {
+  getTipos() { return api.get('/tipos-paca/tipos'); },
+  createTipo(data) { return api.post('/tipos-paca/tipos', data); },
+  deleteTipo(id) { return api.delete(`/tipos-paca/tipos/${id}`); },
+  getCategorias() { return api.get('/tipos-paca/categorias'); },
+  createCategoria(data) { return api.post('/tipos-paca/categorias', data); },
+  deleteCategoria(id) { return api.delete(`/tipos-paca/categorias/${id}`); },
+};
+
 export const cotizacionesApi = {
+
   getAll(params = {}) {
     const query = new URLSearchParams(params).toString();
     return api.get(`/cotizaciones${query ? `?${query}` : ''}`);

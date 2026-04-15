@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
-import { pacasApi, lotesApi } from '../services/api';
-import { PACA_TIPOS, PACA_CATEGORIAS, PACA_ESTADOS } from '../types';
+import { pacasApi, lotesApi, tiposPacaApi } from '../services/api';
+import { PACA_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, Package, Eye, EyeOff, Link, Unlink } from 'lucide-react';
 
 function useDebounce(value, delay) {
@@ -32,6 +32,8 @@ export default function Pacas() {
   const [error, setError] = useState('');
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
+  const [tiposList, setTiposList] = useState([]);
+  const [categoriasList, setCategoriasList] = useState([]);
   const { addToast } = useToast();
   const confirm = useConfirm();
 
@@ -43,6 +45,7 @@ export default function Pacas() {
 
   useEffect(() => {
     loadLotes();
+    loadTiposYCategorias();
   }, []);
 
   const loadPacas = async () => {
@@ -73,6 +76,21 @@ export default function Pacas() {
       setLotes(data);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const loadTiposYCategorias = async () => {
+    try {
+      const [tipos, cats] = await Promise.all([
+        tiposPacaApi.getTipos(),
+        tiposPacaApi.getCategorias(),
+      ]);
+      setTiposList(tipos.map(t => t.nombre));
+      setCategoriasList(cats.map(c => c.nombre));
+    } catch (err) {
+      // fallback a hardcodeados si falla
+      setTiposList(['premium', 'jeans', 'mixta', 'playera', 'formal', 'deportiva', 'americana']);
+      setCategoriasList(['hombre', 'mujer', 'niño', 'unisex']);
     }
   };
 
@@ -453,7 +471,7 @@ export default function Pacas() {
               label="Tipo"
               value={formData.tipo}
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-              options={PACA_TIPOS.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+              options={tiposList.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
               placeholder="Seleccionar..."
               required
             />
@@ -461,7 +479,7 @@ export default function Pacas() {
               label="Categoría"
               value={formData.categoria}
               onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
-              options={PACA_CATEGORIAS.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
+              options={categoriasList.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
               placeholder="Seleccionar..."
               required
             />

@@ -17,6 +17,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Tag,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -27,6 +28,7 @@ const adminNavItems = [
   { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',    key: null },
   { path: '/pacas',                icon: Package,         label: 'Inventario',   key: 'pacas' },
   { path: '/lotes',                icon: Layers,          label: 'Lotes',        key: null },
+  { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca', key: null },
   { path: '/clientes',             icon: Users,           label: 'Clientes',     key: 'clientes' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',       key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',      key: 'pedidos' },
