@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Badge } from '../components/common';
 import { analyticsApi } from '../services/api';
@@ -9,7 +9,8 @@ import {
 import {
   TrendingUp, Users, Package, Zap, AlertTriangle, CheckCircle, Clock,
   DollarSign, ShoppingCart, ArrowUp, ArrowDown, Brain, Target, Award,
-  BarChart3, RefreshCw, Filter, Star, Info
+  BarChart3, RefreshCw, Filter, Star, Info, Calendar, Database, TrendingDown,
+  Minus, Sparkles, ChevronDown, ChevronUp, HelpCircle
 } from 'lucide-react';
 
 const formatCurrency = (value) => {
@@ -43,6 +44,495 @@ const PRIORIDAD_COLORS = {
   media: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   baja: 'bg-green-100 text-green-800 border-green-200'
 };
+
+const CONFIANZA_COLORS = {
+  excelente: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  buena: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
+  regular: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500' },
+  baja: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' }
+};
+
+const URGENCIA_STYLES = {
+  critica: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '🚨' },
+  alta: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: '⚠️' },
+  media: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: '📅' },
+  baja: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', icon: '✓' }
+};
+
+// Hook para detectar preferencia de movimiento reducido
+function useReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReducedMotion(mediaQuery.matches);
+    
+    const handler = (e) => setReducedMotion(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+  
+  return reducedMotion;
+}
+
+// Componente Skeleton Loader
+function Skeleton({ className, variant = 'rect' }) {
+  const baseClass = variant === 'circle' ? 'rounded-full' : 'rounded-lg';
+  return (
+    <div 
+      className={`animate-pulse bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%] ${baseClass} ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+// Skeleton para cards de métricas
+function MetricCardSkeleton() {
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex items-start justify-between">
+          <Skeleton className="w-10 h-10 rounded-xl" variant="circle" />
+          <Skeleton className="w-8 h-4 rounded" />
+        </div>
+        <div className="mt-3 space-y-2">
+          <Skeleton className="w-16 h-8 rounded" />
+          <Skeleton className="w-24 h-4 rounded" />
+          <Skeleton className="w-20 h-3 rounded" />
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+// Skeleton para lista de clientes
+function ClienteCardSkeleton() {
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex items-center gap-4 p-4">
+          <Skeleton className="w-12 h-12 rounded-xl" variant="circle" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="w-32 h-5 rounded" />
+            <Skeleton className="w-48 h-4 rounded" />
+            <Skeleton className="w-24 h-3 rounded" />
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <Skeleton className="w-20 h-6 rounded-full" />
+            <Skeleton className="w-16 h-4 rounded" />
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+// Barra de progreso circular para score
+function CircularProgress({ score, size = 80, strokeWidth = 6, showLabel = true }) {
+  const reducedMotion = useReducedMotion();
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (score / 100) * circumference;
+  
+  const getColor = () => {
+    if (score >= 85) return '#10b981'; // emerald-500
+    if (score >= 70) return '#3b82f6'; // blue-500
+    if (score >= 50) return '#f59e0b'; // amber-500
+    return '#ef4444'; // red-500
+  };
+  
+  return (
+    <div 
+      className="relative inline-flex items-center justify-center"
+      role="progressbar"
+      aria-valuenow={score}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Score de confiabilidad: ${score} de 100`}
+    >
+      <svg 
+        width={size} 
+        height={size} 
+        className={`transform -rotate-90 ${reducedMotion ? '' : 'transition-all duration-500 ease-out'}`}
+      >
+        {/* Fondo */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          fill="none"
+          className="text-slate-200"
+        />
+        {/* Progreso */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={getColor()}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className={`${reducedMotion ? '' : 'transition-all duration-700 ease-out'}`}
+        />
+      </svg>
+      {showLabel && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-xl font-bold text-slate-800">{score}</span>
+          <span className="text-xs text-slate-500">/100</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Barra de progreso lineal
+function LinearProgress({ value, max = 100, color, label, showValue = true }) {
+  const reducedMotion = useReducedMotion();
+  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
+  
+  return (
+    <div className="space-y-1.5">
+      {label && (
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-medium text-slate-700">{label}</span>
+          {showValue && (
+            <span className="text-sm text-slate-500 tabular-nums">{Math.round(percentage)}%</span>
+          )}
+        </div>
+      )}
+      <div 
+        className="h-2 bg-slate-200 rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={max}
+      >
+        <div
+          className={`h-full rounded-full ${reducedMotion ? '' : 'transition-all duration-500 ease-out'}`}
+          style={{ 
+            width: `${percentage}%`, 
+            backgroundColor: color || (percentage >= 85 ? '#10b981' : percentage >= 70 ? '#3b82f6' : percentage >= 50 ? '#f59e0b' : '#ef4444')
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Tooltip personalizado con detalles del score
+function TooltipScore({ children, score }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
+  
+  const detalles = score?.detalles || {};
+  const factores = [
+    { label: 'Cantidad datos', puntos: detalles.cantidadDatos?.puntos, max: 30 },
+    { label: 'R² linealidad', puntos: detalles.rSquared?.puntos, max: 30 },
+    { label: 'Consistencia', puntos: detalles.consistencia?.puntos, max: 20 },
+    { label: 'Recencia', puntos: detalles.recencia?.puntos, max: 10 },
+    { label: 'Estacionalidad', puntos: detalles.estacionalidad?.puntos, max: 10 },
+  ];
+  
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <div
+        onMouseEnter={() => setIsOpen(true)}
+        onMouseLeave={() => setIsOpen(false)}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setIsOpen(false)}
+      >
+        {children}
+      </div>
+      {isOpen && score && (
+        <div 
+          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white rounded-xl shadow-xl text-sm"
+          role="tooltip"
+        >
+          <p className="font-semibold mb-2 text-center">{score.nivel?.toUpperCase()} ({score.score}/100)</p>
+          <div className="space-y-1.5">
+            {factores.map((factor, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span className="text-slate-300">{factor.label}</span>
+                <span className="tabular-nums font-medium">{factor.puntos}/{factor.max}</span>
+              </div>
+            ))}
+          </div>
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45"></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Badge de confianza mejorado
+function ConfianzaBadge({ nivel, score }) {
+  const colors = CONFIANZA_COLORS[nivel] || CONFIANZA_COLORS.baja;
+  const icons = {
+    excelente: <Sparkles className="w-3 h-3" />,
+    buena: <CheckCircle className="w-3 h-3" />,
+    regular: <Minus className="w-3 h-3" />,
+    baja: <AlertTriangle className="w-3 h-3" />
+  };
+  const labels = {
+    excelente: '⭐ Excelente',
+    buena: '✓ Buena',
+    regular: '~ Regular',
+    baja: '⚠ Baja'
+  };
+  
+  return (
+    <TooltipScore score={{ nivel, score }}>
+      <span 
+        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text} cursor-help`}
+        role="status"
+        aria-label={`Nivel de confianza: ${nivel}, score ${score}`}
+      >
+        {icons[nivel]} {labels[nivel]} ({score})
+      </span>
+    </TooltipScore>
+  );
+}
+
+// Card de cliente con todas las mejoras
+function ClientePrediccionCard({ cliente, index = 0 }) {
+  const [expanded, setExpanded] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const confianza = cliente.prediccion?.confiabilidad;
+  const banda = cliente.prediccion?.bandaConfianza;
+  const estacionalidad = cliente.prediccion?.estacionalidad;
+  const tendencia = cliente.prediccion?.tendencia;
+  const urgenciaStyle = URGENCIA_STYLES[cliente.prediccion?.urgencia] || URGENCIA_STYLES.baja;
+  
+  const urgenciaLabels = {
+    critica: '🚨 Crítica',
+    alta: '⚠️ Alta',
+    media: '📅 Media',
+    baja: '✓ Normal'
+  };
+  
+  const tendenciaIcon = {
+    acelerando: <TrendingUp className="w-3 h-3" />,
+    desacelerando: <TrendingDown className="w-3 h-3" />,
+    estable: <Minus className="w-3 h-3" />
+  };
+  
+  return (
+    <div
+      className={`
+        ${urgenciaStyle.bg} border ${urgenciaStyle.border} rounded-2xl overflow-hidden
+        ${reducedMotion ? '' : 'transition-all duration-300 ease-out'}
+        ${expanded ? 'shadow-lg' : 'hover:shadow-md hover:scale-[1.01]'}
+        animate-fade-in-up
+      `}
+      style={{ 
+        animationDelay: reducedMotion ? '0ms' : `${index * 50}ms`,
+        animationFillMode: 'both'
+      }}
+      role="article"
+      aria-labelledby={`cliente-${cliente.id}-nombre`}
+    >
+      <div 
+        className="p-4 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => e.key === 'Enter' && setExpanded(!expanded)}
+        tabIndex={0}
+        role="button"
+        aria-expanded={expanded}
+        aria-controls={`cliente-${cliente.id}-detalles`}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+          {/* Info principal */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <h4 id={`cliente-${cliente.id}-nombre`} className="font-semibold text-lg text-slate-800 truncate">
+                {cliente.nombre}
+              </h4>
+              <ConfianzaBadge nivel={confianza?.nivel} score={confianza?.score} />
+              {tendencia !== 'estable' && (
+                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+                  tendencia === 'acelerando' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {tendenciaIcon[tendencia]} {tendencia === 'acelerando' ? 'Acelerando' : 'Desacelerando'}
+                </span>
+              )}
+            </div>
+            
+            {/* Banda de confianza */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                <span>
+                  Entre{' '}
+                  <strong className="text-slate-800">
+                    {cliente.prediccion?.fechaMinima && new Date(cliente.prediccion.fechaMinima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}
+                  </strong>
+                  {' - '}
+                  <strong className="text-slate-800">
+                    {cliente.prediccion?.fechaMaxima && new Date(cliente.prediccion.fechaMaxima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}
+                  </strong>
+                </span>
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs font-medium">
+                {banda?.probabilidad || '80%'} probabilidad
+              </span>
+              {estacionalidad?.tipo !== 'variable' && (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                  estacionalidad?.tipo === 'quincenal' ? 'bg-purple-100 text-purple-700' : 'bg-indigo-100 text-indigo-700'
+                }`}>
+                  📅 {estacionalidad?.tipo === 'quincenal' ? 'Pago quincenal' : 'Pago mensual'}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {/* Score circular */}
+          <TooltipScore score={confianza}>
+            <div className="flex-shrink-0 cursor-help">
+              <CircularProgress score={confianza?.score || 0} size={64} strokeWidth={5} />
+            </div>
+          </TooltipScore>
+          
+          {/* Detalles rápidos */}
+          <div className="flex flex-row lg:flex-col items-center lg:items-end gap-2 lg:gap-1">
+            <span 
+              className={`px-3 py-1 rounded-full text-sm font-medium ${urgenciaStyle.bg} ${urgenciaStyle.text} border ${urgenciaStyle.border}`}
+              role="status"
+            >
+              {urgenciaLabels[cliente.prediccion?.urgencia]}
+            </span>
+            <span className="text-sm text-slate-500">
+              hace {cliente.prediccion?.diasDesdeUltimaCompra} días
+            </span>
+            <span className="text-sm font-medium text-slate-700">
+              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
+            </span>
+          </div>
+          
+          {/* Expand indicator */}
+          <button
+            className="p-1 rounded-lg hover:bg-white/50 lg:hidden"
+            aria-label={expanded ? 'Contraer detalles' : 'Expandir detalles'}
+          >
+            {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+      
+      {/* Detalles expandidos */}
+      <div 
+        id={`cliente-${cliente.id}-detalles`}
+        className={`border-t ${urgenciaStyle.border} ${expanded ? 'block' : 'hidden'}`}
+        role="region"
+        aria-label="Detalles de predicción"
+      >
+        <div className="p-4 bg-white/50 space-y-4">
+          {/* Breakdown del score */}
+          {confianza?.detalles && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Desglose del Score de Confiabilidad
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <div className="p-2 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500">Datos</p>
+                  <p className="font-semibold text-slate-800">{confianza.detalles.cantidadDatos?.puntos || 0}/{confianza.detalles.cantidadDatos?.max}</p>
+                </div>
+                <div className="p-2 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500">R²</p>
+                  <p className="font-semibold text-slate-800">{confianza.detalles.rSquared?.puntos || 0}/{confianza.detalles.rSquared?.max}</p>
+                </div>
+                <div className="p-2 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500">Consistencia</p>
+                  <p className="font-semibold text-slate-800">{confianza.detalles.consistencia?.puntos || 0}/{confianza.detalles.consistencia?.max}</p>
+                </div>
+                <div className="p-2 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500">Recencia</p>
+                  <p className="font-semibold text-slate-800">{confianza.detalles.recencia?.puntos || 0}/{confianza.detalles.recencia?.max}</p>
+                </div>
+                <div className="p-2 bg-slate-50 rounded-lg">
+                  <p className="text-xs text-slate-500">Estacionalidad</p>
+                  <p className="font-semibold text-slate-800">{confianza.detalles.estacionalidad?.puntos || 0}/{confianza.detalles.estacionalidad?.max}</p>
+                </div>
+              </div>
+              <LinearProgress 
+                value={confianza.score || 0} 
+                max={100} 
+                color={
+                  confianza.score >= 85 ? '#10b981' : 
+                  confianza.score >= 70 ? '#3b82f6' : 
+                  confianza.score >= 50 ? '#f59e0b' : '#ef4444'
+                }
+              />
+            </div>
+          )}
+          
+          {/* Insights */}
+          {cliente.prediccion?.insights?.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                Insights
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {cliente.prediccion.insights.map((insight, i) => (
+                  <span 
+                    key={i}
+                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                      insight.nivel === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                      insight.nivel === 'info' ? 'bg-blue-100 text-blue-700' :
+                      insight.nivel === 'warning' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}
+                    role="status"
+                  >
+                    {insight.mensaje?.substring(0, 60)}{insight.mensaje?.length > 60 ? '...' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Explicación de confiabilidad */}
+          {confianza?.explicacion && (
+            <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+              <p className="text-sm text-blue-800">
+                <HelpCircle className="w-4 h-4 inline mr-1" />
+                {confianza.explicacion}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Estado vacío mejorado
+function EmptyState({ icon: Icon, title, description, action }) {
+  return (
+    <div 
+      className="flex flex-col items-center justify-center py-16 px-4 text-center"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+        <Icon className="w-10 h-10 text-slate-400" aria-hidden="true" />
+      </div>
+      <h4 className="text-lg font-semibold text-slate-700 mb-2">{title}</h4>
+      <p className="text-sm text-slate-500 max-w-sm mb-4">{description}</p>
+      {action && (
+        <Button onClick={action.onClick} variant="outline">
+          {action.label}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 function MetricCard({ icon: Icon, label, value, subtext, color = 'primary', trend, delay = 0 }) {
   const colorClasses = {
@@ -859,9 +1349,13 @@ export default function InteligenciaDeNegocio() {
 
         {/* Predicciones */}
         {activeTab === 'predicciones' && (
-          <div className="space-y-6">
+          <div className="space-y-6" role="region" aria-label="Predicciones de clientes">
             {/* Métricas principales */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div 
+              className="grid grid-cols-2 lg:grid-cols-5 gap-4"
+              role="group"
+              aria-label="Métricas de predicciones"
+            >
               <MetricCard
                 icon={Target}
                 label="Con Predicción"
@@ -900,32 +1394,42 @@ export default function InteligenciaDeNegocio() {
             </div>
 
             {/* Sistema de confiabilidad mejorado */}
-            <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border border-blue-100">
+            <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border border-blue-100 overflow-hidden">
               <CardBody>
-                <h4 className="font-display text-lg mb-4 flex items-center gap-3">
+                <h4 
+                  className="font-display text-lg mb-4 flex items-center gap-3"
+                  id="confiabilidad-heading"
+                >
                   <div className="p-2 bg-blue-100 rounded-xl">
                     <Star className="w-5 h-5 text-blue-600" />
                   </div>
                   Sistema de Confiabilidad Mejorado
+                  <span className="ml-auto text-xs text-slate-500 font-normal">
+                    5 factores combinados para mayor precisión
+                  </span>
                 </h4>
                 
-                {/* Explicación del nuevo sistema */}
+                {/* Factores del score */}
                 <div className="bg-white/60 rounded-xl p-4 mb-4">
                   <p className="text-sm text-muted mb-3">
-                    El score de confiabilidad ahora combina <strong>5 factores</strong> para darte una predicción más precisa:
+                    El score de confiabilidad combina <strong>5 factores</strong> para darte una predicción más precisa:
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                     {[
-                      { icon: Database, label: 'Cantidad datos', puntos: '0-30' },
-                      { icon: TrendingUp, label: 'R² linealidad', puntos: '0-30' },
-                      { icon: BarChart3, label: 'Consistencia', puntos: '0-20' },
-                      { icon: Clock, label: 'Recencia', puntos: '0-10' },
-                      { icon: Calendar, label: 'Estacionalidad', puntos: '0-10' },
+                      { icon: Database, label: 'Cantidad datos', puntos: '0-30', desc: 'Más historial = más preciso' },
+                      { icon: TrendingUp, label: 'R² linealidad', puntos: '0-30', desc: 'Patrón consistente' },
+                      { icon: BarChart3, label: 'Consistencia', puntos: '0-20', desc: 'Poca variación' },
+                      { icon: Clock, label: 'Recencia', puntos: '0-10', desc: 'Compra reciente' },
+                      { icon: Calendar, label: 'Estacionalidad', puntos: '0-10', desc: 'Patrón detectable' },
                     ].map((factor, i) => (
-                      <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                        <factor.icon className="w-4 h-4 text-slate-500" />
+                      <div 
+                        key={i} 
+                        className="flex items-start gap-2 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                        title={factor.desc}
+                      >
+                        <factor.icon className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
                         <div>
-                          <p className="text-xs font-medium">{factor.label}</p>
+                          <p className="text-xs font-medium text-slate-700">{factor.label}</p>
                           <p className="text-xs text-muted">{factor.puntos} pts</p>
                         </div>
                       </div>
@@ -934,39 +1438,28 @@ export default function InteligenciaDeNegocio() {
                 </div>
 
                 {/* Clasificación de confiabilidad */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-                      <span className="font-medium text-emerald-700">Excelente</span>
-                      <Badge variant="success" className="ml-auto">85-100</Badge>
-                    </div>
-                    <p className="text-xs text-emerald-600">Predicción altamente confiable. Patrón muy consistente.</p>
-                  </div>
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                      <span className="font-medium text-blue-700">Buena</span>
-                      <Badge variant="info" className="ml-auto">70-84</Badge>
-                    </div>
-                    <p className="text-xs text-blue-600">Confiable. Patrón relativamente estable.</p>
-                  </div>
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-amber-500"></span>
-                      <span className="font-medium text-amber-700">Regular</span>
-                      <Badge variant="warning" className="ml-auto">50-69</Badge>
-                    </div>
-                    <p className="text-xs text-amber-600">Incertidumbre moderada. Más datos ayudarían.</p>
-                  </div>
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                      <span className="font-medium text-red-700">Baja</span>
-                      <Badge variant="error" className="ml-auto">0-49</Badge>
-                    </div>
-                    <p className="text-xs text-red-600">Pocos datos o patrón muy irregular.</p>
-                  </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[
+                    { nivel: 'excelente', rango: '85-100', desc: 'Predicción altamente confiable', color: 'emerald' },
+                    { nivel: 'buena', rango: '70-84', desc: 'Confiable, patrón estable', color: 'blue' },
+                    { nivel: 'regular', rango: '50-69', desc: 'Incertidumbre moderada', color: 'amber' },
+                    { nivel: 'baja', rango: '0-49', desc: 'Pocos datos o irregular', color: 'red' },
+                  ].map((item) => {
+                    const colors = CONFIANZA_COLORS[item.nivel];
+                    return (
+                      <div 
+                        key={item.nivel}
+                        className={`p-3 ${colors.bg} border ${colors.border} rounded-xl transition-all hover:scale-[1.02]`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`w-3 h-3 rounded-full ${colors.dot}`}></span>
+                          <span className={`font-medium ${colors.text} capitalize`}>{item.nivel}</span>
+                          <span className={`ml-auto text-xs font-mono ${colors.text}`}>{item.rango}</span>
+                        </div>
+                        <p className={`text-xs ${colors.text} opacity-80`}>{item.desc}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </CardBody>
             </Card>
@@ -980,157 +1473,27 @@ export default function InteligenciaDeNegocio() {
                   <Badge variant="success" className="ml-auto">{predicciones?.proximos7dias?.length || 0}</Badge>
                 </div>
                 
-                <div className="space-y-3">
-                  {predicciones?.proximos7dias?.slice(0, 10).map((cliente, i) => {
-                    const confianza = cliente.prediccion?.confiabilidad;
-                    const banda = cliente.prediccion?.bandaConfianza;
-                    const estacionalidad = cliente.prediccion?.estacionalidad;
-                    const tendencia = cliente.prediccion?.tendencia;
-                    
-                    return (
-                      <div 
-                        key={i} 
-                        className="p-4 bg-gradient-to-r from-success/5 to-transparent rounded-xl border border-success/20 hover:border-success/40 transition-all"
-                      >
-                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                          {/* Info del cliente */}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <p className="font-semibold text-lg">{cliente.nombre}</p>
-                              {/* Badge de confianza */}
-                              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                                confianza?.nivel === 'excelente' ? 'bg-emerald-100 text-emerald-700' :
-                                confianza?.nivel === 'buena' ? 'bg-blue-100 text-blue-700' :
-                                confianza?.nivel === 'regular' ? 'bg-amber-100 text-amber-700' :
-                                'bg-red-100 text-red-700'
-                              }`}>
-                                {confianza?.nivel === 'excelente' ? '⭐ Excelente' :
-                                 confianza?.nivel === 'buena' ? '✓ Buena' :
-                                 confianza?.nivel === 'regular' ? '~ Regular' : '⚠ Baja'}
-                                {confianza?.score ? ` (${confianza.score}/100)` : ''}
-                              </span>
-                              {/* Tendencia */}
-                              {tendencia === 'acelerando' && (
-                                <span className="flex items-center text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                                  <ArrowUp className="w-3 h-3 mr-1" /> Acelerando
-                                </span>
-                              )}
-                              {tendencia === 'desacelerando' && (
-                                <span className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
-                                  <ArrowDown className="w-3 h-3 mr-1" /> Desacelerando
-                                </span>
-                              )}
-                            </div>
-                            
-                            {/* Banda de confianza */}
-                            <div className="flex flex-wrap items-center gap-4 text-sm text-muted">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-4 h-4" />
-                                Compra entre {cliente.prediccion?.fechaMinima && new Date(cliente.prediccion.fechaMinima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} 
-                                {' - '}
-                                {cliente.prediccion?.fechaMaxima && new Date(cliente.prediccion.fechaMaxima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}
-                              </span>
-                              <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">
-                                {banda?.probabilidad || '80%'} probabilidad
-                              </span>
-                            </div>
-                            
-                            {/* Estacionalidad */}
-                            {estacionalidad?.tipo !== 'variable' && (
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className={`text-xs px-2 py-1 rounded-full ${
-                                  estacionalidad?.tipo === 'quincenal' ? 'bg-purple-100 text-purple-700' : 'bg-indigo-100 text-indigo-700'
-                                }`}>
-                                  📅 {estacionalidad?.tipo === 'quincenal' ? 'Pago quincenal' : 'Pago mensual'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Score visual */}
-                          <div className="flex flex-col items-center">
-                            <div className="relative w-16 h-16">
-                              <svg className="w-16 h-16 transform -rotate-90">
-                                <circle
-                                  cx="32"
-                                  cy="32"
-                                  r="28"
-                                  stroke="currentColor"
-                                  strokeWidth="4"
-                                  fill="none"
-                                  className="text-slate-200"
-                                />
-                                <circle
-                                  cx="32"
-                                  cy="32"
-                                  r="28"
-                                  stroke="currentColor"
-                                  strokeWidth="4"
-                                  fill="none"
-                                  strokeDasharray={`${(confianza?.score || 0) * 1.76} 176`}
-                                  className={
-                                    confianza?.score >= 85 ? 'text-emerald-500' :
-                                    confianza?.score >= 70 ? 'text-blue-500' :
-                                    confianza?.score >= 50 ? 'text-amber-500' : 'text-red-500'
-                                  }
-                                />
-                              </svg>
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-lg font-bold">{confianza?.score || 0}</span>
-                              </div>
-                            </div>
-                            <span className="text-xs text-muted mt-1">confianza</span>
-                          </div>
-                          
-                          {/* Detalles */}
-                          <div className="text-right space-y-1">
-                            <Badge variant={cliente.prediccion?.urgencia === 'critica' ? 'error' : 
-                                           cliente.prediccion?.urgencia === 'alta' ? 'warning' : 'default'}>
-                              {cliente.prediccion?.urgencia === 'critica' ? '🚨 Crítica' :
-                               cliente.prediccion?.urgencia === 'alta' ? '⚠️ Alta' :
-                               cliente.prediccion?.urgencia === 'media' ? '📅 Media' : '✓ Normal'}
-                            </Badge>
-                            <p className="text-xs text-muted">
-                              hace {cliente.prediccion?.diasDesdeUltimaCompra} días
-                            </p>
-                            <p className="text-xs text-muted">
-                              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        {/* Insights del cliente */}
-                        {cliente.prediccion?.insights?.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-success/20">
-                            <div className="flex flex-wrap gap-2">
-                              {cliente.prediccion.insights.slice(0, 3).map((insight, j) => (
-                                <span 
-                                  key={j}
-                                  className={`text-xs px-2 py-1 rounded-full ${
-                                    insight.nivel === 'success' ? 'bg-emerald-100 text-emerald-700' :
-                                    insight.nivel === 'info' ? 'bg-blue-100 text-blue-700' :
-                                    insight.nivel === 'warning' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-red-100 text-red-700'
-                                  }`}
-                                >
-                                  {insight.mensaje?.substring(0, 50)}...
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  
-                  {(!predicciones?.proximos7dias || predicciones.proximos7dias.length === 0) && (
-                    <div className="text-center py-12">
-                      <Target className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                      <p className="text-muted">No hay predicciones próximas</p>
-                      <p className="text-xs text-muted">Los clientes necesitan más historial de compras</p>
-                    </div>
-                  )}
-                </div>
+                {predicciones?.proximos7dias?.length > 0 ? (
+                  <div 
+                    className="space-y-3"
+                    role="list"
+                    aria-label="Lista de clientes próximos a comprar"
+                  >
+                    {predicciones.proximos7dias.slice(0, 10).map((cliente, i) => (
+                      <ClientePrediccionCard 
+                        key={cliente.id || i} 
+                        cliente={cliente} 
+                        index={i}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={Target}
+                    title="No hay predicciones próximas"
+                    description="Los clientes necesitan al menos 3-5 compras en su historial para generar predicciones confiables."
+                  />
+                )}
               </CardBody>
             </Card>
 
@@ -1143,84 +1506,117 @@ export default function InteligenciaDeNegocio() {
                   <Badge variant="error" className="ml-auto">{predicciones?.vencidas?.length || 0}</Badge>
                 </div>
                 
-                <div className="space-y-3">
-                  {predicciones?.vencidas?.slice(0, 10).map((cliente, i) => {
-                    const confianza = cliente.prediccion?.confiabilidad;
-                    
-                    return (
-                      <div 
-                        key={i}
-                        className="p-4 bg-gradient-to-r from-accent/5 to-transparent rounded-xl border border-accent/20"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-1">
-                              <p className="font-semibold">{cliente.nombre}</p>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                confianza?.nivel === 'excelente' || confianza?.nivel === 'buena' 
-                                  ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                {confianza?.nivel} ({confianza?.score || 0}/100)
-                              </span>
-                            </div>
-                            <p className="text-sm text-muted">
-                              Últ compra: hace <strong className="text-accent">{cliente.prediccion?.diasDesdeUltimaCompra}</strong> días
-                              {' • '} Frecuencia típica: <strong>{cliente.prediccion?.frecuenciaPromedio}</strong> días
-                            </p>
-                            {cliente.prediccion?.mensajeUrgencia && (
-                              <p className="text-sm font-medium text-accent mt-1">
-                                {cliente.prediccion.mensajeUrgencia}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <Badge variant="error">
-                              +{cliente.prediccion?.diasDesdeUltimaCompra - cliente.prediccion?.frecuenciaPromedio} días
-                            </Badge>
-                            <p className="text-xs text-muted mt-1">
-                              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  
-                  {(!predicciones?.vencidas || predicciones.vencidas.length === 0) && (
-                    <div className="text-center py-8">
-                      <CheckCircle className="w-10 h-10 text-success mx-auto mb-2" />
-                      <p className="text-success font-medium">¡Sin clientes atrasados!</p>
-                      <p className="text-xs text-muted">Todos los clientes están dentro del patrón esperado</p>
-                    </div>
-                  )}
-                </div>
+                {predicciones?.vencidas?.length > 0 ? (
+                  <div 
+                    className="space-y-3"
+                    role="list"
+                    aria-label="Lista de clientes que requieren atención"
+                  >
+                    {predicciones.vencidas.slice(0, 10).map((cliente, i) => (
+                      <ClientePrediccionCard 
+                        key={cliente.id || i} 
+                        cliente={cliente} 
+                        index={i}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={CheckCircle}
+                    title="¡Sin clientes atrasados!"
+                    description="Todos los clientes están dentro del patrón de compra esperado."
+                  />
+                )}
               </CardBody>
             </Card>
 
-            {/* Resumen de confiabilidad */}
-            <div className="grid grid-cols-3 gap-4">
-              <Card className="bg-emerald-50 border-emerald-200">
-                <CardBody className="text-center">
-                  <p className="text-3xl font-bold text-emerald-600">{predicciones?.resumenConfiabilidad?.alta || 0}</p>
-                  <p className="text-sm text-emerald-700">Alta Confiabilidad</p>
-                  <p className="text-xs text-emerald-600 mt-1">Excelente + Buena</p>
-                </CardBody>
-              </Card>
-              <Card className="bg-amber-50 border-amber-200">
-                <CardBody className="text-center">
-                  <p className="text-3xl font-bold text-amber-600">{predicciones?.resumenConfiabilidad?.media || 0}</p>
-                  <p className="text-sm text-amber-700">Confiabilidad Regular</p>
-                  <p className="text-xs text-amber-600 mt-1">Más datos ayudarían</p>
-                </CardBody>
-              </Card>
-              <Card className="bg-red-50 border-red-200">
-                <CardBody className="text-center">
-                  <p className="text-3xl font-bold text-red-600">{predicciones?.resumenConfiabilidad?.baja || 0}</p>
-                  <p className="text-sm text-red-700">Baja Confiabilidad</p>
-                  <p className="text-xs text-red-600 mt-1">Patrón irregular</p>
-                </CardBody>
-              </Card>
-            </div>
+            {/* Resumen de confiabilidad con barras de progreso */}
+            <Card>
+              <CardBody>
+                <h4 className="font-display text-lg mb-4">Distribución de Confiabilidad</h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Score promedio */}
+                  <div className="md:col-span-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <CircularProgress 
+                          score={predicciones?.promedioScoreConfiabilidad || 0} 
+                          size={64} 
+                          strokeWidth={5}
+                        />
+                        <div>
+                          <p className="font-semibold text-slate-800">Score Promedio</p>
+                          <p className="text-sm text-slate-500">De todos los clientes con predicciones</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-slate-800">
+                          {predicciones?.promedioScoreConfiabilidad || 0}
+                        </p>
+                        <p className="text-xs text-slate-500">/ 100</p>
+                      </div>
+                    </div>
+                    <LinearProgress 
+                      value={predicciones?.promedioScoreConfiabilidad || 0}
+                      max={100}
+                      color={
+                        (predicciones?.promedioScoreConfiabilidad || 0) >= 85 ? '#10b981' :
+                        (predicciones?.promedioScoreConfiabilidad || 0) >= 70 ? '#3b82f6' :
+                        (predicciones?.promedioScoreConfiabilidad || 0) >= 50 ? '#f59e0b' : '#ef4444'
+                      }
+                    />
+                  </div>
+                  
+                  {/* Breakdown por nivel */}
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                    <p className="text-3xl font-bold text-emerald-600">
+                      {predicciones?.resumenConfiabilidad?.alta || 0}
+                    </p>
+                    <p className="text-sm text-emerald-700 font-medium">Alta</p>
+                    <LinearProgress 
+                      value={predicciones?.resumenConfiabilidad?.alta || 0}
+                      max={predicciones?.totalConPrediccion || 1}
+                      color="#10b981"
+                      showValue={false}
+                    />
+                  </div>
+                  
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                    <p className="text-3xl font-bold text-amber-600">
+                      {predicciones?.resumenConfiabilidad?.media || 0}
+                    </p>
+                    <p className="text-sm text-amber-700 font-medium">Regular</p>
+                    <LinearProgress 
+                      value={predicciones?.resumenConfiabilidad?.media || 0}
+                      max={predicciones?.totalConPrediccion || 1}
+                      color="#f59e0b"
+                      showValue={false}
+                    />
+                  </div>
+                  
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-center">
+                    <p className="text-3xl font-bold text-red-600">
+                      {predicciones?.resumenConfiabilidad?.baja || 0}
+                    </p>
+                    <p className="text-sm text-red-700 font-medium">Baja</p>
+                    <LinearProgress 
+                      value={predicciones?.resumenConfiabilidad?.baja || 0}
+                      max={predicciones?.totalConPrediccion || 1}
+                      color="#ef4444"
+                      showValue={false}
+                    />
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                    <p className="text-3xl font-bold text-slate-600">
+                      {predicciones?.totalConPrediccion || 0}
+                    </p>
+                    <p className="text-sm text-slate-600 font-medium">Total</p>
+                    <p className="text-xs text-slate-500">clientes</p>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
           </div>
         )}
 
