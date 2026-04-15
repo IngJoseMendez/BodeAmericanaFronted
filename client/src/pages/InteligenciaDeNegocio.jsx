@@ -405,7 +405,7 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
               {urgenciaLabels[cliente.prediccion?.urgencia]}
             </span>
             <span className="text-sm text-slate-500">
-              hace {cliente.prediccion?.diasDesdeUltimaCompra} días
+              hace {Math.max(0, cliente.prediccion?.diasDesdeUltimaCompra || 0)} días
             </span>
             <span className="text-sm font-medium text-slate-700">
               ~{formatCurrency(cliente.prediccion?.montoEstimado)}
