@@ -407,8 +407,8 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
             <span className="text-sm text-slate-500">
               hace {Math.max(0, cliente.prediccion?.diasDesdeUltimaCompra || 0)} días
             </span>
-            <span className="text-sm font-medium text-slate-700">
-              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
+            <span className="text-sm font-medium text-slate-700" title="Ticket promedio estimado">
+              ~{formatCurrency(Math.min(cliente.prediccion?.montoEstimado || 0, 500000))}
             </span>
           </div>
           
