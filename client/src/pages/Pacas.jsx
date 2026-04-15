@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { pacasApi, lotesApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS, PACA_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, Package, Eye, EyeOff, Link, Unlink } from 'lucide-react';
@@ -33,6 +33,7 @@ export default function Pacas() {
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
   const { addToast } = useToast();
+  const confirm = useConfirm();
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -124,7 +125,13 @@ export default function Pacas() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar esta paca?')) return;
+    const ok = await confirm({
+      title: '¿Eliminar paca?',
+      message: 'La paca será eliminada del inventario permanentemente.',
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await pacasApi.delete(id);
       loadPacas();

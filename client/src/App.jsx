@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ToastProvider } from './components/common';
+import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider, ConfirmProvider } from './components/common';
 import Dashboard from './pages/Dashboard';
 import Pacas from './pages/Pacas';
 import Clientes from './pages/Clientes';
@@ -105,16 +106,20 @@ function RutasDinamicas() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/registro" element={<Registro />} />
-            <Route path="/*" element={<RutasDinamicas />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <ConfirmProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/registro" element={<Registro />} />
+                <Route path="/*" element={<RutasDinamicas />} />
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </ConfirmProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }

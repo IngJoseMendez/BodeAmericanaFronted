@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { carteraApi, clientesApi, pagosApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, User, X } from 'lucide-react';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
@@ -12,9 +12,11 @@ export default function Cartera() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [detalleCliente, setDetalleCliente] = useState(null);
+  const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia }
   const [formData, setFormData] = useState({
     cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', referencia: ''
   });
+  const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteList, setShowClienteList] = useState(false);
@@ -22,6 +24,7 @@ export default function Cartera() {
   const [error, setError] = useState('');
   const clienteListRef = useRef(null);
   const { addToast } = useToast();
+  const confirm = useConfirm();
 
   // Cerrar lista de clientes al hacer click fuera
   useEffect(() => {
@@ -83,9 +86,23 @@ export default function Cartera() {
         metodo_pago: 'efectivo',
         referencia: ''
       });
+      setClienteSearch('');
+      setSaldoCliente(null);
+      setError('');
       setModalOpen(true);
     } catch (err) {
-      setError(err.message);
+      addToast(err.message, 'error');
+    }
+  };
+
+  // Cargar saldo del cliente seleccionado para mostrar aviso de sobreabono
+  const cargarSaldoCliente = async (clienteId) => {
+    if (!clienteId) { setSaldoCliente(null); return; }
+    try {
+      const data = await carteraApi.getOne(clienteId);
+      setSaldoCliente(data.saldo_pendiente);
+    } catch {
+      setSaldoCliente(null);
     }
   };
 
@@ -93,8 +110,12 @@ export default function Cartera() {
     e.preventDefault();
     setError('');
 
-    if (!formData.cliente_id || !formData.monto) {
-      setError('Completa todos los campos requeridos');
+    if (!formData.cliente_id) {
+      setError('Selecciona un cliente');
+      return;
+    }
+    if (!formData.monto || parseFloat(formData.monto) <= 0) {
+      setError('El monto debe ser mayor a cero');
       return;
     }
 
@@ -107,10 +128,62 @@ export default function Cartera() {
         referencia: formData.referencia
       });
 
+      addToast(
+        `Abono de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
+        'success'
+      );
+
       setModalOpen(false);
+      setSaldoCliente(null);
       loadCartera();
     } catch (err) {
       setError(err.message);
+      addToast('Error al registrar el abono: ' + err.message, 'error');
+    }
+  };
+
+  // Eliminar abono desde el modal de detalle
+  const handleEliminarAbono = async (abonoId) => {
+    const ok = await confirm({
+      title: '¿Eliminar abono?',
+      message: 'Esta acción no se puede deshacer. El saldo del cliente se recalculará automáticamente.',
+      confirmText: 'Sí, eliminar',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await pagosApi.delete(abonoId);
+      addToast('Abono eliminado', 'success');
+      // Recargar detalle
+      const data = await carteraApi.getOne(detalleCliente.cliente.id);
+      setDetalleCliente(data);
+      loadCartera();
+    } catch (err) {
+      addToast('Error al eliminar: ' + err.message, 'error');
+    }
+  };
+
+  // Guardar edición de abono
+  const handleGuardarEdicionAbono = async () => {
+    if (!editandoAbono || !editandoAbono.monto || parseFloat(editandoAbono.monto) <= 0) {
+      addToast('El monto debe ser mayor a cero', 'error');
+      return;
+    }
+    try {
+      await pagosApi.update(editandoAbono.id, {
+        monto: parseFloat(editandoAbono.monto),
+        fecha: editandoAbono.fecha,
+        metodo_pago: editandoAbono.metodo_pago,
+        referencia: editandoAbono.referencia,
+      });
+      addToast('Abono actualizado', 'success');
+      setEditandoAbono(null);
+      const data = await carteraApi.getOne(detalleCliente.cliente.id);
+      setDetalleCliente(data);
+      loadCartera();
+    } catch (err) {
+      addToast('Error al actualizar: ' + err.message, 'error');
     }
   };
 
@@ -493,7 +566,7 @@ export default function Cartera() {
             </div>
 
             <h4 className="font-display text-primary">Movimientos</h4>
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -501,22 +574,93 @@ export default function Cartera() {
                     <th className="px-3 py-2 text-left">Tipo</th>
                     <th className="px-3 py-2 text-right">Monto</th>
                     <th className="px-3 py-2 text-left">Método</th>
+                    <th className="px-3 py-2 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {detalleCliente.movimientos.map(m => (
-                    <tr key={m.id}>
-                      <td className="px-3 py-2">{new Date(m.fecha).toLocaleDateString('es-MX')}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={m.tipo === 'venta' ? 'vendida' : 'disponible'}>
-                          {m.tipo === 'venta' ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}
-                          {m.tipo}
-                        </Badge>
-                      </td>
-                      <td className={`px-3 py-2 text-right ${m.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>
-                        {m.tipo === 'venta' ? '+' : '-'}{formatCurrency(m.monto)}
-                      </td>
-                      <td className="px-3 py-2 text-gray-500">{m.metodo_pago || '-'}</td>
+                    <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
+                      {editandoAbono?.id === m.id ? (
+                        // Fila en modo edición
+                        <>
+                          <td className="px-2 py-1" colSpan={4}>
+                            <div className="grid grid-cols-4 gap-2">
+                              <input
+                                type="number" step="0.01" min="0.01"
+                                value={editandoAbono.monto}
+                                onChange={e => setEditandoAbono({ ...editandoAbono, monto: e.target.value })}
+                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                placeholder="Monto"
+                              />
+                              <input
+                                type="date"
+                                value={editandoAbono.fecha?.split('T')[0]}
+                                onChange={e => setEditandoAbono({ ...editandoAbono, fecha: e.target.value })}
+                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                              />
+                              <select
+                                value={editandoAbono.metodo_pago || 'efectivo'}
+                                onChange={e => setEditandoAbono({ ...editandoAbono, metodo_pago: e.target.value })}
+                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                              >
+                                {METODOS_PAGO.map(mp => <option key={mp} value={mp}>{mp}</option>)}
+                              </select>
+                              <input
+                                type="text"
+                                value={editandoAbono.referencia || ''}
+                                onChange={e => setEditandoAbono({ ...editandoAbono, referencia: e.target.value })}
+                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                placeholder="Referencia"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            <div className="flex justify-end gap-1">
+                              <button onClick={handleGuardarEdicionAbono} className="p-1.5 rounded text-success hover:bg-success/10" title="Guardar">
+                                <CheckCircle size={15} />
+                              </button>
+                              <button onClick={() => setEditandoAbono(null)} className="p-1.5 rounded text-gray-400 hover:bg-gray-100" title="Cancelar">
+                                <X size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        // Fila normal
+                        <>
+                          <td className="px-3 py-2">{new Date(m.fecha).toLocaleDateString('es-MX')}</td>
+                          <td className="px-3 py-2">
+                            <Badge variant={m.tipo === 'venta' ? 'vendida' : 'disponible'}>
+                              {m.tipo === 'venta' ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}
+                              {m.tipo}
+                            </Badge>
+                          </td>
+                          <td className={`px-3 py-2 text-right ${m.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>
+                            {m.tipo === 'venta' ? '+' : '-'}{formatCurrency(m.monto)}
+                          </td>
+                          <td className="px-3 py-2 text-gray-500">{m.metodo_pago || '-'}</td>
+                          <td className="px-3 py-2 text-right">
+                            {m.tipo === 'abono' && (
+                              <div className="flex justify-end gap-1">
+                                <button
+                                  onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia })}
+                                  className="p-1.5 rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
+                                  title="Editar abono"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleEliminarAbono(m.id)}
+                                  className="p-1.5 rounded text-gray-400 hover:text-error hover:bg-error/10"
+                                  title="Eliminar abono"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -618,6 +762,7 @@ export default function Cartera() {
                         setFormData({ ...formData, cliente_id: c.id });
                         setClienteSearch('');
                         setShowClienteList(false);
+                        cargarSaldoCliente(c.id);
                       }}
                       className={`px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
                         formData.cliente_id === c.id ? 'bg-secondary/10' : ''
@@ -647,14 +792,43 @@ export default function Cartera() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Monto"
-              type="number"
-              step="0.01"
-              value={formData.monto}
-              onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
-              required
-            />
+            <div>
+              <Input
+                label="Monto"
+                type="number"
+                step="0.01"
+                value={formData.monto}
+                onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
+                required
+              />
+              {/* Aviso de sobreabono */}
+              {saldoCliente !== null && formData.monto && parseFloat(formData.monto) > 0 && (() => {
+                const monto = parseFloat(formData.monto);
+                const exceso = monto - saldoCliente;
+                if (saldoCliente <= 0) {
+                  return (
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      <span>Este cliente no tiene deuda pendiente. El abono quedará como <strong>saldo a favor</strong>.</span>
+                    </div>
+                  );
+                } else if (monto > saldoCliente) {
+                  return (
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                      <span>El abono excede el saldo ({formatCurrency(saldoCliente)}). Los {formatCurrency(exceso)} restantes quedarán como <strong>saldo a favor</strong>.</span>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-success bg-success/5 rounded-lg px-3 py-2">
+                      <CheckCircle size={13} className="shrink-0" />
+                      <span>Saldo pendiente: {formatCurrency(saldoCliente)}. Quedaría {formatCurrency(saldoCliente - monto)} por cobrar.</span>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
             <Input
               label="Fecha"
               type="date"

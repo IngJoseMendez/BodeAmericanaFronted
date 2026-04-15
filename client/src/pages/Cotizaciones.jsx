@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
 import { cotizacionesApi, clientesApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart } from 'lucide-react';
@@ -144,6 +144,7 @@ export default function Cotizaciones() {
   const [clientes, setClientes] = useState([]);
   const [filtroEstado, setFiltroEstado] = useState('');
   const { addToast } = useToast();
+  const confirm = useConfirm();
   
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -279,7 +280,13 @@ export default function Cotizaciones() {
   };
 
   const handleEliminar = async (id) => {
-    if (!confirm('¿Eliminar esta cotización?')) return;
+    const ok = await confirm({
+      title: '¿Eliminar cotización?',
+      message: 'Esta acción no se puede deshacer.',
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await cotizacionesApi.delete(id);
       addToast('Cotización eliminada', 'success');
@@ -290,7 +297,14 @@ export default function Cotizaciones() {
   };
 
   const handleConvertirVenta = async (id) => {
-    if (!confirm('¿Convertir esta cotización en venta?')) return;
+    const ok = await confirm({
+      title: '¿Convertir a venta?',
+      message: 'Se creará una venta con los productos de esta cotización.',
+      confirmText: 'Convertir a venta',
+      cancelText: 'Cancelar',
+      variant: 'info',
+    });
+    if (!ok) return;
     try {
       const result = await cotizacionesApi.convertirAVenta(id);
       addToast(`Cotización convertida a venta #${result.venta_id}`, 'success');

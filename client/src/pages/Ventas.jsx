@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { ventasApi, pacasApi, clientesApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard } from 'lucide-react';
@@ -29,6 +29,7 @@ export default function Ventas() {
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
   const { addToast } = useToast();
+  const confirm = useConfirm();
   
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
 
@@ -65,9 +66,10 @@ export default function Ventas() {
         fecha: new Date().toISOString().split('T')[0]
       });
       setPacasSeleccionadas([]);
+      setError('');
       setModalOpen(true);
     } catch (err) {
-      setError(err.message);
+      addToast('Error al cargar datos: ' + err.message, 'error');
     }
   };
 
@@ -107,20 +109,29 @@ export default function Ventas() {
         pacas: pacasSeleccionadas.map(p => ({ id: p.id, precio_venta: p.precio_venta }))
       });
       
+      addToast(`Venta registrada — ${pacasSeleccionadas.length} paca(s) por ${formatCurrency(totalVenta)}`, 'success');
       setModalOpen(false);
       loadVentas();
     } catch (err) {
       setError(err.message);
+      addToast('Error al registrar venta: ' + err.message, 'error');
     }
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar esta venta?')) return;
+    const ok = await confirm({
+      title: '¿Eliminar venta?',
+      message: 'Las pacas volverán al estado disponible. Esta acción no se puede deshacer.',
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await ventasApi.delete(id);
+      addToast('Venta eliminada', 'success');
       loadVentas();
     } catch (err) {
-      setError(err.message);
+      addToast('Error al eliminar: ' + err.message, 'error');
     }
   };
 

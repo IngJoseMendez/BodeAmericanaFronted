@@ -1,58 +1,142 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 
 export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+  const [visible, setVisible] = useState(false);
+  const [animatingOut, setAnimatingOut] = useState(false);
   const modalRef = useRef(null);
+  const triggerRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
+  // Guardar el elemento que abrió el modal para restaurar el foco al cerrar
   useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose();
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement;
+      setVisible(true);
+      setAnimatingOut(false);
+    }
+  }, [isOpen]);
+
+  // Focus trap — mover el foco al modal cuando abre
+  useEffect(() => {
+    if (visible && modalRef.current) {
+      const focusable = modalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      }
+    }
+  }, [visible]);
+
+  const handleClose = useCallback(() => {
+    setAnimatingOut(true);
+    setTimeout(() => {
+      setVisible(false);
+      setAnimatingOut(false);
+      onClose();
+      // Restaurar foco al elemento que abrió el modal
+      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+        previousFocusRef.current.focus();
+      }
+    }, 200); // tiempo de la animación de salida
+  }, [onClose]);
+
+  // Cerrar con Escape + focus trap para Tab
+  useEffect(() => {
+    if (!visible) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleClose();
+        return;
+      }
+
+      // Focus trap con Tab
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last?.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first?.focus();
+          }
+        }
+      }
     };
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
-    }
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [isOpen, onClose]);
+  }, [visible, handleClose]);
 
-  if (!isOpen) return null;
+  if (!visible && !isOpen) return null;
 
   const sizes = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
+    sm:   'max-w-md',
+    md:   'max-w-lg',
+    lg:   'max-w-2xl',
+    xl:   'max-w-4xl',
     full: 'max-w-[90vw]',
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      {/* Backdrop con animación */}
       <div
-        className="absolute inset-0 bg-primary/40 backdrop-blur-sm"
-        onClick={onClose}
+        className={`absolute inset-0 bg-primary/40 backdrop-blur-sm ${
+          animatingOut ? 'animate-overlay-out' : 'animate-overlay-in'
+        }`}
+        onClick={handleClose}
+        aria-hidden="true"
       />
+
+      {/* Panel del modal */}
       <div
         ref={modalRef}
         className={`
-          relative bg-surface rounded-2xl shadow-xl w-full animate-fade-in-scale
+          relative bg-surface rounded-2xl shadow-xl w-full
           ${sizes[size]}
+          ${animatingOut ? 'animate-fade-out-scale' : 'animate-fade-in-scale'}
         `}
       >
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
-          <h2 className="font-display text-xl text-primary">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+          <h2
+            id="modal-title"
+            className="font-display text-xl text-primary"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            {title}
+          </h2>
+          <button
+            ref={triggerRef}
+            onClick={handleClose}
+            className="p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+            aria-label="Cerrar modal"
+          >
+            <X size={20} />
           </button>
         </div>
+
+        {/* Content */}
         <div className="p-6 max-h-[70vh] overflow-y-auto">
           {children}
         </div>

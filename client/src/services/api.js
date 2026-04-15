@@ -141,13 +141,20 @@ export const pagosApi = {
     const query = new URLSearchParams(params).toString();
     return api.get(`/pagos${query ? `?${query}` : ''}`);
   },
+  getOne(id) {
+    return api.get(`/pagos/${id}`);
+  },
   create(data) {
     return api.post('/pagos', data);
+  },
+  update(id, data) {
+    return api.put(`/pagos/${id}`, data);
   },
   delete(id) {
     return api.delete(`/pagos/${id}`);
   },
 };
+
 
 export const carteraApi = {
   getAll() {

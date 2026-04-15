@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { clientesApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard } from 'lucide-react';
@@ -30,6 +30,7 @@ export default function Clientes() {
   });
   const [error, setError] = useState('');
   const { addToast } = useToast();
+  const confirm = useConfirm();
   
   const debouncedSearch = useDebounce(search, 300);
 
@@ -74,10 +75,13 @@ export default function Clientes() {
       
       if (editando) {
         await clientesApi.update(editando.id, payload);
+        addToast(`Cliente "${formData.nombre}" actualizado`, 'success');
       } else {
         const result = await clientesApi.create(payload);
         if (result.usuario_creado) {
           addToast(`Cliente creado con usuario: ${formData.username}`, 'success');
+        } else {
+          addToast(`Cliente "${formData.nombre}" creado`, 'success');
         }
       }
       
@@ -104,12 +108,19 @@ export default function Clientes() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar este cliente?')) return;
+    const ok = await confirm({
+      title: '¿Eliminar cliente?',
+      message: 'Se eliminará el cliente y todos sus datos asociados. Esta acción no se puede deshacer.',
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await clientesApi.delete(id);
+      addToast('Cliente eliminado', 'success');
       loadClientes();
     } catch (err) {
-      setError(err.message);
+      addToast('Error al eliminar: ' + err.message, 'error');
     }
   };
 

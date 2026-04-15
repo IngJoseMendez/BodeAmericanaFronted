@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge, Modal, Input, Select, useToast } from '../components/common';
+import { Card, CardBody, Button, Badge, Modal, Input, Select, useToast, useConfirm } from '../components/common';
 import { lotesApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Eye, Link, Unlink, Hash, Layers } from 'lucide-react';
@@ -21,6 +21,7 @@ export default function Lotes() {
   const [selectedPacas, setSelectedPacas] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const { addToast } = useToast();
+  const confirm = useConfirm();
 
   const [form, setForm] = useState({
     numero: '',
@@ -124,7 +125,13 @@ export default function Lotes() {
   };
 
   const handleDelete = async (lote) => {
-    if (!confirm(`¿Eliminar lote "${lote.numero}"?\n\nLas pacas serán desasignadas pero no eliminadas.`)) return;
+    const ok = await confirm({
+      title: `¿Eliminar lote "${lote.numero}"?`,
+      message: 'Las pacas serán desasignadas pero no eliminadas.',
+      confirmText: 'Sí, eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await lotesApi.delete(lote.id);
       addToast('Lote eliminado', 'success');
@@ -191,7 +198,13 @@ export default function Lotes() {
   };
 
   const handleDesasignarPaca = async (pacaId) => {
-    if (!confirm('¿Desasignar esta paca del lote?')) return;
+    const ok = await confirm({
+      title: '¿Desasignar paca?',
+      message: 'La paca quedará sin lote asignado.',
+      confirmText: 'Desasignar',
+      variant: 'warning',
+    });
+    if (!ok) return;
 
     try {
       await lotesApi.desasignarPaca(selectedLote.id, pacaId);
