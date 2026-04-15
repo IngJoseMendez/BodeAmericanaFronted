@@ -321,7 +321,7 @@ export const clienteApi = {
     return api.get(`/pedidos${query ? `?${query}` : ''}`);
   },
   getHistorial() {
-    return api.get('/ventas/reporte');
+    return api.get('/ventas/mi-historial');
   },
 };
 
