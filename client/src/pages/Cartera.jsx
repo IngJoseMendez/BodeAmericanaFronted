@@ -527,17 +527,17 @@ export default function Cartera() {
                     <Badge variant={c.tipo_cliente}>{c.tipo_cliente}</Badge>
                   </div>
                   <div className="space-y-2 pt-3 border-t border-gray-100">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Total Vendido</span>
-                      <span className="text-primary">{formatCurrency(c.total_vendido)}</span>
+                    <div className="flex justify-between items-start text-sm gap-2">
+                      <span className="text-gray-500 shrink-0">Total Vendido</span>
+                      <span className="text-primary text-right break-all">{formatCurrency(c.total_vendido)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Total Abonado</span>
-                      <span className="text-success">{formatCurrency(c.total_abonado)}</span>
+                    <div className="flex justify-between items-start text-sm gap-2">
+                      <span className="text-gray-500 shrink-0">Total Abonado</span>
+                      <span className="text-success text-right break-all">{formatCurrency(c.total_abonado)}</span>
                     </div>
-                    <div className="flex justify-between pt-2 border-t border-gray-100">
-                      <span className="font-medium">Saldo Pendiente</span>
-                      <span className="font-display text-lg text-accent">{formatCurrency(c.saldo_pendiente)}</span>
+                    <div className="flex justify-between items-start pt-2 border-t border-gray-100 gap-2">
+                      <span className="font-medium shrink-0">Saldo Pendiente</span>
+                      <span className="font-display text-lg text-accent text-right break-all">{formatCurrency(c.saldo_pendiente)}</span>
                     </div>
                   </div>
                 </CardBody>
@@ -553,15 +553,15 @@ export default function Cartera() {
             <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm text-gray-500">Total Vendido</p>
-                <p className="text-lg font-display text-primary">{formatCurrency(detalleCliente.total_vendido)}</p>
+                <p className="text-lg font-display text-primary break-all">{formatCurrency(detalleCliente.total_vendido)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Total Abonado</p>
-                <p className="text-lg font-display text-success">{formatCurrency(detalleCliente.total_abonado)}</p>
+                <p className="text-lg font-display text-success break-all">{formatCurrency(detalleCliente.total_abonado)}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Saldo Pendiente</p>
-                <p className="text-lg font-display text-accent">{formatCurrency(detalleCliente.saldo_pendiente)}</p>
+                <p className="text-lg font-display text-accent break-all">{formatCurrency(detalleCliente.saldo_pendiente)}</p>
               </div>
             </div>
 

@@ -282,7 +282,8 @@ export default function Pacas() {
               className="px-4 py-3 rounded-xl border border-border bg-white"
             >
               <option value="">Todos los tipos</option>
-              {PACA_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+              {tiposList.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+
             </select>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nueva Paca

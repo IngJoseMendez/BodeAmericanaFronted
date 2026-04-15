@@ -602,8 +602,8 @@ export default function Reportes() {
                         <p className="font-medium text-primary truncate">{c.nombre}</p>
                         <p className="text-sm text-muted truncate">{c.ciudad || 'Sin ciudad'}</p>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="font-display text-accent text-sm sm:text-base" title={formatCurrency(c.saldo_pendiente)}>
+                      <div className="text-right flex-shrink-0 min-w-0">
+                        <p className="font-display text-accent text-sm sm:text-base break-all" title={formatCurrency(c.saldo_pendiente)}>
                           {formatCurrency(c.saldo_pendiente)}
                         </p>
                       </div>

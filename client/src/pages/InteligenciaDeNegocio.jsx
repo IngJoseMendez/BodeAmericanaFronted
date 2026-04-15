@@ -1305,9 +1305,9 @@ export default function InteligenciaDeNegocio() {
                   <div className="space-y-2">
                     {riesgoCartera?.clientes?.filter(c => c.nivel_riesgo === 'alto')?.slice(0, 5).map((c, i) => (
                       <div key={i} className="p-3 bg-accent/5 rounded-xl">
-                        <div className="flex justify-between">
-                          <span className="font-medium">{c.nombre}</span>
-                          <span className="font-medium text-accent">{formatCurrency(c.deuda_pendiente)}</span>
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="font-medium shrink-0">{c.nombre}</span>
+                          <span className="font-medium text-accent text-right break-all">{formatCurrency(c.deuda_pendiente)}</span>
                         </div>
                         <p className="text-xs text-muted">{c.mensaje}</p>
                       </div>
@@ -1385,7 +1385,7 @@ export default function InteligenciaDeNegocio() {
                           {new Date(semana.fecha_inicio).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
-                      <p className={`text-2xl font-display font-bold ${
+                      <p className={`text-2xl font-display font-bold break-all ${
                         semana.entrada_estimada > 0 ? 'text-success' : 'text-muted'
                       }`}>
                         {formatCurrency(semana.entrada_estimada)}
