@@ -536,46 +536,46 @@ export default function Cotizaciones() {
       <Modal isOpen={viewModalOpen} onClose={() => setViewModalOpen(false)} title={`Cotización ${selectedCotizacion?.numero}`} size="xl">
         {selectedCotizacion && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
               <div>
-                <p className="text-sm text-gray-500">Cliente</p>
-                <p className="font-medium">{selectedCotizacion.cliente_nombre}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Cliente</p>
+                <p className="font-medium text-sm sm:text-base">{selectedCotizacion.cliente_nombre}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Vendedor</p>
-                <p className="font-medium">{selectedCotizacion.vendedor_nombre || 'N/A'}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Vendedor</p>
+                <p className="font-medium text-sm sm:text-base">{selectedCotizacion.vendedor_nombre || 'N/A'}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Fecha</p>
-                <p className="font-medium">{new Date(selectedCotizacion.created_at).toLocaleDateString('es-MX')}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Fecha</p>
+                <p className="font-medium text-sm sm:text-base">{new Date(selectedCotizacion.created_at).toLocaleDateString('es-MX')}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Vence</p>
-                <p className="font-medium">{new Date(selectedCotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
+                <p className="text-xs sm:text-sm text-gray-500">Vence</p>
+                <p className="font-medium text-sm sm:text-base">{new Date(selectedCotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
               </div>
             </div>
 
             <div>
-              <h4 className="font-medium mb-2">Items</h4>
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
+              <h4 className="font-medium mb-2 text-sm sm:text-base">Items</h4>
+              <div className="border rounded-xl overflow-x-auto">
+                <table className="w-full text-xs sm:text-sm min-w-[400px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-2 text-left">Tipo</th>
-                      <th className="px-4 py-2 text-left">Categoría</th>
-                      <th className="px-4 py-2 text-right">Cantidad</th>
-                      <th className="px-4 py-2 text-right">Precio</th>
-                      <th className="px-4 py-2 text-right">Subtotal</th>
+                      <th className="px-2 sm:px-4 py-2 text-left">Tipo</th>
+                      <th className="px-2 sm:px-4 py-2 text-left hidden sm:table-cell">Categoría</th>
+                      <th className="px-2 sm:px-4 py-2 text-right">Cant.</th>
+                      <th className="px-2 sm:px-4 py-2 text-right">Precio</th>
+                      <th className="px-2 sm:px-4 py-2 text-right">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {selectedCotizacion.detalles?.map((item, i) => (
                       <tr key={i}>
-                        <td className="px-4 py-2">{item.tipo}</td>
-                        <td className="px-4 py-2 text-gray-500">{item.categoria || '-'}</td>
-                        <td className="px-4 py-2 text-right">{item.cantidad}</td>
-                        <td className="px-4 py-2 text-right">{formatCurrency(item.precio_unitario)}</td>
-                        <td className="px-4 py-2 text-right font-medium">{formatCurrency(item.subtotal)}</td>
+                        <td className="px-2 sm:px-4 py-2">{item.tipo}</td>
+                        <td className="px-2 sm:px-4 py-2 text-gray-500 hidden sm:table-cell">{item.categoria || '-'}</td>
+                        <td className="px-2 sm:px-4 py-2 text-right">{item.cantidad}</td>
+                        <td className="px-2 sm:px-4 py-2 text-right">{formatCurrency(item.precio_unitario)}</td>
+                        <td className="px-2 sm:px-4 py-2 text-right font-medium">{formatCurrency(item.subtotal)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -584,16 +584,16 @@ export default function Cotizaciones() {
             </div>
 
             <div className="flex justify-end">
-              <div className="w-full max-w-xs space-y-2 text-right">
-                <div className="flex justify-between text-sm">
+              <div className="w-full max-w-xs space-y-1 sm:space-y-2 text-right">
+                <div className="flex justify-between text-xs sm:text-sm">
                   <span className="text-gray-500">Subtotal:</span>
                   <span>{formatCurrency(selectedCotizacion.subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-xs sm:text-sm">
                   <span className="text-gray-500">Descuento:</span>
                   <span>-{formatCurrency(selectedCotizacion.descuento)}</span>
                 </div>
-                <div className="flex justify-between text-xl font-bold border-t pt-2">
+                <div className="flex justify-between text-base sm:text-xl font-bold border-t pt-2">
                   <span>Total:</span>
                   <span className="text-primary">{formatCurrency(selectedCotizacion.total)}</span>
                 </div>
@@ -601,34 +601,32 @@ export default function Cotizaciones() {
             </div>
 
             {selectedCotizacion.notas && (
-              <div className="p-4 bg-gray-50 rounded-xl">
-                <p className="text-sm text-gray-500 mb-1">Notas:</p>
-                <p className="text-sm">{selectedCotizacion.notas}</p>
+              <div className="p-3 sm:p-4 bg-gray-50 rounded-xl">
+                <p className="text-xs sm:text-sm text-gray-500 mb-1">Notas:</p>
+                <p className="text-xs sm:text-sm">{selectedCotizacion.notas}</p>
               </div>
             )}
 
-            <div className="flex justify-between items-center pt-4 border-t">
-              <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-4 border-t">
+              <div className="flex flex-wrap gap-2">
                 {getEstadoBadge(selectedCotizacion.estado)}
-                <Button variant="outline" onClick={() => generarPDF(selectedCotizacion)} icon={Download}>
-                  Descargar PDF
+                <Button variant="outline" size="sm" onClick={() => generarPDF(selectedCotizacion)} icon={Download}>
+                  PDF
                 </Button>
               </div>
-              <div className="flex gap-2">
-                {selectedCotizacion.estado === 'pendiente' && (
-                  <>
-                    <Button variant="ghost" onClick={() => handleEliminar(selectedCotizacion.id)} icon={Trash2} className="text-error">
-                      Eliminar
-                    </Button>
-                    <Button variant="secondary" onClick={() => { handleRechazar(selectedCotizacion.id); setViewModalOpen(false); }} icon={X}>
-                      Rechazar
-                    </Button>
-                    <Button onClick={() => handleConvertirVenta(selectedCotizacion.id)} icon={ShoppingCart}>
-                      Convertir a Venta
-                    </Button>
-                  </>
-                )}
-              </div>
+              {selectedCotizacion.estado === 'pendiente' && (
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <Button variant="ghost" size="sm" onClick={() => handleEliminar(selectedCotizacion.id)} icon={Trash2} className="text-error">
+                    Eliminar
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => { handleRechazar(selectedCotizacion.id); setViewModalOpen(false); }} icon={X}>
+                    Rechazar
+                  </Button>
+                  <Button size="sm" onClick={() => handleConvertirVenta(selectedCotizacion.id)} icon={ShoppingCart}>
+                    Convertir
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
