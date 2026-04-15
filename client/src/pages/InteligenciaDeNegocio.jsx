@@ -860,7 +860,8 @@ export default function InteligenciaDeNegocio() {
         {/* Predicciones */}
         {activeTab === 'predicciones' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Métricas principales */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <MetricCard
                 icon={Target}
                 label="Con Predicción"
@@ -877,125 +878,349 @@ export default function InteligenciaDeNegocio() {
               />
               <MetricCard
                 icon={AlertTriangle}
-                label="Vencidas"
+                label="Atrasados"
                 value={predicciones?.vencidas?.length || 0}
-                subtext="fuera de patrón"
+                subtext="requieren atención"
                 color="accent"
               />
               <MetricCard
                 icon={CheckCircle}
-                label="Alta Confianza"
-                value={predicciones?.predicciones?.filter(p => p.prediccion?.confianza === 'alta')?.length || 0}
-                subtext="R² ≥ 80%"
+                label="Score Promedio"
+                value={predicciones?.promedioScoreConfiabilidad || 0}
+                subtext="/ 100 puntos"
                 color="success"
+              />
+              <MetricCard
+                icon={Star}
+                label="Alta Confianza"
+                value={predicciones?.resumenConfiabilidad?.alta || 0}
+                subtext="excelente/buena"
+                color="info"
               />
             </div>
 
-            {/* Leyenda de confianza */}
-            <Card className="bg-gray-50">
+            {/* Sistema de confiabilidad mejorado */}
+            <Card className="bg-gradient-to-br from-slate-50 to-blue-50 border border-blue-100">
               <CardBody>
-                <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
-                  <Info className="w-4 h-4" />
-                  Cómo interpretamos la confianza (R²)
+                <h4 className="font-display text-lg mb-4 flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-xl">
+                    <Star className="w-5 h-5 text-blue-600" />
+                  </div>
+                  Sistema de Confiabilidad Mejorado
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div className="flex items-start gap-2">
-                    <span className="w-3 h-3 rounded-full bg-success mt-1 flex-shrink-0"></span>
-                    <div>
-                      <p className="font-medium text-success">Alta (R² ≥ 80%)</p>
-                      <p className="text-muted text-xs">Patrón muy consistente, predicción confiable</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="w-3 h-3 rounded-full bg-warning mt-1 flex-shrink-0"></span>
-                    <div>
-                      <p className="font-medium text-warning">Media (R² 50-79%)</p>
-                      <p className="text-muted text-xs">Patrón moderado, usar como guía</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="w-3 h-3 rounded-full bg-accent mt-1 flex-shrink-0"></span>
-                    <div>
-                      <p className="font-medium text-accent">Baja (R² &lt; 50%)</p>
-                      <p className="text-muted text-xs">Comportamiento irregular, tomar con cautela</p>
-                    </div>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardBody>
-                <h3 className="font-display text-lg mb-4">Clientes que Probablemente Comprarán Pronto</h3>
-                <div className="space-y-3">
-                  {predicciones?.proximos7dias?.map((cliente, i) => (
-                    <div key={i} className="flex items-center justify-between p-4 bg-warning/5 rounded-xl border border-warning/20">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-warning/20">
-                          <ShoppingCart className="w-5 h-5 text-warning" />
-                        </div>
+                
+                {/* Explicación del nuevo sistema */}
+                <div className="bg-white/60 rounded-xl p-4 mb-4">
+                  <p className="text-sm text-muted mb-3">
+                    El score de confiabilidad ahora combina <strong>5 factores</strong> para darte una predicción más precisa:
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    {[
+                      { icon: Database, label: 'Cantidad datos', puntos: '0-30' },
+                      { icon: TrendingUp, label: 'R² linealidad', puntos: '0-30' },
+                      { icon: BarChart3, label: 'Consistencia', puntos: '0-20' },
+                      { icon: Clock, label: 'Recencia', puntos: '0-10' },
+                      { icon: Calendar, label: 'Estacionalidad', puntos: '0-10' },
+                    ].map((factor, i) => (
+                      <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                        <factor.icon className="w-4 h-4 text-slate-500" />
                         <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{cliente.nombre}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              cliente.prediccion?.confianza === 'alta' ? 'bg-success/20 text-success' :
-                              cliente.prediccion?.confianza === 'media' ? 'bg-warning/20 text-warning' :
-                              'bg-accent/20 text-accent'
-                            }`}>
-                              {cliente.prediccion?.confianza === 'alta' ? '✓ Alta' :
-                               cliente.prediccion?.confianza === 'media' ? '~ Media' : '⚠ Baja'}
-                              {cliente.prediccion?.confianzaValor ? ` (${cliente.prediccion.confianzaValor}%)` : ''}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted">
-                            Frecuencia: cada {cliente.prediccion?.frecuenciaPromedio} días
-                          </p>
+                          <p className="text-xs font-medium">{factor.label}</p>
+                          <p className="text-xs text-muted">{factor.puntos} pts</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <Badge variant="warning">
-                          {cliente.prediccion.urgencia === 'alta' ? '⚠️ Urgente' : 'Pronto'}
-                        </Badge>
-                        <p className="text-xs text-muted mt-1">
-                          Est: {new Date(cliente.prediccion.proximaCompraEstimada).toLocaleDateString('es-MX')}
-                        </p>
-                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Clasificación de confiabilidad */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+                      <span className="font-medium text-emerald-700">Excelente</span>
+                      <Badge variant="success" className="ml-auto">85-100</Badge>
                     </div>
-                  ))}
+                    <p className="text-xs text-emerald-600">Predicción altamente confiable. Patrón muy consistente.</p>
+                  </div>
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                      <span className="font-medium text-blue-700">Buena</span>
+                      <Badge variant="info" className="ml-auto">70-84</Badge>
+                    </div>
+                    <p className="text-xs text-blue-600">Confiable. Patrón relativamente estable.</p>
+                  </div>
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                      <span className="font-medium text-amber-700">Regular</span>
+                      <Badge variant="warning" className="ml-auto">50-69</Badge>
+                    </div>
+                    <p className="text-xs text-amber-600">Incertidumbre moderada. Más datos ayudarían.</p>
+                  </div>
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                      <span className="font-medium text-red-700">Baja</span>
+                      <Badge variant="error" className="ml-auto">0-49</Badge>
+                    </div>
+                    <p className="text-xs text-red-600">Pocos datos o patrón muy irregular.</p>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+
+            {/* Clientes próximos a comprar */}
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-3 mb-4">
+                  <ShoppingCart className="w-6 h-6 text-success" />
+                  <h3 className="font-display text-lg">Próximos a Comprar</h3>
+                  <Badge variant="success" className="ml-auto">{predicciones?.proximos7dias?.length || 0}</Badge>
+                </div>
+                
+                <div className="space-y-3">
+                  {predicciones?.proximos7dias?.slice(0, 10).map((cliente, i) => {
+                    const confianza = cliente.prediccion?.confiabilidad;
+                    const banda = cliente.prediccion?.bandaConfianza;
+                    const estacionalidad = cliente.prediccion?.estacionalidad;
+                    const tendencia = cliente.prediccion?.tendencia;
+                    
+                    return (
+                      <div 
+                        key={i} 
+                        className="p-4 bg-gradient-to-r from-success/5 to-transparent rounded-xl border border-success/20 hover:border-success/40 transition-all"
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                          {/* Info del cliente */}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <p className="font-semibold text-lg">{cliente.nombre}</p>
+                              {/* Badge de confianza */}
+                              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                confianza?.nivel === 'excelente' ? 'bg-emerald-100 text-emerald-700' :
+                                confianza?.nivel === 'buena' ? 'bg-blue-100 text-blue-700' :
+                                confianza?.nivel === 'regular' ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {confianza?.nivel === 'excelente' ? '⭐ Excelente' :
+                                 confianza?.nivel === 'buena' ? '✓ Buena' :
+                                 confianza?.nivel === 'regular' ? '~ Regular' : '⚠ Baja'}
+                                {confianza?.score ? ` (${confianza.score}/100)` : ''}
+                              </span>
+                              {/* Tendencia */}
+                              {tendencia === 'acelerando' && (
+                                <span className="flex items-center text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                                  <ArrowUp className="w-3 h-3 mr-1" /> Acelerando
+                                </span>
+                              )}
+                              {tendencia === 'desacelerando' && (
+                                <span className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                                  <ArrowDown className="w-3 h-3 mr-1" /> Desacelerando
+                                </span>
+                              )}
+                            </div>
+                            
+                            {/* Banda de confianza */}
+                            <div className="flex flex-wrap items-center gap-4 text-sm text-muted">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4" />
+                                Compra entre {cliente.prediccion?.fechaMinima && new Date(cliente.prediccion.fechaMinima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} 
+                                {' - '}
+                                {cliente.prediccion?.fechaMaxima && new Date(cliente.prediccion.fechaMaxima).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}
+                              </span>
+                              <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">
+                                {banda?.probabilidad || '80%'} probabilidad
+                              </span>
+                            </div>
+                            
+                            {/* Estacionalidad */}
+                            {estacionalidad?.tipo !== 'variable' && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className={`text-xs px-2 py-1 rounded-full ${
+                                  estacionalidad?.tipo === 'quincenal' ? 'bg-purple-100 text-purple-700' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  📅 {estacionalidad?.tipo === 'quincenal' ? 'Pago quincenal' : 'Pago mensual'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Score visual */}
+                          <div className="flex flex-col items-center">
+                            <div className="relative w-16 h-16">
+                              <svg className="w-16 h-16 transform -rotate-90">
+                                <circle
+                                  cx="32"
+                                  cy="32"
+                                  r="28"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                  fill="none"
+                                  className="text-slate-200"
+                                />
+                                <circle
+                                  cx="32"
+                                  cy="32"
+                                  r="28"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                  fill="none"
+                                  strokeDasharray={`${(confianza?.score || 0) * 1.76} 176`}
+                                  className={
+                                    confianza?.score >= 85 ? 'text-emerald-500' :
+                                    confianza?.score >= 70 ? 'text-blue-500' :
+                                    confianza?.score >= 50 ? 'text-amber-500' : 'text-red-500'
+                                  }
+                                />
+                              </svg>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-lg font-bold">{confianza?.score || 0}</span>
+                              </div>
+                            </div>
+                            <span className="text-xs text-muted mt-1">confianza</span>
+                          </div>
+                          
+                          {/* Detalles */}
+                          <div className="text-right space-y-1">
+                            <Badge variant={cliente.prediccion?.urgencia === 'critica' ? 'error' : 
+                                           cliente.prediccion?.urgencia === 'alta' ? 'warning' : 'default'}>
+                              {cliente.prediccion?.urgencia === 'critica' ? '🚨 Crítica' :
+                               cliente.prediccion?.urgencia === 'alta' ? '⚠️ Alta' :
+                               cliente.prediccion?.urgencia === 'media' ? '📅 Media' : '✓ Normal'}
+                            </Badge>
+                            <p className="text-xs text-muted">
+                              hace {cliente.prediccion?.diasDesdeUltimaCompra} días
+                            </p>
+                            <p className="text-xs text-muted">
+                              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Insights del cliente */}
+                        {cliente.prediccion?.insights?.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-success/20">
+                            <div className="flex flex-wrap gap-2">
+                              {cliente.prediccion.insights.slice(0, 3).map((insight, j) => (
+                                <span 
+                                  key={j}
+                                  className={`text-xs px-2 py-1 rounded-full ${
+                                    insight.nivel === 'success' ? 'bg-emerald-100 text-emerald-700' :
+                                    insight.nivel === 'info' ? 'bg-blue-100 text-blue-700' :
+                                    insight.nivel === 'warning' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}
+                                >
+                                  {insight.mensaje?.substring(0, 50)}...
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  
                   {(!predicciones?.proximos7dias || predicciones.proximos7dias.length === 0) && (
-                    <p className="text-center text-muted py-8">No hay predicciones para los próximos 7 días</p>
+                    <div className="text-center py-12">
+                      <Target className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                      <p className="text-muted">No hay predicciones próximas</p>
+                      <p className="text-xs text-muted">Los clientes necesitan más historial de compras</p>
+                    </div>
                   )}
                 </div>
               </CardBody>
             </Card>
 
-            <Card>
+            {/* Clientes atrasados */}
+            <Card className="border-accent/30">
               <CardBody>
-                <h3 className="font-display text-lg mb-4 text-accent">Clientes Fuera de Patrón</h3>
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle className="w-6 h-6 text-accent" />
+                  <h3 className="font-display text-lg">Requieren Atención</h3>
+                  <Badge variant="error" className="ml-auto">{predicciones?.vencidas?.length || 0}</Badge>
+                </div>
+                
                 <div className="space-y-3">
-                  {predicciones?.vencidas?.slice(0, 10).map((cliente, i) => (
-                    <div key={i} className="flex items-center justify-between p-4 bg-accent/5 rounded-xl border border-accent/20">
-                      <div>
-                        <p className="font-medium">{cliente.nombre}</p>
-                        <p className="text-xs text-muted">
-                          Últ compra: hace {cliente.prediccion.diasDesdeUltimaCompra} días
-                          (normalmente cada {cliente.prediccion.frecuenciaPromedio})
-                        </p>
+                  {predicciones?.vencidas?.slice(0, 10).map((cliente, i) => {
+                    const confianza = cliente.prediccion?.confiabilidad;
+                    
+                    return (
+                      <div 
+                        key={i}
+                        className="p-4 bg-gradient-to-r from-accent/5 to-transparent rounded-xl border border-accent/20"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-1">
+                              <p className="font-semibold">{cliente.nombre}</p>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                confianza?.nivel === 'excelente' || confianza?.nivel === 'buena' 
+                                  ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {confianza?.nivel} ({confianza?.score || 0}/100)
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted">
+                              Últ compra: hace <strong className="text-accent">{cliente.prediccion?.diasDesdeUltimaCompra}</strong> días
+                              {' • '} Frecuencia típica: <strong>{cliente.prediccion?.frecuenciaPromedio}</strong> días
+                            </p>
+                            {cliente.prediccion?.mensajeUrgencia && (
+                              <p className="text-sm font-medium text-accent mt-1">
+                                {cliente.prediccion.mensajeUrgencia}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="error">
+                              +{cliente.prediccion?.diasDesdeUltimaCompra - cliente.prediccion?.frecuenciaPromedio} días
+                            </Badge>
+                            <p className="text-xs text-muted mt-1">
+                              ~{formatCurrency(cliente.prediccion?.montoEstimado)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <Badge variant="error">Atrasado</Badge>
-                        <p className="text-xs text-muted mt-1">
-                          +{cliente.prediccion.diasDesdeUltimaCompra - cliente.prediccion.frecuenciaPromedio} días
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                  
                   {(!predicciones?.vencidas || predicciones.vencidas.length === 0) && (
-                    <p className="text-center text-muted py-8">Todos los clientes están dentro del patrón</p>
+                    <div className="text-center py-8">
+                      <CheckCircle className="w-10 h-10 text-success mx-auto mb-2" />
+                      <p className="text-success font-medium">¡Sin clientes atrasados!</p>
+                      <p className="text-xs text-muted">Todos los clientes están dentro del patrón esperado</p>
+                    </div>
                   )}
                 </div>
               </CardBody>
             </Card>
+
+            {/* Resumen de confiabilidad */}
+            <div className="grid grid-cols-3 gap-4">
+              <Card className="bg-emerald-50 border-emerald-200">
+                <CardBody className="text-center">
+                  <p className="text-3xl font-bold text-emerald-600">{predicciones?.resumenConfiabilidad?.alta || 0}</p>
+                  <p className="text-sm text-emerald-700">Alta Confiabilidad</p>
+                  <p className="text-xs text-emerald-600 mt-1">Excelente + Buena</p>
+                </CardBody>
+              </Card>
+              <Card className="bg-amber-50 border-amber-200">
+                <CardBody className="text-center">
+                  <p className="text-3xl font-bold text-amber-600">{predicciones?.resumenConfiabilidad?.media || 0}</p>
+                  <p className="text-sm text-amber-700">Confiabilidad Regular</p>
+                  <p className="text-xs text-amber-600 mt-1">Más datos ayudarían</p>
+                </CardBody>
+              </Card>
+              <Card className="bg-red-50 border-red-200">
+                <CardBody className="text-center">
+                  <p className="text-3xl font-bold text-red-600">{predicciones?.resumenConfiabilidad?.baja || 0}</p>
+                  <p className="text-sm text-red-700">Baja Confiabilidad</p>
+                  <p className="text-xs text-red-600 mt-1">Patrón irregular</p>
+                </CardBody>
+              </Card>
+            </div>
           </div>
         )}
 
