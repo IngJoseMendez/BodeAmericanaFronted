@@ -9,6 +9,132 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
 };
 
+const generarPDF = (cotizacion) => {
+  const contenido = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Cotización ${cotizacion.numero}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1a1a2e; font-size: 14px; }
+        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #d4a373; }
+        .header h1 { font-size: 28px; margin-bottom: 5px; color: #1a1a2e; }
+        .header p { color: #666; font-size: 14px; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        .info-box { background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        .info-box h3 { color: #d4a373; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; }
+        .info-box p { margin: 3px 0; }
+        .bold { font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th { background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 12px; }
+        td { padding: 12px 15px; border-bottom: 1px solid #eee; }
+        .text-right { text-align: right; }
+        .totals { margin-top: 20px; }
+        .totals-row { display: flex; justify-content: flex-end; margin: 5px 0; }
+        .totals-label { width: 150px; text-align: right; color: #666; }
+        .totals-value { width: 120px; text-align: right; font-weight: bold; }
+        .totals-total { font-size: 18px; color: #1a1a2e; border-top: 2px solid #1a1a2e; padding-top: 10px; margin-top: 10px; }
+        .notes { background: #fff8e6; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #d4a373; }
+        .footer { margin-top: 50px; text-align: center; color: #999; font-size: 11px; }
+        .status { display: inline-block; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        .status-pendiente { background: #fff3cd; color: #856404; }
+        .status-aprobada { background: #d4edda; color: #155724; }
+        .status-rechazada { background: #f8d7da; color: #721c24; }
+        .status-vencida { background: #e2e3e5; color: #383d41; }
+        @media print { body { padding: 20px; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>📦 BODEGA AMERICANA</h1>
+        <p>COTIZACIÓN</p>
+      </div>
+      
+      <div class="info-grid">
+        <div class="info-box">
+          <h3>Datos de la Cotización</h3>
+          <p><span class="bold">Número:</span> ${cotizacion.numero}</p>
+          <p><span class="bold">Fecha:</span> ${new Date(cotizacion.created_at).toLocaleDateString('es-MX')}</p>
+          <p><span class="bold">Válida hasta:</span> ${new Date(cotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
+          <p>
+            <span class="bold">Estado:</span> 
+            <span class="status status-${cotizacion.estado}">${cotizacion.estado?.toUpperCase()}</span>
+          </p>
+        </div>
+        <div class="info-box">
+          <h3>Datos del Cliente</h3>
+          <p><span class="bold">Cliente:</span> ${cotizacion.cliente_nombre || 'N/A'}</p>
+          <p><span class="bold">Teléfono:</span> ${cotizacion.cliente_telefono || 'N/A'}</p>
+          <p><span class="bold">Ciudad:</span> ${cotizacion.cliente_ciudad || 'N/A'}</p>
+          <p><span class="bold">Vendedor:</span> ${cotizacion.vendedor_nombre || 'N/A'}</p>
+        </div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Tipo</th>
+            <th>Categoría</th>
+            <th class="text-right">Cantidad</th>
+            <th class="text-right">Precio Unit.</th>
+            <th class="text-right">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cotizacion.detalles?.map(item => `
+            <tr>
+              <td>${item.tipo}</td>
+              <td>${item.categoria || '-'}</td>
+              <td class="text-right">${item.cantidad}</td>
+              <td class="text-right">${formatCurrency(item.precio_unitario)}</td>
+              <td class="text-right">${formatCurrency(item.subtotal)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div class="totals">
+        <div class="totals-row">
+          <span class="totals-label">Subtotal:</span>
+          <span class="totals-value">${formatCurrency(cotizacion.subtotal)}</span>
+        </div>
+        <div class="totals-row">
+          <span class="totals-label">Descuento:</span>
+          <span class="totals-value">-${formatCurrency(cotizacion.descuento)}</span>
+        </div>
+        <div class="totals-row totals-total">
+          <span class="totals-label">TOTAL:</span>
+          <span class="totals-value">${formatCurrency(cotizacion.total)}</span>
+        </div>
+      </div>
+      
+      ${cotizacion.notas ? `
+        <div class="notes">
+          <strong>Notas:</strong><br>
+          ${cotizacion.notas}
+        </div>
+      ` : ''}
+      
+      <div class="footer">
+        <p>Cotización generada el ${new Date().toLocaleString('es-MX')}</p>
+        <p>Bodega Americana - Sistema de Gestión</p>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(contenido);
+  printWindow.document.close();
+  printWindow.focus();
+  
+  setTimeout(() => {
+    printWindow.print();
+  }, 250);
+};
+
 export default function Cotizaciones() {
   const [cotizaciones, setCotizaciones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -482,8 +608,11 @@ export default function Cotizaciones() {
             )}
 
             <div className="flex justify-between items-center pt-4 border-t">
-              <div>
+              <div className="flex gap-2">
                 {getEstadoBadge(selectedCotizacion.estado)}
+                <Button variant="outline" onClick={() => generarPDF(selectedCotizacion)} icon={Download}>
+                  Descargar PDF
+                </Button>
               </div>
               <div className="flex gap-2">
                 {selectedCotizacion.estado === 'pendiente' && (
