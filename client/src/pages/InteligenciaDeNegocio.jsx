@@ -359,6 +359,12 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
                   {tendenciaIcon[tendencia]} {tendencia === 'acelerando' ? 'Acelerando' : 'Desacelerando'}
                 </span>
               )}
+              {cliente.prediccion?.productoFavorito && (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200" title={`Comprado el ${cliente.prediccion.productoFavorito.probabilidad}% de las veces`}>
+                  <Package className="w-3 h-3" />
+                  Prefiere: {cliente.prediccion.productoFavorito.tipo} ({cliente.prediccion.productoFavorito.probabilidad}%)
+                </span>
+              )}
             </div>
             
             {/* Banda de confianza */}
@@ -1464,6 +1470,39 @@ export default function InteligenciaDeNegocio() {
               </CardBody>
             </Card>
 
+            {/* Clientes Más Predecibles (Alta Confianza) */}
+            <Card className="border-info/30">
+              <CardBody>
+                <div className="flex items-center gap-3 mb-4">
+                  <Star className="w-6 h-6 text-info" />
+                  <h3 className="font-display text-lg">Clientes Más Predecibles (VIP)</h3>
+                  <Badge variant="info" className="ml-auto">
+                    {predicciones?.predicciones?.filter(p => p.prediccion?.confiabilidad?.score >= 80).length || 0}
+                  </Badge>
+                </div>
+                
+                {predicciones?.predicciones?.filter(p => p.prediccion?.confiabilidad?.score >= 80).length > 0 ? (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar" role="list" aria-label="Lista de clientes altamente predecibles">
+                    {predicciones.predicciones
+                      .filter(p => p.prediccion?.confiabilidad?.score >= 80)
+                      .map((cliente, i) => (
+                      <ClientePrediccionCard 
+                        key={cliente.id || i} 
+                        cliente={cliente} 
+                        index={i}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={Star}
+                    title="Aún no hay clientes altamente predecibles"
+                    description="El sistema identificará aquí a los clientes con patrones de compra extremadamente estables (Score > 80)."
+                  />
+                )}
+              </CardBody>
+            </Card>
+
             {/* Clientes próximos a comprar */}
             <Card>
               <CardBody>
@@ -1475,11 +1514,11 @@ export default function InteligenciaDeNegocio() {
                 
                 {predicciones?.proximos7dias?.length > 0 ? (
                   <div 
-                    className="space-y-3"
+                    className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
                     role="list"
                     aria-label="Lista de clientes próximos a comprar"
                   >
-                    {predicciones.proximos7dias.slice(0, 10).map((cliente, i) => (
+                    {predicciones.proximos7dias.map((cliente, i) => (
                       <ClientePrediccionCard 
                         key={cliente.id || i} 
                         cliente={cliente} 
@@ -1508,11 +1547,11 @@ export default function InteligenciaDeNegocio() {
                 
                 {predicciones?.vencidas?.length > 0 ? (
                   <div 
-                    className="space-y-3"
+                    className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
                     role="list"
                     aria-label="Lista de clientes que requieren atención"
                   >
-                    {predicciones.vencidas.slice(0, 10).map((cliente, i) => (
+                    {predicciones.vencidas.map((cliente, i) => (
                       <ClientePrediccionCard 
                         key={cliente.id || i} 
                         cliente={cliente} 

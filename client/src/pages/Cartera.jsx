@@ -4,6 +4,7 @@ import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfi
 import { carteraApi, clientesApi, pagosApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
+import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 export default function Cartera() {
@@ -458,16 +459,22 @@ export default function Cartera() {
         </html>
       `;
       
-      const printWindow = window.open('', '_blank');
-      printWindow.document.write(contenido);
-      printWindow.document.close();
-      printWindow.focus();
+      const opt = {
+        margin:       10,
+        filename:     `Cartera_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' }
+      };
       
-      setTimeout(() => {
-        printWindow.print();
-      }, 250);
+      const element = document.createElement('div');
+      element.innerHTML = contenido;
       
-      addToast('PDF listo para imprimir', 'success');
+      html2pdf().set(opt).from(element).save().then(() => {
+        addToast('PDF descargado', 'success');
+      }).catch(e => {
+        setError('Error al generar PDF: ' + e.message);
+      });
     } catch (err) {
       setError('Error al exportar PDF: ' + err.message);
     }

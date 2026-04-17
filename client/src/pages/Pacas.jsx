@@ -3,7 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { pacasApi, lotesApi, tiposPacaApi } from '../services/api';
 import { PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, Package, Eye, EyeOff, Link, Unlink } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink } from 'lucide-react';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -19,6 +19,9 @@ export default function Pacas() {
   const [resumen, setResumen] = useState([]);
   const [lotes, setLotes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [limite, setLimite] = useState(50);
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
@@ -40,8 +43,12 @@ export default function Pacas() {
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
+    setPagina(1);
+  }, [filtroEstado, filtroTipo, debouncedSearch, limite]);
+
+  useEffect(() => {
     loadPacas();
-  }, [filtroEstado, filtroTipo, debouncedSearch]);
+  }, [filtroEstado, filtroTipo, debouncedSearch, pagina, limite]);
 
   useEffect(() => {
     loadLotes();
@@ -51,7 +58,7 @@ export default function Pacas() {
   const loadPacas = async () => {
     try {
       setLoading(true);
-      const params = {};
+      const params = { pagina, limite };
       if (filtroEstado) params.estado = filtroEstado;
       if (filtroTipo) params.tipo = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
@@ -62,6 +69,7 @@ export default function Pacas() {
       ]);
 
       setPacas(data.data || data);
+      if (data.total_paginas) setTotalPaginas(data.total_paginas);
       setResumen(resumenData || []);
     } catch (err) {
       addToast(err.message, 'error');
@@ -459,6 +467,47 @@ export default function Pacas() {
               </table>
             </div>
           </Card>
+        )}
+
+        {/* Paginación */}
+        {totalPaginas > 0 && (
+          <div className="flex flex-col sm:flex-row justify-between items-center bg-surface p-4 rounded-xl border border-border mt-4 gap-4 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted">Mostrar:</span>
+              <select
+                value={limite}
+                onChange={(e) => setLimite(Number(e.target.value))}
+                className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+              </select>
+              <span className="text-sm text-muted">por página</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setPagina(p => Math.max(1, p - 1))}
+                disabled={pagina === 1}
+                className="px-3 py-1.5 h-auto text-sm"
+              >
+                <ChevronLeft size={16} className="mr-1" /> Anterior
+              </Button>
+              <span className="text-sm font-medium px-4 text-primary">
+                Página {pagina} de {totalPaginas}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                disabled={pagina === totalPaginas}
+                className="px-3 py-1.5 h-auto text-sm"
+              >
+                Siguiente <ChevronRight size={16} className="ml-1" />
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 

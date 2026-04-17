@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
 import { cotizacionesApi, clientesApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
+import html2pdf from 'html2pdf.js';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart } from 'lucide-react';
 
 const formatCurrency = (value) => {
@@ -125,14 +126,18 @@ const generarPDF = (cotizacion) => {
     </html>
   `;
   
-  const printWindow = window.open('', '_blank');
-  printWindow.document.write(contenido);
-  printWindow.document.close();
-  printWindow.focus();
+  const opt = {
+    margin:       10,
+    filename:     `Cotizacion_${cotizacion?.numero || Date.now()}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2 },
+    jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' }
+  };
   
-  setTimeout(() => {
-    printWindow.print();
-  }, 250);
+  const element = document.createElement('div');
+  element.innerHTML = contenido;
+  
+  html2pdf().set(opt).from(element).save();
 };
 
 export default function Cotizaciones() {

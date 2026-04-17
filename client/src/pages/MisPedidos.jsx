@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Badge, Modal, Button, useToast } from '../components/common';
 import { pedidosApi } from '../services/api';
 import ExcelJS from 'exceljs';
+import html2pdf from 'html2pdf.js';
 import { Package, Clock, CheckCircle, XCircle, ShoppingCart, FileSpreadsheet, Download } from 'lucide-react';
 
 export default function MisPedidos() {
@@ -269,11 +270,22 @@ export default function MisPedidos() {
       </html>
     `;
     
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(contenido);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 250);
-    addToast('PDF listo para imprimir', 'success');
+    const opt = {
+      margin:       10,
+      filename:     `Pedido_${detallePedido.id}_${new Date().toISOString().split('T')[0]}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' }
+    };
+    
+    const element = document.createElement('div');
+    element.innerHTML = contenido;
+    
+    html2pdf().set(opt).from(element).save().then(() => {
+      addToast('PDF descargado', 'success');
+    }).catch(err => {
+      addToast('Error al generar PDF', 'error');
+    });
   };
 
   return (
