@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Tag,
   X,
+  Search
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -64,7 +65,6 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
       )
     : navItems;
 
-  /* lock body scroll when mobile sidebar is open */
   useEffect(() => {
     if (isOpen && window.innerWidth < 1024) {
       document.body.style.overflow = 'hidden';
@@ -91,7 +91,6 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
     }
   };
 
-  /* close sidebar when navigating on mobile */
   const handleNavClick = () => {
     if (window.innerWidth < 1024) onToggle?.();
   };
@@ -99,6 +98,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
   return (
     <>
       {/* ── OVERLAY (mobile only) ─────────────────── */}
+      {/* Debe ser oscuro y bloquear clics, pero no tener sidebar traslúcido */}
       <div
         className={`
           lg:hidden fixed inset-0 z-40
@@ -117,11 +117,10 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
         role="navigation"
         aria-label="Menú principal"
         aria-hidden={!isOpen && true}
-        style={{ backgroundColor: '#0f0f1a' }}
         className={`
           fixed lg:sticky top-0 left-0 h-screen
-          flex flex-col text-white
-          border-r border-white/10
+          bg-surface flex flex-col text-primary
+          border-r border-border
           transition-transform duration-300 ease-out
           shadow-2xl lg:shadow-none
           z-50
@@ -130,27 +129,24 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
         `}
       >
         {/* ── HEADER ──────────────────────────────── */}
-        <div className="flex-shrink-0 p-4 border-b border-white/10">
-
+        <div className="flex-shrink-0 p-4 border-b border-border">
           {/* Mobile: logo + title + X close button */}
           <div className="lg:hidden relative flex items-center gap-3">
-            {/* Logo */}
             <div className="relative flex-shrink-0">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-lg shadow-secondary/30">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-md shadow-secondary/20">
                 <Sparkles className="w-5 h-5 text-white" aria-hidden="true" />
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-[#0f0f1a] animate-pulse" aria-hidden="true" />
+              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface animate-pulse" aria-hidden="true" />
             </div>
 
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-display font-bold text-white tracking-tight leading-none">Bodega</h1>
-              <p className="text-[10px] text-white/50 font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
+              <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Bodega</h1>
+              <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
             </div>
 
-            {/* X close button — mobile only */}
             <button
               onClick={onToggle}
-              className="flex-shrink-0 p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-all duration-200 active:scale-95"
+              className="flex-shrink-0 p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200 active:scale-95"
               aria-label="Cerrar menú"
             >
               <X size={20} />
@@ -162,14 +158,14 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
             {collapsed ? (
               <div className="relative flex flex-col items-center gap-2">
                 <div className="relative flex-shrink-0">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-lg shadow-secondary/30">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-md shadow-secondary/20">
                     <Sparkles className="w-5 h-5 text-white" aria-hidden="true" />
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-[#0f0f1a] animate-pulse" aria-hidden="true" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface animate-pulse" aria-hidden="true" />
                 </div>
                 <button
                   onClick={onToggleCollapse}
-                  className="flex p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all duration-200"
+                  className="flex p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
                   aria-label="Expandir sidebar"
                   title="Expandir"
                 >
@@ -179,20 +175,20 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
             ) : (
               <div className="relative flex items-center gap-3">
                 <div className="relative flex-shrink-0">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-lg shadow-secondary/30">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center shadow-md shadow-secondary/20">
                     <Sparkles className="w-5 h-5 text-white" aria-hidden="true" />
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-[#0f0f1a] animate-pulse" aria-hidden="true" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface animate-pulse" aria-hidden="true" />
                 </div>
 
                 <div className="min-w-0">
-                  <h1 className="text-xl font-display font-bold text-white tracking-tight leading-none">Bodega</h1>
-                  <p className="text-[10px] text-white/50 font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
+                  <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Bodega</h1>
+                  <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
                 </div>
 
                 <button
                   onClick={onToggleCollapse}
-                  className="ml-auto flex p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all duration-200"
+                  className="ml-auto flex p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
                   aria-label="Colapsar sidebar"
                   title="Colapsar"
                 >
@@ -205,7 +201,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
         {/* ── SEARCH (oculto en mini) ─────────────── */}
         {!collapsed && (
-          <div className="px-3 py-2 flex-shrink-0">
+          <div className="px-3 py-3 flex-shrink-0">
             <div className="relative">
               <input
                 type="text"
@@ -213,15 +209,12 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 aria-label="Buscar en el menú"
-                className="w-full pl-3 pr-9 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 font-medium text-sm transition-all focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-primary/5 border border-transparent text-primary placeholder-muted font-medium text-sm transition-all focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30 focus:bg-surface"
               />
-              <svg
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
                 aria-hidden="true"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              />
             </div>
           </div>
         )}
@@ -233,12 +226,12 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {!collapsed && (
-            <p className="px-3 py-2 text-[10px] font-heading font-semibold text-white/30 uppercase tracking-wider">
+            <p className="px-3 py-2 text-[10px] font-heading font-semibold text-muted uppercase tracking-wider">
               Menú
             </p>
           )}
 
-          <div className="space-y-0.5 pb-2">
+          <div className="space-y-1 pb-2">
             {filteredItems.map((item, index) => {
               const isActive = location.pathname === item.path;
               const badge    = item.key ? counts[item.key] : null;
@@ -257,8 +250,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                       transition-all duration-200 overflow-hidden
                       ${collapsed ? 'justify-center p-3 mx-1' : 'px-3 py-3 lg:py-2.5'}
                       ${isActive
-                        ? 'bg-gradient-to-r from-secondary/30 to-transparent text-white shadow-lg shadow-secondary/20'
-                        : 'text-white/60 hover:text-white hover:bg-white/10 active:bg-white/15'
+                        ? 'bg-secondary/10 text-primary font-semibold'
+                        : 'text-muted hover:text-primary hover:bg-primary/5 active:bg-primary/10 font-medium'
                       }
                     `}
                   >
@@ -269,10 +262,10 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
                     {/* Icon */}
                     <div className={`
-                      p-1.5 rounded-lg transition-all duration-200 flex-shrink-0
+                      p-1.5 rounded-lg transition-colors duration-200 flex-shrink-0
                       ${isActive
-                        ? 'bg-secondary/25 text-secondary'
-                        : 'text-white/70 group-hover/item:text-white group-hover/item:bg-white/15'}
+                        ? 'text-secondary'
+                        : 'text-muted group-hover/item:text-primary'}
                     `}>
                       <item.icon size={18} aria-hidden="true" />
                     </div>
@@ -280,21 +273,21 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                     {/* Label + badge */}
                     {!collapsed && (
                       <>
-                        <span className="flex-1 font-medium text-sm truncate">{item.label}</span>
+                        <span className="flex-1 text-sm truncate">{item.label}</span>
                         {badge != null && (
                           <span className={`
                             px-2 py-0.5 text-[11px] font-bold rounded-full tabular-nums flex-shrink-0
                             ${isActive
                               ? 'bg-secondary text-primary'
-                              : 'bg-white/10 text-white/60 group-hover/item:bg-white/20 group-hover/item:text-white'}
+                              : 'bg-primary/10 text-muted group-hover/item:bg-primary/20 group-hover/item:text-primary'}
                           `}>
                             {badge}
                           </span>
                         )}
                         {hoveredItem === index && !isActive && (
                           <ChevronRight
-                            size={13}
-                            className="text-white/40 flex-shrink-0 transition-transform group-hover/item:translate-x-0.5"
+                            size={14}
+                            className="text-muted flex-shrink-0 transition-transform group-hover/item:translate-x-0.5"
                             aria-hidden="true"
                           />
                         )}
@@ -306,8 +299,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                   {collapsed && (
                     <div className="
                       absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50
-                      px-2.5 py-1.5 rounded-xl bg-[#0f0f1a] border border-white/10
-                      text-white text-xs font-medium whitespace-nowrap
+                      px-2.5 py-1.5 rounded-xl bg-surface border border-border
+                      text-primary text-xs font-medium whitespace-nowrap
                       opacity-0 pointer-events-none
                       group-hover/item:opacity-100
                       transition-opacity duration-150
@@ -319,7 +312,6 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                           {badge}
                         </span>
                       )}
-                      <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#0f0f1a]" aria-hidden="true" />
                     </div>
                   )}
                 </div>
@@ -328,47 +320,45 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
             {filteredItems.length === 0 && !collapsed && (
               <div className="py-8 text-center">
-                <p className="text-xs text-white/30">Sin resultados</p>
+                <p className="text-xs text-muted">Sin resultados</p>
               </div>
             )}
           </div>
         </nav>
 
         {/* ── FOOTER ──────────────────────────────── */}
-        <div className="relative flex-shrink-0 p-3 border-t border-white/10">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" aria-hidden="true" />
-
+        <div className="relative flex-shrink-0 p-3 border-t border-border">
           {/* Dark / Light mode toggle */}
           <button
             onClick={toggleTheme}
             className={`
-              w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-white/10 transition-colors mb-2 active:scale-95
+              w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-primary/5 transition-colors mb-2 active:scale-95 text-muted hover:text-primary
               ${collapsed ? 'justify-center' : ''}
             `}
             aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
             title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
           >
             {theme === 'dark'
-              ? <Sun  size={17} className="text-yellow-400 flex-shrink-0" />
-              : <Moon size={17} className="text-blue-300 flex-shrink-0" />
+              ? <Sun  size={18} className="text-yellow-400 flex-shrink-0" />
+              : <Moon size={18} className="text-blue-500 flex-shrink-0" />
             }
             {!collapsed && (
-              <span className="text-xs text-white/50 font-medium">
+              <span className="text-xs font-medium">
                 {theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
               </span>
             )}
           </button>
 
           {/* User info */}
-          <div className={`flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 transition-colors ${collapsed ? 'justify-center' : ''}`}>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center text-white font-bold text-xs shadow-lg flex-shrink-0">
+          <div className={`flex items-center gap-2.5 p-2 rounded-xl hover:bg-primary/5 transition-colors cursor-default ${collapsed ? 'justify-center' : ''}`}>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0">
               {usuario?.nombre?.slice(0, 2)?.toUpperCase() || 'U'}
             </div>
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-white truncate">{usuario?.nombre || 'Usuario'}</p>
-                  <p className="text-[10px] text-white/40 capitalize">{usuario?.rol || 'Cliente'}</p>
+                  <p className="text-xs font-semibold text-primary truncate">{usuario?.nombre || 'Usuario'}</p>
+                  <p className="text-[10px] text-muted capitalize">{usuario?.rol || 'Cliente'}</p>
                 </div>
                 <div className="w-2 h-2 rounded-full bg-success animate-pulse flex-shrink-0" aria-hidden="true" />
               </>
