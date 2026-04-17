@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { LogOut, Menu, ChevronRight, Command } from 'lucide-react';
@@ -40,7 +40,13 @@ function Breadcrumbs({ location }) {
 
 export function Layout({ children, title, subtitle, actions }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('sidebar-collapsed') === 'true'
+  );
+
+  useEffect(() => {
+    localStorage.setItem('sidebar-collapsed', sidebarCollapsed);
+  }, [sidebarCollapsed]);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -61,14 +67,19 @@ export function Layout({ children, title, subtitle, actions }) {
       <div className="flex-1 flex flex-col w-full min-w-0">
         {/* ── HEADER ──────────────────────────────── */}
         <header
-          className="sticky top-0 z-20 bg-surface/80 backdrop-blur-md border-b border-border/50 px-4 sm:px-6 py-3"
+          className="sticky top-0 z-20 bg-surface/80 backdrop-blur-md border-b border-border px-4 sm:px-6 py-3"
           role="banner"
         >
           <div className="flex items-center justify-between gap-4">
             {/* Mobile hamburger */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden p-2 rounded-xl bg-surface shadow-md hover:shadow-lg transition-all text-primary"
+              className={`
+                lg:hidden p-2.5 rounded-xl transition-all duration-200 active:scale-95
+                ${sidebarOpen
+                  ? 'bg-secondary/20 text-secondary ring-2 ring-secondary/30'
+                  : 'bg-surface shadow-md hover:shadow-lg text-primary'}
+              `}
               aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
               aria-expanded={sidebarOpen}
               aria-controls="main-sidebar"

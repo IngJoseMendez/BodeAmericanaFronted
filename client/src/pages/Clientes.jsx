@@ -145,14 +145,14 @@ export default function Clientes() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && loadClientes()}
-              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
             />
           </div>
           <div className="flex gap-2 flex-wrap">
             <select
               value={filtroTipo}
               onChange={(e) => setFiltroTipo(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los tipos</option>
               {CLIENTE_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
@@ -160,7 +160,7 @@ export default function Clientes() {
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los estados</option>
               {CLIENTE_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}

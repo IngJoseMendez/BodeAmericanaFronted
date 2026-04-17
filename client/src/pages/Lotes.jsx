@@ -379,7 +379,7 @@ export default function Lotes() {
               value={form.notas}
               onChange={(e) => setForm({ ...form, notas: e.target.value })}
               placeholder="Notas adicionales..."
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all resize-none"
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all resize-none"
               rows={3}
             />
           </div>
@@ -400,30 +400,30 @@ export default function Lotes() {
         {selectedLote && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="p-3 bg-gray-50 rounded-xl text-center">
+              <div className="p-3 bg-primary/5 rounded-xl text-center">
                 <p className="text-xs text-muted">Pacas</p>
                 <p className="text-xl font-bold text-primary">{lotePacas.length}</p>
               </div>
-              <div className="p-3 bg-gray-50 rounded-xl text-center">
+              <div className="p-3 bg-primary/5 rounded-xl text-center">
                 <p className="text-xs text-muted">Valor Total</p>
                 <p className="text-xl font-bold text-primary">{formatCurrency(totalPacaValue)}</p>
               </div>
-              <div className="p-3 bg-gray-50 rounded-xl text-center">
+              <div className="p-3 bg-primary/5 rounded-xl text-center">
                 <p className="text-xs text-muted">Costo Pacas</p>
                 <p className="text-xl font-bold text-secondary">{formatCurrency(totalCostoPacas)}</p>
               </div>
-              <div className="p-3 bg-gray-50 rounded-xl text-center">
+              <div className="p-3 bg-primary/5 rounded-xl text-center">
                 <p className="text-xs text-muted">Ganancia Est.</p>
                 <p className="text-xl font-bold text-success">{formatCurrency(totalPacaValue - totalCostoPacas)}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-gray-50 rounded-xl">
+              <div className="p-4 bg-primary/5 rounded-xl">
                 <p className="text-sm text-muted">Proveedor</p>
                 <p className="font-medium">{selectedLote.proveedor || 'No especificado'}</p>
               </div>
-              <div className="p-4 bg-gray-50 rounded-xl">
+              <div className="p-4 bg-primary/5 rounded-xl">
                 <p className="text-sm text-muted">Fecha de Compra</p>
                 <p className="font-medium">
                   {selectedLote.fecha_compra
@@ -431,11 +431,11 @@ export default function Lotes() {
                     : 'No especificada'}
                 </p>
               </div>
-              <div className="p-4 bg-gray-50 rounded-xl">
+              <div className="p-4 bg-primary/5 rounded-xl">
                 <p className="text-sm text-muted">Costo Total del Lote</p>
                 <p className="font-medium font-display">{formatCurrency(selectedLote.costo_total)}</p>
               </div>
-              <div className="p-4 bg-gray-50 rounded-xl">
+              <div className="p-4 bg-primary/5 rounded-xl">
                 <p className="text-sm text-muted">Total Vendido</p>
                 <p className="font-medium font-display text-success">{formatCurrency(selectedLote.vendido_total || 0)}</p>
               </div>
@@ -519,13 +519,13 @@ export default function Lotes() {
             <div>
               <h4 className="font-medium mb-3">Pacas del Lote ({lotePacas.length})</h4>
               {lotePacas.length === 0 ? (
-                <p className="text-center text-muted py-8 bg-gray-50 rounded-xl">
+                <p className="text-center text-muted py-8 bg-primary/5 rounded-xl">
                   Este lote aún no tiene pacas. Usa el formulario de arriba para agregar.
                 </p>
               ) : (
                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-100 sticky top-0">
+                    <thead className="bg-primary/10 sticky top-0">
                       <tr>
                         <th className="px-4 py-2 text-left">Tipo</th>
                         <th className="px-4 py-2 text-left">Categoría</th>
@@ -537,7 +537,7 @@ export default function Lotes() {
                     </thead>
                     <tbody className="divide-y">
                       {lotePacas.map((paca) => (
-                        <tr key={paca.id} className="hover:bg-gray-50">
+                        <tr key={paca.id} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">{paca.tipo}</td>
                           <td className="px-4 py-2 text-muted">{paca.categoria}</td>
                           <td className="px-4 py-2 text-right text-muted">{formatCurrency(paca.costo_base)}</td>
@@ -582,7 +582,7 @@ export default function Lotes() {
           </p>
 
           {pacasSinLote.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-xl">
+            <div className="text-center py-8 bg-primary/5 rounded-xl">
               <Package className="w-12 h-12 mx-auto text-muted mb-3" />
               <p className="text-muted">No hay pacas sin asignar</p>
               <p className="text-xs text-muted mt-1">Todas las pacas ya pertenecen a un lote</p>
@@ -612,7 +612,7 @@ export default function Lotes() {
 
               <div className="overflow-x-auto max-h-96 overflow-y-auto border rounded-xl">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
+                  <thead className="bg-primary/5 sticky top-0">
                     <tr>
                       <th className="px-4 py-2 text-left w-10"></th>
                       <th className="px-4 py-2 text-left">Tipo</th>
@@ -625,7 +625,7 @@ export default function Lotes() {
                     {pacasSinLote.map((paca) => (
                       <tr
                         key={paca.id}
-                        className={`hover:bg-gray-50 cursor-pointer ${selectedPacas.includes(paca.id) ? 'bg-secondary/5' : ''}`}
+                        className={`hover:bg-primary/5 cursor-pointer ${selectedPacas.includes(paca.id) ? 'bg-secondary/5' : ''}`}
                         onClick={() => togglePacaSelection(paca.id)}
                       >
                         <td className="px-4 py-2">
@@ -633,7 +633,7 @@ export default function Lotes() {
                             type="checkbox"
                             checked={selectedPacas.includes(paca.id)}
                             onChange={() => togglePacaSelection(paca.id)}
-                            className="rounded border-gray-300"
+                            className="rounded border-border"
                           />
                         </td>
                         <td className="px-4 py-2 font-medium">{paca.tipo}</td>

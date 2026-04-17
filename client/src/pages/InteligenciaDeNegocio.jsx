@@ -249,7 +249,7 @@ function TooltipScore({ children, score }) {
       </div>
       {isOpen && score && (
         <div 
-          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white rounded-xl shadow-xl text-sm"
+          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface text-primary rounded-xl shadow-xl text-sm border border-border"
           role="tooltip"
         >
           <p className="font-semibold mb-2 text-center">{score.nivel?.toUpperCase()} ({score.score}/100)</p>
@@ -414,7 +414,7 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
           
           {/* Expand indicator */}
           <button
-            className="p-1 rounded-lg hover:bg-white/50 lg:hidden"
+            className="p-1 rounded-lg hover:bg-surface/50 lg:hidden"
             aria-label={expanded ? 'Contraer detalles' : 'Expandir detalles'}
           >
             {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -429,7 +429,7 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
         role="region"
         aria-label="Detalles de predicción"
       >
-        <div className="p-4 bg-white/50 space-y-4">
+        <div className="p-4 bg-surface/50 space-y-4">
           {/* Breakdown del score */}
           {confianza?.detalles && (
             <div className="space-y-2">
@@ -837,8 +837,8 @@ export default function InteligenciaDeNegocio() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                 activeTab === tab.id
-                  ? 'bg-primary text-white shadow-md'
-                  : 'bg-white text-muted hover:bg-gray-50 border border-gray-200'
+                  ? 'bg-secondary text-primary shadow-md font-semibold'
+                  : 'bg-surface text-muted hover:bg-primary/5 border border-border'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -996,7 +996,7 @@ export default function InteligenciaDeNegocio() {
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {rotacion?.pacasLentas?.length > 0 ? (
                       rotacion.pacasLentas.map((paca, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div key={i} className="flex items-center justify-between p-3 bg-primary/5 rounded-lg">
                           <div>
                             <p className="font-medium text-sm">{paca.tipo}</p>
                             <p className="text-xs text-muted">{paca.categoria}</p>
@@ -1020,7 +1020,7 @@ export default function InteligenciaDeNegocio() {
                 <h3 className="font-display text-lg mb-4">Tipos Más Vendidos por Rotación</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-primary/5">
                       <tr>
                         <th className="px-4 py-2 text-left">Tipo</th>
                         <th className="px-4 py-2 text-left">Categoría</th>
@@ -1123,7 +1123,7 @@ export default function InteligenciaDeNegocio() {
                 <h3 className="font-display text-lg mb-4">Ranking de Clientes</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-primary/5">
                       <tr>
                         <th className="px-4 py-2 text-left">Cliente</th>
                         <th className="px-4 py-2 text-left">Ciudad</th>
@@ -1135,7 +1135,7 @@ export default function InteligenciaDeNegocio() {
                     </thead>
                     <tbody className="divide-y">
                       {clientesScore?.clientes?.slice(0, 20).map((cliente, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
+                        <tr key={i} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">{cliente.nombre}</td>
                           <td className="px-4 py-2 text-muted">{cliente.ciudad || '-'}</td>
                           <td className="px-4 py-2 text-right">{cliente.total_compras}</td>
@@ -1234,7 +1234,7 @@ export default function InteligenciaDeNegocio() {
                   <h3 className="font-display text-lg mb-4 text-accent">Menos Rentables</h3>
                   <div className="space-y-3">
                     {lotes?.menosRentables?.map((lote, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <div key={i} className="flex items-center justify-between p-3 bg-primary/5 rounded-xl">
                         <div>
                           <p className="font-medium">{lote.numero}</p>
                           <p className="text-xs text-muted">{lote.pacas_vendidas}/{lote.cantidad_pacas} vendidas</p>
@@ -1262,7 +1262,7 @@ export default function InteligenciaDeNegocio() {
                   setPeriodo(e.target.value);
                   analyticsApi.getVentas({ periodo: e.target.value, dias: 30 }).then(setVentas);
                 }}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-sm"
+                className="px-4 py-2 rounded-xl border border-border text-sm"
               >
                 <option value="dia">Diario</option>
                 <option value="semana">Semanal</option>
@@ -1290,7 +1290,7 @@ export default function InteligenciaDeNegocio() {
                   <h3 className="font-display text-lg mb-4">Métodos de Pago</h3>
                   <div className="space-y-3">
                     {ventas?.metodosPago?.map((metodo, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                      <div key={i} className="flex items-center justify-between p-3 bg-primary/5 rounded-xl">
                         <div className="flex items-center gap-3">
                           <div className={`p-2 rounded-lg ${
                             metodo.tipo_pago === 'contado' ? 'bg-success/10' : 'bg-warning/10'
@@ -1320,7 +1320,7 @@ export default function InteligenciaDeNegocio() {
                 <h3 className="font-display text-lg mb-4">Top Clientes (Últimos 30 días)</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-primary/5">
                       <tr>
                         <th className="px-4 py-2 text-left">Cliente</th>
                         <th className="px-4 py-2 text-left">Ciudad</th>
@@ -1410,7 +1410,7 @@ export default function InteligenciaDeNegocio() {
                 </h4>
                 
                 {/* Factores del score */}
-                <div className="bg-white/60 rounded-xl p-4 mb-4">
+                <div className="bg-surface/60 rounded-xl p-4 mb-4">
                   <p className="text-sm text-muted mb-3">
                     El score de confiabilidad combina <strong>5 factores</strong> para darte una predicción más precisa:
                   </p>
@@ -1728,7 +1728,7 @@ export default function InteligenciaDeNegocio() {
                   </h3>
                   <div className="space-y-3">
                     {queComprar?.recomendaciones?.filter(r => r.tipo === 'compra')?.map((rec, i) => (
-                      <div key={i} className="p-4 bg-white rounded-xl border border-success/20">
+                      <div key={i} className="p-4 bg-surface rounded-xl border border-success/20">
                         <p className="font-medium">{rec.mensaje}</p>
                         {rec.detalles?.slice(0, 3).map((d, j) => (
                           <div key={j} className="mt-2 flex justify-between text-sm">
@@ -1753,7 +1753,7 @@ export default function InteligenciaDeNegocio() {
                   </h3>
                   <div className="space-y-3">
                     {queComprar?.recomendaciones?.filter(r => r.tipo === 'evitar')?.map((rec, i) => (
-                      <div key={i} className="p-4 bg-white rounded-xl border border-accent/20">
+                      <div key={i} className="p-4 bg-surface rounded-xl border border-accent/20">
                         <p className="font-medium">{rec.mensaje}</p>
                         {rec.detalles?.slice(0, 3).map((d, j) => (
                           <div key={j} className="mt-2 flex justify-between text-sm">
@@ -1777,7 +1777,7 @@ export default function InteligenciaDeNegocio() {
                 <h3 className="font-display text-lg mb-4">Análisis Detallado por Tipo</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-primary/5">
                       <tr>
                         <th className="px-4 py-2 text-left">Tipo</th>
                         <th className="px-4 py-2 text-center">Disponibles</th>
@@ -1790,7 +1790,7 @@ export default function InteligenciaDeNegocio() {
                     </thead>
                     <tbody className="divide-y">
                       {queComprar?.analisis?.map((item, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
+                        <tr key={i} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">{item.tipo}</td>
                           <td className="px-4 py-2 text-center">{item.disponibles}</td>
                           <td className="px-4 py-2 text-center">{item.unidades_vendidas || 0}</td>
@@ -1864,7 +1864,7 @@ export default function InteligenciaDeNegocio() {
                 <h3 className="font-display text-lg mb-4">Riesgo de Cartera - Clientes</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-primary/5">
                       <tr>
                         <th className="px-4 py-2 text-left">Cliente</th>
                         <th className="px-4 py-2 text-left">Ciudad</th>
@@ -1877,7 +1877,7 @@ export default function InteligenciaDeNegocio() {
                     </thead>
                     <tbody className="divide-y">
                       {riesgoCartera?.clientes?.map((cliente, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
+                        <tr key={i} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">{cliente.nombre}</td>
                           <td className="px-4 py-2 text-muted">{cliente.ciudad || '-'}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(cliente.deuda_pendiente)}</td>
@@ -1998,7 +1998,7 @@ export default function InteligenciaDeNegocio() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {flujoCaja?.flujos_por_semana?.map((semana, i) => (
                     <div key={i} className={`p-4 rounded-xl border ${
-                      semana.entrada_estimada > 0 ? 'bg-success/5 border-success/30' : 'bg-gray-50 border-gray-200'
+                      semana.entrada_estimada > 0 ? 'bg-success/5 border-success/30' : 'bg-primary/5 border-border'
                     }`}>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-medium">Semana {semana.semana}</span>
@@ -2056,7 +2056,7 @@ export default function InteligenciaDeNegocio() {
                       {semana.clientes?.length > 0 ? (
                         <div className="space-y-2 ml-4">
                           {semana.clientes.map((cliente, j) => (
-                            <div key={j} className="flex justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                            <div key={j} className="flex justify-between p-2 bg-primary/5 rounded-lg text-sm">
                               <span>{cliente.nombre}</span>
                               <span className="font-medium">{formatCurrency(cliente.monto)}</span>
                             </div>

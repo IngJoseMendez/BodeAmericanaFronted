@@ -54,10 +54,10 @@ function ToastItem({ message, type, removing, onClose }) {
   };
 
   const colors = {
-    success: 'bg-white dark:bg-success/20 border-success/40 text-success shadow-success/20',
-    error: 'bg-white dark:bg-error/20 border-error/40 text-error shadow-error/20',
-    warning: 'bg-white dark:bg-warning/20 border-warning/40 text-warning shadow-warning/20',
-    info: 'bg-white dark:bg-secondary/20 border-secondary/40 text-primary shadow-secondary/20'
+    success: 'bg-surface border-success/40 text-success shadow-success/20',
+    error: 'bg-surface border-error/40 text-error shadow-error/20',
+    warning: 'bg-surface border-warning/40 text-warning shadow-warning/20',
+    info: 'bg-surface border-secondary/40 text-primary shadow-secondary/20'
   };
 
   const bgColors = {
@@ -89,7 +89,7 @@ function ToastItem({ message, type, removing, onClose }) {
       </p>
       <button 
         onClick={onClose} 
-        className="p-2 md:p-1.5 hover:bg-black/5 md:hover:bg-black/10 rounded-full flex-shrink-0 transition-colors active:scale-95 touch-manipulation -m-1 md:m-0"
+        className="p-2 md:p-1.5 hover:bg-primary/5 md:hover:bg-primary/10 rounded-full flex-shrink-0 transition-colors active:scale-95 touch-manipulation -m-1 md:m-0"
         aria-label="Cerrar notificación"
       >
         <X size={18} className="md:w-4 md:h-4" />

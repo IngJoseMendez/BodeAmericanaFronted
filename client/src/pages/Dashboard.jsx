@@ -4,14 +4,14 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, CardTitle, CardDescription } from '../components/common';
 import { dashboardApi, analyticsApi } from '../services/api';
 import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+  BarChart, Bar, CartesianGrid, XAxis, YAxis, LineChart, Line, AreaChart, Area
+} from 'recharts';
+import {
   Package, Users, ShoppingCart, Wallet,
   TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight,
   Receipt, FileSignature, Brain, TrendingDown
 } from 'lucide-react';
-import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
 
 const CHART_COLORS = {
   primary: '#d4a373',
@@ -188,16 +188,16 @@ function ProgressBar({ value, max, color = 'bg-success', label }) {
   );
 }
 
-function MetricCard({ icon: Icon, label, value, subtext, color, trend }) {
+function MetricCard({ icon: Icon, label, value, subtext, color, trend, delay = 0 }) {
   const colorClasses = {
     primary: 'bg-primary/10 text-primary',
-    secondary: 'bg-secondary/15 text-primary',
+    secondary: 'bg-secondary/15 text-secondary',
     success: 'bg-success/15 text-success',
     accent: 'bg-accent/15 text-accent',
   };
 
   return (
-    <Card hover className="animate-fade-in-up">
+    <Card hover className="animate-fade-in-up" style={{ animationDelay: `${delay}ms` }}>
       <CardBody className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <div className={`p-3 rounded-2xl flex-shrink-0 ${colorClasses[color] || colorClasses.primary}`}>
@@ -320,6 +320,7 @@ export default function Dashboard() {
               value={totalPacas.toLocaleString('es-MX')}
               subtext={`${disponibles} disponibles`}
               color="secondary"
+              delay={0}
             />
             <MetricCard
               icon={Users}
@@ -327,6 +328,7 @@ export default function Dashboard() {
               value={(metricas?.clientes?.total || 0).toLocaleString('es-MX')}
               subtext={`${metricas?.clientes?.activos || 0} activos`}
               color="primary"
+              delay={75}
             />
             <MetricCard
               icon={ShoppingCart}
@@ -335,6 +337,7 @@ export default function Dashboard() {
               subtext={`${ventasData.length} transacciones`}
               color="success"
               trend={totalVentas > 0 ? 'up' : undefined}
+              delay={150}
             />
             <MetricCard
               icon={Wallet}
@@ -342,12 +345,13 @@ export default function Dashboard() {
               value={formatCurrency(metricas?.cartera?.saldo_pendiente)}
               subtext="Saldo pendiente"
               color="accent"
+              delay={225}
             />
           </div>
         </section>
 
         <section aria-label="Acciones rápidas">
-          <Card className="animate-fade-in-up">
+          <Card className="animate-fade-in-up" style={{ animationDelay: '300ms' }}>
             <CardBody>
               <CardTitle className="mb-3">Acciones Rápidas</CardTitle>
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-1">
@@ -363,7 +367,7 @@ export default function Dashboard() {
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="animate-fade-in-up">
+          <Card className="animate-fade-in-up" style={{ animationDelay: '375ms' }}>
             <CardBody>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-xl bg-success/15">
@@ -378,7 +382,7 @@ export default function Dashboard() {
             </CardBody>
           </Card>
 
-          <Card className="lg:col-span-2 animate-fade-in-up">
+          <Card className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: '450ms' }}>
             <CardBody>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-xl bg-primary/15">
@@ -395,7 +399,7 @@ export default function Dashboard() {
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="animate-fade-in-up">
+          <Card className="animate-fade-in-up" style={{ animationDelay: '525ms' }}>
             <CardBody>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-xl bg-secondary/15">
@@ -410,7 +414,7 @@ export default function Dashboard() {
             </CardBody>
           </Card>
 
-          <Card className="animate-fade-in-up">
+          <Card className="animate-fade-in-up" style={{ animationDelay: '600ms' }}>
             <CardBody>
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-xl bg-primary/15">

@@ -335,7 +335,7 @@ export default function Cotizaciones() {
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white"
+              className="px-4 py-2.5 rounded-xl border border-border bg-surface"
             >
               <option value="">Todas</option>
               <option value="pendiente">Pendientes</option>
@@ -343,7 +343,7 @@ export default function Cotizaciones() {
               <option value="rechazada">Rechazadas</option>
               <option value="vencida">Vencidas</option>
             </select>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-muted">
               {cotizaciones.length} cotización(es)
             </span>
           </div>
@@ -359,9 +359,9 @@ export default function Cotizaciones() {
         ) : cotizaciones.length === 0 ? (
           <Card>
             <CardBody className="text-center py-12">
-              <FileText className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+              <FileText className="w-16 h-16 mx-auto text-muted mb-4" />
               <h3 className="text-lg font-medium mb-2">No hay cotizaciones</h3>
-              <p className="text-gray-500 mb-4">Crea tu primera cotización</p>
+              <p className="text-muted mb-4">Crea tu primera cotización</p>
               <Button onClick={openCreateModal} icon={Plus}>Crear Cotización</Button>
             </CardBody>
           </Card>
@@ -372,16 +372,16 @@ export default function Cotizaciones() {
                 <CardBody>
                   <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      <div className="p-3 bg-gray-100 rounded-xl">
-                        <FileText className="w-6 h-6 text-gray-500" />
+                      <div className="p-3 bg-primary/10 rounded-xl">
+                        <FileText className="w-6 h-6 text-muted" />
                       </div>
                       <div>
                         <p className="font-display font-bold text-lg text-primary">{cot.numero}</p>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <p className="text-sm text-muted flex items-center gap-1">
                           <User className="w-3 h-3" />
                           {cot.cliente_nombre || 'Sin cliente'}
                         </p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-muted">
                           {new Date(cot.created_at).toLocaleDateString('es-MX')} • Vence: {new Date(cot.fecha_vencimiento).toLocaleDateString('es-MX')}
                         </p>
                       </div>
@@ -390,7 +390,7 @@ export default function Cotizaciones() {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <p className="text-2xl font-display font-bold text-primary">{formatCurrency(cot.total)}</p>
-                        <p className="text-xs text-gray-500">{cot.num_items} item(s)</p>
+                        <p className="text-xs text-muted">{cot.num_items} item(s)</p>
                       </div>
                       {getEstadoBadge(cot.estado)}
                     </div>
@@ -411,7 +411,7 @@ export default function Cotizaciones() {
               <select
                 value={formData.cliente_id}
                 onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 required
               >
                 <option value="">Seleccionar cliente...</option>
@@ -427,7 +427,7 @@ export default function Cotizaciones() {
                 type="number"
                 value={formData.validez_dias}
                 onChange={(e) => setFormData({ ...formData, validez_dias: parseInt(e.target.value) || 15 })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 min="1"
                 max="90"
               />
@@ -445,7 +445,7 @@ export default function Cotizaciones() {
             
             <div className="space-y-2 max-h-64 overflow-y-auto border rounded-xl p-3">
               {items.map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center p-2 bg-gray-50 rounded-lg">
+                <div key={index} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center p-2 bg-primary/5 rounded-lg">
                   <select
                     value={item.tipo}
                     onChange={(e) => updateItem(index, 'tipo', e.target.value)}
@@ -492,7 +492,7 @@ export default function Cotizaciones() {
                   <button
                     type="button"
                     onClick={() => removeItem(index)}
-                    className="p-2 text-gray-400 hover:text-red-500"
+                    className="p-2 text-muted hover:text-red-500"
                   >
                     <XIcon size={16} />
                   </button>
@@ -505,11 +505,11 @@ export default function Cotizaciones() {
           <div className="flex justify-end">
             <div className="w-full max-w-xs space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Subtotal:</span>
+                <span className="text-muted">Subtotal:</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">Descuento:</span>
+                <span className="text-sm text-muted">Descuento:</span>
                 <input
                   type="number"
                   value={formData.descuento}
@@ -529,7 +529,7 @@ export default function Cotizaciones() {
             <textarea
               value={formData.notas}
               onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 resize-none"
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 resize-none"
               rows={2}
               placeholder="Notas adicionales..."
             />
@@ -550,21 +550,21 @@ export default function Cotizaciones() {
       <Modal isOpen={viewModalOpen} onClose={() => setViewModalOpen(false)} title={`Cotización ${selectedCotizacion?.numero}`} size="xl">
         {selectedCotizacion && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 bg-gray-50 rounded-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 bg-primary/5 rounded-xl">
               <div>
-                <p className="text-xs sm:text-sm text-gray-500">Cliente</p>
+                <p className="text-xs sm:text-sm text-muted">Cliente</p>
                 <p className="font-medium text-sm sm:text-base">{selectedCotizacion.cliente_nombre}</p>
               </div>
               <div>
-                <p className="text-xs sm:text-sm text-gray-500">Vendedor</p>
+                <p className="text-xs sm:text-sm text-muted">Vendedor</p>
                 <p className="font-medium text-sm sm:text-base">{selectedCotizacion.vendedor_nombre || 'N/A'}</p>
               </div>
               <div>
-                <p className="text-xs sm:text-sm text-gray-500">Fecha</p>
+                <p className="text-xs sm:text-sm text-muted">Fecha</p>
                 <p className="font-medium text-sm sm:text-base">{new Date(selectedCotizacion.created_at).toLocaleDateString('es-MX')}</p>
               </div>
               <div>
-                <p className="text-xs sm:text-sm text-gray-500">Vence</p>
+                <p className="text-xs sm:text-sm text-muted">Vence</p>
                 <p className="font-medium text-sm sm:text-base">{new Date(selectedCotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
               </div>
             </div>
@@ -573,7 +573,7 @@ export default function Cotizaciones() {
               <h4 className="font-medium mb-2 text-sm sm:text-base">Items</h4>
               <div className="border rounded-xl overflow-x-auto">
                 <table className="w-full text-xs sm:text-sm min-w-[400px]">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-primary/5">
                     <tr>
                       <th className="px-2 sm:px-4 py-2 text-left">Tipo</th>
                       <th className="px-2 sm:px-4 py-2 text-left hidden sm:table-cell">Categoría</th>
@@ -586,7 +586,7 @@ export default function Cotizaciones() {
                     {selectedCotizacion.detalles?.map((item, i) => (
                       <tr key={i}>
                         <td className="px-2 sm:px-4 py-2">{item.tipo}</td>
-                        <td className="px-2 sm:px-4 py-2 text-gray-500 hidden sm:table-cell">{item.categoria || '-'}</td>
+                        <td className="px-2 sm:px-4 py-2 text-muted hidden sm:table-cell">{item.categoria || '-'}</td>
                         <td className="px-2 sm:px-4 py-2 text-right">{item.cantidad}</td>
                         <td className="px-2 sm:px-4 py-2 text-right">{formatCurrency(item.precio_unitario)}</td>
                         <td className="px-2 sm:px-4 py-2 text-right font-medium">{formatCurrency(item.subtotal)}</td>
@@ -600,11 +600,11 @@ export default function Cotizaciones() {
             <div className="flex justify-end">
               <div className="w-full max-w-xs space-y-1 sm:space-y-2 text-right">
                 <div className="flex justify-between text-xs sm:text-sm">
-                  <span className="text-gray-500">Subtotal:</span>
+                  <span className="text-muted">Subtotal:</span>
                   <span>{formatCurrency(selectedCotizacion.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-xs sm:text-sm">
-                  <span className="text-gray-500">Descuento:</span>
+                  <span className="text-muted">Descuento:</span>
                   <span>-{formatCurrency(selectedCotizacion.descuento)}</span>
                 </div>
                 <div className="flex justify-between text-base sm:text-xl font-bold border-t pt-2">
@@ -615,8 +615,8 @@ export default function Cotizaciones() {
             </div>
 
             {selectedCotizacion.notas && (
-              <div className="p-3 sm:p-4 bg-gray-50 rounded-xl">
-                <p className="text-xs sm:text-sm text-gray-500 mb-1">Notas:</p>
+              <div className="p-3 sm:p-4 bg-primary/5 rounded-xl">
+                <p className="text-xs sm:text-sm text-muted mb-1">Notas:</p>
                 <p className="text-xs sm:text-sm">{selectedCotizacion.notas}</p>
               </div>
             )}

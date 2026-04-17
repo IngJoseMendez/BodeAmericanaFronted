@@ -81,19 +81,19 @@ function ConfirmDialogUI({
     danger: {
       icon: <Trash2 size={22} />,
       iconBg: 'bg-error/10 text-error',
-      btn: 'bg-error hover:bg-error/90 text-white',
+      btn: 'bg-error hover:bg-error/90 text-on-primary',
       defaultTitle: '¿Eliminar?',
     },
     warning: {
       icon: <AlertTriangle size={22} />,
-      iconBg: 'bg-amber-100 text-amber-600',
-      btn: 'bg-amber-500 hover:bg-amber-600 text-white',
+      iconBg: 'bg-warning/10 text-warning',
+      btn: 'bg-warning hover:bg-warning/90 text-on-surface',
       defaultTitle: '¿Estás seguro?',
     },
     info: {
       icon: <CheckCircle size={22} />,
       iconBg: 'bg-secondary/10 text-secondary',
-      btn: 'bg-secondary hover:bg-secondary/90 text-white',
+      btn: 'bg-secondary hover:bg-secondary/90 text-on-surface',
       defaultTitle: 'Confirmar acción',
     },
   };
@@ -104,8 +104,7 @@ function ConfirmDialogUI({
   return (
     /* Backdrop */
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ background: 'rgba(10,10,20,0.55)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 cmd-backdrop"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
     >
       {/* Card */}
@@ -123,7 +122,7 @@ function ConfirmDialogUI({
         {/* Close X */}
         <button
           onClick={onCancel}
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface transition-colors"
           aria-label="Cancelar"
         >
           <X size={16} />
@@ -151,7 +150,7 @@ function ConfirmDialogUI({
           <div className="flex justify-end gap-3 pt-2">
             <button
               onClick={onCancel}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-muted hover:text-primary hover:bg-gray-100 transition-colors"
+              className="px-4 py-2 rounded-xl text-sm font-medium text-muted hover:text-primary hover:bg-surface transition-colors"
             >
               {cancelText}
             </button>

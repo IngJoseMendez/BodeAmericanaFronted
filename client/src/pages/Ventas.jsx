@@ -168,7 +168,7 @@ export default function Ventas() {
           <CardBody className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
+                <thead className="bg-primary/5 border-b border-border/50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
@@ -186,7 +186,7 @@ export default function Ventas() {
                     <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No hay ventas</td></tr>
                   ) : (
                     ventas.map((venta) => (
-                      <tr key={venta.id} className="hover:bg-gray-50 transition-colors">
+                      <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
                         <td className="px-4 py-3 text-sm text-gray-500 font-mono">#{venta.id}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
                         <td className="px-4 py-3 text-sm text-primary font-medium">{venta.cliente_nombre}</td>
@@ -237,19 +237,19 @@ export default function Ventas() {
             />
           </div>
 
-          <div className="border-t border-gray-100 pt-4">
+          <div className="border-t border-border/50 pt-4">
             <label className="block text-sm font-medium text-primary mb-2">Seleccionar Pacas</label>
             <input
               type="text"
               placeholder="Buscar pacas..."
               value={buscarPacas}
               onChange={(e) => setBuscarPacas(e.target.value)}
-              className="w-full mb-3 px-3 py-2 rounded-lg border border-gray-200"
+              className="w-full mb-3 px-3 py-2 rounded-lg border border-border"
             />
             
-            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+            <div className="max-h-64 overflow-y-auto border border-border rounded-lg">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0">
+                <thead className="bg-primary/5 sticky top-0">
                   <tr>
                     <th className="px-3 py-2 text-left"></th>
                     <th className="px-3 py-2 text-left">Tipo</th>
@@ -267,7 +267,7 @@ export default function Ventas() {
                             type="checkbox"
                             checked={!!selected}
                             onChange={() => togglePaca(paca)}
-                            className="rounded border-gray-300"
+                            className="rounded border-border"
                           />
                         </td>
                         <td className="px-3 py-2">{paca.tipo}</td>
@@ -292,7 +292,7 @@ export default function Ventas() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg">
             <span className="text-sm text-gray-500">Total ({pacasSeleccionadas.length} pacas)</span>
             <span className="text-xl font-display text-primary">{formatCurrency(totalVenta)}</span>
           </div>

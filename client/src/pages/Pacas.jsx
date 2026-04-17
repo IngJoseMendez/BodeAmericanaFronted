@@ -248,21 +248,21 @@ export default function Pacas() {
               placeholder="Buscar por UUID o notas..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
             />
           </div>
           <div className="flex gap-2 flex-wrap items-center">
             <div className="flex rounded-xl border border-border overflow-hidden">
               <button
                 onClick={() => setVistaAgrupada(true)}
-                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-primary font-medium' : 'bg-white text-muted hover:bg-gray-50'}`}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-on-surface font-medium' : 'bg-surface text-muted hover:bg-primary/5'}`}
               >
                 <Grid size={16} />
                 <span className="hidden sm:inline">Agrupado</span>
               </button>
               <button
                 onClick={() => setVistaAgrupada(false)}
-                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-primary font-medium' : 'bg-white text-muted hover:bg-gray-50'}`}
+                className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-on-surface font-medium' : 'bg-surface text-muted hover:bg-primary/5'}`}
               >
                 <List size={16} />
                 <span className="hidden sm:inline">Lista</span>
@@ -271,7 +271,7 @@ export default function Pacas() {
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los estados</option>
               {PACA_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
@@ -279,7 +279,7 @@ export default function Pacas() {
             <select
               value={filtroTipo}
               onChange={(e) => setFiltroTipo(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los tipos</option>
               {tiposList.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}

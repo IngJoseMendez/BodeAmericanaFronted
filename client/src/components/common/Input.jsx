@@ -64,10 +64,10 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
           onFocus={handleFocus}
           placeholder={placeholder}
           className={`
-            w-full px-4 py-3 rounded-xl border bg-white text-primary placeholder-gray-400
+            w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
             transition-all duration-300 ease-out
             focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:bg-gray-50 disabled:cursor-not-allowed
+            disabled:opacity-50 disabled:cursor-not-allowed
             ${prefix ? 'pl-8' : ''}
             ${error ? 'border-error focus:ring-error/30' : 'border-border'}
             ${className}
@@ -138,10 +138,10 @@ export function NumberInput({ label, value, onChange, error, className = '', pla
           onFocus={handleFocus}
           placeholder={placeholder}
           className={`
-            w-full px-4 py-3 rounded-xl border bg-white text-primary placeholder-gray-400
+            w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
             transition-all duration-300 ease-out
             focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:bg-gray-50 disabled:cursor-not-allowed
+            disabled:opacity-50 disabled:cursor-not-allowed
             ${suffix ? 'pr-12' : ''}
             ${error ? 'border-error focus:ring-error/30' : 'border-border'}
             ${className}
@@ -173,10 +173,10 @@ export const Input = ({ label, error, className = '', type, ...props }) => {
       )}
       <input
         className={`
-          w-full px-4 py-3 rounded-xl border bg-white text-primary placeholder-gray-400
+          w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
           transition-all duration-300 ease-out
           focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-          disabled:bg-gray-50 disabled:cursor-not-allowed
+          disabled:opacity-50 disabled:cursor-not-allowed
           ${error ? 'border-error focus:ring-error/30' : 'border-border'}
           ${className}
         `}
@@ -197,10 +197,10 @@ export function Select({ label, error, options = [], className = '', placeholder
       <div className="relative">
         <select
           className={`
-            w-full px-4 py-3 rounded-xl border bg-white text-primary appearance-none
+            w-full px-4 py-3 rounded-xl border bg-surface text-primary appearance-none
             transition-all duration-300 ease-out
             focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:bg-gray-50 disabled:cursor-not-allowed
+            disabled:opacity-50 disabled:cursor-not-allowed
             ${error ? 'border-error focus:ring-error/30' : 'border-border'}
             ${className}
           `}
@@ -214,7 +214,7 @@ export function Select({ label, error, options = [], className = '', placeholder
           ))}
         </select>
         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
@@ -232,10 +232,10 @@ export function Textarea({ label, error, className = '', ...props }) {
       )}
       <textarea
         className={`
-          w-full px-4 py-3 rounded-xl border bg-white text-primary placeholder-gray-400
+          w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
           transition-all duration-300 ease-out
           focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-          disabled:bg-gray-50 disabled:cursor-not-allowed resize-none
+          disabled:opacity-50 disabled:cursor-not-allowed resize-none
           ${error ? 'border-error focus:ring-error/30' : 'border-border'}
           ${className}
         `}

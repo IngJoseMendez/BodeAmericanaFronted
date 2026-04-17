@@ -18,6 +18,11 @@
   --color-surface: #ffffff;
   --color-muted: #6b7280;
   --color-border: #e5e0db;
+  --color-on-primary: #ffffff;
+  --color-on-surface: #0f0f1a;
+  --color-sidebar-bg: #1a1a2e;
+  --color-sidebar-text: #ffffff;
+  --color-sidebar-border: #2d2d44;
 
   --shadow-sm: 0 1px 2px rgba(15, 15, 26, 0.04);
   --shadow-md: 0 4px 12px rgba(15, 15, 26, 0.08);
@@ -41,6 +46,11 @@
   --color-surface: #1c1c28;
   --color-muted: #9ca3af;
   --color-border: #2a2a3a;
+  --color-on-primary: #0f0f1a;
+  --color-on-surface: #1c1c28;
+  --color-sidebar-bg: #0a0a12;
+  --color-sidebar-text: #f0ede8;
+  --color-sidebar-border: #2a2a3a;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -232,6 +242,10 @@ select {
 .delay-150 { animation-delay: 150ms; }
 .delay-225 { animation-delay: 225ms; }
 .delay-300 { animation-delay: 300ms; }
+.delay-375 { animation-delay: 375ms; }
+.delay-450 { animation-delay: 450ms; }
+.delay-525 { animation-delay: 525ms; }
+.delay-600 { animation-delay: 600ms; }
 
 /* ============================================
    REDUCED MOTION — ACCESSIBILITY (CRITICO)
@@ -251,13 +265,14 @@ select {
    GLASS + GLOW EFFECTS
    ============================================ */
 .glass {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
 :root[data-theme="dark"] .glass {
-  background: rgba(28, 28, 40, 0.85);
+  background: rgba(28, 28, 40, 0.9);
+  border-color: var(--color-border);
 }
 
 .glow-secondary { box-shadow: 0 0 20px rgba(212, 163, 115, 0.3); }
@@ -282,6 +297,11 @@ select {
   transition: all 0.3s ease;
 }
 
+[data-theme="dark"] .search-input {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 .search-input:focus {
   background: rgba(255, 255, 255, 0.15);
   border-color: var(--color-secondary);
@@ -289,6 +309,8 @@ select {
 }
 
 .search-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+
+[data-theme="dark"] .search-input::placeholder { color: rgba(255, 255, 255, 0.3); }
 
 /* ============================================
    CUSTOM SCROLLBAR
@@ -401,4 +423,71 @@ body,
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+}
+
+/* ============================================
+   DARK MODE OVERRIDES FOR TAILWIND UTILITIES
+   ============================================ */
+[data-theme="dark"] .bg-white {
+  background-color: var(--color-surface);
+}
+
+[data-theme="dark"] .text-white {
+  color: var(--color-on-surface);
+}
+
+[data-theme="dark"] .text-gray-50,
+[data-theme="dark"] .text-gray-100,
+[data-theme="dark"] .text-gray-200,
+[data-theme="dark"] .text-gray-300,
+[data-theme="dark"] .text-gray-400,
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-gray-600 {
+  color: var(--color-muted);
+}
+
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-100,
+[data-theme="dark"] .bg-gray-200 {
+  background-color: var(--color-surface);
+}
+
+[data-theme="dark"] .bg-gray-300 {
+  background-color: var(--color-border);
+}
+
+[data-theme="dark"] .bg-slate-900 {
+  background-color: var(--color-surface);
+}
+
+[data-theme="dark"] .text-slate-900 {
+  color: var(--color-primary);
+}
+
+[data-theme="dark"] .hover\:bg-gray-50:hover {
+  background-color: rgba(240, 237, 232, 0.05) !important;
+}
+
+[data-theme="dark"] .hover\:bg-gray-100:hover {
+  background-color: rgba(240, 237, 232, 0.1) !important;
+}
+
+[data-theme="dark"] .border-gray-200 {
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .border-gray-300 {
+  border-color: var(--color-border);
+}
+
+[data-theme="dark"] .border-gray-100 {
+  border-color: rgba(240, 237, 232, 0.1);
+}
+
+[data-theme="dark"] .hover\:text-gray-600:hover {
+  color: var(--color-primary);
+}
+
+[data-theme="dark"] .hover\:text-gray-500:hover {
+  color: var(--color-muted);
 }

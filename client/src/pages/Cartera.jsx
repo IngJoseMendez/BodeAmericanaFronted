@@ -496,12 +496,12 @@ export default function Cartera() {
             placeholder="Buscar cliente por nombre, ciudad o teléfono..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+            className="w-full pl-12 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
             >
               <X size={18} />
             </button>
@@ -740,14 +740,14 @@ export default function Cartera() {
                     setShowClienteList(true);
                   }}
                   onFocus={() => clienteSearch && setShowClienteList(true)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                 />
               </div>
             )}
             
             {/* Lista de clientes filtrados - solo mostrar si hay texto y no hay cliente seleccionado */}
             {!formData.cliente_id && clienteSearch && (
-              <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+              <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
                 {clientes
                   .filter(c => 
                     c.nombre?.toLowerCase().includes(clienteSearch.toLowerCase()) ||

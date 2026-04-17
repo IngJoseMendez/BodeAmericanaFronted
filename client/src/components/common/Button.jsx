@@ -13,22 +13,22 @@ export function Button({
 }) {
   const clickedRef = useRef(false);
   
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]';
+  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97] active:transition-transform active:duration-75';
   
   const variants = {
-    primary: 'bg-primary text-white hover:bg-opacity-90 focus:ring-primary shadow-md hover:shadow-lg hover:shadow-primary/20',
-    secondary: 'bg-secondary text-primary hover:bg-opacity-90 focus:ring-secondary shadow-md hover:shadow-glow',
-    accent: 'bg-accent text-white hover:bg-opacity-90 focus:ring-accent shadow-md hover:shadow-accent/20',
-    ghost: 'bg-transparent text-primary hover:bg-primary/5 focus:ring-primary/20',
-    danger: 'bg-error text-white hover:bg-opacity-90 focus:ring-error shadow-md hover:shadow-error/20',
-    outline: 'border-2 border-primary text-primary hover:bg-primary hover:text-white focus:ring-primary',
+    primary:   'bg-secondary text-primary hover:opacity-90 focus:ring-secondary shadow-md hover:shadow-lg hover:shadow-glow font-semibold',
+    secondary: 'bg-secondary text-primary hover:opacity-90 focus:ring-secondary shadow-md hover:shadow-lg font-semibold',
+    accent:    'bg-accent text-white hover:opacity-90 focus:ring-accent shadow-md hover:shadow-accent/20',
+    ghost:     'bg-transparent text-primary hover:bg-primary/5 focus:ring-primary/20',
+    danger:    'bg-error text-white hover:opacity-90 focus:ring-error shadow-md hover:shadow-error/20',
+    outline:   'border-2 border-primary text-primary hover:bg-primary/10 focus:ring-primary',
   };
   
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs gap-1.5',
-    md: 'px-4 py-2.5 text-sm gap-2',
-    lg: 'px-6 py-3 text-base gap-2',
-    xl: 'px-8 py-4 text-lg gap-2.5',
+    sm: 'px-3 py-2.5 text-xs gap-1.5 min-h-[36px]',
+    md: 'px-4 py-3 text-sm gap-2 min-h-[44px]',
+    lg: 'px-6 py-3.5 text-base gap-2 min-h-[48px]',
+    xl: 'px-8 py-4 text-lg gap-2.5 min-h-[52px]',
   };
 
   const handleClick = (e) => {

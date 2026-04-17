@@ -107,14 +107,14 @@ export default function Catalogo() {
               placeholder="Buscar..."
               value={buscar}
               onChange={(e) => setBuscar(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-border bg-white"
+              className="w-full px-4 py-3 rounded-xl border border-border bg-surface"
             />
           </div>
           <div className="flex gap-2">
             <select
               value={filtroTipo}
               onChange={(e) => setFiltroTipo(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los tipos</option>
               {PACA_TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
@@ -122,7 +122,7 @@ export default function Catalogo() {
             <select
               value={filtroCategoria}
               onChange={(e) => setFiltroCategoria(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-white"
+              className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todas las categorías</option>
               {PACA_CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -174,7 +174,7 @@ export default function Catalogo() {
                         <td className="px-4 py-3">
                           <button
                             onClick={() => toggleSeleccion(paca)}
-                            className={`p-2 rounded-lg transition-all ${selected ? 'bg-success text-white' : 'bg-gray-100 text-gray-400 hover:bg-success/20'}`}
+                            className={`p-2 rounded-lg transition-all ${selected ? 'bg-success text-on-primary' : 'bg-primary/5 text-muted hover:bg-success/20'}`}
                           >
                             <Check size={16} />
                           </button>

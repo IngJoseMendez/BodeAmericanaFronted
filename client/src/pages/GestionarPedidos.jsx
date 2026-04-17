@@ -180,24 +180,24 @@ export default function GestionarPedidos() {
                         setShowClienteList(true);
                       }}
                       onFocus={() => searchCliente && setShowClienteList(true)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                     />
                   </div>
                 )}
                 
                 {/* Lista desplegable de clientes - solo mostrar si hay texto y no hay filtro */}
                 {!filtroCliente && searchCliente && (
-                  <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                  <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {clientesFiltrados.length > 0 ? (
                       clientesFiltrados.slice(0, 10).map(cliente => (
                         <div
                           key={cliente.id}
                           onClick={() => seleccionarCliente(cliente)}
-                          className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                          className="px-4 py-3 cursor-pointer hover:bg-primary/5 border-b border-border last:border-b-0"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="p-2 bg-gray-100 rounded-lg">
-                              <User className="w-4 h-4 text-gray-500" />
+                            <div className="p-2 bg-primary/5 rounded-lg">
+                              <User className="w-4 h-4 text-muted" />
                             </div>
                             <div className="flex-1">
                               <p className="font-medium text-sm">{cliente.nombre}</p>
@@ -221,7 +221,7 @@ export default function GestionarPedidos() {
                 <select
                   value={filtroEstado}
                   onChange={(e) => setFiltroEstado(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                 >
                   <option value="">Todos</option>
                   <option value="pendiente">Pendientes</option>

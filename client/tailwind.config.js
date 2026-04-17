@@ -7,16 +7,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#0f0f1a',
-        secondary: '#d4a373',
-        accent: '#bc4749',
-        success: '#6a994e',
-        warning: '#e9c46a',
-        error: '#bc4749',
-        cream: '#faf8f5',
-        surface: '#ffffff',
-        muted: '#6b7280',
-        border: '#e5e0db',
+        primary: 'var(--color-primary)',
+        secondary: 'var(--color-secondary)',
+        accent: 'var(--color-accent)',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        error: 'var(--color-error)',
+        cream: 'var(--color-cream)',
+        surface: 'var(--color-surface)',
+        muted: 'var(--color-muted)',
+        border: 'var(--color-border)',
       },
       fontFamily: {
         display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],
