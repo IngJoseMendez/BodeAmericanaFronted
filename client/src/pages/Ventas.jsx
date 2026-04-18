@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
-import { ventasApi, pacasApi, clientesApi } from '../services/api';
+import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
-import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard } from 'lucide-react';
+import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -28,24 +30,58 @@ export default function Ventas() {
   const [pacasDisponibles, setPacasDisponibles] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
+  const [despachoModalOpen, setDespachoModalOpen] = useState(false);
+  const [ventaCompletada, setVentaCompletada] = useState(null);
+  const [despachoData, setDespachoData] = useState(null);
+  const [filtroVista, setFiltroVista] = useState('disponible'); // disponible, reservada, ventas
+  const [reservasActivas, setReservasActivas] = useState([]);
+  const [reservaModalOpen, setReservaModalOpen] = useState(false);
+  const [reservaForm, setReservaForm] = useState({ cliente_id: '', cantidad: 1, notas: '', dias_expiracion: 7 });
+  const [pacasReservadas, setPacasReservadas] = useState([]);
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
   const { addToast } = useToast();
   const confirm = useConfirm();
   
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
 
-  useEffect(() => {
+useEffect(() => {
     loadVentas();
-  }, []);
+    loadClientes();
+    if (filtroVista === 'reservada') {
+      loadReservas();
+    }
+  }, [filtroVista, pagina]);
 
-  const loadVentas = async () => {
+  const loadVentas = async (page = 1) => {
     try {
-      const response = await ventasApi.getAll();
+      const response = await ventasApi.getAll({ pagina: page, limite: 20 });
       const data = response.data || response;
       setVentas(Array.isArray(data) ? data : []);
+      if (response.total_paginas) setTotalPaginas(response.total_paginas);
+      setPagina(response.pagina || page);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
       setLoading(false);
+    }
+};
+
+  const loadReservas = async () => {
+    try {
+      const data = await reservasApi.getAll({ estado: 'activa' });
+      setReservasActivas(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const loadClientes = async () => {
+    try {
+      const clientesRes = await clientesApi.getAll({ estado: 'activo' });
+      setClientes((clientesRes.data || clientesRes) || []);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -102,15 +138,32 @@ export default function Ventas() {
     }
 
     try {
-      await ventasApi.create({
+      const result = await ventasApi.create({
         cliente_id: parseInt(formData.cliente_id),
         tipo_pago: formData.tipo_pago,
         fecha: formData.fecha,
         pacas: pacasSeleccionadas.map(p => ({ id: p.id, precio_venta: p.precio_venta }))
       });
       
+      const cliente = clientes.find(c => c.id === parseInt(formData.cliente_id));
+      const ventaInfo = {
+        ...result,
+        cliente,
+        pacas: pacasSeleccionadas,
+        total: totalVenta,
+        fecha: formData.fecha,
+        tipo_pago: formData.tipo_pago
+      };
+      
+      setVentaCompletada(ventaInfo);
+      setDespachoData(ventaInfo);
+      setDespachoModalOpen(true);
+      
       addToast(`Venta registrada — ${pacasSeleccionadas.length} paca(s) por ${formatCurrency(totalVenta)}`, 'success');
       setModalOpen(false);
+      // Reset form after successful sale
+      setFormData({ cliente_id: '', tipo_pago: 'contado', fecha: new Date().toISOString().split('T')[0] });
+      setPacasSeleccionadas([]);
       loadVentas();
     } catch (err) {
       setError(err.message);
@@ -145,70 +198,473 @@ export default function Ventas() {
     return new Date(date).toLocaleDateString('es-MX');
   };
 
+  const descargarExcel = async (data) => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Bodega Americana';
+    wb.created = new Date();
+    
+    const ws = wb.addWorksheet('Venta');
+    ws.properties.tabColor = '1a1a2e';
+    
+    // Título
+    ws.mergeCells('A1:D1');
+    ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
+    ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+    ws.getCell('A1').alignment = { horizontal: 'center' };
+    
+    // Datos del cliente
+    ws.getCell('A3').value = 'Cliente:';
+    ws.getCell('B3').value = data.cliente?.nombre || 'N/A';
+    ws.getCell('A4').value = 'Fecha:';
+    ws.getCell('B4').value = data.fecha;
+    ws.getCell('A5').value = 'Tipo de Pago:';
+    ws.getCell('B5').value = data.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
+    ws.getCell('A6').value = 'Folio:';
+    ws.getCell('B6').value = data.uuid?.slice(0, 8).toUpperCase();
+    
+    // Encabezados
+    const headersRow = 8;
+    ['Tipo', 'Categoría', 'Precio Unitario'].forEach((h, i) => {
+      const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
+      cell.value = h;
+      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+    });
+    
+    // Datos de pacas
+    let row = 9;
+    data.pacas.forEach(paca => {
+      ws.getCell(`A${row}`).value = paca.tipo;
+      ws.getCell(`B${row}`).value = paca.categoria;
+      ws.getCell(`C${row}`).value = parseFloat(paca.precio_venta);
+      ws.getCell(`C${row}`).numFmt = '$#,##0.00';
+      row++;
+    });
+    
+    // Total
+    ws.getCell(`A${row}`).value = 'TOTAL';
+    ws.getCell(`A${row}`).font = { bold: true };
+    ws.getCell(`C${row}`).value = data.total;
+    ws.getCell(`C${row}`).numFmt = '$#,##0.00';
+    ws.getCell(`C${row}`).font = { bold: true };
+    
+    // Ajustar anchos
+    ws.getColumn(1).width = 25;
+    ws.getColumn(2).width = 15;
+    ws.getColumn(3).width = 18;
+    
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Venta_${data.uuid?.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    
+    addToast('Excel descargado', 'success');
+  };
+
+  const descargarPDF = (data) => {
+    const doc = new jsPDF();
+    
+    // Título
+    doc.setFontSize(18);
+    doc.setTextColor(26, 26, 46);
+    doc.text('BODEGA AMERICANA', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text('Comprobante de Venta', 105, 28, { align: 'center' });
+    doc.text(`Folio: ${data.uuid?.slice(0, 8).toUpperCase()}`, 105, 34, { align: 'center' });
+    
+    // Datos
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.text(`Cliente: ${data.cliente?.nombre || 'N/A'}`, 20, 50);
+    doc.text(`Fecha: ${formatDate(data.fecha)}`, 20, 56);
+    doc.text(`Tipo de Pago: ${data.tipo_pago === 'contado' ? 'Contado' : 'Crédito'}`, 20, 62);
+    
+    // Tabla de productos
+    const tableData = data.pacas.map(p => [p.tipo, p.categoria, formatCurrency(p.precio_venta)]);
+    tableData.push(['TOTAL', '', formatCurrency(data.total)]);
+    
+    autoTable(doc, {
+      startY: 75,
+      head: [['Tipo', 'Categoría', 'Precio']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [26, 26, 46] },
+      footStyles: { fillColor: [26, 26, 46], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 9 }
+    });
+    
+    doc.save(`Venta_${data.uuid?.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`);
+    addToast('PDF descargado', 'success');
+  };
+
   const filteredPacas = buscarPacas 
     ? pacasDisponibles.filter(p => 
         p.tipo.includes(buscarPacas) || p.uuid.includes(buscarPacas)
       )
     : pacasDisponibles;
 
+  const openReservaModal = () => {
+    if (clientes.length === 0) {
+      loadClientes();
+    }
+    setReservaForm({ cliente_id: '', cantidad: 1, notas: '', dias_expiracion: 7 });
+    setReservaModalOpen(true);
+  };
+
+  const handleCrearReserva = async () => {
+    if (!reservaForm.cliente_id) {
+      addToast('Selecciona un cliente', 'error');
+      return;
+    }
+    if (pacasSeleccionadas.length === 0) {
+      addToast('Selecciona al menos una paca', 'error');
+      return;
+    }
+    try {
+      for (const paca of pacasSeleccionadas) {
+        await reservasApi.create({
+          cliente_id: parseInt(reservaForm.cliente_id),
+          paca_id: paca.id,
+          cantidad: 1,
+          notas: reservaForm.notas,
+          dias_expiracion: parseInt(reservaForm.dias_expiracion)
+        });
+      }
+      addToast(`${pacasSeleccionadas.length} reserva(s) creada(s)`, 'success');
+      setReservaModalOpen(false);
+      setPacasSeleccionadas([]);
+      loadPacasDisponibles();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const loadPacasDisponibles = async () => {
+    try {
+      const pacasRes = await pacasApi.getAll({ estado: 'disponible' });
+      setPacasDisponibles((pacasRes.data || pacasRes) || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const convertirReservaAVenta = async (reserva) => {
+    try {
+      await ventasApi.create({
+        cliente_id: reserva.cliente_id,
+        tipo_pago: 'contado',
+        fecha: new Date().toISOString().split('T')[0],
+        pacas: [{ id: reserva.paca_id, precio_venta: reserva.precio_venta }]
+      });
+      addToast('Reserva convertida a venta exitosamente', 'success');
+      loadReservas();
+      loadVentas();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const descargarExcelVenta = async (venta) => {
+    try {
+      const ventaDetalle = await ventasApi.getOne(venta.id);
+      const cliente = clientes.find(c => c.id === venta.cliente_id) || {};
+      
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Bodega Americana';
+      wb.created = new Date();
+      
+      const ws = wb.addWorksheet('Venta');
+      ws.properties.tabColor = '1a1a2e';
+      
+      ws.mergeCells('A1:E1');
+      ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
+      ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+      ws.getCell('A1').alignment = { horizontal: 'center' };
+      
+      ws.getCell('A3').value = 'Folio:';
+      ws.getCell('B3').value = venta.uuid?.slice(0, 8).toUpperCase();
+      ws.getCell('A4').value = 'Cliente:';
+      ws.getCell('B4').value = ventaDetalle.cliente_nombre || cliente.nombre || 'N/A';
+      ws.getCell('A5').value = 'Fecha:';
+      ws.getCell('B5').value = new Date(venta.fecha).toLocaleDateString('es-MX');
+      ws.getCell('A6').value = 'Tipo de Pago:';
+      ws.getCell('B6').value = venta.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
+      
+      const headersRow = 8;
+      ['Cantidad', 'Tipo', 'Categoría', 'Peso (kg)', 'Precio Unitario'].forEach((h, i) => {
+        const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+      });
+      
+      let row = 9;
+      let total = 0;
+      (ventaDetalle.detalles || []).forEach(paca => {
+        ws.getCell(`A${row}`).value = 1;
+        ws.getCell(`B${row}`).value = paca.tipo || paca.paca_tipo || '';
+        ws.getCell(`C${row}`).value = paca.categoria || paca.paca_categoria || '';
+        ws.getCell(`D${row}`).value = paca.peso || '';
+        ws.getCell(`E${row}`).value = parseFloat(paca.precio_unitario || 0);
+        ws.getCell(`E${row}`).numFmt = '$#,##0.00';
+        total += parseFloat(paca.precio_unitario || 0);
+        row++;
+      });
+      
+      ws.getCell(`A${row}`).value = 'TOTAL';
+      ws.getCell(`A${row}`).font = { bold: true };
+      ws.getCell(`E${row}`).value = total;
+      ws.getCell(`E${row}`).numFmt = '$#,##0.00';
+      ws.getCell(`E${row}`).font = { bold: true };
+      
+      ws.getColumn(1).width = 10;
+      ws.getColumn(2).width = 20;
+      ws.getColumn(3).width = 12;
+      ws.getColumn(4).width = 12;
+      ws.getColumn(5).width = 18;
+      
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Venta_${venta.uuid?.slice(0, 8)}_${venta.fecha}.xlsx`;
+      link.click();
+      
+      addToast('Excel descargado', 'success');
+    } catch (err) {
+      addToast('Error al descargar: ' + err.message, 'error');
+    }
+  };
+
+  const getClienteNombre = (clienteId) => {
+    const cliente = clientes.find(c => c.id === clienteId);
+    return cliente?.nombre || `Cliente #${clienteId}`;
+  };
+
   return (
     <Layout title="Ventas" subtitle={`${ventas.length} ventas registradas`}>
       <div className="space-y-4">
-        <div className="flex justify-end">
-          <Button onClick={openModal} variant="secondary">
-            <Plus size={18} className="mr-1" /> Nueva Venta
-          </Button>
+        {/* Filtros / Tabs */}
+        <div className="flex gap-2 border-b border-border pb-2">
+          <button
+            onClick={() => setFiltroVista('disponible')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              filtroVista === 'disponible' 
+                ? 'bg-primary text-white' 
+                : 'text-muted hover:bg-primary/5'
+            }`}
+          >
+            Nueva Venta
+          </button>
+          <button
+            onClick={() => setFiltroVista('reservada')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              filtroVista === 'reservada' 
+                ? 'bg-info text-white' 
+                : 'text-muted hover:bg-primary/5'
+            }`}
+          >
+            Reservas ({reservasActivas.length})
+          </button>
+          <button
+            onClick={() => setFiltroVista('ventas')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              filtroVista === 'ventas' 
+                ? 'bg-success text-white' 
+                : 'text-muted hover:bg-primary/5'
+            }`}
+          >
+            Ventas Realizadas
+          </button>
         </div>
 
-        {error && (
-          <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
+        {/* Vista de Nueva Venta */}
+        {filtroVista === 'disponible' && (
+          <>
+            <div className="flex justify-end gap-2">
+              <Button onClick={openReservaModal} variant="info" disabled={pacasSeleccionadas.length === 0}>
+                <Calendar size={18} className="mr-1" /> Reservar ({pacasSeleccionadas.length})
+              </Button>
+              <Button onClick={openModal} variant="secondary">
+                <Plus size={18} className="mr-1" /> Nueva Venta
+              </Button>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
+            )}
+
+            {/* Vista de Nueva Venta - Tabla de ventas */}
+            <Card>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-primary/5 border-b border-border/50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Pago</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {loading ? (
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Cargando...</td></tr>
+                      ) : ventas.length === 0 ? (
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No hay ventas</td></tr>
+                      ) : (
+                        ventas.map((venta) => (
+                          <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
+                            <td className="px-4 py-3 text-sm text-gray-500 font-mono">#{venta.id}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
+                            <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
+                            <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
+                            <td className="px-4 py-3 text-sm text-primary font-medium">{formatCurrency(venta.total)}</td>
+                            <td className="px-4 py-3"><Badge variant="disponible">{venta.estado}</Badge></td>
+                            <td className="px-4 py-3 text-right flex gap-1 justify-end">
+                              <button 
+                                onClick={() => descargarExcelVenta(venta)} 
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-success hover:bg-success/10"
+                                title="Descargar Excel"
+                              >
+                                <FileSpreadsheet size={16} />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(venta.id)} 
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-error hover:bg-error/10"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+</tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+            
+            {/* Paginación */}
+            {totalPaginas > 1 && (
+              <div className="flex justify-center items-center gap-2 py-4 border-t border-border">
+                <button
+                  onClick={() => setPagina(p => Math.max(1, p - 1))}
+                  disabled={pagina === 1}
+                  className="px-3 py-1 rounded-lg border border-border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
+                >
+                  Anterior
+                </button>
+                <span className="text-sm text-muted">
+                  Página {pagina} de {totalPaginas}
+                </span>
+                <button
+                  onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                  disabled={pagina === totalPaginas}
+                  className="px-3 py-1 rounded-lg border border-border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </>
         )}
 
-        <Card>
-          <CardBody className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-primary/5 border-b border-border/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Pago</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {loading ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Cargando...</td></tr>
-                  ) : ventas.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No hay ventas</td></tr>
-                  ) : (
-                    ventas.map((venta) => (
-                      <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-4 py-3 text-sm text-gray-500 font-mono">#{venta.id}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
-                        <td className="px-4 py-3 text-sm text-primary font-medium">{venta.cliente_nombre}</td>
-                        <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
-                        <td className="px-4 py-3 text-sm text-primary font-medium">{formatCurrency(venta.total)}</td>
-                        <td className="px-4 py-3"><Badge variant="disponible">{venta.estado}</Badge></td>
-                        <td className="px-4 py-3 text-right">
-                          <button 
-                            onClick={() => handleDelete(venta.id)} 
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-error hover:bg-error/10"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
+        {/* Vista de Reservas */}
+        {filtroVista === 'reservada' && (
+          <Card>
+            <CardBody className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-info/10 border-b border-border/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paca</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Precio</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expiración</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notas</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {reservasActivas.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay reservas activas</td></tr>
+                    ) : (
+                      reservasActivas.map((reserva) => (
+                        <tr key={reserva.id} className="hover:bg-info/5 transition-colors">
+                          <td className="px-4 py-3 text-sm">
+                            <div className="font-medium">{reserva.paca_tipo}</div>
+                            <div className="text-xs text-muted">{reserva.paca_categoria}</div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-primary font-medium">{reserva.cliente_nombre}</td>
+                          <td className="px-4 py-3 text-sm">{formatCurrency(reserva.precio_venta)}</td>
+                          <td className="px-4 py-3 text-sm text-muted">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
+                          <td className="px-4 py-3 text-sm text-muted max-w-xs truncate">{reserva.notas || '-'}</td>
+                          <td className="px-4 py-3 text-right">
+                            <Button size="sm" onClick={() => convertirReservaAVenta(reserva)} variant="success">
+                              Pasar a Venta
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {/* Vista de Ventas Realizadas */}
+        {filtroVista === 'ventas' && (
+          <Card>
+            <CardBody className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-success/10 border-b border-border/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Folio</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Pago</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {ventas.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay ventas realizadas</td></tr>
+                    ) : (
+                      ventas.map((venta) => (
+                        <tr key={venta.id} className="hover:bg-success/5 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">{venta.uuid?.slice(0, 8).toUpperCase()}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
+                          <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
+                          <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
+                          <td className="px-4 py-3 text-sm text-primary font-bold">{formatCurrency(venta.total)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <Button size="sm" variant="success" onClick={() => descargarExcelVenta(venta)}>
+                              <FileSpreadsheet size={14} className="mr-1" /> Excel
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
+        )}
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Nueva Venta" size="xl">
@@ -302,6 +758,130 @@ export default function Ventas() {
             <Button type="submit" variant="secondary">Confirmar Venta</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal de Despacho Post-Venta */}
+      <Modal isOpen={despachoModalOpen} onClose={() => { setDespachoModalOpen(false); setPacasSeleccionadas([]); }} title="Comprobante de Venta" size="lg">
+        {despachoData && (
+          <div className="space-y-6">
+            {/* Encabezado */}
+            <div className="text-center border-b pb-4">
+              <h2 className="text-xl font-bold text-primary">BODEGA AMERICANA</h2>
+              <p className="text-sm text-muted">Comprobante de Venta</p>
+              <p className="text-xs text-muted">Folio: {despachoData.uuid?.slice(0, 8).toUpperCase()}</p>
+            </div>
+
+            {/* Datos de la venta */}
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted">Cliente</p>
+                <p className="font-medium">{despachoData.cliente?.nombre || 'Cliente'}</p>
+              </div>
+              <div>
+                <p className="text-muted">Fecha</p>
+                <p className="font-medium">{formatDate(despachoData.fecha)}</p>
+              </div>
+              <div>
+                <p className="text-muted">Tipo de Pago</p>
+                <p className="font-medium">{despachoData.tipo_pago === 'contado' ? 'Contado' : 'Crédito'}</p>
+              </div>
+              <div>
+                <p className="text-muted">Total</p>
+                <p className="font-bold text-lg text-primary">{formatCurrency(despachoData.total)}</p>
+              </div>
+            </div>
+
+            {/* Detalle de pacas */}
+            <div>
+              <h3 className="font-medium text-sm text-muted mb-2">Detalle de Productos</h3>
+              <table className="w-full text-sm">
+                <thead className="bg-primary/5">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Tipo</th>
+                    <th className="px-3 py-2 text-left">Categoría</th>
+                    <th className="px-3 py-2 text-right">Precio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {despachoData.pacas.map((paca, i) => (
+                    <tr key={i} className="border-b">
+                      <td className="px-3 py-2">{paca.tipo}</td>
+                      <td className="px-3 py-2 text-muted">{paca.categoria}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(paca.precio_venta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-bold">
+                    <td colSpan={2} className="px-3 py-2 text-right">Total:</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(despachoData.total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Botones de descarga */}
+            <div className="flex gap-3 pt-4">
+              <Button onClick={() => descargarExcel(despachoData)} variant="secondary" className="flex-1">
+                <FileSpreadsheet size={18} className="mr-2" />
+                Descargar Excel
+              </Button>
+              <Button onClick={() => descargarPDF(despachoData)} variant="primary" className="flex-1">
+                <FileText size={18} className="mr-2" />
+                Descargar PDF
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal de Reserva desde Ventas */}
+      <Modal isOpen={reservaModalOpen} onClose={() => setReservaModalOpen(false)} title="Reservar Paca(s)">
+        <div className="space-y-4">
+          <div className="p-4 bg-info/10 rounded-xl border border-info/20">
+            <p className="text-sm text-muted">Pacas a reservar: {pacasSeleccionadas.length}</p>
+            <p className="font-medium text-primary">
+              {pacasSeleccionadas.slice(0, 3).map(p => p.tipo).join(', ')}
+              {pacasSeleccionadas.length > 3 && ` + ${pacasSeleccionadas.length - 3} más`}
+            </p>
+            <p className="text-sm text-muted mt-1">Total: {formatCurrency(totalVenta)}</p>
+          </div>
+
+          <Select
+            label="Cliente"
+            value={reservaForm.cliente_id}
+            onChange={(e) => setReservaForm({ ...reservaForm, cliente_id: e.target.value })}
+            options={[{ value: '', label: 'Seleccionar cliente...' }, ...clientes.filter(c => c.estado === 'activo').map(c => ({ value: c.id, label: c.nombre }))]}
+          />
+
+          <Input
+            label="Notas (opcional)"
+            value={reservaForm.notas}
+            onChange={(e) => setReservaForm({ ...reservaForm, notas: e.target.value })}
+            placeholder="Observaciones de la reserva..."
+          />
+
+          <Select
+            label="Días de validez"
+            value={reservaForm.dias_expiracion}
+            onChange={(e) => setReservaForm({ ...reservaForm, dias_expiracion: e.target.value })}
+            options={[
+              { value: 3, label: '3 días' },
+              { value: 7, label: '7 días' },
+              { value: 14, label: '14 días' },
+              { value: 30, label: '30 días' }
+            ]}
+          />
+
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setReservaModalOpen(false)} className="flex-1">
+              Cancelar
+            </Button>
+            <Button onClick={handleCrearReserva} className="flex-1">
+              Reservar {pacasSeleccionadas.length} paca(s)
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );

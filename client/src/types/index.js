@@ -1,6 +1,6 @@
 export const PACA_TIPOS = ['premium', 'jeans', 'mixta', 'playera', 'formal', 'deportiva', 'americana'];
 export const PACA_CATEGORIAS = ['hombre', 'mujer', 'niño', 'unisex'];
-export const PACA_ESTADOS = ['disponible', 'separada', 'vendida'];
+export const PACA_ESTADOS = ['disponible', 'separada', 'reservada', 'vendida'];
 
 export const CLIENTE_TIPOS = ['mayorista', 'minorista'];
 export const CLIENTE_ESTADOS = ['activo', 'inactivo'];

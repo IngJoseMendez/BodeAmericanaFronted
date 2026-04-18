@@ -577,11 +577,14 @@ function MetricCard({ icon: Icon, label, value, subtext, color = 'primary', tren
 }
 
 function RotacionChart({ data }) {
-  const chartData = [
-    { name: 'Rápida', value: data?.filter(r => r.clasificacion_rotacion === 'rapida')?.length || 0, color: COLORS.success },
-    { name: 'Media', value: data?.filter(r => r.clasificacion_rotacion === 'media')?.length || 0, color: COLORS.warning },
-    { name: 'Lenta', value: data?.filter(r => r.clasificacion_rotacion === 'lenta')?.length || 0, color: COLORS.accent }
-  ].filter(d => d.value > 0);
+  console.log('RotacionChart data:', data);
+  const chartData = (data || [])
+    .filter(r => r.cantidad > 0)
+    .map(r => ({
+      name: r.clasificacion_rotacion === 'rapida' ? 'Rápida' : r.clasificacion_rotacion === 'media' ? 'Media' : 'Lenta',
+      value: r.cantidad,
+      color: r.clasificacion_rotacion === 'rapida' ? COLORS.success : r.clasificacion_rotacion === 'media' ? COLORS.warning : COLORS.accent
+    }));
 
   if (chartData.length === 0) {
     return <p className="text-center text-muted py-8">Sin datos de rotación</p>;
@@ -981,7 +984,7 @@ export default function InteligenciaDeNegocio() {
               <Card>
                 <CardBody>
                   <h3 className="font-display text-lg mb-4">Distribución por Rotación</h3>
-                  <RotacionChart data={rotacion?.pacasLentas} />
+                  <RotacionChart data={rotacion?.porClasificacion} />
                   <div className="flex justify-center gap-4 mt-4 text-xs">
                     <span className="flex items-center gap-1">
                       <span className="w-3 h-3 rounded-full bg-success"></span> Rápida
@@ -1041,7 +1044,7 @@ export default function InteligenciaDeNegocio() {
                           <td className="px-4 py-2 font-medium">{item.tipo}</td>
                           <td className="px-4 py-2 text-muted">{item.categoria}</td>
                           <td className="px-4 py-2 text-right">{item.cantidad}</td>
-                          <td className="px-4 py-2 text-right">{item.promedio_dias}</td>
+                          <td className="px-4 py-2 text-right">{item.promedio_dias ? Math.round(item.promedio_dias) : '-'}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(item.ingreso_total)}</td>
                         </tr>
                       ))}

@@ -1,6 +1,7 @@
 const variants = {
   disponible: 'bg-success/15 text-success border-success/20',
   separada: 'bg-warning/15 text-warning border-warning/20',
+  reservada: 'bg-info/15 text-info border-info/20',
   vendida: 'bg-accent/15 text-accent border-accent/20',
   activo: 'bg-success/15 text-success border-success/20',
   inactivo: 'bg-gray-100 text-muted border-gray/20',

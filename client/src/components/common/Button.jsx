@@ -22,6 +22,8 @@ export function Button({
     ghost:     'bg-transparent text-primary hover:bg-primary/5 focus:ring-primary/20',
     danger:    'bg-error text-white hover:opacity-90 focus:ring-error shadow-md hover:shadow-error/20',
     outline:   'border-2 border-primary text-primary hover:bg-primary/10 focus:ring-primary',
+    info:      'bg-info text-white hover:opacity-90 focus:ring-info shadow-md hover:shadow-info/20 font-semibold',
+    success:   'bg-success text-white hover:opacity-90 focus:ring-success shadow-md hover:shadow-success/20 font-semibold',
   };
   
   const sizes = {

@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bodeamericana-production.up.railway.app/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 const getToken = () => localStorage.getItem('token');
 
@@ -393,5 +393,30 @@ export const cotizacionesApi = {
   },
   convertirAVenta(id, vendedorId) {
     return api.post(`/cotizaciones/${id}/convertir`, { vendedor_id: vendedorId });
+  },
+};
+
+export const reservasApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/reservas${query ? `?${query}` : ''}`);
+  },
+  getByCliente(clienteId) {
+    return api.get(`/reservas/cliente/${clienteId}`);
+  },
+  create(data) {
+    return api.post('/reservas', data);
+  },
+  cancelar(id) {
+    return api.put(`/reservas/${id}/cancelar`);
+  },
+  convertir(id) {
+    return api.put(`/reservas/${id}/convertir`);
+  },
+  expirar() {
+    return api.put('/reservas/expirar');
+  },
+  delete(id) {
+    return api.delete(`/reservas/${id}`);
   },
 };

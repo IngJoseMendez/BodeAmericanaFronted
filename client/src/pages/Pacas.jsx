@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
-import { pacasApi, lotesApi, tiposPacaApi } from '../services/api';
+import { pacasApi, lotesApi, tiposPacaApi, reservasApi, clientesApi } from '../services/api';
 import { PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -27,6 +30,9 @@ export default function Pacas() {
   const [filtroTipo, setFiltroTipo] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [reservaModalOpen, setReservaModalOpen] = useState(false);
+  const [clientes, setClientes] = useState([]);
+  const [reservaForm, setReservaForm] = useState({ cliente_id: '', notas: '', dias_expiracion: 7 });
   const [selectedPaca, setSelectedPaca] = useState(null);
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
@@ -53,6 +59,7 @@ export default function Pacas() {
   useEffect(() => {
     loadLotes();
     loadTiposYCategorias();
+    loadClientes();
   }, []);
 
   const loadPacas = async () => {
@@ -99,6 +106,42 @@ export default function Pacas() {
       // fallback a hardcodeados si falla
       setTiposList(['premium', 'jeans', 'mixta', 'playera', 'formal', 'deportiva', 'americana']);
       setCategoriasList(['hombre', 'mujer', 'niño', 'unisex']);
+    }
+  };
+
+  const loadClientes = async () => {
+    try {
+      const data = await clientesApi.getAll({ estado: 'activo' });
+      setClientes(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openReservaModal = (paca) => {
+    setSelectedPaca(paca);
+    setReservaForm({ cliente_id: '', notas: '', dias_expiracion: 7 });
+    setReservaModalOpen(true);
+  };
+
+  const handleCreateReserva = async () => {
+    if (!reservaForm.cliente_id) {
+      addToast('Selecciona un cliente', 'error');
+      return;
+    }
+    try {
+      await reservasApi.create({
+        cliente_id: parseInt(reservaForm.cliente_id),
+        paca_id: selectedPaca.id,
+        cantidad: 1,
+        notas: reservaForm.notas,
+        dias_expiracion: parseInt(reservaForm.dias_expiracion)
+      });
+      addToast('Reserva creada correctamente', 'success');
+      setReservaModalOpen(false);
+      loadPacas();
+    } catch (err) {
+      addToast(err.message, 'error');
     }
   };
 
@@ -194,6 +237,123 @@ export default function Pacas() {
   const resetForm = () => {
     setEditando(null);
     setFormData({ tipo: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1 });
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const fetchInventarioActual = async () => {
+    const params = { limite: 10000 };
+    if (filtroEstado) params.estado = filtroEstado;
+    if (filtroTipo) params.tipo = filtroTipo;
+    if (debouncedSearch) params.buscar = debouncedSearch;
+
+    const res = await pacasApi.getAll(params);
+    return res.data || res;
+  };
+
+  const exportarInventarioExcel = async () => {
+    try {
+      setExporting(true);
+      const datos = await fetchInventarioActual();
+      if (!datos.length) {
+        addToast('No hay datos para exportar', 'warning');
+        return;
+      }
+
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Inventario Pacas');
+      
+      ws.columns = [
+        { header: 'Tipo', key: 'tipo', width: 20 },
+        { header: 'Categoría', key: 'categoria', width: 20 },
+        { header: 'Peso (kg)', key: 'peso', width: 12 },
+        { header: 'Costo Base', key: 'costo', width: 15 },
+        { header: 'Precio Venta', key: 'precio', width: 15 },
+        { header: 'Lote', key: 'lote', width: 15 },
+        { header: 'Estado', key: 'estado', width: 15 },
+        { header: 'Notas', key: 'notas', width: 30 }
+      ];
+
+      ws.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+        cell.alignment = { horizontal: 'center' };
+      });
+
+      datos.forEach(p => {
+        ws.addRow({
+          tipo: p.tipo,
+          categoria: p.categoria,
+          peso: p.peso,
+          costo: p.costo_base,
+          precio: p.precio_venta,
+          lote: getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
+          estado: p.estado,
+          notas: p.notas || ''
+        });
+      });
+
+      ws.getColumn('costo').numFmt = '$#,##0.00';
+      ws.getColumn('precio').numFmt = '$#,##0.00';
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Inventario_Pacas_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.click();
+      
+      addToast('Excel exportado', 'success');
+    } catch (err) {
+      addToast('Error al exportar Excel', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportarInventarioPDF = async () => {
+    try {
+      setExporting(true);
+      const datos = await fetchInventarioActual();
+      if (!datos.length) {
+        addToast('No hay datos para exportar', 'warning');
+        return;
+      }
+
+      const doc = new jsPDF();
+      
+      doc.setFontSize(18);
+      doc.text('Bodega Americana - Inventario de Pacas', 14, 20);
+      
+      doc.setFontSize(11);
+      doc.text(`Fecha de reporte: ${new Date().toLocaleDateString('es-MX')}`, 14, 28);
+      doc.text(`Total de pacas: ${datos.length}`, 14, 34);
+
+      const tableData = datos.map(p => [
+        p.tipo,
+        p.categoria,
+        `${p.peso} kg`,
+        formatCurrency(p.precio_venta),
+        getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
+        p.estado
+      ]);
+
+      autoTable(doc, {
+        startY: 40,
+        head: [['Tipo', 'Categoría', 'Peso', 'Precio Venta', 'Lote', 'Estado']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [26, 26, 46] },
+        styles: { fontSize: 9 }
+      });
+
+      doc.save(`Inventario_Pacas_${new Date().toISOString().split('T')[0]}.pdf`);
+      addToast('PDF exportado', 'success');
+    } catch (err) {
+      addToast('Error al exportar PDF: ' + err.message, 'error');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const formatCurrency = (value) => {
@@ -293,6 +453,12 @@ export default function Pacas() {
               {tiposList.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
 
             </select>
+            <Button onClick={exportarInventarioExcel} variant="outline" disabled={exporting}>
+              <Download size={16} className="mr-1" /> Excel
+            </Button>
+            <Button onClick={exportarInventarioPDF} variant="outline" disabled={exporting}>
+              <Download size={16} className="mr-1" /> PDF
+            </Button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nueva Paca
             </Button>
@@ -447,10 +613,18 @@ export default function Pacas() {
                         <td className="px-4 py-3"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1">
-                            {paca.estado !== 'vendida' && (
-                              <button onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-all" title="Asignar a lote">
-                                <Link size={16} />
-                              </button>
+                            {paca.estado === 'disponible' && (
+                              <>
+                                <button onClick={() => openReservaModal(paca)} className="p-2 rounded-lg text-muted hover:text-success hover:bg-success/10 transition-all" title="Reservar para cliente">
+                                  <Calendar size={16} />
+                                </button>
+                                <button onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-all" title="Asignar a lote">
+                                  <Link size={16} />
+                                </button>
+                              </>
+                            )}
+                            {paca.estado === 'reservada' && (
+                              <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full">Reservada</span>
                             )}
                             <button onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
                               <Edit2 size={16} />
@@ -627,6 +801,58 @@ export default function Pacas() {
             </Button>
             <Button onClick={handleAssignLote} className="flex-1">
               Asignar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Reservar Paca */}
+      <Modal isOpen={reservaModalOpen} onClose={() => setReservaModalOpen(false)} title="Reservar Paca para Cliente">
+        <div className="space-y-4">
+          {selectedPaca && (
+            <div className="p-4 bg-primary/5 rounded-xl border border-primary/20">
+              <p className="text-sm text-muted">Paca a reservar</p>
+              <p className="font-medium text-primary">{selectedPaca.tipo} - {selectedPaca.categoria}</p>
+              <p className="text-sm text-muted">Precio: {formatCurrency(selectedPaca.precio_venta)}</p>
+              <p className="text-xs text-muted mt-1">Peso: {selectedPaca.peso} kg</p>
+            </div>
+          )}
+
+          <Select
+            label="Cliente"
+            value={reservaForm.cliente_id}
+            onChange={(e) => setReservaForm({ ...reservaForm, cliente_id: e.target.value })}
+            options={[
+              { value: '', label: 'Seleccionar cliente...' },
+              ...clientes.filter(c => c.estado === 'activo').map(c => ({ value: c.id, label: c.nombre }))
+            ]}
+          />
+
+          <Input
+            label="Notas (opcional)"
+            value={reservaForm.notas}
+            onChange={(e) => setReservaForm({ ...reservaForm, notas: e.target.value })}
+            placeholder="Observaciones de la reserva..."
+          />
+
+          <Select
+            label="Días de validez"
+            value={reservaForm.dias_expiracion}
+            onChange={(e) => setReservaForm({ ...reservaForm, dias_expiracion: e.target.value })}
+            options={[
+              { value: 3, label: '3 días' },
+              { value: 7, label: '7 días' },
+              { value: 14, label: '14 días' },
+              { value: 30, label: '30 días' }
+            ]}
+          />
+
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setReservaModalOpen(false)} className="flex-1">
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateReserva} className="flex-1">
+              Reservar
             </Button>
           </div>
         </div>
