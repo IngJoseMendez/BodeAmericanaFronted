@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ['class', '[data-theme="dark"]'],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,16 +8,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#0f0f1a',
-        secondary: '#d4a373',
-        accent: '#bc4749',
-        success: '#6a994e',
-        warning: '#e9c46a',
-        error: '#bc4749',
-        cream: '#faf8f5',
-        surface: '#ffffff',
-        muted: '#6b7280',
-        border: '#e5e0db',
+        primary: 'var(--color-primary)',
+        secondary: 'var(--color-secondary)',
+        accent: 'var(--color-accent)',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        error: 'var(--color-error)',
+        info: 'var(--color-info)',
+        cream: 'var(--color-cream)',
+        surface: 'var(--color-surface)',
+        muted: 'var(--color-muted)',
+        border: 'var(--color-border)',
+        background: 'var(--color-cream)',
+        'on-primary': 'var(--color-on-primary)',
+        'on-surface': 'var(--color-on-surface)',
+        'sidebar-bg': 'var(--color-sidebar-bg)',
+        'sidebar-text': 'var(--color-sidebar-text)',
+        'sidebar-border': 'var(--color-sidebar-border)',
       },
       fontFamily: {
         display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],
@@ -24,9 +32,9 @@ export default {
         body: ['"Outfit"', 'sans-serif'],
       },
       boxShadow: {
-        'card': '0 4px 12px rgba(15, 15, 26, 0.08)',
-        'card-hover': '0 12px 32px rgba(15, 15, 26, 0.12), 0 0 40px rgba(212, 163, 115, 0.15)',
-        'glow': '0 0 40px rgba(212, 163, 115, 0.2)',
+        'card': 'var(--shadow-md)',
+        'card-hover': 'var(--shadow-lg)',
+        'glow': 'var(--shadow-glow)',
       },
       animation: {
         'fade-in-up': 'fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',

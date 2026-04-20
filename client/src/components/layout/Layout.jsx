@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { LogOut, Menu, ChevronRight, Command } from 'lucide-react';
 import { Button } from '../common';
 import { CommandPalette } from '../common/CommandPalette';
+import { useAuth } from '../../context/AuthContext';
 
 // Mapa de rutas a nombres legibles para breadcrumbs
 const ROUTE_NAMES = {
@@ -49,10 +50,10 @@ export function Layout({ children, title, subtitle, actions }) {
   }, [sidebarCollapsed]);
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
+    logout();
   };
 
   return (

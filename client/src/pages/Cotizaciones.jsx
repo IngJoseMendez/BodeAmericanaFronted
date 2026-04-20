@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
 import { cotizacionesApi, clientesApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
+import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart } from 'lucide-react';
 
@@ -150,6 +151,7 @@ export default function Cotizaciones() {
   const [filtroEstado, setFiltroEstado] = useState('');
   const { addToast } = useToast();
   const confirm = useConfirm();
+  const { usuario } = useAuth();
   
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -249,7 +251,7 @@ export default function Cotizaciones() {
     try {
       await cotizacionesApi.create({
         cliente_id: formData.cliente_id,
-        vendedor_id: 1,
+        vendedor_id: usuario?.id,
         validez_dias: formData.validez_dias,
         notas: formData.notas,
         descuento: formData.descuento,

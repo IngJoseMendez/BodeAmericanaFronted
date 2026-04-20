@@ -212,7 +212,7 @@ export default function Pacas() {
 
   const openAssignModal = async (paca) => {
     setSelectedPaca(paca);
-    setFormData(prev => ({ ...prev, lote_id: pacas.lote_id || '' }));
+    setFormData(prev => ({ ...prev, lote_id: paca.lote_id || '' }));
     setAssignModalOpen(true);
   };
 

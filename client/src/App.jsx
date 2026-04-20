@@ -19,6 +19,7 @@ import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
 import Lotes from './pages/Lotes';
 import Cotizaciones from './pages/Cotizaciones';
 import TiposPaca from './pages/TiposPaca';
+import GestionUsuarios from './pages/GestionUsuarios';
 
 function AdminLayout() {
   return (
@@ -65,6 +66,7 @@ function RutasAdmin() {
       <Route path="/inteligencia-negocio" element={<InteligenciaDeNegocio />} />
       <Route path="/cotizaciones" element={<Cotizaciones />} />
       <Route path="/tipos-paca" element={<TiposPaca />} />
+      <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -257,6 +257,15 @@ export const authApi = {
   cambiarPassword(data) {
     return api.post('/auth/cambiar-password', data);
   },
+  createUser(data) {
+    return api.post('/auth/crear-usuario', data);
+  },
+  getUsers() {
+    return api.get('/auth/usuarios');
+  },
+  updateUser(id, data) {
+    return api.patch(`/auth/usuarios/${id}`, data);
+  },
 };
 
 export const facturasApi = {

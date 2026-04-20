@@ -19,7 +19,8 @@ import {
   PanelLeftOpen,
   Tag,
   X,
-  Search
+  Search,
+  Shield
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -27,7 +28,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 
 const adminNavItems = [
-  { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',     key: null },
+  { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
   { path: '/pacas',                icon: Package,         label: 'Inventario',    key: 'pacas' },
   { path: '/lotes',                icon: Layers,          label: 'Lotes',         key: null },
   { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca', key: null },
@@ -38,6 +39,7 @@ const adminNavItems = [
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',       key: null },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',      key: null },
   { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',     key: null },
+  { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',      key: null, rol: 'admin' },
 ];
 
 const clienteNavItems = [
@@ -56,8 +58,16 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
   const { theme, toggleTheme }  = useTheme();
   const location = useLocation();
 
-  const isAdmin  = tieneRol('admin') || tieneRol('vendedor');
-  const navItems = isAdmin ? adminNavItems : clienteNavItems;
+  const isAdmin = tieneRol('admin');
+  const isVendedor = tieneRol('admin') || tieneRol('vendedor');
+  
+  // Filter admin items - usuarios only for admin role
+  const filteredAdminItems = adminNavItems.filter(item => {
+    if (!item.rol) return isVendedor;
+    return item.rol === 'admin' && isAdmin;
+  });
+  
+  const navItems = isVendedor ? filteredAdminItems : clienteNavItems;
 
   const filteredItems = searchQuery.trim()
     ? navItems.filter(item =>
