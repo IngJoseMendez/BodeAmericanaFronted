@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { pacasApi, lotesApi, tiposPacaApi, reservasApi, clientesApi } from '../services/api';
 import { PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -45,6 +45,11 @@ export default function Pacas() {
   const [categoriasList, setCategoriasList] = useState([]);
   const { addToast } = useToast();
   const confirm = useConfirm();
+  
+  // Buscador cliente en modal reserva
+  const [busquedaClienteReserva, setBusquedaClienteReserva] = useState('');
+  const [showListaClientesReserva, setShowListaClientesReserva] = useState(false);
+  const clienteReservaListRef = useRef(null);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -60,6 +65,16 @@ export default function Pacas() {
     loadLotes();
     loadTiposYCategorias();
     loadClientes();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (clienteReservaListRef.current && !clienteReservaListRef.current.contains(e.target)) {
+        setShowListaClientesReserva(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadPacas = async () => {
@@ -547,6 +562,11 @@ export default function Pacas() {
                             <td className="px-4 py-2"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
                             <td className="px-4 py-2 text-right">
                               <div className="flex justify-end gap-1">
+                                {paca.estado === 'disponible' && (
+                                  <button onClick={(e) => { e.stopPropagation(); openReservaModal(paca); }} className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10" title="Reservar para cliente">
+                                    <Calendar size={14} />
+                                  </button>
+                                )}
                                 {paca.estado !== 'vendida' && (
                                   <button onClick={(e) => { e.stopPropagation(); openAssignModal(paca); }} className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10" title="Asignar a lote">
                                     <Link size={14} />
@@ -818,15 +838,89 @@ export default function Pacas() {
             </div>
           )}
 
-          <Select
-            label="Cliente"
-            value={reservaForm.cliente_id}
-            onChange={(e) => setReservaForm({ ...reservaForm, cliente_id: e.target.value })}
-            options={[
-              { value: '', label: 'Seleccionar cliente...' },
-              ...clientes.filter(c => c.estado === 'activo').map(c => ({ value: c.id, label: c.nombre }))
-            ]}
-          />
+          {/* Selector de cliente con búsqueda */}
+          <div className="relative" ref={clienteReservaListRef}>
+            <label className="block text-sm font-medium text-primary mb-1">
+              Cliente <span className="text-error">*</span>
+            </label>
+            
+            {reservaForm.cliente_id ? (
+              <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+                <div className="p-2 bg-secondary/20 rounded-lg">
+                  <User className="w-4 h-4 text-secondary" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-sm text-secondary">
+                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.nombre || 'Cliente'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.ciudad || ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReservaForm({ ...reservaForm, cliente_id: '' });
+                    setBusquedaClienteReserva('');
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente..."
+                  value={busquedaClienteReserva}
+                  onChange={(e) => {
+                    setBusquedaClienteReserva(e.target.value);
+                    setShowListaClientesReserva(true);
+                  }}
+                  onFocus={() => busquedaClienteReserva && setShowListaClientesReserva(true)}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                />
+              </div>
+            )}
+            
+            {!reservaForm.cliente_id && busquedaClienteReserva && (
+              <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {clientes
+                  .filter(c => c.estado === 'activo')
+                  .filter(c => 
+                    c.nombre?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
+                    c.ciudad?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
+                    c.telefono?.toLowerCase().includes(busquedaClienteReserva.toLowerCase())
+                  )
+                  .slice(0, 10)
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setReservaForm({ ...reservaForm, cliente_id: c.id.toString() });
+                        setBusquedaClienteReserva('');
+                        setShowListaClientesReserva(false);
+                      }}
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-gray-100 rounded-lg">
+                          <User className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{c.nombre}</p>
+                          <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
 
           <Input
             label="Notas (opcional)"

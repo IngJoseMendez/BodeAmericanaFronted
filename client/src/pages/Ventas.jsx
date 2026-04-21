@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
-import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 
@@ -43,15 +43,69 @@ export default function Ventas() {
   const { addToast } = useToast();
   const confirm = useConfirm();
   
+  // Filtros
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
+  const [filtroFechaFin, setFiltroFechaFin] = useState('');
+  const [filtroMontoMin, setFiltroMontoMin] = useState('');
+  const [filtroMontoMax, setFiltroMontoMax] = useState('');
+  
+  // Buscador cliente en modal
+  const [busquedaCliente, setBusquedaCliente] = useState('');
+  const [showListaClientes, setShowListaClientes] = useState(false);
+  const clienteListRef = useRef(null);
+  
+  // Buscador cliente en modal reserva
+  const [busquedaClienteReserva, setBusquedaClienteReserva] = useState('');
+  const [showListaClientesReserva, setShowListaClientesReserva] = useState(false);
+  const clienteReservaListRef = useRef(null);
+  
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
 
 useEffect(() => {
     loadVentas();
     loadClientes();
-    if (filtroVista === 'reservada') {
-      loadReservas();
-    }
+    loadReservas();
   }, [filtroVista, pagina]);
+
+  // Cerrar lista clientes al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (clienteListRef.current && !clienteListRef.current.contains(e.target)) {
+        setShowListaClientes(false);
+      }
+      if (clienteReservaListRef.current && !clienteReservaListRef.current.contains(e.target)) {
+        setShowListaClientesReserva(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtrar ventas
+  const ventasFiltradas = ventas.filter(v => {
+    const cliente = clientes.find(c => c.id === v.cliente_id);
+    const nombreCliente = cliente?.nombre?.toLowerCase() || '';
+    const searchLower = busqueda.toLowerCase();
+    
+    if (busqueda && !nombreCliente.includes(searchLower)) return false;
+    
+    if (filtroFechaInicio) {
+      const fechaVenta = new Date(v.fecha);
+      const fechaIni = new Date(filtroFechaInicio);
+      if (fechaVenta < fechaIni) return false;
+    }
+    if (filtroFechaFin) {
+      const fechaVenta = new Date(v.fecha);
+      const fechaFin = new Date(filtroFechaFin);
+      fechaFin.setHours(23, 59, 59);
+      if (fechaVenta > fechaFin) return false;
+    }
+    if (filtroMontoMin && v.total < parseFloat(filtroMontoMin)) return false;
+    if (filtroMontoMax && v.total > parseFloat(filtroMontoMax)) return false;
+    
+    return true;
+  });
 
   const loadVentas = async (page = 1) => {
     try {
@@ -457,7 +511,7 @@ useEffect(() => {
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
               filtroVista === 'disponible' 
                 ? 'bg-primary text-white' 
-                : 'text-muted hover:bg-primary/5'
+                : 'text-primary hover:bg-primary/10'
             }`}
           >
             Nueva Venta
@@ -466,21 +520,11 @@ useEffect(() => {
             onClick={() => setFiltroVista('reservada')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
               filtroVista === 'reservada' 
-                ? 'bg-info text-white' 
-                : 'text-muted hover:bg-primary/5'
+                ? 'bg-success text-white' 
+                : 'text-green-700 hover:bg-green-50'
             }`}
           >
             Reservas ({reservasActivas.length})
-          </button>
-          <button
-            onClick={() => setFiltroVista('ventas')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-              filtroVista === 'ventas' 
-                ? 'bg-success text-white' 
-                : 'text-muted hover:bg-primary/5'
-            }`}
-          >
-            Ventas Realizadas
           </button>
         </div>
 
@@ -500,9 +544,67 @@ useEffect(() => {
               <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
             )}
 
-            {/* Vista de Nueva Venta - Tabla de ventas */}
+            {/* Filtros de ventas */}
             <Card>
               <CardBody className="p-0">
+                <div className="p-4 border-b border-border/50 bg-gray-50">
+                  <div className="flex flex-wrap gap-3 items-end">
+                    <div className="flex-1 min-w-[200px]">
+                      <Input
+                        placeholder="Buscar por cliente..."
+                        value={busqueda}
+                        onChange={(e) => setBusqueda(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="w-36">
+                      <Input
+                        type="date"
+                        placeholder="Desde"
+                        value={filtroFechaInicio}
+                        onChange={(e) => setFiltroFechaInicio(e.target.value)}
+                      />
+                    </div>
+                    <div className="w-36">
+                      <Input
+                        type="date"
+                        placeholder="Hasta"
+                        value={filtroFechaFin}
+                        onChange={(e) => setFiltroFechaFin(e.target.value)}
+                      />
+                    </div>
+                    <div className="w-28">
+                      <Input
+                        type="number"
+                        placeholder="Min $"
+                        value={filtroMontoMin}
+                        onChange={(e) => setFiltroMontoMin(e.target.value)}
+                      />
+                    </div>
+                    <div className="w-28">
+                      <Input
+                        type="number"
+                        placeholder="Max $"
+                        value={filtroMontoMax}
+                        onChange={(e) => setFiltroMontoMax(e.target.value)}
+                      />
+                    </div>
+                    {(busqueda || filtroFechaInicio || filtroFechaFin || filtroMontoMin || filtroMontoMax) && (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setBusqueda('');
+                        setFiltroFechaInicio('');
+                        setFiltroFechaFin('');
+                        setFiltroMontoMin('');
+                        setFiltroMontoMax('');
+                      }}>
+                        Limpiar
+                      </Button>
+                    )}
+                  </div>
+                  {ventasFiltradas.length !== ventas.length && (
+                    <p className="text-xs text-muted mt-2">Mostrando {ventasFiltradas.length} de {ventas.length} ventas</p>
+                  )}
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-primary/5 border-b border-border/50">
@@ -519,10 +621,10 @@ useEffect(() => {
                     <tbody className="divide-y divide-gray-100">
                       {loading ? (
                         <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Cargando...</td></tr>
-                      ) : ventas.length === 0 ? (
+                      ) : ventasFiltradas.length === 0 ? (
                         <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No hay ventas</td></tr>
                       ) : (
-                        ventas.map((venta) => (
+                        ventasFiltradas.map((venta) => (
                           <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
                             <td className="px-4 py-3 text-sm text-gray-500 font-mono">#{venta.id}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
@@ -585,14 +687,14 @@ useEffect(() => {
             <CardBody className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-info/10 border-b border-border/50">
+                  <thead className="bg-green-50 border-b border-border/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paca</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Precio</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expiración</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notas</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Paca</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Precio</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Expiración</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Notas</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -600,15 +702,15 @@ useEffect(() => {
                       <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay reservas activas</td></tr>
                     ) : (
                       reservasActivas.map((reserva) => (
-                        <tr key={reserva.id} className="hover:bg-info/5 transition-colors">
-                          <td className="px-4 py-3 text-sm">
+                        <tr key={reserva.id} className="hover:bg-green-50 transition-colors">
+                          <td className="px-4 py-3 text-sm text-gray-800">
                             <div className="font-medium">{reserva.paca_tipo}</div>
-                            <div className="text-xs text-muted">{reserva.paca_categoria}</div>
+                            <div className="text-xs text-gray-500">{reserva.paca_categoria}</div>
                           </td>
-                          <td className="px-4 py-3 text-sm text-primary font-medium">{reserva.cliente_nombre}</td>
-                          <td className="px-4 py-3 text-sm">{formatCurrency(reserva.precio_venta)}</td>
-                          <td className="px-4 py-3 text-sm text-muted">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
-                          <td className="px-4 py-3 text-sm text-muted max-w-xs truncate">{reserva.notas || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800 font-medium">{reserva.cliente_nombre}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{formatCurrency(reserva.precio_venta)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{reserva.notas || '-'}</td>
                           <td className="px-4 py-3 text-right">
                             <Button size="sm" onClick={() => convertirReservaAVenta(reserva)} variant="success">
                               Pasar a Venta
@@ -628,6 +730,65 @@ useEffect(() => {
         {filtroVista === 'ventas' && (
           <Card>
             <CardBody className="p-0">
+              {/* Filtros */}
+              <div className="p-4 border-b border-border/50 bg-gray-50">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="flex-1 min-w-[200px]">
+                    <Input
+                      placeholder="Buscar por cliente..."
+                      value={busqueda}
+                      onChange={(e) => setBusqueda(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="w-36">
+                    <Input
+                      type="date"
+                      placeholder="Desde"
+                      value={filtroFechaInicio}
+                      onChange={(e) => setFiltroFechaInicio(e.target.value)}
+                    />
+                  </div>
+                  <div className="w-36">
+                    <Input
+                      type="date"
+                      placeholder="Hasta"
+                      value={filtroFechaFin}
+                      onChange={(e) => setFiltroFechaFin(e.target.value)}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      placeholder="Min $"
+                      value={filtroMontoMin}
+                      onChange={(e) => setFiltroMontoMin(e.target.value)}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      placeholder="Max $"
+                      value={filtroMontoMax}
+                      onChange={(e) => setFiltroMontoMax(e.target.value)}
+                    />
+                  </div>
+                  {(busqueda || filtroFechaInicio || filtroFechaFin || filtroMontoMin || filtroMontoMax) && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setBusqueda('');
+                      setFiltroFechaInicio('');
+                      setFiltroFechaFin('');
+                      setFiltroMontoMin('');
+                      setFiltroMontoMax('');
+                    }}>
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+                {ventasFiltradas.length !== ventas.length && (
+                  <p className="text-xs text-muted mt-2">Mostrando {ventasFiltradas.length} de {ventas.length} ventas</p>
+                )}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-success/10 border-b border-border/50">
@@ -641,10 +802,10 @@ useEffect(() => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {ventas.length === 0 ? (
+                    {ventasFiltradas.length === 0 ? (
                       <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay ventas realizadas</td></tr>
                     ) : (
-                      ventas.map((venta) => (
+                      ventasFiltradas.map((venta) => (
                         <tr key={venta.id} className="hover:bg-success/5 transition-colors">
                           <td className="px-4 py-3 text-sm text-gray-500 font-mono">{venta.uuid?.slice(0, 8).toUpperCase()}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
@@ -672,13 +833,89 @@ useEffect(() => {
           {error && <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>}
           
           <div className="grid grid-cols-3 gap-4">
-            <Select
-              label="Cliente"
-              value={formData.cliente_id}
-              onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
-              options={[{ value: '', label: 'Seleccionar...' }, ...clientes.map(c => ({ value: c.id, label: c.nombre }))]}
-              required
-            />
+            {/* Selector de cliente con búsqueda */}
+            <div className="relative" ref={clienteListRef}>
+              <label className="block text-sm font-medium text-primary mb-1">
+                Cliente <span className="text-error">*</span>
+              </label>
+              
+              {formData.cliente_id ? (
+                <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+                  <div className="p-2 bg-secondary/20 rounded-lg">
+                    <User className="w-4 h-4 text-secondary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm text-secondary">
+                      {clientes.find(c => c.id === parseInt(formData.cliente_id))?.nombre || 'Cliente'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {clientes.find(c => c.id === parseInt(formData.cliente_id))?.ciudad || ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, cliente_id: '' });
+                      setBusquedaCliente('');
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={busquedaCliente}
+                    onChange={(e) => {
+                      setBusquedaCliente(e.target.value);
+                      setShowListaClientes(true);
+                    }}
+                    onFocus={() => busquedaCliente && setShowListaClientes(true)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                  />
+                </div>
+              )}
+              
+              {!formData.cliente_id && busquedaCliente && (
+                <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                  {clientes
+                    .filter(c => 
+                      c.nombre?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
+                      c.ciudad?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
+                      c.telefono?.toLowerCase().includes(busquedaCliente.toLowerCase())
+                    )
+                    .slice(0, 10)
+                    .map(c => (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setFormData({ ...formData, cliente_id: c.id.toString() });
+                          setBusquedaCliente('');
+                          setShowListaClientes(false);
+                        }}
+                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-gray-100 rounded-lg">
+                            <User className="w-4 h-4 text-gray-500" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{c.nombre}</p>
+                            <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+            
             <Select
               label="Tipo de Pago"
               value={formData.tipo_pago}
@@ -847,12 +1084,89 @@ useEffect(() => {
             <p className="text-sm text-muted mt-1">Total: {formatCurrency(totalVenta)}</p>
           </div>
 
-          <Select
-            label="Cliente"
-            value={reservaForm.cliente_id}
-            onChange={(e) => setReservaForm({ ...reservaForm, cliente_id: e.target.value })}
-            options={[{ value: '', label: 'Seleccionar cliente...' }, ...clientes.filter(c => c.estado === 'activo').map(c => ({ value: c.id, label: c.nombre }))]}
-          />
+          {/* Selector de cliente con búsqueda para reserva */}
+          <div className="relative" ref={clienteReservaListRef}>
+            <label className="block text-sm font-medium text-primary mb-1">
+              Cliente <span className="text-error">*</span>
+            </label>
+            
+            {reservaForm.cliente_id ? (
+              <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+                <div className="p-2 bg-secondary/20 rounded-lg">
+                  <User className="w-4 h-4 text-secondary" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-sm text-secondary">
+                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.nombre || 'Cliente'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.ciudad || ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReservaForm({ ...reservaForm, cliente_id: '' });
+                    setBusquedaClienteReserva('');
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente..."
+                  value={busquedaClienteReserva}
+                  onChange={(e) => {
+                    setBusquedaClienteReserva(e.target.value);
+                    setShowListaClientesReserva(true);
+                  }}
+                  onFocus={() => busquedaClienteReserva && setShowListaClientesReserva(true)}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                />
+              </div>
+            )}
+            
+            {!reservaForm.cliente_id && busquedaClienteReserva && (
+              <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {clientes
+                  .filter(c => c.estado === 'activo')
+                  .filter(c => 
+                    c.nombre?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
+                    c.ciudad?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
+                    c.telefono?.toLowerCase().includes(busquedaClienteReserva.toLowerCase())
+                  )
+                  .slice(0, 10)
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => {
+                        setReservaForm({ ...reservaForm, cliente_id: c.id.toString() });
+                        setBusquedaClienteReserva('');
+                        setShowListaClientesReserva(false);
+                      }}
+                      className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-gray-100 rounded-lg">
+                          <User className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{c.nombre}</p>
+                          <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
 
           <Input
             label="Notas (opcional)"
