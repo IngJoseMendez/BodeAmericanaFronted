@@ -26,7 +26,7 @@ export default function Clientes() {
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
     nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', limite_credito: '', estado: 'activo',
-    crear_usuario: false, username: '', password: ''
+    crear_usuario: false, username: '', password: '', saldo_inicial: ''
   });
   const [error, setError] = useState('');
   const { addToast } = useToast();
@@ -101,8 +101,9 @@ export default function Clientes() {
       direccion: cliente.direccion || '',
       ciudad: cliente.ciudad || '',
       tipo_cliente: cliente.tipo_cliente,
-      limite_credito: cliente.limite_credito,
-      estado: cliente.estado
+      limite_credito: cliente.limite_credito || '',
+      estado: cliente.estado,
+      saldo_inicial: cliente.saldo_inicial || ''
     });
     setModalOpen(true);
   };
@@ -331,12 +332,24 @@ export default function Clientes() {
           )}
           
           {editando && (
-            <Select
-              label="Estado"
-              value={formData.estado}
-              onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
-              options={CLIENTE_ESTADOS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
-            />
+            <div className="space-y-3">
+              <Select
+                label="Estado"
+                value={formData.estado}
+                onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
+                options={CLIENTE_ESTADOS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
+              />
+              <Input
+                label="Saldo Deuda Inicial"
+                type="number"
+                value={formData.saldo_inicial}
+                onChange={(e) => setFormData({ ...formData, saldo_inicial: e.target.value })}
+                placeholder="Deuda historica existente"
+              />
+              <p className="text-xs text-muted">
+                Ingresa la deuda que el cliente tenía antes de usar el sistema. Esto sumará al saldo pendiente en cartera.
+              </p>
+            </div>
           )}
           
           <div className="flex justify-end gap-3 pt-2">
