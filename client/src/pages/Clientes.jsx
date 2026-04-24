@@ -338,25 +338,28 @@ export default function Clientes() {
             </div>
           )}
           
+          {/* Saldo inicial - mostrar siempre (crear y editar) */}
+          <div className="space-y-2">
+            <Input
+              label="Saldo Deuda Inicial"
+              type="number"
+              value={formData.saldo_inicial}
+              onChange={(e) => setFormData({ ...formData, saldo_inicial: e.target.value })}
+              placeholder="0.00"
+            />
+            <p className="text-xs text-muted">
+              Deuda que el cliente tenía antes de usar el sistema. Se suma al saldo pendiente en cartera.
+            </p>
+          </div>
+
+          {/* Estado solo al editar */}
           {editando && (
-            <div className="space-y-3">
-              <Select
-                label="Estado"
-                value={formData.estado}
-                onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
-                options={CLIENTE_ESTADOS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
-              />
-              <Input
-                label="Saldo Deuda Inicial"
-                type="number"
-                value={formData.saldo_inicial}
-                onChange={(e) => setFormData({ ...formData, saldo_inicial: e.target.value })}
-                placeholder="Deuda historica existente"
-              />
-              <p className="text-xs text-muted">
-                Ingresa la deuda que el cliente tenía antes de usar el sistema. Esto sumará al saldo pendiente en cartera.
-              </p>
-            </div>
+            <Select
+              label="Estado"
+              value={formData.estado}
+              onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
+              options={CLIENTE_ESTADOS.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
+            />
           )}
           
           <div className="flex justify-end gap-3 pt-2">
