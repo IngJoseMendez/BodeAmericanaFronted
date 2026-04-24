@@ -65,6 +65,7 @@ export default function Clientes() {
         tipo_cliente: formData.tipo_cliente,
         limite_credito: parseFloat(formData.limite_credito) || 0,
         estado: formData.estado,
+        saldo_inicial: parseFloat(formData.saldo_inicial) || 0,
       };
       
       if (!editando && formData.crear_usuario) {
@@ -103,7 +104,10 @@ export default function Clientes() {
       tipo_cliente: cliente.tipo_cliente,
       limite_credito: cliente.limite_credito || '',
       estado: cliente.estado,
-      saldo_inicial: cliente.saldo_inicial || ''
+      saldo_inicial: cliente.saldo_inicial || '',
+      crear_usuario: false,
+      username: '',
+      password: ''
     });
     setModalOpen(true);
   };
@@ -127,7 +131,10 @@ export default function Clientes() {
 
   const resetForm = () => {
     setEditando(null);
-    setFormData({ nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', limite_credito: '', estado: 'activo' });
+    setFormData({ 
+      nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', 
+      limite_credito: '', estado: 'activo', crear_usuario: false, username: '', password: '', saldo_inicial: '' 
+    });
   };
 
   const formatCurrency = (value) => {
