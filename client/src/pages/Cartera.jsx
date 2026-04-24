@@ -534,6 +534,12 @@ export default function Cartera() {
                     <Badge variant={c.tipo_cliente}>{c.tipo_cliente}</Badge>
                   </div>
                   <div className="space-y-2 pt-3 border-t border-gray-100">
+                    {parseFloat(c.saldo_inicial) > 0 && (
+                      <div className="flex justify-between items-start text-sm gap-2 pb-2 border-b border-orange-100">
+                        <span className="text-orange-500 shrink-0 font-medium">Deuda migración</span>
+                        <span className="text-orange-600 font-semibold text-right break-all">{formatCurrency(c.saldo_inicial)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-start text-sm gap-2">
                       <span className="text-gray-500 shrink-0">Total Vendido</span>
                       <span className="text-primary text-right break-all">{formatCurrency(c.total_vendido)}</span>
@@ -557,8 +563,15 @@ export default function Cartera() {
       <Modal isOpen={!!detalleCliente} onClose={() => setDetalleCliente(null)} title={detalleCliente?.cliente?.nombre} size="lg">
         {detalleCliente && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-              <div>
+            {/* Resumen de cuenta */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-gray-50 rounded-lg">
+              {parseFloat(detalleCliente.saldo_inicial) > 0 && (
+                <div className="col-span-2 sm:col-span-1 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                  <p className="text-xs text-orange-500 font-medium uppercase tracking-wide">Deuda Migración</p>
+                  <p className="text-lg font-display text-orange-600 break-all">{formatCurrency(detalleCliente.saldo_inicial)}</p>
+                </div>
+              )}
+              <div className={parseFloat(detalleCliente.saldo_inicial) > 0 ? '' : 'col-span-2 sm:col-span-1'}>
                 <p className="text-sm text-gray-500">Total Vendido</p>
                 <p className="text-lg font-display text-primary break-all">{formatCurrency(detalleCliente.total_vendido)}</p>
               </div>
@@ -585,6 +598,24 @@ export default function Cartera() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  {/* Fila fija: Saldo Inicial (deuda de migración) */}
+                  {parseFloat(detalleCliente.saldo_inicial) > 0 && (
+                    <tr className="bg-orange-50">
+                      <td className="px-3 py-2 text-xs text-orange-500">
+                        {new Date(detalleCliente.cliente.created_at).toLocaleDateString('es-MX')}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                          📋 Saldo Inicial
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-orange-600">
+                        +{formatCurrency(detalleCliente.saldo_inicial)}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-orange-400 italic">Deuda migrada</td>
+                      <td className="px-3 py-2"></td>
+                    </tr>
+                  )}
                   {detalleCliente.movimientos.map(m => (
                     <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
                       {editandoAbono?.id === m.id ? (

@@ -17,6 +17,7 @@ export default function CarteraCliente() {
     try {
       const data = await clienteApi.getCartera();
       setCartera({
+        saldo_inicial: data.saldo_inicial || 0,
         total_vendido: data.total_vendido,
         total_abonado: data.total_abonado,
         saldo_pendiente: data.saldo_pendiente,
@@ -45,6 +46,21 @@ export default function CarteraCliente() {
     <Layout title="Mi Cartera" subtitle="Resumen de cuenta">
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {parseFloat(cartera?.saldo_inicial) > 0 && (
+          <Card>
+            <CardBody className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-orange-100">
+                <Wallet className="w-5 h-5 text-orange-500" />
+              </div>
+              <div>
+                <p className="text-xs text-orange-500 uppercase font-medium">Deuda Migración</p>
+                <p className="text-2xl font-bold text-orange-600">{formatCurrency(cartera?.saldo_inicial)}</p>
+                <p className="text-xs text-muted">Saldo anterior al sistema</p>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
           <Card>
             <CardBody className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
@@ -87,6 +103,12 @@ export default function CarteraCliente() {
             <CardBody>
               <h3 className="font-medium text-primary mb-4">Estado de Cuenta</h3>
               <div className="space-y-3">
+              {parseFloat(cartera?.saldo_inicial) > 0 && (
+                <div className="flex justify-between p-3 bg-orange-50 rounded-xl border border-orange-200">
+                  <span className="text-orange-500 font-medium">Deuda de migración</span>
+                  <span className="font-semibold text-orange-600">{formatCurrency(cartera?.saldo_inicial)}</span>
+                </div>
+              )}
                 <div className="flex justify-between p-3 bg-primary/5 rounded-xl">
                   <span className="text-muted">Total comprador</span>
                   <span className="font-medium text-primary">{formatCurrency(cartera?.total_vendido)}</span>
