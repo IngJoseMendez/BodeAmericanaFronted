@@ -21,6 +21,10 @@ const ROUTE_NAMES = {
   '/catalogo':             'Catálogo',
   '/mis-pedidos':          'Mis Pedidos',
   '/mi-cartera':           'Mi Cartera',
+  '/contenedores':         'Contenedores',
+  '/tipos-paca':           'Tipos de Paca',
+  '/gestion-usuarios':     'Usuarios',
+  '/cotizaciones':         'Cotizaciones',
 };
 
 function Breadcrumbs({ location }) {
