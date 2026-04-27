@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
   TrendingUp, DollarSign, Archive, Boxes,
-  ArrowRight, AlertTriangle, Layers,
+  ArrowRight, AlertTriangle, Layers, Search, Download,
+  BarChart2, Calendar, List, ChevronRight,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm } from '../components/common';
@@ -26,6 +27,36 @@ const emptyProveedor = () => ({
 });
 const emptyServicio = () => ({ proveedor_nombre: '', tipo_servicio: '', costo: '', notas: '' });
 
+// ── Price input with auto-formatting ─────────────────────────────
+function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
+  const [focused, setFocused] = useState(false);
+
+  const formatDisplay = (raw) => {
+    const n = parseFloat(raw);
+    if (!raw || isNaN(n)) return '';
+    return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+  };
+
+  const handleChange = (e) => {
+    const stripped = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+    onChange(stripped);
+  };
+
+  return (
+    <input
+      {...rest}
+      type="text"
+      inputMode="decimal"
+      className={className}
+      placeholder={placeholder}
+      value={focused ? value : formatDisplay(value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={handleChange}
+    />
+  );
+}
+
 // ── Shared style tokens ───────────────────────────────────────────
 const inp =
   'w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary text-sm ' +
@@ -37,13 +68,7 @@ const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wi
 function StatusBadge({ estado }) {
   const isFinal = estado === 'finalizado';
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-        isFinal
-          ? 'bg-success/10 text-success'
-          : 'bg-warning/15 text-warning'
-      }`}
-    >
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isFinal ? 'bg-success/10 text-success' : 'bg-warning/15 text-warning'}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${isFinal ? 'bg-success' : 'bg-warning'}`} />
       {isFinal ? 'Finalizado' : 'Borrador'}
     </span>
@@ -66,18 +91,197 @@ function KpiCard({ label, value, sub, icon: Icon, color }) {
   );
 }
 
-// ── Section header for modals ─────────────────────────────────────
-function SectionHeader({ number, title, description }) {
+// ── Timeline View ─────────────────────────────────────────────────
+function TimelineView({ items, onView }) {
+  const withDate = [...items]
+    .filter(c => c.fecha_llegada)
+    .sort((a, b) => new Date(a.fecha_llegada) - new Date(b.fecha_llegada));
+  const withoutDate = items.filter(c => !c.fecha_llegada);
+
+  const groups = {};
+  withDate.forEach(c => {
+    const key = new Date(c.fecha_llegada).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(c);
+  });
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+        <Package2 size={32} className="text-muted/40" />
+        <p className="text-muted text-sm">No hay contenedores para mostrar</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-start gap-3 mb-4">
-      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-secondary/15 text-secondary text-xs font-bold flex items-center justify-center">
-        {number}
-      </div>
-      <div>
-        <h3 className="font-semibold text-primary text-sm">{title}</h3>
-        {description && <p className="text-xs text-muted mt-0.5">{description}</p>}
-      </div>
+    <div className="space-y-1 py-2">
+      {Object.entries(groups).map(([month, conts]) => (
+        <div key={month} className="mb-2">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary/10 text-secondary rounded-full flex-shrink-0">
+              <Calendar size={11} />
+              <span className="text-xs font-bold capitalize">{month}</span>
+            </div>
+            <div className="flex-1 h-px bg-border/40" />
+            <span className="text-xs text-muted flex-shrink-0">{conts.length} contenedor{conts.length !== 1 ? 'es' : ''}</span>
+          </div>
+          <div className="relative pl-7 space-y-2.5 mb-5">
+            <div className="absolute left-2.5 top-1 bottom-4 w-px bg-border/50" />
+            {conts.map(cont => (
+              <div key={cont.id} className="relative flex items-center gap-3">
+                <div className={`absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface flex-shrink-0 ${cont.estado === 'finalizado' ? 'bg-success' : 'bg-warning'}`} />
+                <div
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group"
+                  onClick={() => onView(cont)}
+                >
+                  <div>
+                    <p className="font-semibold text-primary font-heading text-sm">{cont.numero}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      {new Date(cont.fecha_llegada).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                      {' · '}{parseInt(cont.total_pacas).toLocaleString()} pacas
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {parseFloat(cont.costo_unitario) > 0 && (
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] text-muted uppercase tracking-wide">Costo/paca</p>
+                        <p className="text-sm font-mono font-bold text-secondary">{formatCurrency(cont.costo_unitario)}</p>
+                      </div>
+                    )}
+                    <StatusBadge estado={cont.estado} />
+                    <ChevronRight size={14} className="text-muted/50 group-hover:text-secondary transition-colors" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {withoutDate.length > 0 && (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="px-3 py-1.5 bg-primary/8 text-muted rounded-full text-xs font-bold flex-shrink-0">Sin fecha</div>
+            <div className="flex-1 h-px bg-border/40" />
+          </div>
+          <div className="relative pl-7 space-y-2.5">
+            <div className="absolute left-2.5 top-1 bottom-2 w-px bg-border/40" />
+            {withoutDate.map(cont => (
+              <div key={cont.id} className="relative flex items-center gap-3">
+                <div className="absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface bg-muted/40" />
+                <div
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 transition-all duration-150 cursor-pointer"
+                  onClick={() => onView(cont)}
+                >
+                  <p className="font-semibold text-primary text-sm">{cont.numero}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted">{parseInt(cont.total_pacas).toLocaleString()} pacas</span>
+                    <StatusBadge estado={cont.estado} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Comparador Modal ──────────────────────────────────────────────
+function ComparadorModal({ isOpen, onClose, items }) {
+  const finalizados = items.filter(c => c.estado === 'finalizado');
+  const costos = finalizados.map(c => parseFloat(c.costo_unitario) || 0).filter(v => v > 0);
+  const minCosto = costos.length ? Math.min(...costos) : 0;
+  const maxCosto = costos.length ? Math.max(...costos) : 0;
+
+  const metrics = [
+    { label: 'Fecha llegada',  fn: (c) => formatDate(c.fecha_llegada),                       mono: false },
+    { label: 'Pacas',          fn: (c) => parseInt(c.total_pacas).toLocaleString(),           mono: true  },
+    { label: 'Costo Unitario', fn: (c) => formatCurrency(c.costo_unitario),
+      raw: (c) => parseFloat(c.costo_unitario) || 0, highlight: true, mono: true },
+    { label: 'Costo Total',    fn: (c) => formatCurrency(c.costo_total),                      mono: true  },
+    { label: 'N° Servicios',   fn: (c) => c.num_servicios ?? '—',                             mono: true  },
+  ];
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Comparador de Contenedores" size="xl">
+      {finalizados.length < 2 ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+          <BarChart2 size={36} className="text-muted/30" />
+          <p className="text-sm text-muted">Necesitas al menos 2 contenedores finalizados para comparar.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/60 bg-primary/3">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider min-w-28">Métrica</th>
+                  {finalizados.map(c => {
+                    const costo = parseFloat(c.costo_unitario) || 0;
+                    return (
+                      <th key={c.id} className="px-4 py-3 text-center">
+                        <p className="text-xs font-bold text-primary">{c.numero}</p>
+                        {costo === minCosto && costos.length > 0 && (
+                          <span className="inline-block mt-1 text-[10px] bg-success/15 text-success px-2 py-0.5 rounded-full font-bold">Mejor costo</span>
+                        )}
+                        {costo === maxCosto && maxCosto !== minCosto && (
+                          <span className="inline-block mt-1 text-[10px] bg-error/10 text-error px-2 py-0.5 rounded-full font-bold">Mayor costo</span>
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {metrics.map(metric => (
+                  <tr key={metric.label} className="hover:bg-primary/3 transition-colors">
+                    <td className="px-4 py-3 text-xs font-semibold text-muted uppercase tracking-wider">{metric.label}</td>
+                    {finalizados.map(c => {
+                      const rawVal = metric.raw ? metric.raw(c) : null;
+                      const isBest  = metric.highlight && rawVal !== null && rawVal === minCosto && minCosto > 0;
+                      const isWorst = metric.highlight && rawVal !== null && rawVal === maxCosto && maxCosto !== minCosto;
+                      return (
+                        <td key={c.id} className={`px-4 py-3 text-center ${metric.mono ? 'font-mono' : ''} font-semibold ${isBest ? 'text-success' : isWorst ? 'text-error' : 'text-primary'}`}>
+                          {metric.fn(c)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Visual bar chart */}
+          <div className="px-1 pb-2">
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-3">Costo por Paca — Visual</p>
+            <div className="space-y-2.5">
+              {finalizados.map(c => {
+                const val    = parseFloat(c.costo_unitario) || 0;
+                const pct    = maxCosto > 0 ? (val / maxCosto) * 100 : 0;
+                const isBest = val === minCosto && val > 0;
+                return (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <span className="text-xs text-muted font-medium w-32 truncate">{c.numero}</span>
+                    <div className="flex-1 h-2.5 bg-primary/8 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${isBest ? 'bg-success' : 'bg-secondary/60'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs font-mono font-bold w-28 text-right tabular-nums ${isBest ? 'text-success' : 'text-primary'}`}>
+                      {formatCurrency(val)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -93,6 +297,9 @@ export default function Contenedores() {
   const [contenedores, setContenedores]     = useState([]);
   const [loading, setLoading]               = useState(true);
   const [filtroEstado, setFiltroEstado]     = useState('');
+  const [busqueda, setBusqueda]             = useState('');
+  const [vista, setVista]                   = useState('tabla');
+  const [comparadorOpen, setComparadorOpen] = useState(false);
 
   // ── Modals ─────────────────────────────────────────────────────
   const [modalOpen, setModalOpen]                   = useState(false);
@@ -105,12 +312,12 @@ export default function Contenedores() {
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Form ───────────────────────────────────────────────────────
-  const [formData, setFormData]     = useState({ numero: '', fecha_llegada: '', total_pacas: '', notas: '' });
+  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', total_pacas: '', notas: '' });
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
-  const [servicios, setServicios]   = useState([emptyServicio()]);
+  const [servicios, setServicios]     = useState([emptyServicio()]);
 
   // ── Finalize ───────────────────────────────────────────────────
-  const [preciosVenta, setPreciosVenta]         = useState({});
+  const [preciosVenta, setPreciosVenta]           = useState({});
   const [combsFinalizacion, setCombsFinalizacion] = useState([]);
 
   // ── Load ───────────────────────────────────────────────────────
@@ -128,6 +335,35 @@ export default function Contenedores() {
     }
   };
   useEffect(() => { loadContenedores(); }, [filtroEstado]);
+
+  // ── Filtered list (client-side search) ────────────────────────
+  const contenedoresFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return contenedores;
+    return contenedores.filter(c => c.numero.toLowerCase().includes(q));
+  }, [contenedores, busqueda]);
+
+  // ── Export CSV ─────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    const headers = ['Número', 'Fecha Llegada', 'Estado', 'Total Pacas', 'Costo Unitario', 'Costo Total', 'N° Servicios'];
+    const rows = contenedoresFiltrados.map(c => [
+      c.numero,
+      c.fecha_llegada ? new Date(c.fecha_llegada).toLocaleDateString('es-MX') : '',
+      c.estado,
+      c.total_pacas,
+      parseFloat(c.costo_unitario || 0).toFixed(2),
+      parseFloat(c.costo_total || 0).toFixed(2),
+      c.num_servicios ?? 0,
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(';')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contenedores-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── Derived summary (live) ─────────────────────────────────────
   const calcularResumen = () => {
@@ -299,18 +535,34 @@ export default function Contenedores() {
         )
       }
     >
-
       {/* ── KPI Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Total" value={contenedores.length} icon={Boxes} color="bg-secondary/80" sub={`${borradores} en borrador`} />
-        <KpiCard label="Borradores" value={borradores} icon={Layers} color="bg-warning/70" sub="Pendientes de finalizar" />
-        <KpiCard label="Finalizados" value={finalizados} icon={Archive} color="bg-success/70" sub="Lotes creados en inventario" />
+        <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${borradores} en borrador`} />
+        <KpiCard label="Borradores"   value={borradores}                   icon={Layers}   color="bg-warning/70"   sub="Pendientes de finalizar" />
+        <KpiCard label="Finalizados"  value={finalizados}                  icon={Archive}  color="bg-success/70"   sub="Lotes creados en inventario" />
         <KpiCard label="Pacas Totales" value={totalPacas.toLocaleString()} icon={TrendingUp} color="bg-accent/70" sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Sin datos aún'} />
       </div>
 
-      {/* ── Filter bar ────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1" />
+      {/* ── Toolbar ───────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        {/* Search */}
+        <div className="relative flex-1 min-w-44">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+          <input
+            type="text"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar por número..."
+            className="w-full pl-8 pr-8 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-muted/60 transition-colors"
+          />
+          {busqueda && (
+            <button onClick={() => setBusqueda('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Estado filter */}
         <select
           value={filtroEstado}
           onChange={(e) => setFiltroEstado(e.target.value)}
@@ -320,36 +572,83 @@ export default function Contenedores() {
           <option value="borrador">Borrador</option>
           <option value="finalizado">Finalizado</option>
         </select>
+
+        {/* View toggle */}
+        <div className="flex items-center rounded-xl border border-border overflow-hidden flex-shrink-0">
+          <button
+            onClick={() => setVista('tabla')}
+            title="Vista tabla"
+            className={`p-2 transition-colors ${vista === 'tabla' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
+          >
+            <List size={15} />
+          </button>
+          <button
+            onClick={() => setVista('timeline')}
+            title="Vista timeline"
+            className={`p-2 transition-colors ${vista === 'timeline' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
+          >
+            <Calendar size={15} />
+          </button>
+        </div>
+
+        {/* Comparar — only when ≥2 finalized */}
+        {finalizados >= 2 && (
+          <button
+            onClick={() => setComparadorOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm font-medium hover:border-secondary/40 hover:text-secondary transition-colors flex-shrink-0"
+          >
+            <BarChart2 size={14} />
+            <span className="hidden sm:inline">Comparar</span>
+          </button>
+        )}
+
+        {/* Export CSV */}
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm font-medium hover:border-secondary/40 hover:text-secondary transition-colors flex-shrink-0"
+        >
+          <Download size={14} />
+          <span className="hidden sm:inline">Exportar</span>
+        </button>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────────── */}
-      <div className="bg-surface rounded-2xl border border-border/60 shadow-card overflow-hidden">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <div className="animate-spin rounded-full h-9 w-9 border-4 border-secondary/30 border-t-secondary" />
-            <p className="text-muted text-sm">Cargando contenedores...</p>
+      {/* ── Main content ──────────────────────────────────────── */}
+      {loading ? (
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card flex flex-col items-center justify-center py-20 gap-3">
+          <div className="animate-spin rounded-full h-9 w-9 border-4 border-secondary/30 border-t-secondary" />
+          <p className="text-muted text-sm">Cargando contenedores...</p>
+        </div>
+      ) : contenedores.length === 0 ? (
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card flex flex-col items-center justify-center py-20 gap-4 text-center px-6">
+          <div className="w-16 h-16 rounded-2xl bg-secondary/10 flex items-center justify-center">
+            <Package2 size={32} className="text-secondary/60" />
           </div>
-        ) : contenedores.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center px-6">
-            <div className="w-16 h-16 rounded-2xl bg-secondary/10 flex items-center justify-center">
-              <Package2 size={32} className="text-secondary/60" />
-            </div>
-            <div>
-              <p className="font-semibold text-primary">No hay contenedores</p>
-              <p className="text-sm text-muted mt-1">
-                {filtroEstado ? `Sin contenedores con estado "${filtroEstado}"` : 'Crea el primero para comenzar'}
-              </p>
-            </div>
-            {canEdit && !filtroEstado && (
-              <button
-                onClick={openCreateModal}
-                className="flex items-center gap-2 px-4 py-2 bg-secondary/10 text-secondary rounded-xl text-sm font-semibold hover:bg-secondary/20 transition-colors"
-              >
-                <Plus size={16} /> Crear contenedor
-              </button>
-            )}
+          <div>
+            <p className="font-semibold text-primary">No hay contenedores</p>
+            <p className="text-sm text-muted mt-1">
+              {filtroEstado ? `Sin contenedores con estado "${filtroEstado}"` : 'Crea el primero para comenzar'}
+            </p>
           </div>
-        ) : (
+          {canEdit && !filtroEstado && (
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-2 px-4 py-2 bg-secondary/10 text-secondary rounded-xl text-sm font-semibold hover:bg-secondary/20 transition-colors"
+            >
+              <Plus size={16} /> Crear contenedor
+            </button>
+          )}
+        </div>
+      ) : contenedoresFiltrados.length === 0 ? (
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card flex flex-col items-center justify-center py-16 gap-3 text-center">
+          <Search size={28} className="text-muted/40" />
+          <p className="font-semibold text-primary">Sin resultados</p>
+          <p className="text-sm text-muted">No hay contenedores que coincidan con "<span className="font-medium">{busqueda}</span>"</p>
+          <button onClick={() => setBusqueda('')} className="text-xs text-secondary hover:underline mt-1">Limpiar búsqueda</button>
+        </div>
+      ) : vista === 'tabla' ? (
+
+        /* ── TABLE VIEW ─────────────────────────────────────── */
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -362,7 +661,7 @@ export default function Contenedores() {
                 </tr>
               </thead>
               <tbody>
-                {contenedores.map((cont, idx) => (
+                {contenedoresFiltrados.map((cont, idx) => (
                   <tr
                     key={cont.id}
                     className={`border-b border-border/40 hover:bg-secondary/5 transition-colors duration-150 ${idx % 2 === 0 ? '' : 'bg-primary/2'}`}
@@ -375,26 +674,18 @@ export default function Contenedores() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">
-                      {formatDate(cont.fecha_llegada)}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-semibold text-primary text-center">
-                      {parseInt(cont.total_pacas).toLocaleString()}
-                    </td>
+                    <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">{formatDate(cont.fecha_llegada)}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-primary text-center">{parseInt(cont.total_pacas).toLocaleString()}</td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
                       <span className="text-secondary font-semibold">{formatCurrency(cont.costo_unitario)}</span>
                     </td>
-                    <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">
-                      {formatCurrency(cont.costo_total)}
-                    </td>
+                    <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">{formatCurrency(cont.costo_total)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/8 text-primary text-xs font-bold">
                         {cont.num_servicios}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge estado={cont.estado} />
-                    </td>
+                    <td className="px-4 py-3"><StatusBadge estado={cont.estado} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <ActionBtn icon={Eye} title="Ver detalle" onClick={() => openViewModal(cont)} />
@@ -413,15 +704,25 @@ export default function Contenedores() {
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-3 border-t border-border/40 flex items-center justify-between">
-              <p className="text-xs text-muted">{contenedores.length} contenedor{contenedores.length !== 1 ? 'es' : ''}</p>
-              <p className="text-xs text-muted">
-                {finalizados} finalizado{finalizados !== 1 ? 's' : ''} · {borradores} en borrador
-              </p>
-            </div>
           </div>
-        )}
-      </div>
+          <div className="px-4 py-3 border-t border-border/40 flex items-center justify-between">
+            <p className="text-xs text-muted">
+              {contenedoresFiltrados.length} de {contenedores.length} contenedor{contenedores.length !== 1 ? 'es' : ''}
+            </p>
+            <p className="text-xs text-muted">
+              {finalizados} finalizado{finalizados !== 1 ? 's' : ''} · {borradores} en borrador
+            </p>
+          </div>
+        </div>
+
+      ) : (
+
+        /* ── TIMELINE VIEW ──────────────────────────────────── */
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card px-5 py-4">
+          <TimelineView items={contenedoresFiltrados} onView={openViewModal} />
+        </div>
+
+      )}
 
       {/* ════════════════════════════════════════════════════════
           CREATE / EDIT MODAL
@@ -435,7 +736,7 @@ export default function Contenedores() {
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col xl:flex-row gap-6 items-start">
 
-            {/* ── LEFT: form sections (scrolls with the modal) ─── */}
+            {/* ── LEFT: form sections ─────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
 
               {/* [1] Información Básica */}
@@ -480,23 +781,18 @@ export default function Contenedores() {
                     <p className="text-[11px] text-muted mt-0.5">Quién suministra qué tipos de paca y en qué cantidad</p>
                   </div>
                 </div>
-
                 <div className="space-y-3">
                   {proveedores.map((prov, pi) => (
                     <div key={pi} className="rounded-2xl border border-border/60 bg-surface overflow-hidden">
-
-                      {/* Provider header */}
                       <div className="px-4 py-3 space-y-2">
                         <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-secondary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-                            {pi + 1}
-                          </span>
+                          <span className="w-6 h-6 rounded-lg bg-secondary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{pi + 1}</span>
                           <input type="text" className={`${inp} flex-1`} placeholder="Nombre del proveedor *"
                             value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <span className="text-xs text-muted font-medium hidden sm:inline">$</span>
-                            <input type="number" min="0" step="0.01" className={`${inp} w-32`} placeholder="Costo mercancía"
-                              value={prov.costo} onChange={(e) => updateProveedor(pi, 'costo', e.target.value)} />
+                            <PriceInput className={`${inp} w-32`} placeholder="Costo mercancía"
+                              value={prov.costo} onChange={(val) => updateProveedor(pi, 'costo', val)} />
                           </div>
                           {proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
@@ -505,16 +801,11 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
-                        {/* Notas proveedor */}
                         <input type="text" className={`${inp} text-xs`} placeholder="Notas del proveedor (opcional)"
                           value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                       </div>
-
-                      {/* Detail lines */}
                       <div className="px-4 pb-4 pt-3 bg-cream/50 border-t border-border/30">
-                        <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">
-                          Distribución por tipo y categoría
-                        </p>
+                        <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Distribución por tipo y categoría</p>
                         <div className="space-y-2">
                           {prov.detalles.map((det, di) => (
                             <div key={di} className="flex items-center gap-2 bg-surface rounded-xl px-3 py-2.5 border border-border/40">
@@ -550,7 +841,6 @@ export default function Contenedores() {
                     </div>
                   ))}
                 </div>
-
                 <button type="button" onClick={addProveedor}
                   className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-primary/30 text-primary text-sm font-semibold hover:bg-primary/5 hover:border-primary/50 transition-all">
                   <Plus size={15} /> Agregar proveedor
@@ -566,7 +856,6 @@ export default function Contenedores() {
                     <p className="text-[11px] text-muted mt-0.5">Transporte, aduana, maniobras y otros costos operativos</p>
                   </div>
                 </div>
-
                 <div className="rounded-2xl border border-border/60 bg-surface overflow-hidden">
                   <div className="divide-y divide-border/30">
                     {servicios.map((srv, si) => (
@@ -578,8 +867,8 @@ export default function Contenedores() {
                         </select>
                         <input type="text" className={`${inp} flex-1`} placeholder="Empresa o proveedor"
                           value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
-                        <input type="number" min="0" step="0.01" className={`${inp} xl:w-32`} placeholder="Costo $"
-                          value={srv.costo} onChange={(e) => updateServicio(si, 'costo', e.target.value)} />
+                        <PriceInput className={`${inp} xl:w-32`} placeholder="Costo $"
+                          value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
                         <input type="text" className={`${inp} flex-1`} placeholder="Notas (opcional)"
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
                         {servicios.length > 1 && (
@@ -600,7 +889,7 @@ export default function Contenedores() {
                 </div>
               </div>
 
-              {/* Mobile-only action row */}
+              {/* Mobile action row */}
               <div className="flex xl:hidden gap-3 pt-1">
                 <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
@@ -613,18 +902,11 @@ export default function Contenedores() {
               </div>
             </div>
 
-            {/* ── RIGHT: sticky summary + actions ─────────────────── */}
+            {/* ── RIGHT: sticky summary ────────────────────────── */}
             <div className="hidden xl:block w-72 flex-shrink-0">
               <div className="sticky top-0 space-y-3">
-
-                {/* Cost summary */}
-                <div className={`rounded-2xl border p-4 transition-colors duration-300 ${
-                  resumen.cantidadValida
-                    ? 'border-success/30 bg-success/5'
-                    : 'border-border bg-surface shadow-sm'
-                }`}>
+                <div className={`rounded-2xl border p-4 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-4">Resumen de Costos</p>
-
                   <div className="space-y-2.5 mb-4">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted">Mercancía</span>
@@ -640,29 +922,17 @@ export default function Contenedores() {
                       <span className="text-base font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
                     </div>
                   </div>
-
-                  {/* Costo / paca hero */}
                   <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 text-center mb-3">
                     <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Costo por Paca</p>
-                    <p className="text-2xl font-display font-bold text-primary">
-                      {formatCurrency(resumen.costoUnitario)}
-                    </p>
+                    <p className="text-2xl font-display font-bold text-primary">{formatCurrency(resumen.costoUnitario)}</p>
                   </div>
-
-                  {/* Quantity validation */}
-                  <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${
-                    resumen.cantidadValida
-                      ? 'bg-success/10 text-success'
-                      : 'bg-primary/10 text-primary'
-                  }`}>
+                  <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
                     {resumen.cantidadValida
                       ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} pacas — OK</>
                       : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
                     }
                   </div>
                 </div>
-
-                {/* Action buttons */}
                 <div className="space-y-2">
                   <button type="submit" disabled={submitting || !resumen.cantidadValida}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
@@ -675,7 +945,6 @@ export default function Contenedores() {
                 </div>
               </div>
             </div>
-
           </div>
         </form>
       </Modal>
@@ -686,37 +955,27 @@ export default function Contenedores() {
       {selectedContenedor && (
         <Modal isOpen={viewModalOpen} onClose={() => setViewModalOpen(false)} title={selectedContenedor.numero} size="xl">
           <div className="space-y-5">
-
-            {/* Status + meta row */}
             <div className="flex flex-wrap items-center gap-3">
               <StatusBadge estado={selectedContenedor.estado} />
               <span className="text-xs text-muted">{formatDate(selectedContenedor.fecha_llegada)}</span>
               <span className="text-xs text-muted">{selectedContenedor.total_pacas} pacas</span>
               {selectedContenedor.lote_id && (
-                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">
-                  Lote #{selectedContenedor.lote_id}
-                </span>
+                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
               )}
             </div>
-
-            {/* Cost breakdown cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Mercancía', value: selectedContenedor.costo_mercancia_total, small: true },
-                { label: 'Servicios', value: selectedContenedor.costo_servicios_total, small: true },
-                { label: 'Total', value: selectedContenedor.costo_total, small: true },
+                { label: 'Mercancía',   value: selectedContenedor.costo_mercancia_total },
+                { label: 'Servicios',   value: selectedContenedor.costo_servicios_total },
+                { label: 'Total',       value: selectedContenedor.costo_total           },
                 { label: 'Costo / Paca', value: selectedContenedor.costo_unitario, highlight: true },
               ].map((item) => (
                 <div key={item.label} className={`rounded-2xl p-3 text-center border ${item.highlight ? 'bg-primary/10 border-primary/20' : 'bg-primary/4 border-border/40'}`}>
                   <p className="text-xs text-muted mb-1">{item.label}</p>
-                  <p className={`font-bold font-mono ${item.highlight ? 'text-primary text-xl' : 'text-primary text-base'}`}>
-                    {formatCurrency(item.value)}
-                  </p>
+                  <p className={`font-bold font-mono ${item.highlight ? 'text-primary text-xl' : 'text-primary text-base'}`}>{formatCurrency(item.value)}</p>
                 </div>
               ))}
             </div>
-
-            {/* Providers */}
             <div>
               <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Proveedores de Mercancía</p>
               <div className="space-y-2">
@@ -741,8 +1000,6 @@ export default function Contenedores() {
                 ))}
               </div>
             </div>
-
-            {/* Services */}
             {selectedContenedor.servicios.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Servicios</p>
@@ -759,11 +1016,9 @@ export default function Contenedores() {
                 </div>
               </div>
             )}
-
             {selectedContenedor.notas && (
               <p className="text-sm text-muted italic border-l-2 border-border pl-3">{selectedContenedor.notas}</p>
             )}
-
             {isAdmin && selectedContenedor.estado === 'borrador' && (
               <div className="flex justify-end gap-3 pt-2 border-t border-border/40">
                 <button onClick={() => openEditModal(selectedContenedor)}
@@ -786,26 +1041,18 @@ export default function Contenedores() {
       {selectedContenedor && (
         <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title="Finalizar Contenedor" size="lg">
           <div className="space-y-5">
-
-            {/* Costo unitario hero */}
             <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
               <div className="flex items-center justify-center gap-2 mb-1">
                 <DollarSign size={16} className="text-muted" />
                 <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por paca</p>
               </div>
-              <p className="text-4xl font-display font-bold text-primary">
-                {formatCurrency(selectedContenedor.costo_unitario)}
-              </p>
+              <p className="text-4xl font-display font-bold text-primary">{formatCurrency(selectedContenedor.costo_unitario)}</p>
               <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada paca</p>
             </div>
-
-            {/* Info banner */}
             <div className="flex items-start gap-3 bg-primary/5 rounded-xl px-4 py-3 text-sm text-muted">
               <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
               <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas} pacas</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
             </div>
-
-            {/* Price inputs per combination */}
             <div>
               <p className={lbl}>Precio de Venta por Tipo / Categoría</p>
               <div className="rounded-xl border border-border/60 bg-surface overflow-hidden divide-y divide-border/40">
@@ -818,16 +1065,15 @@ export default function Contenedores() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs text-muted">$</span>
-                      <input type="number" min="0.01" step="0.01"
+                      <PriceInput
                         className={`${inp} w-32 text-right font-mono`} placeholder="0.00"
                         value={preciosVenta[comb.key] || ''}
-                        onChange={(e) => setPreciosVenta({ ...preciosVenta, [comb.key]: e.target.value })} />
+                        onChange={(val) => setPreciosVenta({ ...preciosVenta, [comb.key]: val })} />
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" onClick={() => setFinalizarModalOpen(false)}
                 className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
@@ -841,6 +1087,15 @@ export default function Contenedores() {
           </div>
         </Modal>
       )}
+
+      {/* ════════════════════════════════════════════════════════
+          COMPARADOR MODAL
+      ════════════════════════════════════════════════════════ */}
+      <ComparadorModal
+        isOpen={comparadorOpen}
+        onClose={() => setComparadorOpen(false)}
+        items={contenedores}
+      />
     </Layout>
   );
 }

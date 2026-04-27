@@ -16,7 +16,6 @@ import CarteraCliente from './pages/CarteraCliente';
 import GestionarPedidos from './pages/GestionarPedidos';
 import ClienteDashboard from './pages/ClienteDashboard';
 import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
-import Lotes from './pages/Lotes';
 import Cotizaciones from './pages/Cotizaciones';
 import TiposPaca from './pages/TiposPaca';
 import GestionUsuarios from './pages/GestionUsuarios';
@@ -58,7 +57,6 @@ function RutasAdmin() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/pacas" element={<Pacas />} />
-      <Route path="/lotes" element={<Lotes />} />
       <Route path="/contenedores" element={<Contenedores />} />
       <Route path="/clientes" element={<Clientes />} />
       <Route path="/ventas" element={<Ventas />} />
