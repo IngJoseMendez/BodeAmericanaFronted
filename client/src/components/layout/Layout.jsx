@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 const ROUTE_NAMES = {
   '/':                     'Dashboard',
   '/pacas':                'Inventario',
-  '/lotes':                'Lotes',
+  '/contenedores':         'Contenedores',
   '/clientes':             'Clientes',
   '/ventas':               'Ventas',
   '/gestionar-pedidos':    'Pedidos',
@@ -21,10 +21,8 @@ const ROUTE_NAMES = {
   '/catalogo':             'Catálogo',
   '/mis-pedidos':          'Mis Pedidos',
   '/mi-cartera':           'Mi Cartera',
-  '/contenedores':         'Contenedores',
   '/tipos-paca':           'Tipos de Paca',
   '/gestion-usuarios':     'Usuarios',
-  '/cotizaciones':         'Cotizaciones',
 };
 
 function Breadcrumbs({ location }) {

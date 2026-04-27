@@ -368,6 +368,9 @@ export const analyticsApi = {
     const query = new URLSearchParams(params).toString();
     return api.get(`/analytics/flujo-caja${query ? `?${query}` : ''}`);
   },
+  getContenedores() {
+    return api.get('/analytics/contenedores');
+  },
 };
 
 export const tiposPacaApi = {

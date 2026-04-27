@@ -1,15 +1,55 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
-import { cotizacionesApi, clientesApi } from '../services/api';
+import { cotizacionesApi, clientesApi, pacasApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
-import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart } from 'lucide-react';
+import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart, Package, AlertCircle, Info } from 'lucide-react';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
 };
+
+function PriceInput({ value, onChange, placeholder = 'Precio', className = '' }) {
+  const [focused, setFocused] = useState(false);
+  const [raw, setRaw] = useState('');
+
+  const handleFocus = () => {
+    setRaw(value > 0 ? String(value) : '');
+    setFocused(true);
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    const parsed = parseFloat(raw.replace(/,/g, '')) || 0;
+    onChange(parsed);
+  };
+
+  const handleChange = (e) => {
+    const v = e.target.value.replace(/[^0-9.]/g, '');
+    setRaw(v);
+  };
+
+  const displayValue = focused
+    ? raw
+    : value > 0
+      ? new Intl.NumberFormat('es-MX').format(value)
+      : '';
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={displayValue}
+      placeholder={placeholder}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      onChange={handleChange}
+      className={className}
+    />
+  );
+}
 
 const generarPDF = (cotizacion) => {
   const contenido = `
@@ -218,6 +258,29 @@ export default function Cotizaciones() {
     }
   };
 
+  const fetchPrecioDefault = async (index, tipo, categoria) => {
+    if (!tipo) return;
+    try {
+      const params = { tipo, estado: 'disponible', limite: 1 };
+      if (categoria) params.categoria = categoria;
+      const res = await pacasApi.getAll(params);
+      const paca = res.data?.[0];
+      if (paca && paca.precio_venta > 0) {
+        setItems(prev => {
+          const next = [...prev];
+          if (next[index].precio_unitario === 0) {
+            next[index] = {
+              ...next[index],
+              precio_unitario: parseFloat(paca.precio_venta),
+              subtotal: (next[index].cantidad || 0) * parseFloat(paca.precio_venta),
+            };
+          }
+          return next;
+        });
+      }
+    } catch (_) {}
+  };
+
   const updateItem = (index, field, value) => {
     const newItems = [...items];
     newItems[index][field] = value;
@@ -225,6 +288,12 @@ export default function Cotizaciones() {
       newItems[index].subtotal = (newItems[index].cantidad || 0) * (newItems[index].precio_unitario || 0);
     }
     setItems(newItems);
+
+    if (field === 'tipo' || field === 'categoria') {
+      const tipo     = field === 'tipo'      ? value : newItems[index].tipo;
+      const categoria = field === 'categoria' ? value : newItems[index].categoria;
+      fetchPrecioDefault(index, tipo, categoria);
+    }
   };
 
   const calcularTotales = () => {
@@ -277,9 +346,18 @@ export default function Cotizaciones() {
   };
 
   const handleRechazar = async (id) => {
+    const ok = await confirm({
+      title: '¿Rechazar cotización?',
+      message: 'Las pacas reservadas volverán a estar disponibles en el inventario.',
+      confirmText: 'Rechazar',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await cotizacionesApi.updateEstado(id, 'rechazada');
-      addToast('Cotización rechazada', 'success');
+      addToast('Cotización rechazada — pacas liberadas al inventario', 'success');
+      setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
       addToast(err.message, 'error');
@@ -305,16 +383,16 @@ export default function Cotizaciones() {
 
   const handleConvertirVenta = async (id) => {
     const ok = await confirm({
-      title: '¿Convertir a venta?',
-      message: 'Se creará una venta con los productos de esta cotización.',
-      confirmText: 'Convertir a venta',
+      title: '¿Confirmar cotización y crear venta?',
+      message: 'Se creará una venta y las pacas reservadas pasarán a estado vendida en el inventario. Esta acción no se puede deshacer.',
+      confirmText: 'Confirmar y crear venta',
       cancelText: 'Cancelar',
       variant: 'info',
     });
     if (!ok) return;
     try {
       const result = await cotizacionesApi.convertirAVenta(id);
-      addToast(`Cotización convertida a venta #${result.venta_id}`, 'success');
+      addToast(`Venta #${result.venta_id} creada — ${result.pacas_vendidas} pacas vendidas`, 'success');
       setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
@@ -441,6 +519,12 @@ export default function Cotizaciones() {
             </div>
           </div>
 
+          {/* Aviso inventario */}
+          <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+            <Info size={14} className="flex-shrink-0 mt-0.5 text-blue-500" />
+            <span>Al crear la cotización, las pacas se reservarán automáticamente en el inventario (estado <strong>separada</strong>) hasta que la cotización sea confirmada o rechazada.</span>
+          </div>
+
           {/* Items */}
           <div>
             <div className="flex justify-between items-center mb-2">
@@ -484,12 +568,11 @@ export default function Cotizaciones() {
                     min="1"
                   />
                   
-                  <input
-                    type="number"
+                  <PriceInput
                     value={item.precio_unitario}
-                    onChange={(e) => updateItem(index, 'precio_unitario', parseFloat(e.target.value) || 0)}
-                    className="w-24 px-2 py-2 rounded-lg border text-sm text-right"
+                    onChange={(v) => updateItem(index, 'precio_unitario', v)}
                     placeholder="Precio"
+                    className="w-28 px-2 py-2 rounded-lg border text-sm text-right"
                   />
                   
                   <span className="w-24 text-right font-medium text-sm">
@@ -604,6 +687,31 @@ export default function Cotizaciones() {
               </div>
             </div>
 
+            {/* Pacas vinculadas al inventario */}
+            {selectedCotizacion.pacas_vinculadas?.length > 0 ? (
+              <div className="p-3 bg-success/5 border border-success/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Package size={14} className="text-success" />
+                  <span className="text-xs font-semibold text-success uppercase tracking-wide">
+                    Pacas reservadas en inventario ({selectedCotizacion.pacas_vinculadas.reduce((s, p) => s + p.cantidad, 0)} pacas)
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {selectedCotizacion.pacas_vinculadas.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs text-primary">
+                      <span className="font-medium capitalize">{p.tipo}{p.categoria ? ` / ${p.categoria}` : ''}</span>
+                      <span className="text-muted">{p.cantidad} paca{p.cantidad !== 1 ? 's' : ''} · {formatCurrency(p.precio_unitario)} c/u</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : selectedCotizacion.estado === 'pendiente' && (
+              <div className="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-xl text-xs text-warning-dark">
+                <AlertCircle size={14} className="flex-shrink-0 text-warning" />
+                <span>Esta cotización no tiene pacas vinculadas al inventario. No podrá convertirse a venta.</span>
+              </div>
+            )}
+
             <div className="flex justify-end">
               <div className="w-full max-w-xs space-y-1 sm:space-y-2 text-right">
                 <div className="flex justify-between text-xs sm:text-sm">
@@ -640,7 +748,7 @@ export default function Cotizaciones() {
                   <Button variant="ghost" size="sm" onClick={() => handleEliminar(selectedCotizacion.id)} icon={Trash2} className="text-error">
                     Eliminar
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={() => { handleRechazar(selectedCotizacion.id); setViewModalOpen(false); }} icon={X}>
+                  <Button variant="secondary" size="sm" onClick={() => handleRechazar(selectedCotizacion.id)} icon={X}>
                     Rechazar
                   </Button>
                   <Button size="sm" onClick={() => handleConvertirVenta(selectedCotizacion.id)} icon={ShoppingCart}>

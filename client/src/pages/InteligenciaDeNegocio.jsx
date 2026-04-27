@@ -4,10 +4,10 @@ import { Card, CardBody, Button, Badge } from '../components/common';
 import { analyticsApi } from '../services/api';
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  LineChart, Line, ResponsiveContainer, Legend
+  LineChart, Line, AreaChart, Area, ResponsiveContainer, Legend
 } from 'recharts';
 import {
-  TrendingUp, Users, Package, Zap, AlertTriangle, CheckCircle, Clock,
+  TrendingUp, Users, Package, Package2, Zap, AlertTriangle, CheckCircle, Clock,
   DollarSign, ShoppingCart, ArrowUp, ArrowDown, Brain, Target, Award,
   BarChart3, RefreshCw, Filter, Star, Info, Calendar, Database, TrendingDown,
   Minus, Sparkles, ChevronDown, ChevronUp, HelpCircle
@@ -25,6 +25,8 @@ const COLORS = {
   warning: '#f4a261',
   info: '#3b82f6'
 };
+
+const CHART_COLORS = ['#d4a373','#6a994e','#3b82f6','#bc4749','#f4a261','#8b5cf6','#14b8a6','#f97316'];
 
 const SCORE_COLORS = {
   VIP: '#6a994e',
@@ -685,29 +687,28 @@ function ClientesScoreChart({ data }) {
   );
 }
 
-function LotesRentabilidadChart({ data }) {
+function ContenedoresCostoChart({ data }) {
   if (!data || data.length === 0) {
-    return <p className="text-center text-muted py-8">Sin datos de lotes</p>;
+    return <p className="text-center text-muted py-8">Sin contenedores finalizados aún</p>;
   }
-
-  const chartData = data.slice(0, 8).map(lote => ({
-    name: lote.numero.length > 10 ? lote.numero.slice(0, 10) + '...' : lote.numero,
-    ganancia: parseFloat(lote.ganancia_lote) || 0,
-    margen: parseFloat(lote.margen_porcentaje) || 0
-  }));
-
   return (
-    <ResponsiveContainer width="100%" height={250}>
-      <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-        <XAxis type="number" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-        <YAxis type="category" dataKey="name" width={60} tick={{ fontSize: 11 }} />
+    <ResponsiveContainer width="100%" height={260}>
+      <AreaChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+        <defs>
+          <linearGradient id="colorCostoU" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={COLORS.secondary} stopOpacity={0.25}/>
+            <stop offset="95%" stopColor={COLORS.secondary} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="numero" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={40} />
+        <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(1)}k`} tick={{ fontSize: 11 }} />
         <Tooltip
-          formatter={(value, name) => [formatCurrency(value), name === 'ganancia' ? 'Ganancia' : 'Margen %']}
+          formatter={(v) => [formatCurrency(v), 'Costo Unitario']}
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
         />
-        <Bar dataKey="ganancia" fill={COLORS.success} radius={[0, 4, 4, 0]} />
-      </BarChart>
+        <Area type="monotone" dataKey="costo_unitario" stroke={COLORS.secondary} fill="url(#colorCostoU)" strokeWidth={2.5} dot={{ r: 5, fill: COLORS.secondary, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7 }} />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }
@@ -752,7 +753,7 @@ export default function InteligenciaDeNegocio() {
 
   const [rotacion, setRotacion] = useState(null);
   const [clientesScore, setClientesScore] = useState(null);
-  const [lotes, setLotes] = useState(null);
+  const [contenedores, setContenedores] = useState(null);
   const [ventas, setVentas] = useState(null);
   const [predicciones, setPredicciones] = useState(null);
   const [recomendaciones, setRecomendaciones] = useState(null);
@@ -768,10 +769,10 @@ export default function InteligenciaDeNegocio() {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      const [rotacionData, scoreData, lotesData, ventasData, prediccionesData, recomendacionesData, dashboardData, queComprarData, riesgoData, flujoData] = await Promise.all([
+      const [rotacionData, scoreData, contenedoresData, ventasData, prediccionesData, recomendacionesData, dashboardData, queComprarData, riesgoData, flujoData] = await Promise.all([
         analyticsApi.getRotacion(),
         analyticsApi.getClientesScore(),
-        analyticsApi.getLotes(),
+        analyticsApi.getContenedores(),
         analyticsApi.getVentas({ periodo, dias: 30 }),
         analyticsApi.getPredicciones(),
         analyticsApi.getRecomendaciones(),
@@ -783,7 +784,7 @@ export default function InteligenciaDeNegocio() {
 
       setRotacion(rotacionData);
       setClientesScore(scoreData);
-      setLotes(lotesData);
+      setContenedores(contenedoresData);
       setVentas(ventasData);
       setPredicciones(prediccionesData);
       setRecomendaciones(recomendacionesData);
@@ -802,7 +803,7 @@ export default function InteligenciaDeNegocio() {
     { id: 'resumen', label: 'Resumen', icon: Brain },
     { id: 'rotacion', label: 'Rotación', icon: Zap },
     { id: 'clientes', label: 'Clientes', icon: Users },
-    { id: 'lotes', label: 'Lotes', icon: Package },
+    { id: 'contenedores', label: 'Contenedores', icon: Package2 },
     { id: 'ventas', label: 'Ventas', icon: TrendingUp },
     { id: 'predicciones', label: 'Predicciones', icon: Target },
     { id: 'que-comprar', label: 'Qué Comprar', icon: ShoppingCart },
@@ -1180,80 +1181,176 @@ export default function InteligenciaDeNegocio() {
           </div>
         )}
 
-        {/* Lotes */}
-        {activeTab === 'lotes' && (
+        {/* Contenedores */}
+        {activeTab === 'contenedores' && (
           <div className="space-y-6">
+            {/* KPI Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                icon={Package}
-                label="Lotes Activos"
-                value={lotes?.totales?.lotesActivos || 0}
-                color="primary"
-              />
-              <MetricCard
-                icon={DollarSign}
-                label="Costo Total"
-                value={formatCurrency(lotes?.totales?.costoTotal || 0)}
-                color="secondary"
-              />
-              <MetricCard
-                icon={TrendingUp}
-                label="Vendido Total"
-                value={formatCurrency(lotes?.totales?.vendidoTotal || 0)}
-                color="success"
-              />
-              <MetricCard
-                icon={Award}
-                label="Ganancia Total"
-                value={formatCurrency(lotes?.totales?.gananciaTotal || 0)}
-                color="success"
-              />
+              <MetricCard icon={Package2} label="Total Contenedores" value={contenedores?.totales?.total || 0} color="primary" />
+              <MetricCard icon={CheckCircle} label="Finalizados" value={contenedores?.totales?.finalizados || 0} color="success" />
+              <MetricCard icon={DollarSign} label="Inversión Total" value={formatCurrency(contenedores?.totales?.inversionTotal || 0)} color="secondary" />
+              <MetricCard icon={TrendingUp} label="Costo Promedio/Paca" value={formatCurrency(contenedores?.totales?.costoUnitarioPromedio || 0)} color="info" />
             </div>
 
+            {/* Segunda fila KPI */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <MetricCard icon={Package} label="Total Pacas Generadas" value={(contenedores?.totales?.totalPacas || 0).toLocaleString('es-MX')} color="primary" />
+              <MetricCard icon={Clock} label="En Borrador" value={contenedores?.totales?.borradores || 0} color="warning" />
+              <MetricCard icon={BarChart3} label="Tipos de Producto" value={contenedores?.distribucionTipo?.length || 0} color="info" />
+            </div>
+
+            {/* Evolución costo unitario */}
             <Card>
               <CardBody>
-                <h3 className="font-display text-lg mb-4">Rentabilidad por Lote</h3>
-                <LotesRentabilidadChart data={lotes?.lotes} />
+                <h3 className="font-display text-lg mb-1">Evolución del Costo por Paca</h3>
+                <p className="text-xs text-muted mb-4">Costo unitario de cada contenedor finalizado en orden cronológico</p>
+                <ContenedoresCostoChart data={contenedores?.evolucionCosto} />
               </CardBody>
             </Card>
 
+            {/* Distribución tipo + Servicios */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardBody>
-                  <h3 className="font-display text-lg mb-4 text-success">Top 5 Más Rentables</h3>
-                  <div className="space-y-3">
-                    {lotes?.topRentables?.map((lote, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-success/5 rounded-xl">
-                        <div>
-                          <p className="font-medium">{lote.numero}</p>
-                          <p className="text-xs text-muted">{lote.proveedor || 'Sin proveedor'}</p>
+                  <h3 className="font-display text-lg mb-1">Pacas por Tipo de Producto</h3>
+                  <p className="text-xs text-muted mb-4">Total de pacas importadas agrupadas por tipo</p>
+                  {contenedores?.distribucionTipo?.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={contenedores.distribucionTipo} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          formatter={(v) => [v.toLocaleString('es-MX'), 'Pacas']}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+                        />
+                        <Bar dataKey="cantidad" name="Pacas" radius={[4, 4, 0, 0]}>
+                          {contenedores.distribucionTipo.map((_, i) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-center text-muted py-8 text-sm">Sin datos de tipos de producto</p>
+                  )}
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">Costos de Servicios</h3>
+                  <p className="text-xs text-muted mb-4">Desglose de gasto en servicios logísticos</p>
+                  {contenedores?.serviciosPorTipo?.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={contenedores.serviciosPorTipo}
+                          dataKey="total_costo"
+                          nameKey="tipo_servicio"
+                          cx="50%" cy="50%"
+                          outerRadius={85}
+                          label={({ tipo_servicio, percent }) =>
+                            `${tipo_servicio} ${(percent * 100).toFixed(0)}%`
+                          }
+                          labelLine={false}
+                        >
+                          {contenedores.serviciosPorTipo.map((_, i) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(v) => [formatCurrency(v), 'Costo']}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-center text-muted py-8 text-sm">Sin servicios registrados</p>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+
+            {/* Top proveedores + tabla comparativa */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">Top Proveedores de Mercancía</h3>
+                  <p className="text-xs text-muted mb-4">Ordenados por inversión total acumulada</p>
+                  <div className="space-y-4">
+                    {(contenedores?.topProveedores || []).map((p, i) => {
+                      const maxCosto = contenedores.topProveedores[0]?.costo_total || 1;
+                      const pct = Math.round((p.costo_total / maxCosto) * 100);
+                      return (
+                        <div key={i}>
+                          <div className="flex items-center justify-between text-sm mb-1.5">
+                            <span className="font-medium truncate max-w-[55%]">{p.proveedor_nombre}</span>
+                            <span className="text-xs text-muted tabular-nums">
+                              {formatCurrency(p.costo_total)} · {p.num_contenedores} cont.
+                            </span>
+                          </div>
+                          <div className="h-2 bg-primary/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+                            />
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-success">{formatCurrency(lote.ganancia_lote)}</p>
-                          <p className="text-xs text-success">+{lote.margen_porcentaje}%</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
+                    {!contenedores?.topProveedores?.length && (
+                      <p className="text-center text-muted py-6 text-sm">Sin proveedores registrados</p>
+                    )}
                   </div>
                 </CardBody>
               </Card>
 
               <Card>
                 <CardBody>
-                  <h3 className="font-display text-lg mb-4 text-accent">Menos Rentables</h3>
-                  <div className="space-y-3">
-                    {lotes?.menosRentables?.map((lote, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-primary/5 rounded-xl">
-                        <div>
-                          <p className="font-medium">{lote.numero}</p>
-                          <p className="text-xs text-muted">{lote.pacas_vendidas}/{lote.cantidad_pacas} vendidas</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-accent">{lote.margen_porcentaje}%</p>
-                          <p className="text-xs text-muted">margen</p>
-                        </div>
-                      </div>
-                    ))}
+                  <h3 className="font-display text-lg mb-1">Comparativa de Contenedores</h3>
+                  <p className="text-xs text-muted mb-4">Últimos contenedores finalizados</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 text-xs text-muted font-medium">Número</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Pacas</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Costo/u</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(contenedores?.contenedores || [])
+                          .filter(c => c.estado === 'finalizado')
+                          .slice(0, 7)
+                          .map((c, i) => {
+                            const allUnits = (contenedores.contenedores || [])
+                              .filter(x => x.estado === 'finalizado')
+                              .map(x => x.costo_unitario);
+                            const minU = Math.min(...allUnits);
+                            const isBest = c.costo_unitario === minU && allUnits.length > 1;
+                            return (
+                              <tr key={i} className="border-b border-border/50 hover:bg-primary/3">
+                                <td className="py-2 font-medium">{c.numero}</td>
+                                <td className="py-2 text-right tabular-nums">{c.total_pacas.toLocaleString('es-MX')}</td>
+                                <td className={`py-2 text-right tabular-nums font-semibold ${isBest ? 'text-success' : ''}`}>
+                                  {formatCurrency(c.costo_unitario)}
+                                  {isBest && <span className="ml-1 text-[10px]">✓</span>}
+                                </td>
+                                <td className="py-2 text-right tabular-nums">{formatCurrency(c.costo_total)}</td>
+                              </tr>
+                            );
+                          })}
+                        {!(contenedores?.contenedores?.some(c => c.estado === 'finalizado')) && (
+                          <tr>
+                            <td colSpan="4" className="py-6 text-center text-muted text-sm">
+                              Sin contenedores finalizados aún
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </CardBody>
               </Card>

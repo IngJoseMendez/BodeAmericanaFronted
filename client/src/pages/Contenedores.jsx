@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import ExcelJS from 'exceljs';
 import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
   TrendingUp, DollarSign, Archive, Boxes,
@@ -343,26 +344,223 @@ export default function Contenedores() {
     return contenedores.filter(c => c.numero.toLowerCase().includes(q));
   }, [contenedores, busqueda]);
 
-  // ── Export CSV ─────────────────────────────────────────────────
-  const handleExportCSV = () => {
-    const headers = ['Número', 'Fecha Llegada', 'Estado', 'Total Pacas', 'Costo Unitario', 'Costo Total', 'N° Servicios'];
-    const rows = contenedoresFiltrados.map(c => [
-      c.numero,
-      c.fecha_llegada ? new Date(c.fecha_llegada).toLocaleDateString('es-MX') : '',
-      c.estado,
-      c.total_pacas,
-      parseFloat(c.costo_unitario || 0).toFixed(2),
-      parseFloat(c.costo_total || 0).toFixed(2),
-      c.num_servicios ?? 0,
-    ]);
-    const csv = [headers, ...rows].map(r => r.join(';')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+  // ── Export Excel ───────────────────────────────────────────────
+  const handleExportExcel = async () => {
+    const primary   = '1a1a2e';
+    const secondary = 'd4a373';
+    const success   = '6a994e';
+    const warning   = 'f4a261';
+    const accent    = 'bc4749';
+    const lightGray = 'F5F5F0';
+
+    const fmtCurrency = (v) =>
+      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(v || 0);
+    const fmtDate = (v) => v ? new Date(v).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Bodega Americana';
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet('Contenedores');
+    ws.properties.tabColor = { argb: secondary };
+
+    // ── Anchos de columna ──────────────────────────────────────────
+    ws.columns = [
+      { key: 'numero',     width: 22 }, // A
+      { key: 'fecha',      width: 14 }, // B
+      { key: 'estado',     width: 13 }, // C
+      { key: 'pacas',      width: 13 }, // D
+      { key: 'costo_u',    width: 18 }, // E
+      { key: 'mercancia',  width: 20 }, // F
+      { key: 'servicios',  width: 18 }, // G
+      { key: 'total',      width: 20 }, // H
+      { key: 'nprov',      width: 14 }, // I
+      { key: 'nsrv',       width: 14 }, // J
+    ];
+
+    // ── Fila 1: Título ─────────────────────────────────────────────
+    ws.mergeCells('A1:J1');
+    const titleCell = ws.getCell('A1');
+    titleCell.value = 'BODEGA AMERICANA — Reporte de Contenedores';
+    titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 32;
+
+    // ── Fila 2: Fecha ──────────────────────────────────────────────
+    ws.mergeCells('A2:J2');
+    const subCell = ws.getCell('A2');
+    subCell.value = `Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}   |   Total registros: ${contenedoresFiltrados.length}`;
+    subCell.font = { size: 10, italic: true, color: { argb: '888888' } };
+    subCell.alignment = { horizontal: 'center' };
+    ws.getRow(2).height = 18;
+
+    // ── Fila 4: Sección KPIs ───────────────────────────────────────
+    ws.mergeCells('A4:J4');
+    const kpiHeader = ws.getCell('A4');
+    kpiHeader.value = 'RESUMEN EJECUTIVO';
+    kpiHeader.font = { size: 11, bold: true, color: { argb: 'FFFFFF' } };
+    kpiHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    kpiHeader.alignment = { horizontal: 'center' };
+    ws.getRow(4).height = 22;
+
+    // KPI data
+    const totales = contenedoresFiltrados;
+    const finalizados = totales.filter(c => c.estado === 'finalizado');
+    const borradores  = totales.filter(c => c.estado === 'borrador');
+    const invTotal    = finalizados.reduce((s, c) => s + parseFloat(c.costo_total || 0), 0);
+    const totalPacas  = finalizados.reduce((s, c) => s + parseInt(c.total_pacas || 0), 0);
+    const promUnitario = finalizados.length > 0
+      ? finalizados.reduce((s, c) => s + parseFloat(c.costo_unitario || 0), 0) / finalizados.length
+      : 0;
+
+    const kpis = [
+      ['Total contenedores', totales.length,               primary,   null],
+      ['Finalizados',         finalizados.length,           success,   null],
+      ['En borrador',         borradores.length,            warning,   null],
+      ['Total pacas generadas', totalPacas,                 primary,   null],
+      ['Inversión total (finalizados)', invTotal,           accent,    '$#,##0.00'],
+      ['Costo promedio por paca',       promUnitario,       secondary, '$#,##0.00'],
+    ];
+
+    let row = 5;
+    for (const [label, value, color, fmt] of kpis) {
+      ws.getCell(`A${row}`).value = label;
+      ws.getCell(`A${row}`).font = { bold: true, size: 10 };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lightGray } };
+      ws.mergeCells(`A${row}:D${row}`);
+
+      ws.getCell(`E${row}`).value = value;
+      ws.getCell(`E${row}`).font = { bold: true, size: 12, color: { argb: color } };
+      ws.getCell(`E${row}`).alignment = { horizontal: 'right' };
+      if (fmt) ws.getCell(`E${row}`).numFmt = fmt;
+      ws.mergeCells(`E${row}:J${row}`);
+      ws.getRow(row).height = 20;
+      row++;
+    }
+
+    row++; // blank row
+
+    // ── Sección detalle ────────────────────────────────────────────
+    ws.mergeCells(`A${row}:J${row}`);
+    const detHeader = ws.getCell(`A${row}`);
+    detHeader.value = 'DETALLE DE CONTENEDORES';
+    detHeader.font = { size: 11, bold: true, color: { argb: 'FFFFFF' } };
+    detHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    detHeader.alignment = { horizontal: 'center' };
+    ws.getRow(row).height = 22;
+    row++;
+
+    // ── Cabeceras de tabla ─────────────────────────────────────────
+    const cols = ['Número', 'Fecha Llegada', 'Estado', 'Total Pacas', 'Costo/Paca', 'Costo Mercancía', 'Costo Servicios', 'Costo Total', 'Proveedores', 'Servicios'];
+    cols.forEach((h, i) => {
+      const cell = ws.getCell(`${String.fromCharCode(65 + i)}${row}`);
+      cell.value = h;
+      cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 10 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = { bottom: { style: 'thin', color: { argb: secondary } } };
+    });
+    ws.getRow(row).height = 24;
+    row++;
+
+    // ── Filas de datos ─────────────────────────────────────────────
+    contenedoresFiltrados.forEach((c, idx) => {
+      const isFinalizado = c.estado === 'finalizado';
+      const bg = idx % 2 === 0 ? 'FFFFFF' : 'FAF9F7';
+
+      const setCell = (col, value, extra = {}) => {
+        const cell = ws.getCell(`${col}${row}`);
+        cell.value = value;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        cell.font = { size: 10, ...extra.font };
+        cell.alignment = { vertical: 'middle', ...extra.alignment };
+        if (extra.numFmt) cell.numFmt = extra.numFmt;
+        if (extra.border) cell.border = extra.border;
+      };
+
+      setCell('A', c.numero, { font: { bold: true, size: 10 } });
+      setCell('B', c.fecha_llegada ? new Date(c.fecha_llegada) : '—', {
+        numFmt: c.fecha_llegada ? 'dd/mm/yyyy' : undefined,
+        alignment: { horizontal: 'center', vertical: 'middle' },
+      });
+      setCell('C', c.estado === 'finalizado' ? 'Finalizado' : 'Borrador', {
+        font: { bold: true, size: 10, color: { argb: isFinalizado ? success : warning } },
+        alignment: { horizontal: 'center', vertical: 'middle' },
+      });
+      setCell('D', parseInt(c.total_pacas || 0), {
+        numFmt: '#,##0',
+        alignment: { horizontal: 'right', vertical: 'middle' },
+      });
+      setCell('E', parseFloat(c.costo_unitario || 0), {
+        numFmt: '$#,##0.00',
+        alignment: { horizontal: 'right', vertical: 'middle' },
+        font: { bold: isFinalizado, size: 10, color: { argb: isFinalizado ? primary : '999999' } },
+      });
+      setCell('F', parseFloat(c.costo_mercancia_total || 0), {
+        numFmt: '$#,##0.00',
+        alignment: { horizontal: 'right', vertical: 'middle' },
+      });
+      setCell('G', parseFloat(c.costo_servicios_total || 0), {
+        numFmt: '$#,##0.00',
+        alignment: { horizontal: 'right', vertical: 'middle' },
+      });
+      setCell('H', parseFloat(c.costo_total || 0), {
+        numFmt: '$#,##0.00',
+        alignment: { horizontal: 'right', vertical: 'middle' },
+        font: { bold: true, size: 10 },
+      });
+      setCell('I', parseInt(c.num_proveedores || 0), {
+        alignment: { horizontal: 'center', vertical: 'middle' },
+      });
+      setCell('J', parseInt(c.num_servicios || 0), {
+        alignment: { horizontal: 'center', vertical: 'middle' },
+      });
+
+      ws.getRow(row).height = 20;
+      row++;
+    });
+
+    // ── Fila de totales ────────────────────────────────────────────
+    ws.mergeCells(`A${row}:C${row}`);
+    ws.getCell(`A${row}`).value = 'TOTALES (finalizados)';
+    ws.getCell(`A${row}`).font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    ws.getCell(`A${row}`).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    const totalsCells = [
+      ['D', totalPacas,  '#,##0',    true],
+      ['E', promUnitario,'$#,##0.00',true],
+      ['F', finalizados.reduce((s, c) => s + parseFloat(c.costo_mercancia_total || 0), 0), '$#,##0.00', true],
+      ['G', finalizados.reduce((s, c) => s + parseFloat(c.costo_servicios_total || 0), 0), '$#,##0.00', true],
+      ['H', invTotal,    '$#,##0.00',true],
+    ];
+    for (const [col, val, fmt, bold] of totalsCells) {
+      const cell = ws.getCell(`${col}${row}`);
+      cell.value = val;
+      cell.numFmt = fmt;
+      cell.font = { bold, size: 10, color: { argb: primary } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    }
+    ws.getRow(row).height = 22;
+    row += 2;
+
+    // ── Pie de página ──────────────────────────────────────────────
+    ws.mergeCells(`A${row}:J${row}`);
+    ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-MX')} — Bodega Americana`;
+    ws.getCell(`A${row}`).font = { size: 8, italic: true, color: { argb: 'AAAAAA' } };
+    ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
+
+    // ── Descargar ──────────────────────────────────────────────────
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `contenedores-${new Date().toISOString().split('T')[0]}.csv`;
+    a.href = URL.createObjectURL(blob);
+    a.download = `Contenedores_${new Date().toISOString().split('T')[0]}.xlsx`;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(a.href);
+    addToast('Excel descargado correctamente', 'success');
   };
 
   // ── Derived summary (live) ─────────────────────────────────────
@@ -602,13 +800,13 @@ export default function Contenedores() {
           </button>
         )}
 
-        {/* Export CSV */}
+        {/* Export Excel */}
         <button
-          onClick={handleExportCSV}
+          onClick={handleExportExcel}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm font-medium hover:border-secondary/40 hover:text-secondary transition-colors flex-shrink-0"
         >
           <Download size={14} />
-          <span className="hidden sm:inline">Exportar</span>
+          <span className="hidden sm:inline">Excel</span>
         </button>
       </div>
 
