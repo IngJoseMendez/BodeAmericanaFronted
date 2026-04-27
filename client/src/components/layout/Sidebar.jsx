@@ -30,9 +30,9 @@ import { useTheme } from '../../context/ThemeContext';
 
 const adminNavItems = [
   { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
+  { path: '/contenedores',        icon: Package2,        label: 'Contenedores',  key: null },
   { path: '/pacas',                icon: Package,         label: 'Inventario',    key: 'pacas' },
   { path: '/lotes',                icon: Layers,          label: 'Lotes',         key: null },
-  { path: '/contenedores',        icon: Package2,        label: 'Contenedores',  key: null },
   { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca', key: null },
   { path: '/clientes',             icon: Users,           label: 'Clientes',      key: 'clientes' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',        key: 'ventas' },
