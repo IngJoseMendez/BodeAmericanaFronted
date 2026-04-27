@@ -20,6 +20,7 @@ import Lotes from './pages/Lotes';
 import Cotizaciones from './pages/Cotizaciones';
 import TiposPaca from './pages/TiposPaca';
 import GestionUsuarios from './pages/GestionUsuarios';
+import Contenedores from './pages/Contenedores';
 
 function AdminLayout() {
   return (
@@ -58,6 +59,7 @@ function RutasAdmin() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/pacas" element={<Pacas />} />
       <Route path="/lotes" element={<Lotes />} />
+      <Route path="/contenedores" element={<Contenedores />} />
       <Route path="/clientes" element={<Clientes />} />
       <Route path="/ventas" element={<Ventas />} />
       <Route path="/cartera" element={<Cartera />} />

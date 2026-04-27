@@ -429,3 +429,25 @@ export const reservasApi = {
     return api.delete(`/reservas/${id}`);
   },
 };
+
+export const contenedoresApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/contenedores${query ? `?${query}` : ''}`);
+  },
+  getOne(id) {
+    return api.get(`/contenedores/${id}`);
+  },
+  create(data) {
+    return api.post('/contenedores', data);
+  },
+  update(id, data) {
+    return api.put(`/contenedores/${id}`, data);
+  },
+  finalizar(id, data) {
+    return api.post(`/contenedores/${id}/finalizar`, data);
+  },
+  delete(id) {
+    return api.delete(`/contenedores/${id}`);
+  },
+};
