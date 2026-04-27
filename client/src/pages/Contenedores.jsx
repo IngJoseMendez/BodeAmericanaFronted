@@ -441,7 +441,7 @@ export default function Contenedores() {
               {/* [1] Información Básica */}
               <div className="rounded-2xl border border-border/60 overflow-hidden">
                 <div className="flex items-center gap-3 px-4 py-3 bg-primary/[0.03] border-b border-border/40">
-                  <span className="w-6 h-6 rounded-lg bg-secondary/20 text-secondary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
                   <div>
                     <p className="text-sm font-semibold text-primary leading-none">Información Básica</p>
                     <p className="text-[11px] text-muted mt-0.5">Identificación y datos generales del contenedor</p>
@@ -474,7 +474,7 @@ export default function Contenedores() {
               {/* [2] Proveedores de Mercancía */}
               <div>
                 <div className="flex items-center gap-3 mb-3">
-                  <span className="w-6 h-6 rounded-lg bg-secondary/20 text-secondary text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                   <div>
                     <p className="text-sm font-semibold text-primary leading-none">Proveedores de Mercancía</p>
                     <p className="text-[11px] text-muted mt-0.5">Quién suministra qué tipos de paca y en qué cantidad</p>
@@ -543,7 +543,7 @@ export default function Contenedores() {
                           ))}
                         </div>
                         <button type="button" onClick={() => addDetalle(pi)}
-                          className="mt-2.5 flex items-center gap-1.5 text-xs text-secondary font-semibold hover:opacity-70 transition-opacity">
+                          className="mt-2.5 flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-secondary transition-colors">
                           <Plus size={13} /> Agregar línea de distribución
                         </button>
                       </div>
@@ -552,7 +552,7 @@ export default function Contenedores() {
                 </div>
 
                 <button type="button" onClick={addProveedor}
-                  className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-secondary/40 text-secondary text-sm font-semibold hover:bg-secondary/5 hover:border-secondary/60 transition-all">
+                  className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-primary/30 text-primary text-sm font-semibold hover:bg-primary/5 hover:border-primary/50 transition-all">
                   <Plus size={15} /> Agregar proveedor
                 </button>
               </div>
@@ -560,7 +560,7 @@ export default function Contenedores() {
               {/* [3] Servicios */}
               <div>
                 <div className="flex items-center gap-3 mb-3">
-                  <span className="w-6 h-6 rounded-lg bg-secondary/20 text-secondary text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                   <div>
                     <p className="text-sm font-semibold text-primary leading-none">Servicios</p>
                     <p className="text-[11px] text-muted mt-0.5">Transporte, aduana, maniobras y otros costos operativos</p>
@@ -593,7 +593,7 @@ export default function Contenedores() {
                   </div>
                   <div className="px-4 py-3 border-t border-border/30 bg-cream/30">
                     <button type="button" onClick={addServicio}
-                      className="flex items-center gap-1.5 text-xs text-secondary font-semibold hover:opacity-70 transition-opacity">
+                      className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-secondary transition-colors">
                       <Plus size={13} /> Agregar servicio
                     </button>
                   </div>
@@ -618,10 +618,10 @@ export default function Contenedores() {
               <div className="sticky top-0 space-y-3">
 
                 {/* Cost summary */}
-                <div className={`rounded-2xl border-2 p-4 transition-colors duration-300 ${
+                <div className={`rounded-2xl border p-4 transition-colors duration-300 ${
                   resumen.cantidadValida
-                    ? 'border-success/40 bg-success/5'
-                    : 'border-warning/30 bg-warning/5'
+                    ? 'border-success/30 bg-success/5'
+                    : 'border-border bg-surface shadow-sm'
                 }`}>
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-4">Resumen de Costos</p>
 
@@ -642,9 +642,9 @@ export default function Contenedores() {
                   </div>
 
                   {/* Costo / paca hero */}
-                  <div className="bg-secondary/10 border border-secondary/20 rounded-xl p-3 text-center mb-3">
-                    <p className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">Costo por Paca</p>
-                    <p className="text-2xl font-display font-bold text-secondary">
+                  <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 text-center mb-3">
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Costo por Paca</p>
+                    <p className="text-2xl font-display font-bold text-primary">
                       {formatCurrency(resumen.costoUnitario)}
                     </p>
                   </div>
@@ -653,11 +653,11 @@ export default function Contenedores() {
                   <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${
                     resumen.cantidadValida
                       ? 'bg-success/10 text-success'
-                      : 'bg-warning/10 text-warning'
+                      : 'bg-primary/10 text-primary'
                   }`}>
                     {resumen.cantidadValida
                       ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} pacas — OK</>
-                      : <><AlertTriangle size={13} /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
+                      : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
                     }
                   </div>
                 </div>
@@ -707,9 +707,9 @@ export default function Contenedores() {
                 { label: 'Total', value: selectedContenedor.costo_total, small: true },
                 { label: 'Costo / Paca', value: selectedContenedor.costo_unitario, highlight: true },
               ].map((item) => (
-                <div key={item.label} className={`rounded-2xl p-3 text-center border ${item.highlight ? 'bg-secondary/8 border-secondary/20' : 'bg-primary/4 border-border/40'}`}>
+                <div key={item.label} className={`rounded-2xl p-3 text-center border ${item.highlight ? 'bg-primary/10 border-primary/20' : 'bg-primary/4 border-border/40'}`}>
                   <p className="text-xs text-muted mb-1">{item.label}</p>
-                  <p className={`font-bold font-mono ${item.highlight ? 'text-secondary text-xl' : 'text-primary text-base'}`}>
+                  <p className={`font-bold font-mono ${item.highlight ? 'text-primary text-xl' : 'text-primary text-base'}`}>
                     {formatCurrency(item.value)}
                   </p>
                 </div>
@@ -788,15 +788,15 @@ export default function Contenedores() {
           <div className="space-y-5">
 
             {/* Costo unitario hero */}
-            <div className="relative overflow-hidden rounded-2xl bg-secondary/10 border border-secondary/20 p-5 text-center">
+            <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
               <div className="flex items-center justify-center gap-2 mb-1">
-                <DollarSign size={16} className="text-secondary" />
-                <p className="text-xs font-semibold text-secondary uppercase tracking-wider">Costo unitario por paca</p>
+                <DollarSign size={16} className="text-muted" />
+                <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por paca</p>
               </div>
-              <p className="text-4xl font-display font-bold text-secondary">
+              <p className="text-4xl font-display font-bold text-primary">
                 {formatCurrency(selectedContenedor.costo_unitario)}
               </p>
-              <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong>costo_base</strong> a cada paca</p>
+              <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada paca</p>
             </div>
 
             {/* Info banner */}
