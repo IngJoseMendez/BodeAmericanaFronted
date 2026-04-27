@@ -276,40 +276,65 @@ export default function Pacas() {
       }
 
       const wb = new ExcelJS.Workbook();
+      wb.creator = 'Bodega Americana';
+      wb.created = new Date();
       const ws = wb.addWorksheet('Inventario Pacas');
-      
+      ws.properties.tabColor = { argb: '1a1a2e' };
+
       ws.columns = [
-        { header: 'Tipo', key: 'tipo', width: 20 },
-        { header: 'Categoría', key: 'categoria', width: 20 },
-        { header: 'Peso (kg)', key: 'peso', width: 12 },
-        { header: 'Costo Base', key: 'costo', width: 15 },
-        { header: 'Precio Venta', key: 'precio', width: 15 },
-        { header: 'Lote', key: 'lote', width: 15 },
-        { header: 'Estado', key: 'estado', width: 15 },
-        { header: 'Notas', key: 'notas', width: 30 }
+        { header: 'Tipo',           key: 'tipo',       width: 18 },
+        { header: 'Categoría',      key: 'categoria',  width: 14 },
+        { header: 'Peso (kg)',       key: 'peso',       width: 11 },
+        { header: 'Costo Base',     key: 'costo',      width: 16 },
+        { header: 'Precio Venta',   key: 'precio',     width: 16 },
+        { header: 'Lote',           key: 'lote',       width: 16 },
+        { header: 'Estado',         key: 'estado',     width: 13 },
+        { header: 'Cotización',     key: 'cot_numero', width: 16 },
+        { header: 'Cliente Reserva',key: 'cot_cliente',width: 22 },
+        { header: 'Precio Cotizado',key: 'cot_precio', width: 16 },
+        { header: 'Notas',          key: 'notas',      width: 28 },
       ];
 
       ws.getRow(1).eachCell(cell => {
-        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 10 };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
-        cell.alignment = { horizontal: 'center' };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'd4a373' } } };
       });
+      ws.getRow(1).height = 22;
 
-      datos.forEach(p => {
-        ws.addRow({
-          tipo: p.tipo,
-          categoria: p.categoria,
-          peso: p.peso,
-          costo: p.costo_base,
-          precio: p.precio_venta,
-          lote: getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
-          estado: p.estado,
-          notas: p.notas || ''
+      const sepColor = 'FFF8E6'; // fondo suave naranja para separadas
+      datos.forEach((p, idx) => {
+        const isSep = p.estado === 'separada';
+        const bg = isSep ? sepColor : (idx % 2 === 0 ? 'FFFFFF' : 'FAF9F7');
+        const row = ws.addRow({
+          tipo:       p.tipo,
+          categoria:  p.categoria,
+          peso:       parseFloat(p.peso) || 0,
+          costo:      parseFloat(p.costo_base) || 0,
+          precio:     parseFloat(p.precio_venta) || 0,
+          lote:       getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
+          estado:     p.estado,
+          cot_numero: isSep ? (p.cotizacion_numero || '') : '',
+          cot_cliente:isSep ? (p.cotizacion_cliente || '') : '',
+          cot_precio: isSep && p.cotizacion_precio ? parseFloat(p.cotizacion_precio) : '',
+          notas:      p.notas || '',
         });
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.font = { size: 10 };
+          cell.alignment = { vertical: 'middle' };
+        });
+        if (isSep) {
+          row.getCell('estado').font = { bold: true, color: { argb: 'B45309' }, size: 10 };
+          row.getCell('cot_numero').font = { bold: true, color: { argb: 'B45309' }, size: 10 };
+        }
+        row.height = 18;
       });
 
       ws.getColumn('costo').numFmt = '$#,##0.00';
       ws.getColumn('precio').numFmt = '$#,##0.00';
+      ws.getColumn('cot_precio').numFmt = '$#,##0.00';
 
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -403,10 +428,14 @@ export default function Pacas() {
                   <Package className="w-4 h-4 text-secondary" />
                   <span className="font-medium text-sm">{r.tipo}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-4 gap-1 text-xs">
                   <div>
                     <p className="text-muted">Disp</p>
                     <p className="font-bold text-success">{parseInt(r.disponibles) || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted">Sep</p>
+                    <p className="font-bold text-warning">{parseInt(r.separadas) || 0}</p>
                   </div>
                   <div>
                     <p className="text-muted">Vend</p>
@@ -511,18 +540,24 @@ export default function Pacas() {
                       <p className="text-xs text-muted">{grupo.pacas.length} pacas</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6 text-sm">
+                  <div className="flex items-center gap-4 text-sm">
                     <div className="text-center">
                       <p className="text-xs text-muted">Disp</p>
                       <p className="font-bold text-success">{grupo.pacas.filter(p => p.estado === 'disponible').length}</p>
                     </div>
+                    {grupo.pacas.some(p => p.estado === 'separada') && (
+                      <div className="text-center">
+                        <p className="text-xs text-muted">Sep</p>
+                        <p className="font-bold text-warning">{grupo.pacas.filter(p => p.estado === 'separada').length}</p>
+                      </div>
+                    )}
                     <div className="text-center">
                       <p className="text-xs text-muted">Vend</p>
                       <p className="font-bold text-accent">{grupo.pacas.filter(p => p.estado === 'vendida').length}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-xs text-muted">Precio</p>
-                      <p className="font-bold text-primary">{formatCurrency(grupo.pacas[0]?.precio_venta)}</p>
+                      <p className="font-bold text-primary">{formatCurrency(grupo.pacas.find(p => p.estado === 'disponible')?.precio_venta ?? grupo.pacas[0]?.precio_venta)}</p>
                     </div>
                   </div>
                 </div>
@@ -539,17 +574,23 @@ export default function Pacas() {
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Precio</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Lote</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Estado</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Cotización</th>
                           <th className="px-4 py-2 text-right text-xs font-medium text-muted">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border/50">
                         {grupo.pacas.map((paca) => (
-                          <tr key={paca.id} className="hover:bg-primary/3">
+                          <tr key={paca.id} className={`hover:bg-primary/3 ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
                             <td className="px-4 py-2 text-xs text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
                             <td className="px-4 py-2 text-sm text-muted">{paca.categoria}</td>
                             <td className="px-4 py-2 text-sm text-muted">{paca.peso} kg</td>
                             <td className="px-4 py-2 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
-                            <td className="px-4 py-2 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
+                            <td className="px-4 py-2 text-sm font-medium text-primary">
+                              {formatCurrency(paca.precio_venta)}
+                              {paca.estado === 'separada' && paca.cotizacion_precio && parseFloat(paca.cotizacion_precio) !== parseFloat(paca.precio_venta) && (
+                                <span className="block text-xs text-warning">Cot: {formatCurrency(paca.cotizacion_precio)}</span>
+                              )}
+                            </td>
                             <td className="px-4 py-2">
                               {paca.lote_id ? (
                                 <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">
@@ -560,6 +601,18 @@ export default function Pacas() {
                               )}
                             </td>
                             <td className="px-4 py-2"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
+                            <td className="px-4 py-2">
+                              {paca.estado === 'separada' && paca.cotizacion_numero ? (
+                                <div>
+                                  <span className="text-xs font-semibold text-warning">{paca.cotizacion_numero}</span>
+                                  {paca.cotizacion_cliente && (
+                                    <span className="block text-xs text-muted truncate max-w-[120px]">{paca.cotizacion_cliente}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted/40">—</span>
+                              )}
+                            </td>
                             <td className="px-4 py-2 text-right">
                               <div className="flex justify-end gap-1">
                                 {paca.estado === 'disponible' && (
@@ -603,7 +656,7 @@ export default function Pacas() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Lote</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado / Cotización</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                   </tr>
                 </thead>
@@ -614,13 +667,18 @@ export default function Pacas() {
                     <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay pacas</td></tr>
                   ) : (
                     pacas.map((paca) => (
-                      <tr key={paca.id} className="hover:bg-primary/3 transition-colors">
+                      <tr key={paca.id} className={`hover:bg-primary/3 transition-colors ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
                         <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
                         <td className="px-4 py-3 text-sm font-medium text-primary">{paca.tipo}</td>
                         <td className="px-4 py-3 text-sm text-muted">{paca.categoria}</td>
                         <td className="px-4 py-3 text-sm text-muted">{paca.peso} kg</td>
                         <td className="px-4 py-3 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-primary">
+                          {formatCurrency(paca.precio_venta)}
+                          {paca.estado === 'separada' && paca.cotizacion_precio && parseFloat(paca.cotizacion_precio) !== parseFloat(paca.precio_venta) && (
+                            <span className="block text-xs text-warning">Cot: {formatCurrency(paca.cotizacion_precio)}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           {paca.lote_id ? (
                             <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">
@@ -630,7 +688,17 @@ export default function Pacas() {
                             <span className="text-xs text-muted">Sin lote</span>
                           )}
                         </td>
-                        <td className="px-4 py-3"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
+                        <td className="px-4 py-3">
+                          <Badge variant={paca.estado}>{paca.estado}</Badge>
+                          {paca.estado === 'separada' && paca.cotizacion_numero && (
+                            <div className="mt-0.5">
+                              <span className="text-xs font-semibold text-warning">{paca.cotizacion_numero}</span>
+                              {paca.cotizacion_cliente && (
+                                <span className="block text-xs text-muted truncate max-w-[130px]">{paca.cotizacion_cliente}</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1">
                             {paca.estado === 'disponible' && (
@@ -643,8 +711,8 @@ export default function Pacas() {
                                 </button>
                               </>
                             )}
-                            {paca.estado === 'reservada' && (
-                              <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full">Reservada</span>
+                            {paca.estado === 'separada' && (
+                              <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full">Separada</span>
                             )}
                             <button onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
                               <Edit2 size={16} />
