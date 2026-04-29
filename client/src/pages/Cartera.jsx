@@ -839,22 +839,21 @@ export default function Cartera() {
                 onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
                 required
               />
-              {/* Aviso de sobreabono */}
+              {/* Validación de monto vs saldo */}
               {saldoCliente !== null && formData.monto && parseFloat(formData.monto) > 0 && (() => {
                 const monto = parseFloat(formData.monto);
-                const exceso = monto - saldoCliente;
                 if (saldoCliente <= 0) {
                   return (
-                    <div className="mt-1 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-error bg-error/5 rounded-lg px-3 py-2">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      <span>Este cliente no tiene deuda pendiente. El abono quedará como <strong>saldo a favor</strong>.</span>
+                      <span>Este cliente no tiene deuda pendiente. No se puede registrar un abono.</span>
                     </div>
                   );
                 } else if (monto > saldoCliente) {
                   return (
-                    <div className="mt-1 flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-error bg-error/5 rounded-lg px-3 py-2">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      <span>El abono excede el saldo ({formatCurrency(saldoCliente)}). Los {formatCurrency(exceso)} restantes quedarán como <strong>saldo a favor</strong>.</span>
+                      <span>El abono no puede exceder el saldo pendiente ({formatCurrency(saldoCliente)}).</span>
                     </div>
                   );
                 } else {
@@ -892,7 +891,13 @@ export default function Cartera() {
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit" variant="secondary">Registrar Abono</Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={saldoCliente !== null && parseFloat(formData.monto) > saldoCliente}
+            >
+              Registrar Abono
+            </Button>
           </div>
         </form>
       </Modal>

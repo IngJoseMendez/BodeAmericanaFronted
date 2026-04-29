@@ -144,7 +144,7 @@ function TimelineView({ items, onView }) {
                     </p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    {parseFloat(cont.costo_unitario) > 0 && (
+                    {isAdmin && parseFloat(cont.costo_unitario) > 0 && (
                       <div className="text-right hidden sm:block">
                         <p className="text-[10px] text-muted uppercase tracking-wide">Costo/paca</p>
                         <p className="text-sm font-mono font-bold text-secondary">{formatCurrency(cont.costo_unitario)}</p>
@@ -692,7 +692,8 @@ export default function Contenedores() {
 
   const handleFinalizar = async () => {
     for (const c of combsFinalizacion) {
-      if (!preciosVenta[c.key] || parseFloat(preciosVenta[c.key]) <= 0) {
+      const pv = parseFloat(preciosVenta[c.key]);
+      if (isNaN(pv) || pv <= 0) {
         addToast(`Falta precio de venta para "${c.tipo} / ${c.categoria}"`, 'error'); return;
       }
     }
@@ -875,7 +876,9 @@ export default function Contenedores() {
                     <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">{formatDate(cont.fecha_llegada)}</td>
                     <td className="px-4 py-3 font-mono font-semibold text-primary text-center">{parseInt(cont.total_pacas).toLocaleString()}</td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
-                      <span className="text-secondary font-semibold">{formatCurrency(cont.costo_unitario)}</span>
+                      {isAdmin
+                        ? <span className="text-secondary font-semibold">{formatCurrency(cont.costo_unitario)}</span>
+                        : <span className="text-muted text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">{formatCurrency(cont.costo_total)}</td>
                     <td className="px-4 py-3 text-center">
