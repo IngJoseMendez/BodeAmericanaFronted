@@ -380,6 +380,9 @@ export const tiposPacaApi = {
   getCategorias() { return api.get('/tipos-paca/categorias'); },
   createCategoria(data) { return api.post('/tipos-paca/categorias', data); },
   deleteCategoria(id) { return api.delete(`/tipos-paca/categorias/${id}`); },
+  getCalidades() { return api.get('/tipos-paca/calidades'); },
+  createCalidad(data) { return api.post('/tipos-paca/calidades', data); },
+  deleteCalidad(id) { return api.delete(`/tipos-paca/calidades/${id}`); },
 };
 
 export const cotizacionesApi = {

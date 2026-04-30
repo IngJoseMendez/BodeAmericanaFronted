@@ -8,7 +8,7 @@ import html2pdf from 'html2pdf.js';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart, Package, AlertCircle, Info } from 'lucide-react';
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
 };
 
 function PriceInput({ value, onChange, placeholder = 'Precio', className = '' }) {
@@ -34,7 +34,7 @@ function PriceInput({ value, onChange, placeholder = 'Precio', className = '' })
   const displayValue = focused
     ? raw
     : value > 0
-      ? new Intl.NumberFormat('es-MX').format(value)
+      ? new Intl.NumberFormat('es-CO').format(value)
       : '';
 
   return (

@@ -36,7 +36,7 @@ export default function Pacas() {
   const [selectedPaca, setSelectedPaca] = useState(null);
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
-    tipo: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1, lote_id: ''
+    clasificacion: '', referencia: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1, lote_id: ''
   });
   const [error, setError] = useState('');
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
@@ -165,8 +165,8 @@ export default function Pacas() {
     setError('');
     try {
       const payload = {
-        tipo: formData.tipo,
-        categoria: formData.categoria,
+        clasificacion: formData.clasificacion,
+        referencia: formData.referencia,
         peso: parseFloat(formData.peso) || 0,
         costo_base: parseFloat(formData.costo_base) || 0,
         precio_venta: parseFloat(formData.precio_venta) || 0,
@@ -197,8 +197,8 @@ export default function Pacas() {
   const handleEdit = (paca) => {
     setEditando(paca);
     setFormData({
-      tipo: paca.tipo,
-      categoria: paca.categoria,
+      clasificacion: paca.clasificacion,
+      referencia: paca.referencia,
       peso: paca.peso,
       costo_base: paca.costo_base,
       precio_venta: paca.precio_venta,
@@ -251,7 +251,7 @@ export default function Pacas() {
 
   const resetForm = () => {
     setEditando(null);
-    setFormData({ tipo: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1 });
+    setFormData({ clasificacion: '', referencia: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1 });
   };
 
   const [exporting, setExporting] = useState(false);
@@ -282,8 +282,8 @@ export default function Pacas() {
       ws.properties.tabColor = { argb: '1a1a2e' };
 
       ws.columns = [
-        { header: 'Tipo',           key: 'tipo',       width: 18 },
-        { header: 'Categoría',      key: 'categoria',  width: 14 },
+        { header: 'Clasificación',   key: 'clasificacion', width: 18 },
+        { header: 'Referencia',     key: 'referencia', width: 14 },
         { header: 'Peso (kg)',       key: 'peso',       width: 11 },
         { header: 'Costo Base',     key: 'costo',      width: 16 },
         { header: 'Precio Venta',   key: 'precio',     width: 16 },
@@ -308,8 +308,8 @@ export default function Pacas() {
         const isSep = p.estado === 'separada';
         const bg = isSep ? sepColor : (idx % 2 === 0 ? 'FFFFFF' : 'FAF9F7');
         const row = ws.addRow({
-          tipo:       p.tipo,
-          categoria:  p.categoria,
+          clasificacion: p.clasificacion,
+          referencia:    p.referencia,
           peso:       parseFloat(p.peso) || 0,
           costo:      parseFloat(p.costo_base) || 0,
           precio:     parseFloat(p.precio_venta) || 0,
@@ -370,8 +370,8 @@ export default function Pacas() {
       doc.text(`Total de pacas: ${datos.length}`, 14, 34);
 
       const tableData = datos.map(p => [
-        p.tipo,
-        p.categoria,
+        p.clasificacion,
+        p.referencia,
         `${p.peso} kg`,
         formatCurrency(p.precio_venta),
         getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
@@ -380,7 +380,7 @@ export default function Pacas() {
 
       autoTable(doc, {
         startY: 40,
-        head: [['Tipo', 'Categoría', 'Peso', 'Precio Venta', 'Lote', 'Estado']],
+        head: [['Clasificación', 'Referencia', 'Peso', 'Precio Venta', 'Lote', 'Estado']],
         body: tableData,
         theme: 'striped',
         headStyles: { fillColor: [26, 26, 46] },
@@ -398,18 +398,19 @@ export default function Pacas() {
 
   const formatCurrency = (value) => {
     const num = parseFloat(value) || 0;
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(num);
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(num);
   };
 
   const pacasAgrupadas = useMemo(() => {
     const grupos = {};
     pacas.forEach(paca => {
-      if (!grupos[paca.tipo]) {
-        grupos[paca.tipo] = { tipo: paca.tipo, pacas: [] };
+      const key = paca.clasificacion || '';
+      if (!grupos[key]) {
+        grupos[key] = { clasificacion: key, pacas: [] };
       }
-      grupos[paca.tipo].pacas.push(paca);
+      grupos[key].pacas.push(paca);
     });
-    return Object.values(grupos).sort((a, b) => a.tipo.localeCompare(b.tipo));
+    return Object.values(grupos).sort((a, b) => a.clasificacion.localeCompare(b.clasificacion));
   }, [pacas]);
 
   const toggleTipo = (tipo) => {
@@ -422,11 +423,11 @@ export default function Pacas() {
         {/* Resumen stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {resumen.slice(0, 4).map((r, i) => (
-            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.tipo)}>
+            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.clasificacion)}>
               <CardBody className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Package className="w-4 h-4 text-secondary" />
-                  <span className="font-medium text-sm">{r.tipo}</span>
+                  <span className="font-medium text-sm">{r.clasificacion}</span>
                 </div>
                 <div className="grid grid-cols-4 gap-1 text-xs">
                   <div>
@@ -493,7 +494,7 @@ export default function Pacas() {
               onChange={(e) => setFiltroTipo(e.target.value)}
               className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
-              <option value="">Todos los tipos</option>
+              <option value="">Todas las clasificaciones</option>
               {tiposList.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
 
             </select>
@@ -524,19 +525,19 @@ export default function Pacas() {
               ))
             ) : pacasAgrupadas.map((grupo, idx) => (
               <Card key={idx} className="overflow-hidden">
-                <div 
+                <div
                   className="flex items-center justify-between p-4 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
-                  onClick={() => toggleTipo(grupo.tipo)}
+                  onClick={() => toggleTipo(grupo.clasificacion)}
                 >
                   <div className="flex items-center gap-3">
-                    {tiposExpandidos[grupo.tipo] ? (
+                    {tiposExpandidos[grupo.clasificacion] ? (
                       <ChevronDown className="w-5 h-5 text-muted" />
                     ) : (
                       <ChevronRight className="w-5 h-5 text-muted" />
                     )}
                     <Layers className="w-5 h-5 text-secondary" />
                     <div>
-                      <p className="font-bold text-primary">{grupo.tipo}</p>
+                      <p className="font-bold text-primary">{grupo.clasificacion}</p>
                       <p className="text-xs text-muted">{grupo.pacas.length} pacas</p>
                     </div>
                   </div>
@@ -562,13 +563,13 @@ export default function Pacas() {
                   </div>
                 </div>
                 
-                {tiposExpandidos[grupo.tipo] && (
+                {tiposExpandidos[grupo.clasificacion] && (
                   <div className="border-t border-border/50">
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">UUID</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Categoría</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Referencia</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Peso</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Costo</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-muted">Precio</th>
@@ -582,7 +583,7 @@ export default function Pacas() {
                         {grupo.pacas.map((paca) => (
                           <tr key={paca.id} className={`hover:bg-primary/3 ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
                             <td className="px-4 py-2 text-xs text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
-                            <td className="px-4 py-2 text-sm text-muted">{paca.categoria}</td>
+                            <td className="px-4 py-2 text-sm text-muted">{paca.referencia}</td>
                             <td className="px-4 py-2 text-sm text-muted">{paca.peso} kg</td>
                             <td className="px-4 py-2 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
                             <td className="px-4 py-2 text-sm font-medium text-primary">
@@ -650,8 +651,8 @@ export default function Pacas() {
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
@@ -669,8 +670,8 @@ export default function Pacas() {
                     pacas.map((paca) => (
                       <tr key={paca.id} className={`hover:bg-primary/3 transition-colors ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
                         <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-primary">{paca.tipo}</td>
-                        <td className="px-4 py-3 text-sm text-muted">{paca.categoria}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-primary">{paca.clasificacion}</td>
+                        <td className="px-4 py-3 text-sm text-muted">{paca.referencia}</td>
                         <td className="px-4 py-3 text-sm text-muted">{paca.peso} kg</td>
                         <td className="px-4 py-3 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
                         <td className="px-4 py-3 text-sm font-medium text-primary">
@@ -780,17 +781,17 @@ export default function Pacas() {
 
           <div className="grid grid-cols-2 gap-4">
             <Select
-              label="Tipo"
-              value={formData.tipo}
-              onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
+              label="Clasificación"
+              value={formData.clasificacion}
+              onChange={(e) => setFormData({ ...formData, clasificacion: e.target.value })}
               options={tiposList.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
               placeholder="Seleccionar..."
               required
             />
             <Select
-              label="Categoría"
-              value={formData.categoria}
-              onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+              label="Referencia"
+              value={formData.referencia}
+              onChange={(e) => setFormData({ ...formData, referencia: e.target.value })}
               options={categoriasList.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
               placeholder="Seleccionar..."
               required
@@ -867,7 +868,7 @@ export default function Pacas() {
           {selectedPaca && (
             <div className="p-4 bg-gray-50 rounded-xl">
               <p className="text-sm text-muted">Paca seleccionada</p>
-              <p className="font-medium">{selectedPaca.tipo} - {selectedPaca.categoria}</p>
+              <p className="font-medium">{selectedPaca.clasificacion} - {selectedPaca.referencia}</p>
               <p className="text-sm text-muted">Precio: {formatCurrency(selectedPaca.precio_venta)}</p>
             </div>
           )}
@@ -900,7 +901,7 @@ export default function Pacas() {
           {selectedPaca && (
             <div className="p-4 bg-primary/5 rounded-xl border border-primary/20">
               <p className="text-sm text-muted">Paca a reservar</p>
-              <p className="font-medium text-primary">{selectedPaca.tipo} - {selectedPaca.categoria}</p>
+              <p className="font-medium text-primary">{selectedPaca.clasificacion} - {selectedPaca.referencia}</p>
               <p className="text-sm text-muted">Precio: {formatCurrency(selectedPaca.precio_venta)}</p>
               <p className="text-xs text-muted mt-1">Peso: {selectedPaca.peso} kg</p>
             </div>

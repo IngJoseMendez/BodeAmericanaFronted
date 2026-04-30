@@ -4,29 +4,28 @@ import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
   TrendingUp, DollarSign, Archive, Boxes,
   ArrowRight, AlertTriangle, Layers, Search, Download,
-  BarChart2, Calendar, List, ChevronRight,
+  BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm } from '../components/common';
-import { contenedoresApi } from '../services/api';
+import { contenedoresApi, tiposPacaApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { PACA_TIPOS, PACA_CATEGORIAS } from '../types/index';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
 
 const formatCurrency = (value) =>
-  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
 
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 // ── Factory helpers ───────────────────────────────────────────────
 const emptyProveedor = () => ({
-  proveedor_nombre: '', costo: '', notas: '',
-  detalles: [{ tipo: '', categoria: '', cantidad: '' }],
+  proveedor_nombre: '', moneda: 'USD', costo: '', notas: '',
+  detalles: [{ clasificacion: '', referencia: '', calidad: '', cantidad: '' }],
 });
-const emptyServicio = () => ({ proveedor_nombre: '', tipo_servicio: '', costo: '', notas: '' });
+const emptyServicio = () => ({ proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '' });
 
 // ── Price input with auto-formatting ─────────────────────────────
 function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
@@ -59,10 +58,11 @@ function PriceInput({ value, onChange, className = '', placeholder = '0', ...res
 }
 
 // ── Shared style tokens ───────────────────────────────────────────
-const inp =
-  'w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary text-sm ' +
+const inpBase =
+  'px-3 py-2.5 rounded-xl border border-border bg-surface text-primary text-sm ' +
   'focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30 ' +
   'placeholder:text-muted/60 transition-colors duration-150';
+const inp = `w-full ${inpBase}`;
 const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider';
 
 // ── Status badge ─────────────────────────────────────────────────
@@ -286,6 +286,35 @@ function ComparadorModal({ isOpen, onClose, items }) {
   );
 }
 
+// ── Templates (localStorage) ─────────────────────────────────────
+function useContenedorTemplates() {
+  const [templates, setTemplates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ba-contenedor-templates') || '[]'); }
+    catch { return []; }
+  });
+  const save = (nombre, formData, proveedores, servicios) => {
+    const nueva = {
+      id: crypto.randomUUID(),
+      nombre: nombre.trim(),
+      creadoEn: new Date().toISOString(),
+      tasa_conversion: formData.tasa_conversion,
+      total_pacas: formData.total_pacas,
+      notas: formData.notas,
+      proveedores,
+      servicios,
+    };
+    const lista = [...templates.filter(t => t.nombre !== nueva.nombre), nueva];
+    localStorage.setItem('ba-contenedor-templates', JSON.stringify(lista));
+    setTemplates(lista);
+  };
+  const remove = (id) => {
+    const lista = templates.filter(t => t.id !== id);
+    localStorage.setItem('ba-contenedor-templates', JSON.stringify(lista));
+    setTemplates(lista);
+  };
+  return { templates, save, remove };
+}
+
 // ════════════════════════════════════════════════════════════════
 export default function Contenedores() {
   const { addToast } = useToast();
@@ -312,14 +341,31 @@ export default function Contenedores() {
   const [editMode, setEditMode]                     = useState(false);
   const [submitting, setSubmitting]                 = useState(false);
 
+  // ── Catálogo dinámico ─────────────────────────────────────────
+  const [tiposOpts, setTiposOpts]           = useState([]);
+  const [categoriasOpts, setCategoriasOpts] = useState([]);
+  const [calidadesOpts, setCalidadesOpts]   = useState([]);
+
+  useEffect(() => {
+    tiposPacaApi.getTipos().then(d => setTiposOpts(d.map(t => t.nombre))).catch(() => {});
+    tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d.map(t => t.nombre))).catch(() => {});
+    tiposPacaApi.getCalidades().then(d => setCalidadesOpts(d.map(t => t.nombre))).catch(() => {});
+  }, []);
+
   // ── Form ───────────────────────────────────────────────────────
-  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', total_pacas: '', notas: '' });
+  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
 
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
   const [combsFinalizacion, setCombsFinalizacion] = useState([]);
+
+  // ── Templates ─────────────────────────────────────────────────
+  const { templates, save: saveTemplate, remove: removeTemplate } = useContenedorTemplates();
+  const [templateModalOpen, setTemplateModalOpen]         = useState(false);
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
+  const [nombrePlantilla, setNombrePlantilla]             = useState('');
 
   // ── Load ───────────────────────────────────────────────────────
   const loadContenedores = async () => {
@@ -354,7 +400,7 @@ export default function Contenedores() {
     const lightGray = 'F5F5F0';
 
     const fmtCurrency = (v) =>
-      new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(v || 0);
+      new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
     const fmtDate = (v) => v ? new Date(v).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
     const wb = new ExcelJS.Workbook();
@@ -548,7 +594,7 @@ export default function Contenedores() {
 
     // ── Pie de página ──────────────────────────────────────────────
     ws.mergeCells(`A${row}:J${row}`);
-    ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-MX')} — Bodega Americana`;
+    ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-CO')} — Bodega Americana`;
     ws.getCell(`A${row}`).font = { size: 8, italic: true, color: { argb: 'AAAAAA' } };
     ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
 
@@ -563,18 +609,154 @@ export default function Contenedores() {
     addToast('Excel descargado correctamente', 'success');
   };
 
+  // ── Export Excel individual por contenedor ─────────────────────
+  const handleExportContenedorExcel = async (cont) => {
+    const primary   = '1a1a2e';
+    const secondary = 'd4a373';
+    const success   = '6a994e';
+    const fmtCOP = (v) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
+
+    let full = cont;
+    if (!cont.proveedores_mercancia) {
+      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(err.message, 'error'); return; }
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Bodega Americana';
+    const tasa = parseFloat(full.tasa_conversion) || 1;
+    const totalPacas = parseInt(full.total_pacas) || 0;
+
+    // ── Hoja Resumen ────────────────────────────────────────────────
+    const wsR = wb.addWorksheet('Resumen');
+    wsR.properties.tabColor = { argb: secondary };
+    wsR.columns = [{ width: 30 }, { width: 28 }, { width: 20 }, { width: 20 }];
+    const addHeader = (ws, text, cols = 'A1:D1') => {
+      ws.mergeCells(cols);
+      const c = ws.getCell(cols.split(':')[0]);
+      c.value = text; c.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12 };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(parseInt(cols.match(/\d+/)[0])).height = 26;
+    };
+    addHeader(wsR, `CONTENEDOR ${full.numero} — Detalle Completo`);
+    const fields = [
+      ['Número', full.numero], ['Estado', full.estado],
+      ['Fecha Salida', full.fecha_salida ? new Date(full.fecha_salida).toLocaleDateString('es-CO') : '—'],
+      ['Fecha Llegada', full.fecha_llegada ? new Date(full.fecha_llegada).toLocaleDateString('es-CO') : '—'],
+      ['Tasa USD→COP', tasa.toLocaleString('es-CO')],
+      ['Total Pacas', totalPacas],
+      ['Costo Mercancía', fmtCOP(full.costo_mercancia_total)],
+      ['Costo Servicios', fmtCOP(full.costo_servicios_total)],
+      ['Costo Total', fmtCOP(full.costo_total)],
+      ['Costo por Paca', fmtCOP(full.costo_unitario)],
+    ];
+    fields.forEach(([label, val], i) => {
+      const r = i + 2;
+      wsR.getCell(`A${r}`).value = label; wsR.getCell(`A${r}`).font = { bold: true, size: 10 };
+      wsR.getCell(`B${r}`).value = val;   wsR.getCell(`B${r}`).font = { size: 10 };
+      wsR.getRow(r).height = 18;
+    });
+
+    // ── Hoja Mercancía ───────────────────────────────────────────────
+    const wsM = wb.addWorksheet('Mercancía');
+    wsM.columns = [{ width: 24 }, { width: 8 }, { width: 18 }, { width: 18 }, { width: 18 }];
+    addHeader(wsM, 'PROVEEDORES DE MERCANCÍA', 'A1:E1');
+    ['Proveedor', 'Moneda', 'Costo Original', 'Costo COP', 'Costo/Paca'].forEach((h, i) => {
+      const c = wsM.getCell(`${String.fromCharCode(65+i)}2`);
+      c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    });
+    wsM.getRow(2).height = 20;
+    (full.proveedores_mercancia || []).forEach((p, i) => {
+      const r = i + 3;
+      const costoCOP = p.moneda === 'USD' ? parseFloat(p.costo) * tasa : parseFloat(p.costo);
+      wsM.getCell(`A${r}`).value = p.proveedor_nombre;
+      wsM.getCell(`B${r}`).value = p.moneda || 'USD';
+      wsM.getCell(`C${r}`).value = parseFloat(p.costo); wsM.getCell(`C${r}`).numFmt = '#,##0.00';
+      wsM.getCell(`D${r}`).value = costoCOP;             wsM.getCell(`D${r}`).numFmt = '$ #,##0';
+      wsM.getCell(`E${r}`).value = totalPacas > 0 ? costoCOP / totalPacas : 0; wsM.getCell(`E${r}`).numFmt = '$ #,##0';
+      wsM.getRow(r).height = 18;
+    });
+
+    // ── Hoja Servicios ───────────────────────────────────────────────
+    const wsS = wb.addWorksheet('Servicios');
+    wsS.columns = [{ width: 16 }, { width: 24 }, { width: 18 }, { width: 18 }];
+    addHeader(wsS, 'SERVICIOS', 'A1:D1');
+    ['Tipo', 'Proveedor', 'Costo COP', 'Costo/Paca'].forEach((h, i) => {
+      const c = wsS.getCell(`${String.fromCharCode(65+i)}2`);
+      c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    });
+    wsS.getRow(2).height = 20;
+    (full.servicios || []).forEach((s, i) => {
+      const r = i + 3;
+      wsS.getCell(`A${r}`).value = s.tipo_servicio; wsS.getCell(`B${r}`).value = s.proveedor_nombre;
+      wsS.getCell(`C${r}`).value = parseFloat(s.costo); wsS.getCell(`C${r}`).numFmt = '$ #,##0';
+      wsS.getCell(`D${r}`).value = totalPacas > 0 ? parseFloat(s.costo) / totalPacas : 0; wsS.getCell(`D${r}`).numFmt = '$ #,##0';
+      wsS.getRow(r).height = 18;
+    });
+
+    // ── Hoja Distribución ────────────────────────────────────────────
+    const wsD = wb.addWorksheet('Distribución');
+    wsD.columns = [{ width: 20 }, { width: 18 }, { width: 16 }, { width: 12 }, { width: 12 }];
+    addHeader(wsD, 'DISTRIBUCIÓN DE PACAS POR PROVEEDOR', 'A1:E1');
+    ['Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Cantidad'].forEach((h, i) => {
+      const c = wsD.getCell(`${String.fromCharCode(65+i)}2`);
+      c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    });
+    wsD.getRow(2).height = 20;
+    let dr = 3;
+    (full.proveedores_mercancia || []).forEach(p => {
+      (p.detalles || []).forEach(d => {
+        wsD.getCell(`A${dr}`).value = p.proveedor_nombre;
+        wsD.getCell(`B${dr}`).value = d.clasificacion;
+        wsD.getCell(`C${dr}`).value = d.referencia;
+        wsD.getCell(`D${dr}`).value = d.calidad || '—';
+        wsD.getCell(`E${dr}`).value = parseInt(d.cantidad);
+        wsD.getRow(dr).height = 18; dr++;
+      });
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Contenedor_${full.numero}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    addToast(`Excel de "${full.numero}" descargado`, 'success');
+  };
+
   // ── Derived summary (live) ─────────────────────────────────────
   const calcularResumen = () => {
-    const costoMercancia = proveedores.reduce((s, p) => s + (parseFloat(p.costo) || 0), 0);
-    const costoServicios = servicios.reduce((s, sv) => s + (parseFloat(sv.costo) || 0), 0);
+    const tasa       = parseFloat(formData.tasa_conversion) || 1;
+    const totalPacas = parseInt(formData.total_pacas) || 0;
+
+    const proveedoresDetalle = proveedores.map(p => {
+      const costoOriginal = parseFloat(p.costo) || 0;
+      const costoEnCOP    = p.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+      return { nombre: p.proveedor_nombre, moneda: p.moneda || 'USD', costoOriginal, costoEnCOP,
+               costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
+    });
+
+    const serviciosDetalle = servicios.map(sv => {
+      const costoOriginal = parseFloat(sv.costo) || 0;
+      const moneda = sv.moneda || 'COP';
+      const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+      return { tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda, costoOriginal, costo: costoEnCOP,
+               costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
+    });
+
+    const costoMercancia = proveedoresDetalle.reduce((s, p) => s + p.costoEnCOP, 0);
+    const costoServicios = serviciosDetalle.reduce((s, sv) => s + sv.costo, 0);
     const costoTotal     = costoMercancia + costoServicios;
-    const totalPacas     = parseInt(formData.total_pacas) || 0;
     const costoUnitario  = totalPacas > 0 ? costoTotal / totalPacas : 0;
     const sumDetalles    = proveedores.reduce(
       (s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0
     );
     const cantidadValida = totalPacas > 0 && sumDetalles === totalPacas;
-    return { costoMercancia, costoServicios, costoTotal, costoUnitario, sumDetalles, cantidadValida };
+    return { proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal, costoUnitario, sumDetalles, cantidadValida };
   };
 
   // ── Provider row management ────────────────────────────────────
@@ -607,9 +789,16 @@ export default function Contenedores() {
 
   // ── Reset ──────────────────────────────────────────────────────
   const resetForm = () => {
-    setFormData({ numero: '', fecha_llegada: '', total_pacas: '', notas: '' });
+    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });
     setProveedores([emptyProveedor()]);
     setServicios([emptyServicio()]);
+  };
+
+  const handleSaveTemplate = () => {
+    if (!nombrePlantilla.trim()) return;
+    saveTemplate(nombrePlantilla, formData, proveedores, servicios);
+    addToast(`Plantilla "${nombrePlantilla.trim()}" guardada`, 'success');
+    setSaveTemplateModalOpen(false);
   };
 
   // ── Open modals ────────────────────────────────────────────────
@@ -619,17 +808,27 @@ export default function Contenedores() {
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
-      setFormData({ numero: full.numero, fecha_llegada: full.fecha_llegada?.split('T')[0] || '', total_pacas: String(full.total_pacas), notas: full.notas || '' });
+      setFormData({
+        numero: full.numero,
+        fecha_llegada: full.fecha_llegada?.split('T')[0] || '',
+        fecha_salida: full.fecha_salida?.split('T')[0] || '',
+        tasa_conversion: String(full.tasa_conversion || '1'),
+        total_pacas: String(full.total_pacas),
+        notas: full.notas || '',
+      });
       setProveedores(full.proveedores_mercancia.length > 0
         ? full.proveedores_mercancia.map((p) => ({
-            proveedor_nombre: p.proveedor_nombre, costo: String(p.costo || ''), notas: p.notas || '',
+            proveedor_nombre: p.proveedor_nombre,
+            moneda: p.moneda || 'USD',
+            costo: String(p.costo || ''),
+            notas: p.notas || '',
             detalles: p.detalles.length > 0
-              ? p.detalles.map((d) => ({ tipo: d.tipo, categoria: d.categoria, cantidad: String(d.cantidad) }))
-              : [{ tipo: '', categoria: '', cantidad: '' }],
+              ? p.detalles.map((d) => ({ clasificacion: d.clasificacion, referencia: d.referencia, calidad: d.calidad || '', cantidad: String(d.cantidad) }))
+              : [{ clasificacion: '', referencia: '', calidad: '', cantidad: '' }],
           }))
         : [emptyProveedor()]);
       setServicios(full.servicios.length > 0
-        ? full.servicios.map((s) => ({ proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, costo: String(s.costo || ''), notas: s.notas || '' }))
+        ? full.servicios.map((s) => ({ proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP', costo: String(s.costo || ''), notas: s.notas || '' }))
         : [emptyServicio()]);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
@@ -651,8 +850,19 @@ export default function Contenedores() {
     setSubmitting(true);
     try {
       const payload = {
-        ...formData, total_pacas: parseInt(formData.total_pacas),
-        proveedores_mercancia: proveedores.map((p) => ({ ...p, costo: parseFloat(p.costo) || 0, detalles: p.detalles.map((d) => ({ ...d, cantidad: parseInt(d.cantidad) || 0 })) })),
+        numero: formData.numero,
+        fecha_llegada: formData.fecha_llegada || null,
+        fecha_salida: formData.fecha_salida || null,
+        tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
+        total_pacas: parseInt(formData.total_pacas),
+        notas: formData.notas || null,
+        proveedores_mercancia: proveedores.map((p) => ({
+          proveedor_nombre: p.proveedor_nombre,
+          moneda: p.moneda || 'USD',
+          costo: parseFloat(p.costo) || 0,
+          notas: p.notas || null,
+          detalles: p.detalles.map((d) => ({ clasificacion: d.clasificacion, referencia: d.referencia, calidad: d.calidad, cantidad: parseInt(d.cantidad) || 0 })),
+        })),
         servicios: servicios.filter((s) => s.proveedor_nombre || s.tipo_servicio).map((s) => ({ ...s, costo: parseFloat(s.costo) || 0 })),
       };
       if (editMode && selectedContenedor) {
@@ -681,8 +891,13 @@ export default function Contenedores() {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
       const combSet = new Set();
-      full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => combSet.add(`${d.tipo}|${d.categoria}`)));
-      const combs = Array.from(combSet).map((c) => { const [tipo, categoria] = c.split('|'); return { tipo, categoria, key: c }; });
+      full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) =>
+        combSet.add(`${d.clasificacion}|${d.referencia}|${d.calidad || ''}`)
+      ));
+      const combs = Array.from(combSet).map((c) => {
+        const [clasificacion, referencia, calidad] = c.split('|');
+        return { clasificacion, referencia, calidad, key: c };
+      });
       setCombsFinalizacion(combs);
       const init = {}; combs.forEach((c) => { init[c.key] = ''; });
       setPreciosVenta(init);
@@ -694,12 +909,12 @@ export default function Contenedores() {
     for (const c of combsFinalizacion) {
       const pv = parseFloat(preciosVenta[c.key]);
       if (isNaN(pv) || pv <= 0) {
-        addToast(`Falta precio de venta para "${c.tipo} / ${c.categoria}"`, 'error'); return;
+        addToast(`Falta precio de venta para "${c.clasificacion} / ${c.referencia} / ${c.calidad}"`, 'error'); return;
       }
     }
     setSubmitting(true);
     try {
-      const precios = combsFinalizacion.map((c) => ({ tipo: c.tipo, categoria: c.categoria, precio_venta: parseFloat(preciosVenta[c.key]) }));
+      const precios = combsFinalizacion.map((c) => ({ clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
       const result = await contenedoresApi.finalizar(selectedContenedor.id, { precios });
       addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} pacas al inventario`, 'success');
       setFinalizarModalOpen(false); loadContenedores();
@@ -935,7 +1150,7 @@ export default function Contenedores() {
         size="full"
       >
         <form onSubmit={handleSubmit}>
-          <div className="flex flex-col xl:flex-row gap-6 items-start">
+          <div className="flex flex-col lg:flex-row gap-6 items-start">
 
             {/* ── LEFT: form sections ─────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
@@ -949,14 +1164,29 @@ export default function Contenedores() {
                     <p className="text-[11px] text-muted mt-0.5">Identificación y datos generales del contenedor</p>
                   </div>
                 </div>
-                <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="col-span-2 lg:col-span-1">
+                <div className="flex items-center gap-2 px-4 pt-3">
+                  <button type="button" onClick={() => setTemplateModalOpen(true)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-secondary px-3 py-1.5 rounded-lg border border-secondary/30 hover:bg-secondary/8 transition-all">
+                    <BookTemplate size={13} /> Cargar plantilla{templates.length > 0 && ` (${templates.length})`}
+                  </button>
+                  <button type="button" onClick={() => { setNombrePlantilla(''); setSaveTemplateModalOpen(true); }}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-primary px-3 py-1.5 rounded-lg border border-border hover:bg-primary/5 transition-all">
+                    <Save size={13} /> Guardar como plantilla
+                  </button>
+                </div>
+                <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="col-span-2">
                     <label className={lbl}>Número *</label>
                     <input type="text" className={inp} placeholder="CNT-2026-0001"
                       value={formData.numero} onChange={(e) => setFormData({ ...formData, numero: e.target.value })} required />
                   </div>
                   <div>
-                    <label className={lbl}>Fecha de Llegada</label>
+                    <label className={lbl}>Fecha Salida</label>
+                    <input type="date" className={inp}
+                      value={formData.fecha_salida} onChange={(e) => setFormData({ ...formData, fecha_salida: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Fecha Llegada</label>
                     <input type="date" className={inp}
                       value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
                   </div>
@@ -966,6 +1196,11 @@ export default function Contenedores() {
                       value={formData.total_pacas} onChange={(e) => setFormData({ ...formData, total_pacas: e.target.value })} required />
                   </div>
                   <div>
+                    <label className={lbl}>Tasa USD→COP</label>
+                    <input type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
+                      value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
+                  </div>
+                  <div className="col-span-2 md:col-span-3">
                     <label className={lbl}>Notas</label>
                     <input type="text" className={inp} placeholder="Observaciones opcionales..."
                       value={formData.notas} onChange={(e) => setFormData({ ...formData, notas: e.target.value })} />
@@ -990,11 +1225,13 @@ export default function Contenedores() {
                           <span className="w-6 h-6 rounded-lg bg-secondary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{pi + 1}</span>
                           <input type="text" className={`${inp} flex-1`} placeholder="Nombre del proveedor *"
                             value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <span className="text-xs text-muted font-medium hidden sm:inline">$</span>
-                            <PriceInput className={`${inp} w-32`} placeholder="Costo mercancía"
-                              value={prov.costo} onChange={(val) => updateProveedor(pi, 'costo', val)} />
-                          </div>
+                          <select className={`${inpBase} w-20 flex-shrink-0`} value={prov.moneda || 'USD'}
+                            onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
+                            <option value="USD">USD</option>
+                            <option value="COP">COP</option>
+                          </select>
+                          <PriceInput className={`${inpBase} w-32`} placeholder="Costo"
+                            value={prov.costo} onChange={(val) => updateProveedor(pi, 'costo', val)} />
                           {proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
                               className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
@@ -1002,6 +1239,15 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
+                        {(prov.moneda || 'USD') === 'USD' && parseFloat(prov.costo) > 0 && (
+                          <div className="flex items-center gap-2 pl-8">
+                            <span className="text-[10px] text-muted">≈</span>
+                            <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
+                              {formatCurrency(parseFloat(prov.costo) * (parseFloat(formData.tasa_conversion) || 1))}
+                            </span>
+                            <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
+                          </div>
+                        )}
                         <input type="text" className={`${inp} text-xs`} placeholder="Notas del proveedor (opcional)"
                           value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                       </div>
@@ -1009,28 +1255,35 @@ export default function Contenedores() {
                         <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Distribución por tipo y categoría</p>
                         <div className="space-y-2">
                           {prov.detalles.map((det, di) => (
-                            <div key={di} className="flex items-center gap-2 bg-surface rounded-xl px-3 py-2.5 border border-border/40">
-                              <select className={`${inp} flex-1 min-w-0`} value={det.tipo}
-                                onChange={(e) => updateDetalle(pi, di, 'tipo', e.target.value)} required>
-                                <option value="">Tipo de paca</option>
-                                {PACA_TIPOS.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                              </select>
-                              <select className={`${inp} flex-1 min-w-0`} value={det.categoria}
-                                onChange={(e) => updateDetalle(pi, di, 'categoria', e.target.value)} required>
-                                <option value="">Categoría</option>
-                                {PACA_CATEGORIAS.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                              </select>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <input type="number" min="1" className={`${inp} w-20 text-center font-mono`} placeholder="0"
-                                  value={det.cantidad} onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} required />
-                                <span className="text-xs text-muted hidden sm:inline">pcs</span>
+                            <div key={di} className="bg-surface rounded-xl px-3 pt-2.5 pb-3 border border-border/40 space-y-2">
+                              <div className="grid grid-cols-3 gap-2">
+                                <select className={inp} value={det.clasificacion}
+                                  onChange={(e) => updateDetalle(pi, di, 'clasificacion', e.target.value)} required>
+                                  <option value="">Clasificación</option>
+                                  {tiposOpts.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                                </select>
+                                <select className={inp} value={det.referencia}
+                                  onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} required>
+                                  <option value="">Referencia</option>
+                                  {categoriasOpts.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                                </select>
+                                <select className={inp} value={det.calidad}
+                                  onChange={(e) => updateDetalle(pi, di, 'calidad', e.target.value)} required>
+                                  <option value="">Calidad</option>
+                                  {calidadesOpts.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                                </select>
                               </div>
-                              {prov.detalles.length > 1 && (
-                                <button type="button" onClick={() => removeDetalle(pi, di)}
-                                  className="p-1 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
-                                  <X size={13} />
-                                </button>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <input type="number" min="1" className={`${inp} flex-1 text-center font-mono`} placeholder="0"
+                                  value={det.cantidad} onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} required />
+                                <span className="text-xs text-muted font-medium">pacas</span>
+                                {prov.detalles.length > 1 && (
+                                  <button type="button" onClick={() => removeDetalle(pi, di)}
+                                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1060,24 +1313,40 @@ export default function Contenedores() {
                 <div className="rounded-2xl border border-border/60 bg-surface overflow-hidden">
                   <div className="divide-y divide-border/30">
                     {servicios.map((srv, si) => (
-                      <div key={si} className="flex flex-wrap xl:flex-nowrap items-center gap-2 px-4 py-3">
-                        <select className={`${inp} xl:w-36`} value={srv.tipo_servicio}
-                          onChange={(e) => updateServicio(si, 'tipo_servicio', e.target.value)}>
-                          <option value="">Tipo</option>
-                          {TIPOS_SERVICIO.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                        </select>
-                        <input type="text" className={`${inp} flex-1`} placeholder="Empresa o proveedor"
-                          value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
-                        <PriceInput className={`${inp} xl:w-32`} placeholder="Costo $"
-                          value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
-                        <input type="text" className={`${inp} flex-1`} placeholder="Notas (opcional)"
-                          value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
-                        {servicios.length > 1 && (
-                          <button type="button" onClick={() => removeServicio(si)}
-                            className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
-                            <X size={15} />
-                          </button>
+                      <div key={si} className="px-4 py-3 space-y-2">
+                        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
+                          <select className={`${inpBase} lg:w-36`} value={srv.tipo_servicio}
+                            onChange={(e) => updateServicio(si, 'tipo_servicio', e.target.value)}>
+                            <option value="">Tipo</option>
+                            {TIPOS_SERVICIO.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                          </select>
+                          <input type="text" className={`${inp} flex-1 min-w-0`} placeholder="Empresa o proveedor"
+                            value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
+                          <select className={`${inpBase} w-20 flex-shrink-0`} value={srv.moneda || 'COP'}
+                            onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
+                            <option value="USD">USD</option>
+                            <option value="COP">COP</option>
+                          </select>
+                          <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo $"
+                            value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
+                          {servicios.length > 1 && (
+                            <button type="button" onClick={() => removeServicio(si)}
+                              className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                              <X size={15} />
+                            </button>
+                          )}
+                        </div>
+                        {(srv.moneda || 'COP') === 'USD' && parseFloat(srv.costo) > 0 && (
+                          <div className="flex items-center gap-2 pl-1">
+                            <span className="text-[10px] text-muted">≈</span>
+                            <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
+                              {formatCurrency(parseFloat(srv.costo) * (parseFloat(formData.tasa_conversion) || 1))}
+                            </span>
+                            <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
+                          </div>
                         )}
+                        <input type="text" className={inp} placeholder="Notas (opcional)"
+                          value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
                       </div>
                     ))}
                   </div>
@@ -1090,8 +1359,27 @@ export default function Contenedores() {
                 </div>
               </div>
 
+              {/* Mobile cost summary — visible below lg */}
+              <div className="lg:hidden rounded-2xl border border-border/60 bg-surface p-4 space-y-2.5">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted">Costo total</span>
+                  <span className="text-sm font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
+                </div>
+                <div className="flex items-center justify-between pb-2 border-b border-border/40">
+                  <span className="text-xs text-muted">Por paca</span>
+                  <span className="text-sm font-mono font-bold text-secondary tabular-nums">{formatCurrency(resumen.costoUnitario)}</span>
+                </div>
+                <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
+                  {resumen.cantidadValida
+                    ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} pacas — OK</>
+                    : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar distribución</>
+                  }
+                </div>
+              </div>
+
               {/* Mobile action row */}
-              <div className="flex xl:hidden gap-3 pt-1">
+              <div className="flex lg:hidden gap-3 pt-1">
                 <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                   Cancelar
@@ -1104,25 +1392,59 @@ export default function Contenedores() {
             </div>
 
             {/* ── RIGHT: sticky summary ────────────────────────── */}
-            <div className="hidden xl:block w-72 flex-shrink-0">
+            <div className="hidden lg:block w-72 flex-shrink-0">
               <div className="sticky top-0 space-y-3">
                 <div className={`rounded-2xl border p-4 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
-                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-4">Resumen de Costos</p>
-                  <div className="space-y-2.5 mb-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted">Mercancía</span>
-                      <span className="text-sm font-mono font-semibold text-primary tabular-nums">{formatCurrency(resumen.costoMercancia)}</span>
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-3">Resumen de Costos</p>
+
+                  {/* Mercancía por proveedor */}
+                  {resumen.proveedoresDetalle.some(p => p.costoEnCOP > 0) && (
+                    <div className="mb-3">
+                      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Mercancía</p>
+                      <div className="space-y-1.5">
+                        {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
+                          <div key={i} className="flex items-start justify-between gap-1">
+                            <span className="text-[11px] text-muted truncate flex-1">{p.nombre || `Prov. ${i+1}`}</span>
+                            <div className="text-right flex-shrink-0">
+                              {p.moneda === 'USD' && (
+                                <p className="text-[10px] text-muted/70">USD {p.costoOriginal.toLocaleString('es-CO')}</p>
+                              )}
+                              <p className="text-xs font-mono font-semibold text-primary tabular-nums">{formatCurrency(p.costoEnCOP)}</p>
+                              <p className="text-[10px] text-muted/70">{formatCurrency(p.costoPorPaca)}/paca</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted">Servicios</span>
-                      <span className="text-sm font-mono font-semibold text-primary tabular-nums">{formatCurrency(resumen.costoServicios)}</span>
+                  )}
+
+                  {/* Servicios */}
+                  {resumen.serviciosDetalle.some(s => s.costo > 0) && (
+                    <div className="mb-3">
+                      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Servicios</p>
+                      <div className="space-y-1.5">
+                        {resumen.serviciosDetalle.map((s, i) => s.costo > 0 && (
+                          <div key={i} className="flex items-start justify-between gap-1">
+                            <span className="text-[11px] text-muted truncate flex-1 capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
+                            <div className="text-right flex-shrink-0">
+                              {s.moneda === 'USD' && (
+                                <p className="text-[10px] text-muted/70">USD {s.costoOriginal.toLocaleString('es-CO')}</p>
+                              )}
+                              <p className="text-xs font-mono font-semibold text-primary tabular-nums">{formatCurrency(s.costo)}</p>
+                              <p className="text-[10px] text-muted/70">{formatCurrency(s.costoPorPaca)}/paca</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="h-px bg-border/50" />
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-primary">Total</span>
-                      <span className="text-base font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
-                    </div>
+                  )}
+
+                  <div className="h-px bg-border/50 mb-3" />
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold text-primary">Total</span>
+                    <span className="text-base font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
                   </div>
+
                   <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 text-center mb-3">
                     <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Costo por Paca</p>
                     <p className="text-2xl font-display font-bold text-primary">{formatCurrency(resumen.costoUnitario)}</p>
@@ -1158,40 +1480,107 @@ export default function Contenedores() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <StatusBadge estado={selectedContenedor.estado} />
-              <span className="text-xs text-muted">{formatDate(selectedContenedor.fecha_llegada)}</span>
+              {selectedContenedor.fecha_salida && (
+                <span className="text-xs text-muted">Salida: {formatDate(selectedContenedor.fecha_salida)}</span>
+              )}
+              {selectedContenedor.fecha_llegada && (
+                <span className="text-xs text-muted">Llegada: {formatDate(selectedContenedor.fecha_llegada)}</span>
+              )}
               <span className="text-xs text-muted">{selectedContenedor.total_pacas} pacas</span>
+              {selectedContenedor.tasa_conversion && parseFloat(selectedContenedor.tasa_conversion) !== 1 && (
+                <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full">Tasa: {parseFloat(selectedContenedor.tasa_conversion).toLocaleString('es-CO')}</span>
+              )}
               {selectedContenedor.lote_id && (
                 <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
               )}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Mercancía',   value: selectedContenedor.costo_mercancia_total },
-                { label: 'Servicios',   value: selectedContenedor.costo_servicios_total },
-                { label: 'Total',       value: selectedContenedor.costo_total           },
-                { label: 'Costo / Paca', value: selectedContenedor.costo_unitario, highlight: true },
-              ].map((item) => (
-                <div key={item.label} className={`rounded-2xl p-3 text-center border ${item.highlight ? 'bg-primary/10 border-primary/20' : 'bg-primary/4 border-border/40'}`}>
-                  <p className="text-xs text-muted mb-1">{item.label}</p>
-                  <p className={`font-bold font-mono ${item.highlight ? 'text-primary text-xl' : 'text-primary text-base'}`}>{formatCurrency(item.value)}</p>
+
+            {/* Desglose de costos por proveedor y servicio */}
+            <div className="rounded-2xl border border-border/60 overflow-hidden">
+              {/* Proveedores */}
+              {selectedContenedor.proveedores_mercancia.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 bg-primary/3 border-b border-border/40">
+                    <p className="text-xs font-bold text-muted uppercase tracking-wider">Mercancía — por proveedor</p>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {selectedContenedor.proveedores_mercancia.map((prov, i) => {
+                      const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
+                      const costoCOP = (prov.moneda === 'USD') ? parseFloat(prov.costo) * tasa : parseFloat(prov.costo);
+                      const costoPorPaca = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
+                          <div>
+                            <p className="text-sm font-semibold text-primary">{prov.proveedor_nombre}</p>
+                            {prov.moneda === 'USD' && (
+                              <p className="text-xs text-muted">USD {parseFloat(prov.costo).toLocaleString('es-CO')} × {tasa.toLocaleString('es-CO')}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(costoCOP)}</p>
+                            <p className="text-[10px] text-muted">{formatCurrency(costoPorPaca)}/paca</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {/* Servicios */}
+              {selectedContenedor.servicios.length > 0 && (
+                <div>
+                  <div className="px-4 py-2 bg-primary/3 border-b border-border/40 border-t border-t-border/40">
+                    <p className="text-xs font-bold text-muted uppercase tracking-wider">Servicios</p>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {selectedContenedor.servicios.map((srv, i) => {
+                      const costoPorPaca = parseInt(selectedContenedor.total_pacas) > 0 ? parseFloat(srv.costo) / parseInt(selectedContenedor.total_pacas) : 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <span className="capitalize text-xs font-semibold bg-primary/8 text-primary px-2 py-0.5 rounded-md">{srv.tipo_servicio}</span>
+                            <span className="text-sm text-muted">{srv.proveedor_nombre}</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(srv.costo)}</p>
+                            <p className="text-[10px] text-muted">{formatCurrency(costoPorPaca)}/paca</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Totales */}
+              <div className="flex items-center justify-between px-4 py-3 bg-primary/5 border-t border-border/40">
+                <span className="text-sm font-bold text-primary">Total</span>
+                <div className="text-right">
+                  <p className="font-mono font-bold text-primary text-base">{formatCurrency(selectedContenedor.costo_total)}</p>
+                  <p className="text-[10px] text-muted font-mono">{formatCurrency(selectedContenedor.costo_unitario)}/paca</p>
+                </div>
+              </div>
             </div>
+            {/* Distribución de pacas por proveedor */}
             <div>
-              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Proveedores de Mercancía</p>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Distribución de Pacas</p>
               <div className="space-y-2">
                 {selectedContenedor.proveedores_mercancia.map((prov, i) => (
                   <div key={i} className="rounded-xl border border-border/60 bg-surface overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 bg-primary/3">
-                      <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
-                      <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(prov.costo)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
+                        {prov.moneda && <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{prov.moneda}</span>}
+                      </div>
                     </div>
                     <div className="px-4 py-2.5 flex flex-wrap gap-2">
                       {prov.detalles.map((det, di) => (
                         <span key={di} className="inline-flex items-center gap-1.5 bg-primary/5 border border-border/50 rounded-lg px-2.5 py-1 text-xs">
-                          <span className="capitalize font-semibold text-secondary">{det.tipo}</span>
+                          <span className="capitalize font-semibold text-secondary">{det.clasificacion}</span>
                           <span className="text-muted">/</span>
-                          <span className="capitalize text-muted">{det.categoria}</span>
+                          <span className="capitalize text-muted">{det.referencia}</span>
+                          {det.calidad && <><span className="text-muted">/</span><span className="capitalize text-muted">{det.calidad}</span></>}
                           <span className="w-px h-3 bg-border/60" />
                           <span className="font-bold text-primary tabular-nums">{det.cantidad}</span>
                         </span>
@@ -1201,37 +1590,27 @@ export default function Contenedores() {
                 ))}
               </div>
             </div>
-            {selectedContenedor.servicios.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Servicios</p>
-                <div className="rounded-xl border border-border/60 bg-surface overflow-hidden divide-y divide-border/40">
-                  {selectedContenedor.servicios.map((srv, i) => (
-                    <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="capitalize text-xs font-semibold bg-primary/8 text-primary px-2 py-0.5 rounded-md">{srv.tipo_servicio}</span>
-                        <span className="text-sm text-muted">{srv.proveedor_nombre}</span>
-                      </div>
-                      <span className="font-mono text-secondary text-sm font-semibold">{formatCurrency(srv.costo)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
             {selectedContenedor.notas && (
               <p className="text-sm text-muted italic border-l-2 border-border pl-3">{selectedContenedor.notas}</p>
             )}
-            {isAdmin && selectedContenedor.estado === 'borrador' && (
-              <div className="flex justify-end gap-3 pt-2 border-t border-border/40">
-                <button onClick={() => openEditModal(selectedContenedor)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                  <Edit2 size={15} /> Editar
-                </button>
-                <button onClick={() => openFinalizarModal(selectedContenedor)}
-                  className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
-                  <CheckCircle size={17} /> Finalizar Contenedor
-                </button>
-              </div>
-            )}
+            <div className="flex justify-between items-center pt-2 border-t border-border/40 gap-3 flex-wrap">
+              <button onClick={() => handleExportContenedorExcel(selectedContenedor)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                <Download size={15} /> Exportar Excel
+              </button>
+              {isAdmin && selectedContenedor.estado === 'borrador' && (
+                <div className="flex gap-3 ml-auto">
+                  <button onClick={() => openEditModal(selectedContenedor)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                    <Edit2 size={15} /> Editar
+                  </button>
+                  <button onClick={() => openFinalizarModal(selectedContenedor)}
+                    className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
+                    <CheckCircle size={17} /> Finalizar Contenedor
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </Modal>
       )}
@@ -1255,14 +1634,18 @@ export default function Contenedores() {
               <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas} pacas</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
             </div>
             <div>
-              <p className={lbl}>Precio de Venta por Tipo / Categoría</p>
+              <p className={lbl}>Precio de Venta por Clasificación / Referencia / Calidad</p>
               <div className="rounded-xl border border-border/60 bg-surface overflow-hidden divide-y divide-border/40">
                 {combsFinalizacion.map((comb) => (
                   <div key={comb.key} className="flex items-center justify-between px-4 py-3 gap-4">
-                    <div className="flex items-center gap-2 flex-1">
-                      <span className="capitalize text-sm font-semibold bg-secondary/10 text-secondary px-2.5 py-1 rounded-lg">{comb.tipo}</span>
+                    <div className="flex items-center gap-2 flex-1 flex-wrap">
+                      <span className="capitalize text-sm font-semibold bg-secondary/10 text-secondary px-2.5 py-1 rounded-lg">{comb.clasificacion}</span>
                       <ArrowRight size={13} className="text-muted flex-shrink-0" />
-                      <span className="capitalize text-sm text-muted">{comb.categoria}</span>
+                      <span className="capitalize text-sm text-muted">{comb.referencia}</span>
+                      {comb.calidad && (
+                        <><ArrowRight size={13} className="text-muted flex-shrink-0" />
+                        <span className="capitalize text-sm text-muted">{comb.calidad}</span></>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs text-muted">$</span>
@@ -1297,6 +1680,77 @@ export default function Contenedores() {
         onClose={() => setComparadorOpen(false)}
         items={contenedores}
       />
+
+      {/* ════════════════════════════════════════════════════════
+          CARGAR PLANTILLA MODAL
+      ════════════════════════════════════════════════════════ */}
+      <Modal isOpen={templateModalOpen} onClose={() => setTemplateModalOpen(false)} title="Plantillas guardadas" size="sm">
+        {templates.length === 0 ? (
+          <div className="text-center py-10 space-y-2">
+            <BookTemplate size={28} className="mx-auto text-muted/30" />
+            <p className="text-sm text-muted">No hay plantillas guardadas aún</p>
+            <p className="text-xs text-muted/60">Llena un formulario y usa "Guardar como plantilla"</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {templates.map(t => (
+              <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-all group">
+                <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                  setFormData(f => ({ ...f, tasa_conversion: t.tasa_conversion, total_pacas: t.total_pacas, notas: t.notas }));
+                  setProveedores(t.proveedores);
+                  setServicios(t.servicios);
+                  setTemplateModalOpen(false);
+                  addToast(`Plantilla "${t.nombre}" cargada`, 'success');
+                }}>
+                  <p className="text-sm font-semibold text-primary truncate">{t.nombre}</p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {t.proveedores.length} prov. · {t.servicios.length} serv. · {new Date(t.creadoEn).toLocaleDateString('es-CO')}
+                  </p>
+                </div>
+                <button type="button" onClick={() => removeTemplate(t.id)}
+                  className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════
+          GUARDAR PLANTILLA MODAL
+      ════════════════════════════════════════════════════════ */}
+      <Modal isOpen={saveTemplateModalOpen} onClose={() => setSaveTemplateModalOpen(false)} title="Guardar plantilla" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className={lbl}>Nombre de la plantilla *</label>
+            <input type="text" className={inp} placeholder="ej. Contenedor USA 40ft estándar"
+              value={nombrePlantilla} onChange={e => setNombrePlantilla(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveTemplate()} autoFocus />
+            {templates.some(t => t.nombre === nombrePlantilla.trim()) && nombrePlantilla.trim() && (
+              <p className="text-xs text-warning mt-1.5">Ya existe una plantilla con ese nombre — se sobreescribirá.</p>
+            )}
+          </div>
+          <div className="text-xs text-muted bg-primary/5 rounded-xl p-3 space-y-0.5">
+            <p className="font-semibold text-primary mb-1">Se guardará:</p>
+            <p>· Tasa de conversión ({formData.tasa_conversion || '1'})</p>
+            <p>· Total pacas ({formData.total_pacas || '—'})</p>
+            <p>· {proveedores.length} proveedor(es) con distribución</p>
+            <p>· {servicios.filter(s => s.tipo_servicio).length} servicio(s)</p>
+            <p className="text-muted/60 mt-1.5 italic">No se guardan: número ni fechas.</p>
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={() => setSaveTemplateModalOpen(false)}
+              className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
+              Cancelar
+            </button>
+            <button type="button" onClick={handleSaveTemplate} disabled={!nombrePlantilla.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 transition-all">
+              <Save size={15} /> Guardar
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Layout>
   );
 }

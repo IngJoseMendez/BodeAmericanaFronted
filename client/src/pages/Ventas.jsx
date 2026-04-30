@@ -245,7 +245,7 @@ useEffect(() => {
   const totalVenta = pacasSeleccionadas.reduce((sum, p) => sum + parseFloat(p.precio_venta), 0);
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
   const formatDate = (date) => {
@@ -289,8 +289,8 @@ useEffect(() => {
     // Datos de pacas
     let row = 9;
     data.pacas.forEach(paca => {
-      ws.getCell(`A${row}`).value = paca.tipo;
-      ws.getCell(`B${row}`).value = paca.categoria;
+      ws.getCell(`A${row}`).value = paca.clasificacion;
+      ws.getCell(`B${row}`).value = paca.referencia;
       ws.getCell(`C${row}`).value = parseFloat(paca.precio_venta);
       ws.getCell(`C${row}`).numFmt = '$#,##0.00';
       row++;
@@ -339,7 +339,7 @@ useEffect(() => {
     doc.text(`Tipo de Pago: ${data.tipo_pago === 'contado' ? 'Contado' : 'Crédito'}`, 20, 62);
     
     // Tabla de productos
-    const tableData = data.pacas.map(p => [p.tipo, p.categoria, formatCurrency(p.precio_venta)]);
+    const tableData = data.pacas.map(p => [p.clasificacion, p.referencia, formatCurrency(p.precio_venta)]);
     tableData.push(['TOTAL', '', formatCurrency(data.total)]);
     
     autoTable(doc, {
@@ -358,7 +358,7 @@ useEffect(() => {
 
   const filteredPacas = buscarPacas 
     ? pacasDisponibles.filter(p => 
-        p.tipo.includes(buscarPacas) || p.uuid.includes(buscarPacas)
+        p.clasificacion?.includes(buscarPacas) || p.uuid.includes(buscarPacas)
       )
     : pacasDisponibles;
 
@@ -462,8 +462,8 @@ useEffect(() => {
       let total = 0;
       (ventaDetalle.detalles || []).forEach(paca => {
         ws.getCell(`A${row}`).value = 1;
-        ws.getCell(`B${row}`).value = paca.tipo || paca.paca_tipo || '';
-        ws.getCell(`C${row}`).value = paca.categoria || paca.paca_categoria || '';
+        ws.getCell(`B${row}`).value = paca.clasificacion || '';
+        ws.getCell(`C${row}`).value = paca.referencia || '';
         ws.getCell(`D${row}`).value = paca.peso || '';
         ws.getCell(`E${row}`).value = parseFloat(paca.precio_unitario || 0);
         ws.getCell(`E${row}`).numFmt = '$#,##0.00';
@@ -963,8 +963,8 @@ useEffect(() => {
                             className="rounded border-border"
                           />
                         </td>
-                        <td className="px-3 py-2">{paca.tipo}</td>
-                        <td className="px-3 py-2">{paca.categoria}</td>
+                        <td className="px-3 py-2">{paca.clasificacion}</td>
+                        <td className="px-3 py-2">{paca.referencia}</td>
                         <td className="px-3 py-2 text-right">
                           {selected ? (
                             <input
@@ -1042,8 +1042,8 @@ useEffect(() => {
                 <tbody>
                   {despachoData.pacas.map((paca, i) => (
                     <tr key={i} className="border-b">
-                      <td className="px-3 py-2">{paca.tipo}</td>
-                      <td className="px-3 py-2 text-muted">{paca.categoria}</td>
+                      <td className="px-3 py-2">{paca.clasificacion}</td>
+                      <td className="px-3 py-2 text-muted">{paca.referencia}</td>
                       <td className="px-3 py-2 text-right font-medium">{formatCurrency(paca.precio_venta)}</td>
                     </tr>
                   ))}
@@ -1078,7 +1078,7 @@ useEffect(() => {
           <div className="p-4 bg-info/10 rounded-xl border border-info/20">
             <p className="text-sm text-muted">Pacas a reservar: {pacasSeleccionadas.length}</p>
             <p className="font-medium text-primary">
-              {pacasSeleccionadas.slice(0, 3).map(p => p.tipo).join(', ')}
+              {pacasSeleccionadas.slice(0, 3).map(p => p.clasificacion).join(', ')}
               {pacasSeleccionadas.length > 3 && ` + ${pacasSeleccionadas.length - 3} más`}
             </p>
             <p className="text-sm text-muted mt-1">Total: {formatCurrency(totalVenta)}</p>

@@ -130,7 +130,7 @@ export default function Cartera() {
       });
 
       addToast(
-        `Abono de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
+        `Abono de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
         'success'
       );
 
@@ -481,7 +481,7 @@ export default function Cartera() {
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
   return (
