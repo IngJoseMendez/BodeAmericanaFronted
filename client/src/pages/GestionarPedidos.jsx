@@ -120,7 +120,7 @@ export default function GestionarPedidos() {
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
   const getEstadoBadge = (estado) => {
@@ -321,7 +321,7 @@ export default function GestionarPedidos() {
                   <div key={i} className="flex justify-between p-3 bg-primary/3 rounded-xl">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-muted" />
-                      <span className="text-sm text-primary">{item.tipo} ({item.categoria})</span>
+                      <span className="text-sm text-primary">{item.clasificacion} ({item.referencia})</span>
                     </div>
                     <span className="font-medium text-primary">{formatCurrency(item.precio)}</span>
                   </div>

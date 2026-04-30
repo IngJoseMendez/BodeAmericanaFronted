@@ -90,7 +90,14 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
     md:   'max-w-lg',
     lg:   'max-w-2xl',
     xl:   'max-w-4xl',
-    full: 'max-w-[90vw]',
+    full: 'max-w-[92vw]',
+  };
+  const contentHeights = {
+    sm:   'max-h-[72vh]',
+    md:   'max-h-[74vh]',
+    lg:   'max-h-[78vh]',
+    xl:   'max-h-[80vh]',
+    full: 'max-h-[84vh]',
   };
 
   return (
@@ -137,7 +144,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
         </div>
 
         {/* Content */}
-        <div className="p-6 max-h-[70vh] overflow-y-auto">
+        <div className={`p-6 overflow-y-auto ${contentHeights[size] ?? 'max-h-[74vh]'}`}>
           {children}
         </div>
       </div>

@@ -6,7 +6,7 @@ import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw } from 'lucide-react';
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
 };
 
 export default function Reportes() {
@@ -196,8 +196,8 @@ export default function Reportes() {
         headerRow: true,
         columns: pacasHeaders.map(h => ({ name: h, filterButton: false })),
         rows: (reporteMensual.pacas_por_tipo || []).map(p => [
-          p.tipo?.toUpperCase(),
-          p.categoria?.toUpperCase(),
+          p.clasificacion?.toUpperCase(),
+          p.referencia?.toUpperCase(),
           parseInt(p.cantidad),
           parseFloat(p.total),
           parseFloat(p.costo),
@@ -487,8 +487,8 @@ export default function Reportes() {
                       {reporteMensual.pacas_por_tipo?.map((p, i) => (
                         <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
                           <div>
-                            <span className="font-medium">{p.tipo}</span>
-                            <span className="text-muted text-sm ml-2">({p.categoria})</span>
+                            <span className="font-medium">{p.clasificacion}</span>
+                            <span className="text-muted text-sm ml-2">({p.referencia})</span>
                           </div>
                           <div className="text-right">
                             <span className="font-medium">{p.cantidad}</span>
@@ -573,7 +573,7 @@ export default function Reportes() {
                         <tr key={i}>
                           <td className="px-3 py-2">{new Date(p.fecha_venta).toLocaleDateString('es-MX')}</td>
                           <td className="px-3 py-2">{p.cliente}</td>
-                          <td className="px-3 py-2">{p.tipo}</td>
+                          <td className="px-3 py-2">{p.clasificacion}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(p.precio_venta)}</td>
                         </tr>
                       ))

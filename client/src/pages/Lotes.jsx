@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, useToast, useConfirm } from '../components/common';
-import { lotesApi } from '../services/api';
-import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
+import { lotesApi, tiposPacaApi } from '../services/api';
 import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Eye, Link, Unlink, Hash, Layers } from 'lucide-react';
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
 };
 
 export default function Lotes() {
@@ -32,16 +31,20 @@ export default function Lotes() {
   });
 
   const [pacaForm, setPacaForm] = useState({
-    tipo: '',
-    categoria: '',
+    clasificacion: '',
+    referencia: '',
     cantidad: 1,
     precio_venta: '',
     costo_base: '',
     notas: ''
   });
+  const [tiposList, setTiposList] = useState([]);
+  const [categoriasList, setCategoriasList] = useState([]);
 
   useEffect(() => {
     loadLotes();
+    tiposPacaApi.getTipos().then(d => setTiposList(d.map(t => t.nombre))).catch(() => {});
+    tiposPacaApi.getCategorias().then(d => setCategoriasList(d.map(c => c.nombre))).catch(() => {});
   }, []);
 
   const loadLotes = async () => {
@@ -144,8 +147,8 @@ export default function Lotes() {
 
   const handleCreatePacas = async (e) => {
     e.preventDefault();
-    if (!pacaForm.tipo || !pacaForm.categoria) {
-      addToast('Selecciona tipo y categoría', 'error');
+    if (!pacaForm.clasificacion || !pacaForm.referencia) {
+      addToast('Selecciona clasificación y referencia', 'error');
       return;
     }
 
@@ -153,8 +156,8 @@ export default function Lotes() {
       const pacas = [];
       for (let i = 0; i < (parseInt(pacaForm.cantidad) || 1); i++) {
         pacas.push({
-          tipo: pacaForm.tipo,
-          categoria: pacaForm.categoria,
+          clasificacion: pacaForm.clasificacion,
+          referencia: pacaForm.referencia,
           precio_venta: parseFloat(pacaForm.precio_venta) || 0,
           costo_base: parseFloat(pacaForm.costo_base) || 0,
           notas: pacaForm.notas
@@ -164,7 +167,7 @@ export default function Lotes() {
       const result = await lotesApi.agregarPacas(selectedLote.id, pacas);
       addToast(result.mensaje, 'success');
 
-      setPacaForm({ tipo: '', categoria: '', cantidad: 1, precio_venta: '', costo_base: '', notas: '' });
+      setPacaForm({ clasificacion: '', referencia: '', cantidad: 1, precio_venta: '', costo_base: '', notas: '' });
       loadLotes();
 
       const pacasActualizadas = await lotesApi.getPacas(selectedLote.id);
@@ -457,18 +460,18 @@ export default function Lotes() {
               <form onSubmit={handleCreatePacas} className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <Select
-                    label="Tipo"
-                    value={pacaForm.tipo}
-                    onChange={(e) => setPacaForm({ ...pacaForm, tipo: e.target.value })}
-                    options={PACA_TIPOS.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
-                    placeholder="Tipo..."
+                    label="Clasificación"
+                    value={pacaForm.clasificacion}
+                    onChange={(e) => setPacaForm({ ...pacaForm, clasificacion: e.target.value })}
+                    options={tiposList.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+                    placeholder="Clasificación..."
                   />
                   <Select
-                    label="Categoría"
-                    value={pacaForm.categoria}
-                    onChange={(e) => setPacaForm({ ...pacaForm, categoria: e.target.value })}
-                    options={PACA_CATEGORIAS.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
-                    placeholder="Categoría..."
+                    label="Referencia"
+                    value={pacaForm.referencia}
+                    onChange={(e) => setPacaForm({ ...pacaForm, referencia: e.target.value })}
+                    options={categoriasList.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
+                    placeholder="Referencia..."
                   />
                   <Input
                     label="Precio Venta"
@@ -527,8 +530,8 @@ export default function Lotes() {
                   <table className="w-full text-sm">
                     <thead className="bg-primary/10 sticky top-0">
                       <tr>
-                        <th className="px-4 py-2 text-left">Tipo</th>
-                        <th className="px-4 py-2 text-left">Categoría</th>
+                        <th className="px-4 py-2 text-left">Clasificación</th>
+                        <th className="px-4 py-2 text-left">Referencia</th>
                         <th className="px-4 py-2 text-right">Costo</th>
                         <th className="px-4 py-2 text-right">Precio Venta</th>
                         <th className="px-4 py-2 text-center">Estado</th>
@@ -538,8 +541,8 @@ export default function Lotes() {
                     <tbody className="divide-y">
                       {lotePacas.map((paca) => (
                         <tr key={paca.id} className="hover:bg-primary/5">
-                          <td className="px-4 py-2 font-medium">{paca.tipo}</td>
-                          <td className="px-4 py-2 text-muted">{paca.categoria}</td>
+                          <td className="px-4 py-2 font-medium">{paca.clasificacion}</td>
+                          <td className="px-4 py-2 text-muted">{paca.referencia}</td>
                           <td className="px-4 py-2 text-right text-muted">{formatCurrency(paca.costo_base)}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(paca.precio_venta)}</td>
                           <td className="px-4 py-2 text-center">
@@ -615,8 +618,8 @@ export default function Lotes() {
                   <thead className="bg-primary/5 sticky top-0">
                     <tr>
                       <th className="px-4 py-2 text-left w-10"></th>
-                      <th className="px-4 py-2 text-left">Tipo</th>
-                      <th className="px-4 py-2 text-left">Categoría</th>
+                      <th className="px-4 py-2 text-left">Clasificación</th>
+                      <th className="px-4 py-2 text-left">Referencia</th>
                       <th className="px-4 py-2 text-right">Precio</th>
                       <th className="px-4 py-2 text-center">Estado</th>
                     </tr>
@@ -636,8 +639,8 @@ export default function Lotes() {
                             className="rounded border-border"
                           />
                         </td>
-                        <td className="px-4 py-2 font-medium">{paca.tipo}</td>
-                        <td className="px-4 py-2 text-muted">{paca.categoria}</td>
+                        <td className="px-4 py-2 font-medium">{paca.clasificacion}</td>
+                        <td className="px-4 py-2 text-muted">{paca.referencia}</td>
                         <td className="px-4 py-2 text-right">{formatCurrency(paca.precio_venta)}</td>
                         <td className="px-4 py-2 text-center">
                           <Badge variant={paca.estado}>{paca.estado}</Badge>

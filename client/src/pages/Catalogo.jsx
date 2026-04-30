@@ -77,7 +77,7 @@ export default function Catalogo() {
   };
 
   const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
   const totalSeleccionadas = seleccionadas.reduce((sum, s) => sum + s.precio_venta, 0);
@@ -87,11 +87,11 @@ export default function Catalogo() {
       <div className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {resumen.map((r, i) => (
-            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.tipo)}>
+            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.clasificacion)}>
               <CardBody className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Package className="w-4 h-4 text-secondary" />
-                  <span className="font-medium text-sm">{r.tipo}</span>
+                  <span className="font-medium text-sm">{r.clasificacion}</span>
                 </div>
                 <p className="text-2xl font-bold text-primary">{r.cantidad}</p>
                 <p className="text-xs text-muted">{formatCurrency(r.precio_min)} - {formatCurrency(r.precio_max)}</p>
@@ -180,8 +180,8 @@ export default function Catalogo() {
                           </button>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-primary">{paca.tipo}</td>
-                        <td className="px-4 py-3 text-sm text-muted">{paca.categoria}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-primary">{paca.clasificacion}</td>
+                        <td className="px-4 py-3 text-sm text-muted">{paca.referencia}</td>
                         <td className="px-4 py-3 text-sm text-muted">{paca.peso} kg</td>
                         <td className="px-4 py-3 text-sm font-medium text-primary">{formatCurrency(paca.precio_venta)}</td>
                       </tr>

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
 };
 
 const COLORS = {
@@ -719,7 +719,7 @@ function TiposVendidosChart({ data }) {
   }
 
   const chartData = data.slice(0, 6).map(item => ({
-    name: item.tipo,
+    name: item.clasificacion,
     cantidad: parseInt(item.cantidad) || 0,
     ganancia: parseFloat(item.ganancia) || 0
   }));
@@ -1008,8 +1008,8 @@ export default function InteligenciaDeNegocio() {
                       rotacion.pacasLentas.map((paca, i) => (
                         <div key={i} className="flex items-center justify-between p-3 bg-primary/5 rounded-lg">
                           <div>
-                            <p className="font-medium text-sm">{paca.tipo}</p>
-                            <p className="text-xs text-muted">{paca.categoria}</p>
+                            <p className="font-medium text-sm">{paca.clasificacion}</p>
+                            <p className="text-xs text-muted">{paca.referencia}</p>
                           </div>
                           <div className="text-right">
                             <Badge variant="error">{paca.dias_inventario} días</Badge>
@@ -1032,8 +1032,8 @@ export default function InteligenciaDeNegocio() {
                   <table className="w-full text-sm">
                     <thead className="bg-primary/5">
                       <tr>
-                        <th className="px-4 py-2 text-left">Tipo</th>
-                        <th className="px-4 py-2 text-left">Categoría</th>
+                        <th className="px-4 py-2 text-left">Clasificación</th>
+                        <th className="px-4 py-2 text-left">Referencia</th>
                         <th className="px-4 py-2 text-right">Cantidad</th>
                         <th className="px-4 py-2 text-right">Prom. Días</th>
                         <th className="px-4 py-2 text-right">Ingreso</th>
@@ -1042,8 +1042,8 @@ export default function InteligenciaDeNegocio() {
                     <tbody className="divide-y">
                       {rotacion?.topVendidas?.map((item, i) => (
                         <tr key={i}>
-                          <td className="px-4 py-2 font-medium">{item.tipo}</td>
-                          <td className="px-4 py-2 text-muted">{item.categoria}</td>
+                          <td className="px-4 py-2 font-medium">{item.clasificacion}</td>
+                          <td className="px-4 py-2 text-muted">{item.referencia}</td>
                           <td className="px-4 py-2 text-right">{item.cantidad}</td>
                           <td className="px-4 py-2 text-right">{item.promedio_dias ? Math.round(item.promedio_dias) : '-'}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(item.ingreso_total)}</td>
@@ -1218,7 +1218,7 @@ export default function InteligenciaDeNegocio() {
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={contenedores.distribucionTipo} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="tipo" tick={{ fontSize: 11 }} />
+                        <XAxis dataKey="clasificacion" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip
                           formatter={(v) => [v.toLocaleString('es-MX'), 'Pacas']}
@@ -1918,7 +1918,7 @@ export default function InteligenciaDeNegocio() {
                   <table className="w-full text-sm">
                     <thead className="bg-primary/5">
                       <tr>
-                        <th className="px-4 py-2 text-left">Tipo</th>
+                        <th className="px-4 py-2 text-left">Clasificación</th>
                         <th className="px-4 py-2 text-center">Disponibles</th>
                         <th className="px-4 py-2 text-center">Vendidas</th>
                         <th className="px-4 py-2 text-center">Días Inv.</th>
@@ -1930,7 +1930,7 @@ export default function InteligenciaDeNegocio() {
                     <tbody className="divide-y">
                       {queComprar?.analisis?.map((item, i) => (
                         <tr key={i} className="hover:bg-primary/5">
-                          <td className="px-4 py-2 font-medium">{item.tipo}</td>
+                          <td className="px-4 py-2 font-medium">{item.clasificacion}</td>
                           <td className="px-4 py-2 text-center">{item.disponibles}</td>
                           <td className="px-4 py-2 text-center">{item.unidades_vendidas || 0}</td>
                           <td className="px-4 py-2 text-center">{Math.round(item.dias_promedio)}</td>

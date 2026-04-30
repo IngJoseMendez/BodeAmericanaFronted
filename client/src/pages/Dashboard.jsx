@@ -29,7 +29,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         {payload.map((entry, index) => (
           <p key={index} className="text-sm text-muted" style={{ color: entry.color }}>
             {entry.name}: {typeof entry.value === 'number' 
-              ? entry.value.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+              ? entry.value.toLocaleString('es-CO', { style: 'currency', currency: 'COP' })
               : entry.value}
           </p>
         ))}
@@ -286,9 +286,9 @@ export default function Dashboard() {
   };
 
   const formatCurrency = (value) =>
-    new Intl.NumberFormat('es-MX', {
+    new Intl.NumberFormat('es-CO', {
       style: 'currency',
-      currency: 'MXN',
+      currency: 'COP',
       minimumFractionDigits: 0,
     }).format(value || 0);
 
