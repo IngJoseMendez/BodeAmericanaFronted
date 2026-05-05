@@ -34,19 +34,19 @@ let _navScrollPos = 0;
 
 const adminNavItems = [
   { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
-  { path: '/contenedores',        icon: Package2,        label: 'Contenedores',  key: null },
-  { path: '/pacas',                icon: Package,         label: 'Inventario',    key: 'pacas' },
-  { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca', key: null },
-  { path: '/clientes',             icon: Users,           label: 'Clientes',      key: 'clientes' },
-  { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',        key: 'ventas' },
-  { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',       key: 'pedidos' },
-  { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',  key: null },
-  { path: '/despachos',            icon: Truck,           label: 'Despachos',     key: null },
+  { path: '/contenedores',         icon: Package2,        label: 'Contenedores',    key: null },
+  { path: '/pacas',                icon: Package,         label: 'Inventario',      key: 'pacas' },
+  { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',    key: null },
+  { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
-  { path: '/cartera',              icon: Wallet,          label: 'Cartera',       key: null },
-  { path: '/reportes',             icon: FileText,        label: 'Reportes',      key: null },
-  { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',     key: null },
-  { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',      key: null, rol: 'admin' },
+  { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },
+  { path: '/clientes',             icon: Users,           label: 'Clientes',        key: 'clientes' },
+  { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca',   key: null },
+  { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
+  { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
+  { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },
+  { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',       key: null },
+  { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',        key: null, rol: 'admin' },
 ];
 
 const clienteNavItems = [
