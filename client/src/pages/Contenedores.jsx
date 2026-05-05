@@ -7,7 +7,7 @@ import {
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
-import { Modal, useToast, useConfirm } from '../components/common';
+import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
 import { contenedoresApi, tiposPacaApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -1076,9 +1076,8 @@ export default function Contenedores() {
 
       {/* ── Main content ──────────────────────────────────────── */}
       {loading ? (
-        <div className="bg-surface rounded-2xl border border-border/60 shadow-card flex flex-col items-center justify-center py-20 gap-3">
-          <div className="animate-spin rounded-full h-9 w-9 border-4 border-secondary/30 border-t-secondary" />
-          <p className="text-muted text-sm">Cargando contenedores...</p>
+        <div className="bg-surface rounded-2xl border border-border/60 shadow-card overflow-hidden">
+          <table className="w-full text-sm"><tbody><TableSkeleton cols={8} rows={6} /></tbody></table>
         </div>
       ) : contenedores.length === 0 ? (
         <div className="bg-surface rounded-2xl border border-border/60 shadow-card flex flex-col items-center justify-center py-20 gap-4 text-center px-6">
@@ -1469,58 +1468,59 @@ export default function Contenedores() {
                   Cancelar
                 </button>
                 <button type="submit" disabled={submitting || !resumen.cantidadValida}
-                  className="flex-1 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                  {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                   {submitting ? 'Guardando...' : editMode ? 'Actualizar' : 'Crear'}
                 </button>
               </div>
             </div>
 
             {/* ── RIGHT: sticky summary ────────────────────────── */}
-            <div className="hidden lg:block w-[26rem] flex-shrink-0">
+            <div className="hidden lg:block w-[32rem] flex-shrink-0">
               <div className="sticky top-0 space-y-3">
-                <div className={`rounded-2xl border p-5 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
+                <div className={`rounded-2xl border p-6 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
                   {/* Título + cabecera de columnas */}
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-end mb-2">
-                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
-                    <span className="text-[9px] font-bold text-muted uppercase tracking-widest w-24 text-right">COP</span>
-                    <span className="text-[9px] font-bold text-secondary uppercase tracking-widest w-20 text-right">USD</span>
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-end mb-3">
+                    <p className="text-xs font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
+                    <span className="text-xs font-bold text-primary/80 uppercase tracking-wider w-32 text-right">COP</span>
+                    <span className="text-xs font-bold text-secondary uppercase tracking-wider w-24 text-right">USD</span>
                   </div>
-                  <div className="h-px bg-border/50 mb-3" />
+                  <div className="h-px bg-border/50 mb-4" />
 
                   {/* Mercancía por proveedor */}
                   {resumen.proveedoresDetalle.some(p => p.costoEnCOP > 0) && (
-                    <div className="mb-3">
-                      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Mercancía</p>
-                      <div className="space-y-1.5">
+                    <div className="mb-4">
+                      <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Mercancía</p>
+                      <div className="space-y-2">
                         {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
                           <div key={i} className="space-y-0.5">
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
-                              <span className="text-[11px] font-semibold text-primary truncate">{p.nombre || `Prov. ${i+1}`}</span>
-                              <span className="text-xs font-mono font-semibold text-primary tabular-nums text-right w-24">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                              <span className="text-sm font-semibold text-primary truncate">{p.nombre || `Prov. ${i+1}`}</span>
+                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-32">
                                 {formatCurrency(p.costoEnCOP)}
                               </span>
-                              <span className="text-xs font-mono text-secondary/80 tabular-nums text-right w-20">
+                              <span className="text-sm font-mono font-medium text-secondary tabular-nums text-right w-24">
                                 ${(p.costoEnCOP / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
-                              <span className="text-[10px] text-muted/60">por unidad</span>
-                              <span className="text-[10px] font-mono text-muted tabular-nums text-right w-24">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                              <span className="text-xs text-muted/70">por unidad</span>
+                              <span className="text-xs font-mono text-muted tabular-nums text-right w-32">
                                 {formatCurrency(p.costoPorPaca)}
                               </span>
-                              <span className="text-[10px] font-mono text-muted/60 tabular-nums text-right w-20">
+                              <span className="text-xs font-mono text-muted/70 tabular-nums text-right w-24">
                                 ${(p.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
                               </span>
                             </div>
                           </div>
                         ))}
                         {resumen.proveedoresDetalle.filter(p => p.costoEnCOP > 0).length > 1 && (
-                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline pt-1 border-t border-border/30">
-                            <span className="text-[10px] font-semibold text-muted">Subtotal</span>
-                            <span className="text-xs font-mono font-bold text-primary tabular-nums text-right w-24">
+                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
+                            <span className="text-xs font-semibold text-muted">Subtotal</span>
+                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-32">
                               {formatCurrency(resumen.costoMercancia)}
                             </span>
-                            <span className="text-xs font-mono font-semibold text-secondary/80 tabular-nums text-right w-20">
+                            <span className="text-sm font-mono font-semibold text-secondary tabular-nums text-right w-24">
                               ${(resumen.costoMercancia / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                             </span>
                           </div>
@@ -1531,38 +1531,38 @@ export default function Contenedores() {
 
                   {/* Servicios */}
                   {resumen.serviciosDetalle.some(s => s.costo > 0) && (
-                    <div className="mb-3">
-                      <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Servicios</p>
-                      <div className="space-y-1.5">
+                    <div className="mb-4">
+                      <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Servicios</p>
+                      <div className="space-y-2">
                         {resumen.serviciosDetalle.map((s, i) => s.costo > 0 && (
                           <div key={i} className="space-y-0.5">
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
-                              <span className="text-[11px] font-semibold text-primary truncate capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
-                              <span className="text-xs font-mono font-semibold text-primary tabular-nums text-right w-24">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                              <span className="text-sm font-semibold text-primary truncate capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
+                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-32">
                                 {formatCurrency(s.costo)}
                               </span>
-                              <span className="text-xs font-mono text-secondary/80 tabular-nums text-right w-20">
+                              <span className="text-sm font-mono font-medium text-secondary tabular-nums text-right w-24">
                                 ${(s.costo / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
-                              <span className="text-[10px] text-muted/60">por unidad</span>
-                              <span className="text-[10px] font-mono text-muted tabular-nums text-right w-24">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                              <span className="text-xs text-muted/70">por unidad</span>
+                              <span className="text-xs font-mono text-muted tabular-nums text-right w-32">
                                 {formatCurrency(s.costoPorPaca)}
                               </span>
-                              <span className="text-[10px] font-mono text-muted/60 tabular-nums text-right w-20">
+                              <span className="text-xs font-mono text-muted/70 tabular-nums text-right w-24">
                                 ${(s.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
                               </span>
                             </div>
                           </div>
                         ))}
                         {resumen.serviciosDetalle.filter(s => s.costo > 0).length > 1 && (
-                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline pt-1 border-t border-border/30">
-                            <span className="text-[10px] font-semibold text-muted">Subtotal</span>
-                            <span className="text-xs font-mono font-bold text-primary tabular-nums text-right w-24">
+                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
+                            <span className="text-xs font-semibold text-muted">Subtotal</span>
+                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-32">
                               {formatCurrency(resumen.costoServicios)}
                             </span>
-                            <span className="text-xs font-mono font-semibold text-secondary/80 tabular-nums text-right w-20">
+                            <span className="text-sm font-mono font-semibold text-secondary tabular-nums text-right w-24">
                               ${(resumen.costoServicios / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                             </span>
                           </div>
@@ -1572,26 +1572,26 @@ export default function Contenedores() {
                   )}
 
                   {/* Total */}
-                  <div className="h-px bg-border/50 mb-3" />
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline mb-4">
-                    <span className="text-sm font-bold text-primary">Total</span>
-                    <span className="text-base font-mono font-bold text-primary tabular-nums text-right w-24">
+                  <div className="h-px bg-border/60 mb-3" />
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline mb-4">
+                    <span className="text-base font-bold text-primary">Total</span>
+                    <span className="text-lg font-mono font-bold text-primary tabular-nums text-right w-32">
                       {formatCurrency(resumen.costoTotal)}
                     </span>
-                    <span className="text-base font-mono font-bold text-secondary tabular-nums text-right w-20">
+                    <span className="text-lg font-mono font-bold text-secondary tabular-nums text-right w-24">
                       ${(resumen.costoTotal / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
                     </span>
                   </div>
 
                   {/* Por unidad */}
-                  <div className="grid grid-cols-2 gap-3 border border-primary/10 rounded-xl p-3 bg-primary/5 mb-3">
+                  <div className="grid grid-cols-2 gap-4 border border-primary/10 rounded-xl p-4 bg-primary/5 mb-3">
                     <div>
-                      <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-0.5">COP / unidad</p>
-                      <p className="text-xl font-display font-bold text-primary tabular-nums">{formatCurrency(resumen.costoUnitario)}</p>
+                      <p className="text-xs font-bold text-primary/60 uppercase tracking-widest mb-1">COP / unidad</p>
+                      <p className="text-2xl font-display font-bold text-primary tabular-nums leading-tight">{formatCurrency(resumen.costoUnitario)}</p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-bold text-secondary/70 uppercase tracking-widest mb-0.5">USD / unidad</p>
-                      <p className="text-xl font-display font-bold text-secondary tabular-nums">
+                      <p className="text-xs font-bold text-secondary/80 uppercase tracking-widest mb-1">USD / unidad</p>
+                      <p className="text-2xl font-display font-bold text-secondary tabular-nums leading-tight">
                         ${(resumen.costoUnitario / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -1607,6 +1607,7 @@ export default function Contenedores() {
                 <div className="space-y-2">
                   <button type="submit" disabled={submitting || !resumen.cantidadValida}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                    {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                     {submitting ? 'Guardando...' : editMode ? 'Actualizar Contenedor' : 'Crear Contenedor'}
                   </button>
                   <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
@@ -1842,7 +1843,7 @@ export default function Contenedores() {
               </button>
               <button onClick={handleFinalizar} disabled={submitting}
                 className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
-                {submitting ? 'Finalizando...' : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
+                {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
               </button>
             </div>
           </div>

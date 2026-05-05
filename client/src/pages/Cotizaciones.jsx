@@ -437,8 +437,21 @@ export default function Cotizaciones() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-surface rounded-2xl border border-border/50 p-5 animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-primary/8" />
+                    <div className="space-y-2">
+                      <div className="h-4 w-32 bg-primary/8 rounded-full" />
+                      <div className="h-3 w-24 bg-primary/8 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="h-7 w-28 bg-primary/8 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : cotizaciones.length === 0 ? (
           <Card>

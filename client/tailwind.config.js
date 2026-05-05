@@ -17,6 +17,7 @@ export default {
         surface: 'var(--color-surface)',
         muted: 'var(--color-muted)',
         border: 'var(--color-border)',
+        'on-primary': 'var(--color-on-primary)',
       },
       fontFamily: {
         display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],

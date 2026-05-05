@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
 import { despachosApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer } from 'lucide-react';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
@@ -50,50 +50,195 @@ function KpiCard({ label, value, icon: Icon, color, sub }) {
 
 async function exportarExcel(despacho) {
   const wb = new ExcelJS.Workbook();
+  wb.creator = 'Bodega Americana';
+  wb.created  = new Date();
 
-  // Hoja resumen
-  const ws = wb.addWorksheet('Despacho');
-  ws.columns = [
-    { header: 'Campo', key: 'campo', width: 20 },
-    { header: 'Valor', key: 'valor', width: 40 },
-  ];
-  [
-    ['Número', despacho.numero],
+  const PRIMARY   = '0f172a';
+  const SECONDARY = '6366f1';
+  const SUCCESS   = '16a34a';
+  const WARNING   = 'f59e0b';
+  const LIGHT     = 'f8fafc';
+  const WHITE     = 'FFFFFF';
+
+  const items     = despacho.items || [];
+  const vendidas  = items.filter(i => i.paca_estado === 'vendida');
+  const pendientes= items.filter(i => i.paca_estado !== 'vendida');
+  const total     = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  const totalVend = vendidas.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+
+  // ── Hoja 1: Resumen ─────────────────────────────────────────────
+  const ws = wb.addWorksheet('Resumen');
+  ws.properties.tabColor = { argb: PRIMARY };
+
+  // Banner título
+  ws.mergeCells('A1:C1');
+  const title = ws.getCell('A1');
+  title.value     = 'BODEGA AMERICANA';
+  title.font      = { size: 18, bold: true, color: { argb: WHITE } };
+  title.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  title.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  ws.getRow(1).height = 44;
+
+  ws.mergeCells('A2:C2');
+  const sub = ws.getCell('A2');
+  sub.value     = `Comprobante de Despacho — ${despacho.numero}`;
+  sub.font      = { size: 11, color: { argb: WHITE }, italic: true };
+  sub.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: SECONDARY } };
+  sub.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  ws.getRow(2).height = 26;
+
+  // Separador
+  ws.getRow(3).height = 8;
+
+  // Info del despacho
+  const infoRows = [
+    ['Número de Despacho', despacho.numero],
     ['Cliente', despacho.cliente_nombre],
     ['Cotización', despacho.cotizacion_numero || '—'],
-    ['Fecha', formatDate(despacho.fecha)],
-    ['Estado', despacho.estado],
-    ['Total', formatCurrency((despacho.items || []).reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0))],
-  ].forEach(([campo, valor]) => ws.addRow({ campo, valor }));
-
-  ws.getRow(1).font = { bold: true };
-
-  // Hoja items
-  const wi = wb.addWorksheet('Unidades');
-  wi.columns = [
-    { header: 'UUID',          key: 'uuid',       width: 12 },
-    { header: 'Clasificación', key: 'clas',       width: 18 },
-    { header: 'Referencia',    key: 'ref',        width: 18 },
-    { header: 'Calidad',       key: 'cal',        width: 14 },
-    { header: 'Precio',        key: 'precio',     width: 16 },
+    ['Fecha Despacho', formatDate(despacho.fecha)],
+    ['Fecha Salida', formatDate(despacho.fecha_salida)],
+    ['Estado', despacho.estado === 'confirmado' ? 'CONFIRMADO' : despacho.estado === 'en_proceso' ? 'EN PROCESO' : 'ANULADO'],
   ];
-  (despacho.items || []).forEach(item => {
-    wi.addRow({
-      uuid:   item.paca_uuid?.slice(0, 8),
-      clas:   item.clasificacion,
-      ref:    item.referencia,
-      cal:    item.calidad || '—',
-      precio: parseFloat(item.precio_unitario || 0),
+
+  infoRows.forEach(([campo, valor], idx) => {
+    const r = ws.getRow(4 + idx);
+    r.height = 22;
+    const c1 = r.getCell(1);
+    const c2 = r.getCell(2);
+    c1.value     = campo;
+    c1.font      = { bold: true, size: 10, color: { argb: PRIMARY } };
+    c1.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT } };
+    c1.alignment = { vertical: 'middle', indent: 1 };
+    c2.value     = valor;
+    c2.font      = { size: 10, color: { argb: PRIMARY } };
+    c2.alignment = { vertical: 'middle', indent: 1 };
+    ws.mergeCells(`B${4 + idx}:C${4 + idx}`);
+  });
+
+  // KPI boxes
+  const kpiRow = 4 + infoRows.length + 1;
+  ws.getRow(kpiRow - 1).height = 12;
+
+  [[vendidas.length, 'Unidades despachadas', SUCCESS],
+   [pendientes.length, 'Unidades pendientes', WARNING],
+   [items.length, 'Total unidades', PRIMARY]].forEach(([val, lbl, color], ci) => {
+    const col = ci + 1;
+    const r1  = ws.getRow(kpiRow);
+    const r2  = ws.getRow(kpiRow + 1);
+    r1.height = 30;
+    r2.height = 20;
+    const v = r1.getCell(col);
+    v.value     = val;
+    v.font      = { size: 20, bold: true, color: { argb: WHITE } };
+    v.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    v.alignment = { horizontal: 'center', vertical: 'middle' };
+    const l = r2.getCell(col);
+    l.value     = lbl;
+    l.font      = { size: 9, color: { argb: WHITE } };
+    l.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    l.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  // Total
+  const totalRow = kpiRow + 3;
+  ws.getRow(totalRow - 1).height = 12;
+  ws.mergeCells(`A${totalRow}:B${totalRow}`);
+  const tc1 = ws.getCell(`A${totalRow}`);
+  tc1.value     = 'TOTAL DESPACHO';
+  tc1.font      = { bold: true, size: 12, color: { argb: WHITE } };
+  tc1.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  tc1.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+  ws.getRow(totalRow).height = 28;
+  const tc2 = ws.getCell(`C${totalRow}`);
+  tc2.value     = total;
+  tc2.numFmt    = '$#,##0';
+  tc2.font      = { bold: true, size: 14, color: { argb: WHITE } };
+  tc2.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  tc2.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+
+  ws.getColumn(1).width = 28;
+  ws.getColumn(2).width = 30;
+  ws.getColumn(3).width = 22;
+
+  // ── Hoja 2: Unidades ────────────────────────────────────────────
+  const wi = wb.addWorksheet('Unidades');
+  wi.properties.tabColor = { argb: SECONDARY };
+
+  // Cabecera de tabla
+  const headers = ['#', 'UUID', 'Clasificación', 'Referencia', 'Calidad', 'Precio', 'Estado'];
+  const hRow = wi.getRow(1);
+  hRow.height = 28;
+  headers.forEach((h, ci) => {
+    const cell = hRow.getCell(ci + 1);
+    cell.value     = h;
+    cell.font      = { bold: true, size: 10, color: { argb: WHITE } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+    cell.alignment = { horizontal: ci >= 5 ? 'right' : 'center', vertical: 'middle' };
+    cell.border    = { bottom: { style: 'thin', color: { argb: SECONDARY } } };
+  });
+
+  items.forEach((item, idx) => {
+    const r = wi.getRow(2 + idx);
+    r.height = 20;
+    const isVendida = item.paca_estado === 'vendida';
+    const bg = idx % 2 === 0 ? LIGHT : WHITE;
+
+    const vals = [
+      idx + 1,
+      item.paca_uuid?.slice(0, 8) || '—',
+      item.clasificacion || '—',
+      item.referencia || '—',
+      item.calidad || '—',
+      parseFloat(item.precio_unitario || 0),
+      isVendida ? 'Despachado' : 'Pendiente',
+    ];
+    vals.forEach((val, ci) => {
+      const cell = r.getCell(ci + 1);
+      cell.value     = val;
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      cell.alignment = { vertical: 'middle', horizontal: ci >= 5 ? 'right' : ci === 0 ? 'center' : 'left', indent: ci > 0 && ci < 5 ? 1 : 0 };
+      if (ci === 5) {
+        cell.numFmt = '$#,##0';
+        cell.font   = { bold: true, color: { argb: SECONDARY } };
+      } else if (ci === 6) {
+        cell.font = { bold: true, color: { argb: isVendida ? SUCCESS : WARNING } };
+      } else {
+        cell.font = { size: 9, color: { argb: PRIMARY } };
+      }
     });
   });
-  wi.getRow(1).font = { bold: true };
-  wi.getColumn('precio').numFmt = '#,##0';
 
-  const buf = await wb.xlsx.writeBuffer();
+  // Fila total
+  const totRow = wi.getRow(2 + items.length);
+  totRow.height = 24;
+  wi.mergeCells(`A${2 + items.length}:E${2 + items.length}`);
+  const totLbl = totRow.getCell(1);
+  totLbl.value     = 'TOTAL';
+  totLbl.font      = { bold: true, size: 10, color: { argb: WHITE } };
+  totLbl.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  totLbl.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+  const totVal = totRow.getCell(6);
+  totVal.value     = total;
+  totVal.numFmt    = '$#,##0';
+  totVal.font      = { bold: true, color: { argb: WHITE } };
+  totVal.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  totVal.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+  totRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+
+  wi.getColumn(1).width  = 5;
+  wi.getColumn(2).width  = 12;
+  wi.getColumn(3).width  = 20;
+  wi.getColumn(4).width  = 20;
+  wi.getColumn(5).width  = 16;
+  wi.getColumn(6).width  = 18;
+  wi.getColumn(7).width  = 14;
+
+  // Descarga
+  const buf  = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
   a.download = `${despacho.numero}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
@@ -118,7 +263,7 @@ function imprimirDespacho(despacho) {
       h1 { font-size: 18px; margin-bottom: 4px; }
       .meta { color: #555; margin-bottom: 16px; font-size: 11px; }
       table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-      th { background: #f0f0f0; padding: 6px 8px; text-align: left; border: 1px solid #ddd; font-size: 11px; }
+      th { background: #0f172a; color: white; padding: 6px 8px; text-align: left; border: 1px solid #ddd; font-size: 11px; }
       td { padding: 5px 8px; border: 1px solid #ddd; }
       tfoot td { font-weight: bold; background: #f9f9f9; }
       @media print { body { padding: 0; } }
@@ -144,31 +289,52 @@ function imprimirDespacho(despacho) {
 }
 
 export default function Despachos() {
-  const [despachos, setDespachos]       = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState('');
-  const [search, setSearch]             = useState('');
+  const [despachos, setDespachos]               = useState([]);
+  const [loading, setLoading]                   = useState(true);
+  const [search, setSearch]                     = useState('');
   const [selectedDespacho, setSelectedDespacho] = useState(null);
   const [viewModalOpen, setViewModalOpen]       = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [seleccion, setSeleccion]               = useState({});
   const [submitting, setSubmitting]             = useState(false);
+
+  // Sección Despachados
+  const [vistaActiva, setVistaActiva]               = useState('pendientes');
+  const [despachados, setDespachados]               = useState([]);
+  const [loadingDespachados, setLoadingDespachados] = useState(false);
+
   const { addToast } = useToast();
   const confirm = useConfirm();
 
-  useEffect(() => { loadDespachos(); }, [filtroEstado]);
+  useEffect(() => { loadDespachos(); }, []);
+
+  useEffect(() => {
+    if (vistaActiva === 'despachados' && despachados.length === 0) {
+      loadDespachados();
+    }
+  }, [vistaActiva]);
 
   const loadDespachos = async () => {
     try {
       setLoading(true);
-      const params = {};
-      if (filtroEstado) params.estado = filtroEstado;
-      const data = await despachosApi.getAll(params);
+      const data = await despachosApi.getAll({ estado: 'en_proceso' });
       setDespachos(data);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDespachados = async () => {
+    try {
+      setLoadingDespachados(true);
+      const data = await despachosApi.getAll({ estado: 'confirmado' });
+      setDespachados(data);
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setLoadingDespachados(false);
     }
   };
 
@@ -204,13 +370,21 @@ export default function Despachos() {
         'success'
       );
       setConfirmModalOpen(false);
-      if (result.pacas_pendientes > 0) {
-        const updated = await despachosApi.getOne(selectedDespacho.id);
-        setSelectedDespacho(updated);
-      } else {
+
+      // Recargar despacho completo y exportar Excel automáticamente
+      const updated = await despachosApi.getOne(selectedDespacho.id);
+      setSelectedDespacho(updated);
+      await exportarExcel(updated);
+
+      if (result.pacas_pendientes === 0) {
         setViewModalOpen(false);
       }
+
+      // Recargar listas
       loadDespachos();
+      if (vistaActiva === 'despachados' || despachados.length > 0) {
+        loadDespachados();
+      }
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -240,80 +414,197 @@ export default function Despachos() {
     !search || d.numero?.includes(search) || d.cliente_nombre?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const enProceso   = despachos.filter(d => d.estado === 'en_proceso').length;
-  const confirmados = despachos.filter(d => d.estado === 'confirmado').length;
-  const anulados    = despachos.filter(d => d.estado === 'anulado').length;
-  const totalItems  = despachos.reduce((s, d) => s + (parseInt(d.num_items) || 0), 0);
+  // Agrupar despachados por cliente
+  const despachadosAgrupados = useMemo(() => {
+    const map = {};
+    despachados.forEach(d => {
+      const key = d.cliente_nombre || 'Sin cliente';
+      if (!map[key]) map[key] = [];
+      map[key].push(d);
+    });
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [despachados]);
+
+  const totalItems = despachos.reduce((s, d) => s + (parseInt(d.num_items) || 0), 0);
+  const totalDespachados = despachados.reduce((s, d) => s + (parseInt(d.num_items) || 0), 0);
 
   return (
-    <Layout title="Despachos" subtitle={`${despachos.length} despachos registrados`}>
+    <Layout title="Despachos" subtitle="Gestión de salidas de mercancía">
       <div className="space-y-6">
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="En Proceso"  value={enProceso}   icon={Clock}       color="bg-warning/70"   sub="pendientes de confirmar salida" />
-          <KpiCard label="Confirmados" value={confirmados} icon={CheckCircle} color="bg-success/70"   sub="salidas confirmadas" />
-          <KpiCard label="Anulados"    value={anulados}    icon={X}           color="bg-error/70"     sub="este período" />
-          <KpiCard label="Unidades"    value={totalItems}  icon={Package}     color="bg-secondary/70" sub="en todos los despachos" />
+          <KpiCard label="En Proceso"   value={despachos.length}   icon={Clock}       color="bg-warning/70"   sub="pendientes de confirmar salida" />
+          <KpiCard label="Confirmados"  value={despachados.length} icon={CheckCircle} color="bg-success/70"   sub="salidas confirmadas" />
+          <KpiCard label="Uds Pendientes" value={totalItems}       icon={Package}     color="bg-secondary/70" sub="en despachos activos" />
+          <KpiCard label="Uds Despachadas" value={totalDespachados} icon={Truck}      color="bg-primary/70"   sub="entregadas a clientes" />
         </div>
 
-        {/* Filtros */}
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-            <input type="text" placeholder="Buscar por número o cliente..."
-              value={search} onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
-          </div>
-          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}
-            className="px-4 py-3 rounded-xl border border-border bg-surface">
-            <option value="">Todos los estados</option>
-            <option value="en_proceso">En Proceso</option>
-            <option value="confirmado">Confirmado</option>
-            <option value="anulado">Anulado</option>
-          </select>
+        {/* Tabs Pendientes / Despachados */}
+        <div className="flex items-center gap-1 p-1 bg-primary/5 rounded-2xl w-fit">
+          <button
+            onClick={() => setVistaActiva('pendientes')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              vistaActiva === 'pendientes'
+                ? 'bg-surface shadow-sm text-primary'
+                : 'text-muted hover:text-primary'
+            }`}
+          >
+            <Clock size={15} />
+            Pendientes
+            {despachos.length > 0 && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${vistaActiva === 'pendientes' ? 'bg-warning/20 text-warning' : 'bg-primary/10 text-muted'}`}>
+                {despachos.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setVistaActiva('despachados')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              vistaActiva === 'despachados'
+                ? 'bg-surface shadow-sm text-primary'
+                : 'text-muted hover:text-primary'
+            }`}
+          >
+            <CheckCircle size={15} />
+            Despachados
+            {despachados.length > 0 && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${vistaActiva === 'despachados' ? 'bg-success/20 text-success' : 'bg-primary/10 text-muted'}`}>
+                {despachados.length}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* Tabla */}
-        <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-primary/3 border-b border-border/50">
-                <tr>
-                  {['Número', 'Cliente', 'Cotización', 'Fecha', 'Items', 'Total', 'Estado', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {loading ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">No hay despachos</td></tr>
-                ) : filtered.map(d => (
-                  <tr key={d.id} className={`hover:bg-primary/3 transition-colors ${d.estado === 'en_proceso' ? 'bg-warning/3' : ''}`}>
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-primary">{d.cliente_nombre}</td>
-                    <td className="px-4 py-3">
-                      {d.cotizacion_numero
-                        ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
-                        : <span className="text-muted/40 text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(d.fecha)}</td>
-                    <td className="px-4 py-3 text-center font-mono font-bold text-primary">{d.num_items || 0}</td>
-                    <td className="px-4 py-3 font-mono text-sm font-semibold">{formatCurrency(d.total)}</td>
-                    <td className="px-4 py-3"><EstadoBadge estado={d.estado} /></td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => openView(d)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
-                        <Eye size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* ── VISTA PENDIENTES ─────────────────────────────────── */}
+        {vistaActiva === 'pendientes' && (
+          <>
+            {/* Búsqueda */}
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+              <input type="text" placeholder="Buscar por número o cliente..."
+                value={search} onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+            </div>
+
+            <Card padding={false}>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-primary/3 border-b border-border/50">
+                    <tr>
+                      {['Número', 'Cliente', 'Cotización', 'Fecha', 'Items', 'Total', 'Estado', ''].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {loading ? (
+                      <TableSkeleton cols={8} rows={5} />
+                    ) : filtered.length === 0 ? (
+                      <tr><td colSpan={8}>
+                        <EmptyState icon={Truck} title="Sin despachos pendientes" description="Todos los despachos han sido confirmados o no hay despachos activos" />
+                      </td></tr>
+                    ) : filtered.map(d => (
+                      <tr key={d.id} className="hover:bg-primary/3 transition-colors duration-150 bg-warning/3">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-primary">{d.cliente_nombre}</td>
+                        <td className="px-4 py-3">
+                          {d.cotizacion_numero
+                            ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
+                            : <span className="text-muted/40 text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(d.fecha)}</td>
+                        <td className="px-4 py-3 text-center font-mono font-bold text-primary">{d.num_items || 0}</td>
+                        <td className="px-4 py-3 font-mono text-sm font-semibold">{formatCurrency(d.total)}</td>
+                        <td className="px-4 py-3"><EstadoBadge estado={d.estado} /></td>
+                        <td className="px-4 py-3">
+                          <button onClick={() => openView(d)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+                            <Eye size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </>
+        )}
+
+        {/* ── VISTA DESPACHADOS ─────────────────────────────────── */}
+        {vistaActiva === 'despachados' && (
+          <div className="space-y-4">
+            {loadingDespachados ? (
+              <Card padding={false}>
+                <table className="w-full"><tbody><TableSkeleton cols={6} rows={6} /></tbody></table>
+              </Card>
+            ) : despachadosAgrupados.length === 0 ? (
+              <EmptyState
+                icon={Truck}
+                title="Sin despachos confirmados"
+                description="Los despachos confirmados aparecerán aquí agrupados por cliente"
+              />
+            ) : despachadosAgrupados.map(([cliente, items]) => {
+              const totalUds   = items.reduce((s, d) => s + (parseInt(d.num_items) || 0), 0);
+              const totalMonto = items.reduce((s, d) => s + parseFloat(d.total || 0), 0);
+              return (
+                <Card key={cliente} padding={false}>
+                  {/* Header de cliente */}
+                  <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/50 bg-primary/3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-secondary/15 flex items-center justify-center flex-shrink-0">
+                        <Users size={15} className="text-secondary" />
+                      </div>
+                      <div>
+                        <p className="font-display font-bold text-primary text-sm">{cliente}</p>
+                        <p className="text-xs text-muted">{items.length} despacho{items.length !== 1 ? 's' : ''} · {totalUds} unidades</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-mono font-bold text-primary">{formatCurrency(totalMonto)}</p>
+                      <p className="text-xs text-muted">total entregado</p>
+                    </div>
+                  </div>
+
+                  {/* Tabla de despachos del cliente */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border/30">
+                          {['Número', 'Cotización', 'Fecha Salida', 'Unidades', 'Total', ''].map(h => (
+                            <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/30">
+                        {items.map(d => (
+                          <tr key={d.id} className="hover:bg-success/3 transition-colors duration-150">
+                            <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
+                            <td className="px-4 py-3">
+                              {d.cotizacion_numero
+                                ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
+                                : <span className="text-muted/40 text-xs">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-success font-medium whitespace-nowrap">{formatDate(d.fecha_salida || d.fecha)}</td>
+                            <td className="px-4 py-3 text-center font-mono font-bold text-primary">{d.num_items || 0}</td>
+                            <td className="px-4 py-3 font-mono text-sm font-semibold text-primary">{formatCurrency(d.total)}</td>
+                            <td className="px-4 py-3">
+                              <button onClick={() => openView(d)}
+                                className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
+                                title="Ver detalle">
+                                <Eye size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
-        </Card>
+        )}
       </div>
 
       {/* Modal: Ver Despacho */}
@@ -350,7 +641,7 @@ export default function Despachos() {
                   </thead>
                   <tbody className="divide-y divide-border/30">
                     {(selectedDespacho.items || []).map((item, i) => (
-                      <tr key={i} className={`hover:bg-primary/3 ${item.paca_estado === 'vendida' ? 'opacity-60' : ''}`}>
+                      <tr key={i} className={`hover:bg-primary/3 transition-colors ${item.paca_estado === 'vendida' ? 'opacity-70' : ''}`}>
                         <td className="px-4 py-2 text-xs text-muted font-mono">{item.paca_uuid?.slice(0, 8)}</td>
                         <td className="px-4 py-2 text-sm font-medium text-primary capitalize">{item.clasificacion}</td>
                         <td className="px-4 py-2 text-sm text-muted capitalize">{item.referencia}</td>
@@ -381,9 +672,8 @@ export default function Despachos() {
               <p className="text-sm text-muted italic">{selectedDespacho.notas}</p>
             )}
 
-            {/* Footer con acciones + exportar */}
+            {/* Footer acciones */}
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40 flex-wrap">
-              {/* Exportar */}
               <div className="flex items-center gap-2">
                 <button onClick={() => exportarExcel(selectedDespacho)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
@@ -395,7 +685,6 @@ export default function Despachos() {
                 </button>
               </div>
 
-              {/* Acciones de estado */}
               {selectedDespacho.estado === 'en_proceso' && (
                 <div className="flex gap-3">
                   <button onClick={() => handleAnular(selectedDespacho.id)} disabled={submitting}
@@ -417,7 +706,7 @@ export default function Despachos() {
 
               {selectedDespacho.estado === 'confirmado' && (
                 <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-xl text-sm text-success">
-                  <CheckCircle size={15} /> Mercancía despachada
+                  <CheckCircle size={15} /> Mercancía despachada el {formatDate(selectedDespacho.fecha_salida)}
                 </div>
               )}
             </div>
@@ -431,7 +720,7 @@ export default function Despachos() {
           <div className="space-y-4">
             <div className="p-3 bg-warning/10 border border-warning/30 rounded-xl text-xs text-warning-dark flex items-start gap-2">
               <AlertTriangle size={14} className="flex-shrink-0 mt-0.5 text-warning" />
-              <span>Selecciona las unidades que saldrán físicamente de bodega ahora. Las unidades no seleccionadas quedarán pendientes para despacho posterior.</span>
+              <span>Selecciona las unidades que saldrán físicamente de bodega ahora. Al confirmar se descargará automáticamente el comprobante Excel.</span>
             </div>
 
             <div className="space-y-2">
@@ -510,7 +799,9 @@ export default function Despachos() {
                   disabled={submitting || Object.values(seleccion).filter(Boolean).length === 0}
                   className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all"
                 >
-                  <CheckCircle size={15} />
+                  {submitting
+                    ? <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    : <CheckCircle size={15} />}
                   {submitting ? 'Confirmando...' : 'Confirmar Salida'}
                 </button>
               </div>

@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState, Fragment } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
 import { cuentasPagarApi, contenedoresApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
@@ -265,9 +265,9 @@ export default function CuentasPagar() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                  <TableSkeleton cols={9} rows={5} />
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay cuentas por pagar</td></tr>
+                  <tr><td colSpan={9}><EmptyState title="Sin cuentas por pagar" description="Las facturas de los contenedores aparecerán aquí" /></td></tr>
                 ) : Object.entries(grupos).map(([key, grupo]) => (
                   <Fragment key={key}>
                     {/* Encabezado de grupo */}

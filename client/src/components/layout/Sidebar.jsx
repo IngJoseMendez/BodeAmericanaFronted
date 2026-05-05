@@ -303,7 +303,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                           <span className={`
                             px-2 py-0.5 text-[11px] font-bold rounded-full tabular-nums flex-shrink-0
                             ${isActive
-                              ? 'bg-secondary text-primary'
+                              ? 'bg-secondary text-on-primary'
                               : 'bg-primary/10 text-muted group-hover/item:bg-primary/20 group-hover/item:text-primary'}
                           `}>
                             {badge}
