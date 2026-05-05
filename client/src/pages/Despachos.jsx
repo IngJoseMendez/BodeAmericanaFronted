@@ -329,7 +329,7 @@ export default function Despachos() {
   const loadDespachados = async () => {
     try {
       setLoadingDespachados(true);
-      const data = await despachosApi.getAll({ estado: 'confirmado' });
+      const data = await despachosApi.getAll({ con_salida: true });
       setDespachados(data);
     } catch (err) {
       addToast(err.message, 'error');
@@ -371,10 +371,14 @@ export default function Despachos() {
       );
       setConfirmModalOpen(false);
 
-      // Recargar despacho completo y exportar Excel automáticamente
+      // Recargar despacho completo y exportar Excel solo con las unidades recién despachadas
       const updated = await despachosApi.getOne(selectedDespacho.id);
       setSelectedDespacho(updated);
-      await exportarExcel(updated);
+      const despachoSalida = {
+        ...updated,
+        items: (updated.items || []).filter(i => pacaIds.includes(Number(i.paca_id))),
+      };
+      await exportarExcel(despachoSalida);
 
       if (result.pacas_pendientes === 0) {
         setViewModalOpen(false);
@@ -541,11 +545,11 @@ export default function Despachos() {
             ) : despachadosAgrupados.length === 0 ? (
               <EmptyState
                 icon={Truck}
-                title="Sin despachos confirmados"
-                description="Los despachos confirmados aparecerán aquí agrupados por cliente"
+                title="Sin salidas registradas"
+                description="Los despachos con al menos una salida aparecerán aquí agrupados por cliente"
               />
             ) : despachadosAgrupados.map(([cliente, items]) => {
-              const totalUds   = items.reduce((s, d) => s + (parseInt(d.num_items) || 0), 0);
+              const totalUds   = items.reduce((s, d) => s + (parseInt(d.num_vendidas) || 0), 0);
               const totalMonto = items.reduce((s, d) => s + parseFloat(d.total || 0), 0);
               return (
                 <Card key={cliente} padding={false}>
@@ -571,7 +575,7 @@ export default function Despachos() {
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-border/30">
-                          {['Número', 'Cotización', 'Fecha Salida', 'Unidades', 'Total', ''].map(h => (
+                          {['Número', 'Cotización', 'Fecha Salida', 'Despachadas', 'Total', 'Estado', ''].map(h => (
                             <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wider">{h}</th>
                           ))}
                         </tr>
@@ -585,9 +589,20 @@ export default function Despachos() {
                                 ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
                                 : <span className="text-muted/40 text-xs">—</span>}
                             </td>
-                            <td className="px-4 py-3 text-sm text-success font-medium whitespace-nowrap">{formatDate(d.fecha_salida || d.fecha)}</td>
-                            <td className="px-4 py-3 text-center font-mono font-bold text-primary">{d.num_items || 0}</td>
+                            <td className="px-4 py-3 text-sm text-success font-medium whitespace-nowrap">{formatDate(d.fecha_salida)}</td>
+                            <td className="px-4 py-3 text-center font-mono font-bold text-primary">
+                              <span>{d.num_vendidas || 0}</span>
+                              {d.num_items > d.num_vendidas && (
+                                <span className="text-muted font-normal">/{d.num_items}</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 font-mono text-sm font-semibold text-primary">{formatCurrency(d.total)}</td>
+                            <td className="px-4 py-3">
+                              {d.estado === 'confirmado'
+                                ? <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-success/15 text-success">Completo</span>
+                                : <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-warning/15 text-warning">Parcial</span>
+                              }
+                            </td>
                             <td className="px-4 py-3">
                               <button onClick={() => openView(d)}
                                 className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
