@@ -60,11 +60,11 @@ export default function Reportes() {
       wb.created = new Date();
       
       // Colors
-      const primaryColor = '1a1a2e';
-      const secondaryColor = 'd4a373';
-      const accentColor = 'bc4749';
-      const successColor = '6a994e';
-      const lightBg = 'faf8f5';
+      const primaryColor = '0f172a';
+      const secondaryColor = '6366f1';
+      const accentColor = 'ef4444';
+      const successColor = '16a34a';
+      const lightBg = 'f8fafc';
       
       // Helper function for currency
       const fmt = (val) => formatCurrency(val);

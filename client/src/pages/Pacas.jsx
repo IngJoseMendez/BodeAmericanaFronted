@@ -36,13 +36,17 @@ export default function Pacas() {
   const [selectedPaca, setSelectedPaca] = useState(null);
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
-    clasificacion: '', referencia: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1, lote_id: ''
+    clasificacion: '', referencia: '', calidad: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1, lote_id: ''
   });
   const [error, setError] = useState('');
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
+  const [inventarioAgrupado, setInventarioAgrupado] = useState([]);
+  const [loadingAgrupado, setLoadingAgrupado] = useState(false);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
-  const [tiposList, setTiposList] = useState([]);
+  const [tiposList,      setTiposList]      = useState([]);
   const [categoriasList, setCategoriasList] = useState([]);
+  const [calidadesList,  setCalidadesList]  = useState([]);
+  const [temporadasList, setTemporadasList] = useState([]);
   const { addToast } = useToast();
   const confirm = useConfirm();
   
@@ -62,10 +66,30 @@ export default function Pacas() {
   }, [filtroEstado, filtroTipo, debouncedSearch, pagina, limite]);
 
   useEffect(() => {
+    loadInventarioAgrupado();
+  }, [filtroEstado, filtroTipo, debouncedSearch]);
+
+  useEffect(() => {
     loadLotes();
     loadTiposYCategorias();
     loadClientes();
   }, []);
+
+  const loadInventarioAgrupado = async () => {
+    try {
+      setLoadingAgrupado(true);
+      const params = {};
+      if (filtroEstado)    params.estado = filtroEstado;
+      if (filtroTipo)      params.tipo   = filtroTipo;
+      if (debouncedSearch) params.buscar = debouncedSearch;
+      const data = await pacasApi.getInventario(params);
+      setInventarioAgrupado(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingAgrupado(false);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -111,16 +135,21 @@ export default function Pacas() {
 
   const loadTiposYCategorias = async () => {
     try {
-      const [tipos, cats] = await Promise.all([
+      const [tipos, cats, cals, temps] = await Promise.all([
         tiposPacaApi.getTipos(),
         tiposPacaApi.getCategorias(),
+        tiposPacaApi.getCalidades(),
+        tiposPacaApi.getTemporadas(),
       ]);
       setTiposList(tipos.map(t => t.nombre));
       setCategoriasList(cats.map(c => c.nombre));
+      setCalidadesList(cals.map(c => c.nombre));
+      setTemporadasList(temps.map(t => t.nombre));
     } catch (err) {
-      // fallback a hardcodeados si falla
-      setTiposList(['premium', 'jeans', 'mixta', 'playera', 'formal', 'deportiva', 'americana']);
-      setCategoriasList(['hombre', 'mujer', 'niño', 'unisex']);
+      setTiposList(['mixta', 'hombre', 'mujer', 'nino']);
+      setCategoriasList(['mixta', 'chaqueta', 'pantalón', 'shorts', 'blusa', 'vestido']);
+      setCalidadesList(['premium', 'supreme', 'especial']);
+      setTemporadasList(['verano', 'invierno']);
     }
   };
 
@@ -167,6 +196,7 @@ export default function Pacas() {
       const payload = {
         clasificacion: formData.clasificacion,
         referencia: formData.referencia,
+        categoria: formData.categoria || null,
         peso: parseFloat(formData.peso) || 0,
         costo_base: parseFloat(formData.costo_base) || 0,
         precio_venta: parseFloat(formData.precio_venta) || 0,
@@ -176,13 +206,13 @@ export default function Pacas() {
 
       if (editando) {
         await pacasApi.update(editando.id, payload);
-        addToast('Paca actualizada', 'success');
+        addToast('Unidad actualizada', 'success');
       } else {
         const result = await pacasApi.create(payload);
         if (result.cantidad > 1) {
-          addToast(`${result.cantidad} pacas creadas exitosamente`, 'success');
+          addToast(`${result.cantidad} unidades creadas exitosamente`, 'success');
         } else {
-          addToast('Paca creada', 'success');
+          addToast('Unidad creada', 'success');
         }
       }
 
@@ -199,6 +229,8 @@ export default function Pacas() {
     setFormData({
       clasificacion: paca.clasificacion,
       referencia: paca.referencia,
+      calidad: paca.calidad || '',
+      categoria: paca.categoria || '',
       peso: paca.peso,
       costo_base: paca.costo_base,
       precio_venta: paca.precio_venta,
@@ -210,8 +242,8 @@ export default function Pacas() {
 
   const handleDelete = async (id) => {
     const ok = await confirm({
-      title: '¿Eliminar paca?',
-      message: 'La paca será eliminada del inventario permanentemente.',
+      title: '¿Eliminar unidad?',
+      message: 'La unidad será eliminada del inventario permanentemente.',
       confirmText: 'Sí, eliminar',
       variant: 'danger',
     });
@@ -219,7 +251,7 @@ export default function Pacas() {
     try {
       await pacasApi.delete(id);
       loadPacas();
-      addToast('Paca eliminada', 'success');
+      addToast('Unidad eliminada', 'success');
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -251,7 +283,7 @@ export default function Pacas() {
 
   const resetForm = () => {
     setEditando(null);
-    setFormData({ clasificacion: '', referencia: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1 });
+    setFormData({ clasificacion: '', referencia: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1 });
   };
 
   const [exporting, setExporting] = useState(false);
@@ -279,7 +311,7 @@ export default function Pacas() {
       wb.creator = 'Bodega Americana';
       wb.created = new Date();
       const ws = wb.addWorksheet('Inventario Pacas');
-      ws.properties.tabColor = { argb: '1a1a2e' };
+      ws.properties.tabColor = { argb: '0f172a' };
 
       ws.columns = [
         { header: 'Clasificación',   key: 'clasificacion', width: 18 },
@@ -297,9 +329,9 @@ export default function Pacas() {
 
       ws.getRow(1).eachCell(cell => {
         cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 10 };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = { bottom: { style: 'thin', color: { argb: 'd4a373' } } };
+        cell.border = { bottom: { style: 'thin', color: { argb: '6366f1' } } };
       });
       ws.getRow(1).height = 22;
 
@@ -418,7 +450,7 @@ export default function Pacas() {
   };
 
   return (
-    <Layout title="Inventario" subtitle={`${pacas.length} pacas`}>
+    <Layout title="Inventario" subtitle={`${pacas.length} unidades`}>
       <div className="space-y-6">
         {/* Resumen stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -505,7 +537,7 @@ export default function Pacas() {
               <Download size={16} className="mr-1" /> PDF
             </Button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
-              <Plus size={16} /> Nueva Paca
+              <Plus size={16} /> Nueva Unidad
             </Button>
           </div>
         </div>
@@ -516,133 +548,48 @@ export default function Pacas() {
 
         {/* Vista Agrupada */}
         {vistaAgrupada ? (
-          <div className="space-y-3">
-            {loading ? (
-              [...Array(3)].map((_, i) => (
-                <Card key={i} className="animate-pulse">
-                  <CardBody className="p-4"><div className="h-8 bg-gray-100 rounded" /></CardBody>
-                </Card>
-              ))
-            ) : pacasAgrupadas.map((grupo, idx) => (
-              <Card key={idx} className="overflow-hidden">
-                <div
-                  className="flex items-center justify-between p-4 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
-                  onClick={() => toggleTipo(grupo.clasificacion)}
-                >
-                  <div className="flex items-center gap-3">
-                    {tiposExpandidos[grupo.clasificacion] ? (
-                      <ChevronDown className="w-5 h-5 text-muted" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-muted" />
-                    )}
-                    <Layers className="w-5 h-5 text-secondary" />
-                    <div>
-                      <p className="font-bold text-primary">{grupo.clasificacion}</p>
-                      <p className="text-xs text-muted">{grupo.pacas.length} pacas</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="text-center">
-                      <p className="text-xs text-muted">Disp</p>
-                      <p className="font-bold text-success">{grupo.pacas.filter(p => p.estado === 'disponible').length}</p>
-                    </div>
-                    {grupo.pacas.some(p => p.estado === 'separada') && (
-                      <div className="text-center">
-                        <p className="text-xs text-muted">Sep</p>
-                        <p className="font-bold text-warning">{grupo.pacas.filter(p => p.estado === 'separada').length}</p>
-                      </div>
-                    )}
-                    <div className="text-center">
-                      <p className="text-xs text-muted">Vend</p>
-                      <p className="font-bold text-accent">{grupo.pacas.filter(p => p.estado === 'vendida').length}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs text-muted">Precio</p>
-                      <p className="font-bold text-primary">{formatCurrency(grupo.pacas.find(p => p.estado === 'disponible')?.precio_venta ?? grupo.pacas[0]?.precio_venta)}</p>
-                    </div>
-                  </div>
-                </div>
-                
-                {tiposExpandidos[grupo.clasificacion] && (
-                  <div className="border-t border-border/50">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">UUID</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Referencia</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Peso</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Costo</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Precio</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Lote</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Estado</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-muted">Cotización</th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-muted">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/50">
-                        {grupo.pacas.map((paca) => (
-                          <tr key={paca.id} className={`hover:bg-primary/3 ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
-                            <td className="px-4 py-2 text-xs text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
-                            <td className="px-4 py-2 text-sm text-muted">{paca.referencia}</td>
-                            <td className="px-4 py-2 text-sm text-muted">{paca.peso} kg</td>
-                            <td className="px-4 py-2 text-sm text-muted">{formatCurrency(paca.costo_base)}</td>
-                            <td className="px-4 py-2 text-sm font-medium text-primary">
-                              {formatCurrency(paca.precio_venta)}
-                              {paca.estado === 'separada' && paca.cotizacion_precio && parseFloat(paca.cotizacion_precio) !== parseFloat(paca.precio_venta) && (
-                                <span className="block text-xs text-warning">Cot: {formatCurrency(paca.cotizacion_precio)}</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2">
-                              {paca.lote_id ? (
-                                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">
-                                  {getLoteNumero(paca.lote_id) || `#${paca.lote_id}`}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted">Sin lote</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2"><Badge variant={paca.estado}>{paca.estado}</Badge></td>
-                            <td className="px-4 py-2">
-                              {paca.estado === 'separada' && paca.cotizacion_numero ? (
-                                <div>
-                                  <span className="text-xs font-semibold text-warning">{paca.cotizacion_numero}</span>
-                                  {paca.cotizacion_cliente && (
-                                    <span className="block text-xs text-muted truncate max-w-[120px]">{paca.cotizacion_cliente}</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted/40">—</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              <div className="flex justify-end gap-1">
-                                {paca.estado === 'disponible' && (
-                                  <button onClick={(e) => { e.stopPropagation(); openReservaModal(paca); }} className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10" title="Reservar para cliente">
-                                    <Calendar size={14} />
-                                  </button>
-                                )}
-                                {paca.estado !== 'vendida' && (
-                                  <button onClick={(e) => { e.stopPropagation(); openAssignModal(paca); }} className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10" title="Asignar a lote">
-                                    <Link size={14} />
-                                  </button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); handleEdit(paca); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5">
-                                  <Edit2 size={14} />
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); handleDelete(paca.id); }} className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-accent/5" disabled={paca.estado === 'vendida'}>
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
+          <Card padding={false}>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-primary/3 border-b border-border/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Lote</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Cantidad</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Costo Total</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {loadingAgrupado ? (
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                  ) : inventarioAgrupado.length === 0 ? (
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay unidades en inventario</td></tr>
+                  ) : (
+                    inventarioAgrupado.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-primary/3 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.lote}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-sm text-muted">{row.categoria || <span className="text-muted/40">—</span>}</td>
+                        <td className="px-4 py-2.5 text-sm font-semibold text-primary capitalize">{row.clasificacion}</td>
+                        <td className="px-4 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
+                        <td className="px-4 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
+                        <td className="px-4 py-2.5"><Badge variant={row.estado}>{row.estado}</Badge></td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">{row.cantidad}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted">{formatCurrency(row.costo_total)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_total)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         ) : (
           /* Vista Lista/Tabla */
           <Card padding={false}>
@@ -665,7 +612,7 @@ export default function Pacas() {
                   {loading ? (
                     <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
                   ) : pacas.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay pacas</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay unidades</td></tr>
                   ) : (
                     pacas.map((paca) => (
                       <tr key={paca.id} className={`hover:bg-primary/3 transition-colors ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
@@ -775,7 +722,7 @@ export default function Pacas() {
       </div>
 
       {/* Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Paca' : 'Nueva Paca'}>
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Unidad' : 'Nueva Unidad'}>
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
 
@@ -796,6 +743,26 @@ export default function Pacas() {
               placeholder="Seleccionar..."
               required
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Calidad"
+              value={formData.calidad || ''}
+              onChange={(e) => setFormData({ ...formData, calidad: e.target.value })}
+              options={calidadesList.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))}
+              placeholder="Seleccionar..."
+            />
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Categoría <span className="text-muted font-normal">(opcional)</span></label>
+              <input list="temporadas-paca-form" className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                value={formData.categoria}
+                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                placeholder="Verano / Invierno" />
+              <datalist id="temporadas-paca-form">
+                {temporadasList.map(t => <option key={t} value={t.charAt(0).toUpperCase() + t.slice(1)} />)}
+              </datalist>
+            </div>
           </div>
 
           <Input
@@ -833,7 +800,7 @@ export default function Pacas() {
               <Hash className="w-5 h-5 text-secondary" />
               <div className="flex-1">
                 <label className="block text-sm font-medium text-primary">Cantidad</label>
-                <p className="text-xs text-muted">Número de pacas del mismo tipo</p>
+                <p className="text-xs text-muted">Número de unidades del mismo tipo</p>
               </div>
               <input
                 type="number"

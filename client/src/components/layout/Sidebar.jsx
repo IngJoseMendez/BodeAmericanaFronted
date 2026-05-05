@@ -20,12 +20,17 @@ import {
   Tag,
   X,
   Search,
-  Shield
+  Shield,
+  Truck,
+  CreditCard
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+
+// Persiste el scroll entre remounts (cada página monta un Sidebar nuevo)
+let _navScrollPos = 0;
 
 const adminNavItems = [
   { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
@@ -36,6 +41,8 @@ const adminNavItems = [
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',        key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',       key: 'pedidos' },
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',  key: null },
+  { path: '/despachos',            icon: Truck,           label: 'Despachos',     key: null },
+  { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',       key: null },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',      key: null },
   { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',     key: null },
@@ -54,6 +61,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
   const [counts, setCounts]           = useState({});
   const [hoveredItem, setHoveredItem] = useState(null);
   const sidebarRef = useRef(null);
+  const navRef     = useRef(null);
   const { usuario, tieneRol } = useAuth();
   const { theme, toggleTheme }  = useTheme();
   const location = useLocation();
@@ -74,6 +82,11 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
         item.label.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : navItems;
+
+  // Al montar, restaurar la posición guardada (el Sidebar remonta en cada página)
+  useLayoutEffect(() => {
+    if (navRef.current) navRef.current.scrollTop = _navScrollPos;
+  }, []);
 
   useEffect(() => {
     if (isOpen && window.innerWidth < 1024) {
@@ -231,6 +244,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
         {/* ── NAVIGATION ──────────────────────────── */}
         <nav
+          ref={navRef}
+          onScroll={() => { _navScrollPos = navRef.current?.scrollTop || 0; }}
           className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1"
           aria-label="Navegación principal"
           style={{ WebkitOverflowScrolling: 'touch' }}

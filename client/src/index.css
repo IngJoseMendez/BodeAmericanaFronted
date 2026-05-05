@@ -8,27 +8,27 @@
    DESIGN TOKENS — LIGHT MODE (default)
    ============================================ */
 :root {
-  --color-primary: #0f0f1a;
-  --color-secondary: #d4a373;
-  --color-accent: #bc4749;
-  --color-success: #6a994e;
-  --color-warning: #e9c46a;
-  --color-error: #bc4749;
+  --color-primary: #0f172a;
+  --color-secondary: #6366f1;
+  --color-accent: #06b6d4;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #ef4444;
   --color-info: #3b82f6;
-  --color-cream: #faf8f5;
+  --color-cream: #f8fafc;
   --color-surface: #ffffff;
-  --color-muted: #6b7280;
-  --color-border: #e5e0db;
+  --color-muted: #64748b;
+  --color-border: #e2e8f0;
   --color-on-primary: #ffffff;
-  --color-on-surface: #0f0f1a;
-  --color-sidebar-bg: #1a1a2e;
-  --color-sidebar-text: #ffffff;
-  --color-sidebar-border: #2d2d44;
+  --color-on-surface: #0f172a;
+  --color-sidebar-bg: #0f172a;
+  --color-sidebar-text: #f1f5f9;
+  --color-sidebar-border: #1e293b;
 
-  --shadow-sm: 0 1px 2px rgba(15, 15, 26, 0.04);
-  --shadow-md: 0 4px 12px rgba(15, 15, 26, 0.08);
-  --shadow-lg: 0 12px 32px rgba(15, 15, 26, 0.12);
-  --shadow-glow: 0 0 40px rgba(212, 163, 115, 0.15);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
 
   color-scheme: light;
 }
@@ -37,27 +37,27 @@
    DESIGN TOKENS — DARK MODE
    ============================================ */
 :root[data-theme="dark"] {
-  --color-primary: #f0ede8;
-  --color-secondary: #d4a373;
-  --color-accent: #e05c5e;
-  --color-success: #7fba5a;
-  --color-warning: #f0d080;
-  --color-error: #e05c5e;
+  --color-primary: #f1f5f9;
+  --color-secondary: #818cf8;
+  --color-accent: #22d3ee;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
   --color-info: #60a5fa;
-  --color-cream: #111118;
-  --color-surface: #1c1c28;
-  --color-muted: #9ca3af;
-  --color-border: #2a2a3a;
-  --color-on-primary: #0f0f1a;
-  --color-on-surface: #1c1c28;
-  --color-sidebar-bg: #0a0a12;
-  --color-sidebar-text: #f0ede8;
-  --color-sidebar-border: #2a2a3a;
+  --color-cream: #0f172a;
+  --color-surface: #1e293b;
+  --color-muted: #94a3b8;
+  --color-border: #334155;
+  --color-on-primary: #0f172a;
+  --color-on-surface: #1e293b;
+  --color-sidebar-bg: #020617;
+  --color-sidebar-text: #f1f5f9;
+  --color-sidebar-border: #1e293b;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 40px rgba(212, 163, 115, 0.12);
+  --shadow-glow: 0 0 40px rgba(129, 140, 248, 0.12);
 
   color-scheme: dark;
 }
@@ -109,7 +109,7 @@ select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(212, 163, 115, 0.25);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
 }
 
 /* Cursor pointer on all interactive elements */
@@ -126,16 +126,16 @@ select {
    ============================================ */
 .bg-pattern {
   background-image:
-    radial-gradient(circle at 20% 80%, rgba(212, 163, 115, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(188, 71, 73, 0.05) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(106, 153, 78, 0.04) 0%, transparent 30%);
+    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.07) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(129, 140, 248, 0.04) 0%, transparent 30%);
 }
 
 :root[data-theme="dark"] .bg-pattern {
   background-image:
-    radial-gradient(circle at 20% 80%, rgba(212, 163, 115, 0.04) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(188, 71, 73, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(106, 153, 78, 0.03) 0%, transparent 30%);
+    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(129, 140, 248, 0.04) 0%, transparent 30%);
 }
 
 /* ============================================
@@ -277,8 +277,8 @@ select {
   border-color: var(--color-border);
 }
 
-.glow-secondary { box-shadow: 0 0 20px rgba(212, 163, 115, 0.3); }
-.glow-accent    { box-shadow: 0 0 20px rgba(188, 71, 73, 0.3); }
+.glow-secondary { box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); }
+.glow-accent    { box-shadow: 0 0 20px rgba(6, 182, 212, 0.3); }
 
 /* ============================================
    CARD HOVER EFFECTS
@@ -307,7 +307,7 @@ select {
 .search-input:focus {
   background: rgba(255, 255, 255, 0.15);
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(212, 163, 115, 0.2);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 .search-input::placeholder { color: rgba(255, 255, 255, 0.4); }
@@ -319,11 +319,11 @@ select {
    ============================================ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #3a3a4a; }
-:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #5a5a6a; }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #334155; }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* ============================================
    GRADIENT UTILITIES
@@ -353,7 +353,7 @@ select {
    ACTIVE NAV ITEM
    ============================================ */
 .nav-item-active {
-  background: linear-gradient(135deg, rgba(212, 163, 115, 0.2), rgba(212, 163, 115, 0.1));
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.1));
   border-left: 3px solid var(--color-secondary);
 }
 
@@ -367,7 +367,7 @@ select {
 }
 
 :root[data-theme="dark"] .skeleton {
-  background: linear-gradient(90deg, #2a2a3a 25%, #1e1e2e 50%, #2a2a3a 75%);
+  background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%);
   background-size: 200% 100%;
 }
 
@@ -397,7 +397,7 @@ select {
    COMMAND PALETTE
    ============================================ */
 .cmd-backdrop {
-  background: rgba(15, 15, 26, 0.6);
+  background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -467,11 +467,11 @@ body,
 }
 
 [data-theme="dark"] .hover\:bg-gray-50:hover {
-  background-color: rgba(240, 237, 232, 0.05) !important;
+  background-color: rgba(241, 245, 249, 0.05) !important;
 }
 
 [data-theme="dark"] .hover\:bg-gray-100:hover {
-  background-color: rgba(240, 237, 232, 0.1) !important;
+  background-color: rgba(241, 245, 249, 0.1) !important;
 }
 
 [data-theme="dark"] .border-gray-200 {

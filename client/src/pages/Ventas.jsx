@@ -258,13 +258,13 @@ useEffect(() => {
     wb.created = new Date();
     
     const ws = wb.addWorksheet('Venta');
-    ws.properties.tabColor = '1a1a2e';
+    ws.properties.tabColor = '0f172a';
     
     // Título
     ws.mergeCells('A1:D1');
     ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
-    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
     ws.getCell('A1').alignment = { horizontal: 'center' };
     
     // Datos del cliente
@@ -283,7 +283,7 @@ useEffect(() => {
       const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
       cell.value = h;
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
     });
     
     // Datos de pacas
@@ -433,12 +433,12 @@ useEffect(() => {
       wb.created = new Date();
       
       const ws = wb.addWorksheet('Venta');
-      ws.properties.tabColor = '1a1a2e';
+      ws.properties.tabColor = '0f172a';
       
       ws.mergeCells('A1:E1');
       ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
       ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
-      ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+      ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
       ws.getCell('A1').alignment = { horizontal: 'center' };
       
       ws.getCell('A3').value = 'Folio:';
@@ -455,7 +455,7 @@ useEffect(() => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1a1a2e' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
       });
       
       let row = 9;

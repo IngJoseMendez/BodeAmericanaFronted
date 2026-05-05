@@ -21,9 +21,10 @@ const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 // ── Factory helpers ───────────────────────────────────────────────
+
 const emptyProveedor = () => ({
-  proveedor_nombre: '', moneda: 'USD', costo: '', notas: '',
-  detalles: [{ clasificacion: '', referencia: '', calidad: '', cantidad: '' }],
+  proveedor_nombre: '', moneda: 'USD', notas: '',
+  detalles: [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
 });
 const emptyServicio = () => ({ proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '' });
 
@@ -140,7 +141,7 @@ function TimelineView({ items, onView }) {
                     <p className="font-semibold text-primary font-heading text-sm">{cont.numero}</p>
                     <p className="text-xs text-muted mt-0.5">
                       {new Date(cont.fecha_llegada).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
-                      {' · '}{parseInt(cont.total_pacas).toLocaleString()} pacas
+                      {' · '}{parseInt(cont.total_pacas).toLocaleString()} unidades
                     </p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -176,7 +177,7 @@ function TimelineView({ items, onView }) {
                 >
                   <p className="font-semibold text-primary text-sm">{cont.numero}</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted">{parseInt(cont.total_pacas).toLocaleString()} pacas</span>
+                    <span className="text-xs text-muted">{parseInt(cont.total_pacas).toLocaleString()} unidades</span>
                     <StatusBadge estado={cont.estado} />
                   </div>
                 </div>
@@ -198,7 +199,7 @@ function ComparadorModal({ isOpen, onClose, items }) {
 
   const metrics = [
     { label: 'Fecha llegada',  fn: (c) => formatDate(c.fecha_llegada),                       mono: false },
-    { label: 'Pacas',          fn: (c) => parseInt(c.total_pacas).toLocaleString(),           mono: true  },
+    { label: 'Unidades',       fn: (c) => parseInt(c.total_pacas).toLocaleString(),           mono: true  },
     { label: 'Costo Unitario', fn: (c) => formatCurrency(c.costo_unitario),
       raw: (c) => parseFloat(c.costo_unitario) || 0, highlight: true, mono: true },
     { label: 'Costo Total',    fn: (c) => formatCurrency(c.costo_total),                      mono: true  },
@@ -342,14 +343,16 @@ export default function Contenedores() {
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
-  const [tiposOpts, setTiposOpts]           = useState([]);
+  const [tiposOpts,      setTiposOpts]      = useState([]);
   const [categoriasOpts, setCategoriasOpts] = useState([]);
-  const [calidadesOpts, setCalidadesOpts]   = useState([]);
+  const [calidadesOpts,  setCalidadesOpts]  = useState([]);
+  const [temporadasOpts, setTemporadasOpts] = useState([]);
 
   useEffect(() => {
     tiposPacaApi.getTipos().then(d => setTiposOpts(d.map(t => t.nombre))).catch(() => {});
     tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d.map(t => t.nombre))).catch(() => {});
     tiposPacaApi.getCalidades().then(d => setCalidadesOpts(d.map(t => t.nombre))).catch(() => {});
+    tiposPacaApi.getTemporadas().then(d => setTemporadasOpts(d.map(t => t.nombre))).catch(() => {});
   }, []);
 
   // ── Form ───────────────────────────────────────────────────────
@@ -366,6 +369,7 @@ export default function Contenedores() {
   const [templateModalOpen, setTemplateModalOpen]         = useState(false);
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
   const [nombrePlantilla, setNombrePlantilla]             = useState('');
+  const [templateFromView, setTemplateFromView]           = useState(false);
 
   // ── Load ───────────────────────────────────────────────────────
   const loadContenedores = async () => {
@@ -392,12 +396,12 @@ export default function Contenedores() {
 
   // ── Export Excel ───────────────────────────────────────────────
   const handleExportExcel = async () => {
-    const primary   = '1a1a2e';
-    const secondary = 'd4a373';
-    const success   = '6a994e';
-    const warning   = 'f4a261';
-    const accent    = 'bc4749';
-    const lightGray = 'F5F5F0';
+    const primary   = '0f172a';
+    const secondary = '6366f1';
+    const success   = '16a34a';
+    const warning   = 'd97706';
+    const accent    = '06b6d4';
+    const lightGray = 'f8fafc';
 
     const fmtCurrency = (v) =>
       new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
@@ -464,7 +468,7 @@ export default function Contenedores() {
       ['Total contenedores', totales.length,               primary,   null],
       ['Finalizados',         finalizados.length,           success,   null],
       ['En borrador',         borradores.length,            warning,   null],
-      ['Total pacas generadas', totalPacas,                 primary,   null],
+      ['Total unidades generadas', totalPacas,               primary,   null],
       ['Inversión total (finalizados)', invTotal,           accent,    '$#,##0.00'],
       ['Costo promedio por paca',       promUnitario,       secondary, '$#,##0.00'],
     ];
@@ -498,7 +502,7 @@ export default function Contenedores() {
     row++;
 
     // ── Cabeceras de tabla ─────────────────────────────────────────
-    const cols = ['Número', 'Fecha Llegada', 'Estado', 'Total Pacas', 'Costo/Paca', 'Costo Mercancía', 'Costo Servicios', 'Costo Total', 'Proveedores', 'Servicios'];
+    const cols = ['Número', 'Fecha Llegada', 'Estado', 'Total Unidades', 'Costo/Unidad', 'Costo Mercancía', 'Costo Servicios', 'Costo Total', 'Proveedores', 'Servicios'];
     cols.forEach((h, i) => {
       const cell = ws.getCell(`${String.fromCharCode(65 + i)}${row}`);
       cell.value = h;
@@ -611,9 +615,9 @@ export default function Contenedores() {
 
   // ── Export Excel individual por contenedor ─────────────────────
   const handleExportContenedorExcel = async (cont) => {
-    const primary   = '1a1a2e';
-    const secondary = 'd4a373';
-    const success   = '6a994e';
+    const primary   = '0f172a';
+    const secondary = '6366f1';
+    const success   = '16a34a';
     const fmtCOP = (v) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
 
     let full = cont;
@@ -644,7 +648,7 @@ export default function Contenedores() {
       ['Fecha Salida', full.fecha_salida ? new Date(full.fecha_salida).toLocaleDateString('es-CO') : '—'],
       ['Fecha Llegada', full.fecha_llegada ? new Date(full.fecha_llegada).toLocaleDateString('es-CO') : '—'],
       ['Tasa USD→COP', tasa.toLocaleString('es-CO')],
-      ['Total Pacas', totalPacas],
+      ['Total Unidades', totalPacas],
       ['Costo Mercancía', fmtCOP(full.costo_mercancia_total)],
       ['Costo Servicios', fmtCOP(full.costo_servicios_total)],
       ['Costo Total', fmtCOP(full.costo_total)],
@@ -734,8 +738,10 @@ export default function Contenedores() {
     const totalPacas = parseInt(formData.total_pacas) || 0;
 
     const proveedoresDetalle = proveedores.map(p => {
-      const costoOriginal = parseFloat(p.costo) || 0;
-      const costoEnCOP    = p.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+      const costoOriginal = (p.detalles || []).reduce(
+        (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
+      );
+      const costoEnCOP = p.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
       return { nombre: p.proveedor_nombre, moneda: p.moneda || 'USD', costoOriginal, costoEnCOP,
                costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
     });
@@ -767,7 +773,7 @@ export default function Contenedores() {
   };
   const addDetalle    = (pi) => {
     const n = [...proveedores];
-    n[pi] = { ...n[pi], detalles: [...n[pi].detalles, { tipo: '', categoria: '', cantidad: '' }] };
+    n[pi] = { ...n[pi], detalles: [...n[pi].detalles, { categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }] };
     setProveedores(n);
   };
   const removeDetalle = (pi, di) => {
@@ -796,9 +802,39 @@ export default function Contenedores() {
 
   const handleSaveTemplate = () => {
     if (!nombrePlantilla.trim()) return;
-    saveTemplate(nombrePlantilla, formData, proveedores, servicios);
+    if (templateFromView && selectedContenedor) {
+      const c = selectedContenedor;
+      const provs = (c.proveedores_mercancia || []).map(p => ({
+        proveedor_nombre: p.proveedor_nombre,
+        moneda: p.moneda || 'USD',
+        notas: p.notas || '',
+        detalles: (p.detalles || []).map(d => ({
+          categoria: d.categoria || '',
+          clasificacion: d.clasificacion || '',
+          referencia: d.referencia || '',
+          calidad: d.calidad || '',
+          cantidad: String(d.cantidad || ''),
+          costo_unitario: String(d.costo_unitario || ''),
+        })),
+      }));
+      const srvs = (c.servicios || []).map(s => ({
+        proveedor_nombre: s.proveedor_nombre || '',
+        tipo_servicio: s.tipo_servicio || '',
+        moneda: s.moneda || 'COP',
+        costo: String(s.costo || ''),
+        notas: s.notas || '',
+      }));
+      saveTemplate(nombrePlantilla, {
+        tasa_conversion: String(c.tasa_conversion || '1'),
+        total_pacas: String(c.total_pacas || ''),
+        notas: c.notas || '',
+      }, provs, srvs);
+    } else {
+      saveTemplate(nombrePlantilla, formData, proveedores, servicios);
+    }
     addToast(`Plantilla "${nombrePlantilla.trim()}" guardada`, 'success');
     setSaveTemplateModalOpen(false);
+    setTemplateFromView(false);
   };
 
   // ── Open modals ────────────────────────────────────────────────
@@ -820,11 +856,17 @@ export default function Contenedores() {
         ? full.proveedores_mercancia.map((p) => ({
             proveedor_nombre: p.proveedor_nombre,
             moneda: p.moneda || 'USD',
-            costo: String(p.costo || ''),
             notas: p.notas || '',
             detalles: p.detalles.length > 0
-              ? p.detalles.map((d) => ({ clasificacion: d.clasificacion, referencia: d.referencia, calidad: d.calidad || '', cantidad: String(d.cantidad) }))
-              : [{ clasificacion: '', referencia: '', calidad: '', cantidad: '' }],
+              ? p.detalles.map((d) => ({
+                  categoria: d.categoria || '',
+                  clasificacion: d.clasificacion,
+                  referencia: d.referencia,
+                  calidad: d.calidad || '',
+                  cantidad: String(d.cantidad),
+                  costo_unitario: String(d.costo_unitario || ''),
+                }))
+              : [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
           }))
         : [emptyProveedor()]);
       setServicios(full.servicios.length > 0
@@ -844,7 +886,7 @@ export default function Contenedores() {
     e.preventDefault();
     const r = calcularResumen();
     if (!r.cantidadValida) {
-      addToast(`Detalles (${r.sumDetalles}) ≠ total pacas (${formData.total_pacas || '?'})`, 'error');
+      addToast(`Detalles (${r.sumDetalles}) ≠ total unidades (${formData.total_pacas || '?'})`, 'error');
       return;
     }
     setSubmitting(true);
@@ -859,9 +901,15 @@ export default function Contenedores() {
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
           moneda: p.moneda || 'USD',
-          costo: parseFloat(p.costo) || 0,
           notas: p.notas || null,
-          detalles: p.detalles.map((d) => ({ clasificacion: d.clasificacion, referencia: d.referencia, calidad: d.calidad, cantidad: parseInt(d.cantidad) || 0 })),
+          detalles: p.detalles.map((d) => ({
+            categoria: d.categoria || null,
+            clasificacion: d.clasificacion,
+            referencia: d.referencia,
+            calidad: d.calidad,
+            cantidad: parseInt(d.cantidad) || 0,
+            costo_unitario: parseFloat(d.costo_unitario) || 0,
+          })),
         })),
         servicios: servicios.filter((s) => s.proveedor_nombre || s.tipo_servicio).map((s) => ({ ...s, costo: parseFloat(s.costo) || 0 })),
       };
@@ -892,11 +940,11 @@ export default function Contenedores() {
       setSelectedContenedor(full);
       const combSet = new Set();
       full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) =>
-        combSet.add(`${d.clasificacion}|${d.referencia}|${d.calidad || ''}`)
+        combSet.add(`${d.categoria || ''}|${d.clasificacion}|${d.referencia}|${d.calidad || ''}`)
       ));
       const combs = Array.from(combSet).map((c) => {
-        const [clasificacion, referencia, calidad] = c.split('|');
-        return { clasificacion, referencia, calidad, key: c };
+        const [categoria, clasificacion, referencia, calidad] = c.split('|');
+        return { categoria, clasificacion, referencia, calidad, key: c };
       });
       setCombsFinalizacion(combs);
       const init = {}; combs.forEach((c) => { init[c.key] = ''; });
@@ -914,9 +962,9 @@ export default function Contenedores() {
     }
     setSubmitting(true);
     try {
-      const precios = combsFinalizacion.map((c) => ({ clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
+      const precios = combsFinalizacion.map((c) => ({ categoria: c.categoria || null, clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
       const result = await contenedoresApi.finalizar(selectedContenedor.id, { precios });
-      addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} pacas al inventario`, 'success');
+      addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} unidades al inventario`, 'success');
       setFinalizarModalOpen(false); loadContenedores();
     } catch (err) { addToast(err.message, 'error'); }
     finally { setSubmitting(false); }
@@ -954,7 +1002,7 @@ export default function Contenedores() {
         <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${borradores} en borrador`} />
         <KpiCard label="Borradores"   value={borradores}                   icon={Layers}   color="bg-warning/70"   sub="Pendientes de finalizar" />
         <KpiCard label="Finalizados"  value={finalizados}                  icon={Archive}  color="bg-success/70"   sub="Lotes creados en inventario" />
-        <KpiCard label="Pacas Totales" value={totalPacas.toLocaleString()} icon={TrendingUp} color="bg-accent/70" sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Sin datos aún'} />
+        <KpiCard label="Unidades Totales" value={totalPacas.toLocaleString()} icon={TrendingUp} color="bg-accent/70" sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Sin datos aún'} />
       </div>
 
       {/* ── Toolbar ───────────────────────────────────────────── */}
@@ -1067,7 +1115,7 @@ export default function Contenedores() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-primary/3">
-                  {['Número', 'Fecha', 'Pacas', 'Costo Unitario', 'Costo Total', 'Servicios', 'Estado', ''].map((h) => (
+                  {['Número', 'Fecha', 'Unidades', 'Costo Unitario', 'Costo Total', 'Servicios', 'Estado', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
@@ -1191,7 +1239,7 @@ export default function Contenedores() {
                       value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
                   </div>
                   <div>
-                    <label className={lbl}>Total de Pacas *</label>
+                    <label className={lbl}>Total de Unidades *</label>
                     <input type="number" min="1" className={inp} placeholder="200"
                       value={formData.total_pacas} onChange={(e) => setFormData({ ...formData, total_pacas: e.target.value })} required />
                   </div>
@@ -1230,8 +1278,6 @@ export default function Contenedores() {
                             <option value="USD">USD</option>
                             <option value="COP">COP</option>
                           </select>
-                          <PriceInput className={`${inpBase} w-32`} placeholder="Costo"
-                            value={prov.costo} onChange={(val) => updateProveedor(pi, 'costo', val)} />
                           {proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
                               className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
@@ -1239,57 +1285,95 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
-                        {(prov.moneda || 'USD') === 'USD' && parseFloat(prov.costo) > 0 && (
-                          <div className="flex items-center gap-2 pl-8">
-                            <span className="text-[10px] text-muted">≈</span>
-                            <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
-                              {formatCurrency(parseFloat(prov.costo) * (parseFloat(formData.tasa_conversion) || 1))}
-                            </span>
-                            <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
-                          </div>
-                        )}
                         <input type="text" className={`${inp} text-xs`} placeholder="Notas del proveedor (opcional)"
                           value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                       </div>
                       <div className="px-4 pb-4 pt-3 bg-cream/50 border-t border-border/30">
-                        <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Distribución por tipo y categoría</p>
-                        <div className="space-y-2">
-                          {prov.detalles.map((det, di) => (
-                            <div key={di} className="bg-surface rounded-xl px-3 pt-2.5 pb-3 border border-border/40 space-y-2">
-                              <div className="grid grid-cols-3 gap-2">
-                                <select className={inp} value={det.clasificacion}
-                                  onChange={(e) => updateDetalle(pi, di, 'clasificacion', e.target.value)} required>
-                                  <option value="">Clasificación</option>
-                                  {tiposOpts.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                                </select>
-                                <select className={inp} value={det.referencia}
-                                  onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} required>
-                                  <option value="">Referencia</option>
-                                  {categoriasOpts.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                                </select>
-                                <select className={inp} value={det.calidad}
-                                  onChange={(e) => updateDetalle(pi, di, 'calidad', e.target.value)} required>
-                                  <option value="">Calidad</option>
-                                  {calidadesOpts.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                                </select>
+                        <div className="flex items-center justify-between mb-2.5">
+                          <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Distribución — Categoría · Clasificación · Referencia · Calidad</p>
+                          <span className="text-[10px] font-semibold text-secondary tabular-nums">
+                            Total: {formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0))}
+                            {(prov.moneda==='USD') && (parseFloat(formData.tasa_conversion)||1) > 1 &&
+                              ` ≈ ${formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0)*(parseFloat(formData.tasa_conversion)||1))} COP`
+                            }
+                          </span>
+                        </div>
+                        <div className="space-y-3">
+                          {prov.detalles.map((det, di) => {
+                            const subtotal = (parseInt(det.cantidad)||0)*(parseFloat(det.costo_unitario)||0);
+                            return (
+                              <div key={di} className="bg-surface rounded-xl px-3 pt-2.5 pb-3 border border-border/40 space-y-2">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
+                                    <input list={`temporadas-${pi}-${di}`} className={inp} placeholder="Verano / Invierno"
+                                      value={det.categoria}
+                                      onChange={(e) => updateDetalle(pi, di, 'categoria', e.target.value)} />
+                                    <datalist id={`temporadas-${pi}-${di}`}>
+                                      {temporadasOpts.map(t => <option key={t} value={t} />)}
+                                    </datalist>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Clasificación *</label>
+                                    <input list={`tipos-${pi}-${di}`} className={inp} placeholder="Hombre / Mujer..."
+                                      value={det.clasificacion} required
+                                      onChange={(e) => updateDetalle(pi, di, 'clasificacion', e.target.value)} />
+                                    <datalist id={`tipos-${pi}-${di}`}>
+                                      {tiposOpts.map(t => <option key={t} value={t} />)}
+                                    </datalist>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Referencia *</label>
+                                    <input list={`cats-${pi}-${di}`} className={inp} placeholder="Chaqueta / Pantalón..."
+                                      value={det.referencia} required
+                                      onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} />
+                                    <datalist id={`cats-${pi}-${di}`}>
+                                      {categoriasOpts.map(c => <option key={c} value={c} />)}
+                                    </datalist>
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Calidad *</label>
+                                    <input list={`cals-${pi}-${di}`} className={inp} placeholder="Premium / Supreme..."
+                                      value={det.calidad} required
+                                      onChange={(e) => updateDetalle(pi, di, 'calidad', e.target.value)} />
+                                    <datalist id={`cals-${pi}-${di}`}>
+                                      {calidadesOpts.map(c => <option key={c} value={c} />)}
+                                    </datalist>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1">
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
+                                    <input type="number" min="1" className={`${inp} text-center font-mono`} placeholder="0"
+                                      value={det.cantidad} required
+                                      onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Costo Unitario *</label>
+                                    <PriceInput className={inp} placeholder="0"
+                                      value={det.costo_unitario}
+                                      onChange={(val) => updateDetalle(pi, di, 'costo_unitario', val)} />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Subtotal</label>
+                                    <div className={`${inp} bg-primary/3 text-secondary font-mono font-semibold text-sm text-right select-none`}>
+                                      {subtotal > 0 ? subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0}) : '—'}
+                                    </div>
+                                  </div>
+                                  {prov.detalles.length > 1 && (
+                                    <button type="button" onClick={() => removeDetalle(pi, di)}
+                                      className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0 mt-4">
+                                      <X size={13} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <input type="number" min="1" className={`${inp} flex-1 text-center font-mono`} placeholder="0"
-                                  value={det.cantidad} onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} required />
-                                <span className="text-xs text-muted font-medium">pacas</span>
-                                {prov.detalles.length > 1 && (
-                                  <button type="button" onClick={() => removeDetalle(pi, di)}
-                                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
-                                    <X size={13} />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         <button type="button" onClick={() => addDetalle(pi)}
                           className="mt-2.5 flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-secondary transition-colors">
-                          <Plus size={13} /> Agregar línea de distribución
+                          <Plus size={13} /> Agregar línea
                         </button>
                       </div>
                     </div>
@@ -1367,12 +1451,12 @@ export default function Contenedores() {
                   <span className="text-sm font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
                 </div>
                 <div className="flex items-center justify-between pb-2 border-b border-border/40">
-                  <span className="text-xs text-muted">Por paca</span>
+                  <span className="text-xs text-muted">Por unidad</span>
                   <span className="text-sm font-mono font-bold text-secondary tabular-nums">{formatCurrency(resumen.costoUnitario)}</span>
                 </div>
                 <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
                   {resumen.cantidadValida
-                    ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} pacas — OK</>
+                    ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
                     : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar distribución</>
                   }
                 </div>
@@ -1392,10 +1476,16 @@ export default function Contenedores() {
             </div>
 
             {/* ── RIGHT: sticky summary ────────────────────────── */}
-            <div className="hidden lg:block w-72 flex-shrink-0">
+            <div className="hidden lg:block w-[26rem] flex-shrink-0">
               <div className="sticky top-0 space-y-3">
-                <div className={`rounded-2xl border p-4 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
-                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-3">Resumen de Costos</p>
+                <div className={`rounded-2xl border p-5 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
+                  {/* Título + cabecera de columnas */}
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-end mb-2">
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
+                    <span className="text-[9px] font-bold text-muted uppercase tracking-widest w-24 text-right">COP</span>
+                    <span className="text-[9px] font-bold text-secondary uppercase tracking-widest w-20 text-right">USD</span>
+                  </div>
+                  <div className="h-px bg-border/50 mb-3" />
 
                   {/* Mercancía por proveedor */}
                   {resumen.proveedoresDetalle.some(p => p.costoEnCOP > 0) && (
@@ -1403,17 +1493,38 @@ export default function Contenedores() {
                       <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Mercancía</p>
                       <div className="space-y-1.5">
                         {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
-                          <div key={i} className="flex items-start justify-between gap-1">
-                            <span className="text-[11px] text-muted truncate flex-1">{p.nombre || `Prov. ${i+1}`}</span>
-                            <div className="text-right flex-shrink-0">
-                              {p.moneda === 'USD' && (
-                                <p className="text-[10px] text-muted/70">USD {p.costoOriginal.toLocaleString('es-CO')}</p>
-                              )}
-                              <p className="text-xs font-mono font-semibold text-primary tabular-nums">{formatCurrency(p.costoEnCOP)}</p>
-                              <p className="text-[10px] text-muted/70">{formatCurrency(p.costoPorPaca)}/paca</p>
+                          <div key={i} className="space-y-0.5">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
+                              <span className="text-[11px] font-semibold text-primary truncate">{p.nombre || `Prov. ${i+1}`}</span>
+                              <span className="text-xs font-mono font-semibold text-primary tabular-nums text-right w-24">
+                                {formatCurrency(p.costoEnCOP)}
+                              </span>
+                              <span className="text-xs font-mono text-secondary/80 tabular-nums text-right w-20">
+                                ${(p.costoEnCOP / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
+                              <span className="text-[10px] text-muted/60">por unidad</span>
+                              <span className="text-[10px] font-mono text-muted tabular-nums text-right w-24">
+                                {formatCurrency(p.costoPorPaca)}
+                              </span>
+                              <span className="text-[10px] font-mono text-muted/60 tabular-nums text-right w-20">
+                                ${(p.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                              </span>
                             </div>
                           </div>
                         ))}
+                        {resumen.proveedoresDetalle.filter(p => p.costoEnCOP > 0).length > 1 && (
+                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline pt-1 border-t border-border/30">
+                            <span className="text-[10px] font-semibold text-muted">Subtotal</span>
+                            <span className="text-xs font-mono font-bold text-primary tabular-nums text-right w-24">
+                              {formatCurrency(resumen.costoMercancia)}
+                            </span>
+                            <span className="text-xs font-mono font-semibold text-secondary/80 tabular-nums text-right w-20">
+                              ${(resumen.costoMercancia / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1424,34 +1535,71 @@ export default function Contenedores() {
                       <p className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5">Servicios</p>
                       <div className="space-y-1.5">
                         {resumen.serviciosDetalle.map((s, i) => s.costo > 0 && (
-                          <div key={i} className="flex items-start justify-between gap-1">
-                            <span className="text-[11px] text-muted truncate flex-1 capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
-                            <div className="text-right flex-shrink-0">
-                              {s.moneda === 'USD' && (
-                                <p className="text-[10px] text-muted/70">USD {s.costoOriginal.toLocaleString('es-CO')}</p>
-                              )}
-                              <p className="text-xs font-mono font-semibold text-primary tabular-nums">{formatCurrency(s.costo)}</p>
-                              <p className="text-[10px] text-muted/70">{formatCurrency(s.costoPorPaca)}/paca</p>
+                          <div key={i} className="space-y-0.5">
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
+                              <span className="text-[11px] font-semibold text-primary truncate capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
+                              <span className="text-xs font-mono font-semibold text-primary tabular-nums text-right w-24">
+                                {formatCurrency(s.costo)}
+                              </span>
+                              <span className="text-xs font-mono text-secondary/80 tabular-nums text-right w-20">
+                                ${(s.costo / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline">
+                              <span className="text-[10px] text-muted/60">por unidad</span>
+                              <span className="text-[10px] font-mono text-muted tabular-nums text-right w-24">
+                                {formatCurrency(s.costoPorPaca)}
+                              </span>
+                              <span className="text-[10px] font-mono text-muted/60 tabular-nums text-right w-20">
+                                ${(s.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                              </span>
                             </div>
                           </div>
                         ))}
+                        {resumen.serviciosDetalle.filter(s => s.costo > 0).length > 1 && (
+                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline pt-1 border-t border-border/30">
+                            <span className="text-[10px] font-semibold text-muted">Subtotal</span>
+                            <span className="text-xs font-mono font-bold text-primary tabular-nums text-right w-24">
+                              {formatCurrency(resumen.costoServicios)}
+                            </span>
+                            <span className="text-xs font-mono font-semibold text-secondary/80 tabular-nums text-right w-20">
+                              ${(resumen.costoServicios / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
 
+                  {/* Total */}
                   <div className="h-px bg-border/50 mb-3" />
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold text-primary">Total</span>
-                    <span className="text-base font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-baseline mb-4">
+                    <span className="text-sm font-bold text-primary">Total</span>
+                    <span className="text-base font-mono font-bold text-primary tabular-nums text-right w-24">
+                      {formatCurrency(resumen.costoTotal)}
+                    </span>
+                    <span className="text-base font-mono font-bold text-secondary tabular-nums text-right w-20">
+                      ${(resumen.costoTotal / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                    </span>
                   </div>
 
-                  <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 text-center mb-3">
-                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Costo por Paca</p>
-                    <p className="text-2xl font-display font-bold text-primary">{formatCurrency(resumen.costoUnitario)}</p>
+                  {/* Por unidad */}
+                  <div className="grid grid-cols-2 gap-3 border border-primary/10 rounded-xl p-3 bg-primary/5 mb-3">
+                    <div>
+                      <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-0.5">COP / unidad</p>
+                      <p className="text-xl font-display font-bold text-primary tabular-nums">{formatCurrency(resumen.costoUnitario)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-secondary/70 uppercase tracking-widest mb-0.5">USD / unidad</p>
+                      <p className="text-xl font-display font-bold text-secondary tabular-nums">
+                        ${(resumen.costoUnitario / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
                   </div>
+
                   <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
                     {resumen.cantidadValida
-                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} pacas — OK</>
+                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
                       : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
                     }
                   </div>
@@ -1486,7 +1634,7 @@ export default function Contenedores() {
               {selectedContenedor.fecha_llegada && (
                 <span className="text-xs text-muted">Llegada: {formatDate(selectedContenedor.fecha_llegada)}</span>
               )}
-              <span className="text-xs text-muted">{selectedContenedor.total_pacas} pacas</span>
+              <span className="text-xs text-muted">{selectedContenedor.total_pacas} unidades</span>
               {selectedContenedor.tasa_conversion && parseFloat(selectedContenedor.tasa_conversion) !== 1 && (
                 <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full">Tasa: {parseFloat(selectedContenedor.tasa_conversion).toLocaleString('es-CO')}</span>
               )}
@@ -1506,19 +1654,20 @@ export default function Contenedores() {
                   <div className="divide-y divide-border/30">
                     {selectedContenedor.proveedores_mercancia.map((prov, i) => {
                       const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-                      const costoCOP = (prov.moneda === 'USD') ? parseFloat(prov.costo) * tasa : parseFloat(prov.costo);
-                      const costoPorPaca = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
+                      const costoOriginal = (prov.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+                      const costoCOP = prov.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
                       return (
                         <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
                           <div>
                             <p className="text-sm font-semibold text-primary">{prov.proveedor_nombre}</p>
-                            {prov.moneda === 'USD' && (
-                              <p className="text-xs text-muted">USD {parseFloat(prov.costo).toLocaleString('es-CO')} × {tasa.toLocaleString('es-CO')}</p>
+                            {prov.moneda === 'USD' && costoOriginal > 0 && (
+                              <p className="text-xs text-muted">USD {costoOriginal.toLocaleString('es-CO')} × {tasa.toLocaleString('es-CO')}</p>
                             )}
                           </div>
                           <div className="text-right">
                             <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(costoCOP)}</p>
-                            <p className="text-[10px] text-muted">{formatCurrency(costoPorPaca)}/paca</p>
+                            <p className="text-[10px] text-muted">{formatCurrency(costoPorUnidad)}/unidad</p>
                           </div>
                         </div>
                       );
@@ -1535,7 +1684,7 @@ export default function Contenedores() {
                   </div>
                   <div className="divide-y divide-border/30">
                     {selectedContenedor.servicios.map((srv, i) => {
-                      const costoPorPaca = parseInt(selectedContenedor.total_pacas) > 0 ? parseFloat(srv.costo) / parseInt(selectedContenedor.total_pacas) : 0;
+                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? parseFloat(srv.costo) / parseInt(selectedContenedor.total_pacas) : 0;
                       return (
                         <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
                           <div className="flex items-center gap-2">
@@ -1544,7 +1693,7 @@ export default function Contenedores() {
                           </div>
                           <div className="text-right">
                             <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(srv.costo)}</p>
-                            <p className="text-[10px] text-muted">{formatCurrency(costoPorPaca)}/paca</p>
+                            <p className="text-[10px] text-muted">{formatCurrency(costoPorUnidad)}/unidad</p>
                           </div>
                         </div>
                       );
@@ -1554,17 +1703,35 @@ export default function Contenedores() {
               )}
 
               {/* Totales */}
-              <div className="flex items-center justify-between px-4 py-3 bg-primary/5 border-t border-border/40">
-                <span className="text-sm font-bold text-primary">Total</span>
-                <div className="text-right">
-                  <p className="font-mono font-bold text-primary text-base">{formatCurrency(selectedContenedor.costo_total)}</p>
-                  <p className="text-[10px] text-muted font-mono">{formatCurrency(selectedContenedor.costo_unitario)}/paca</p>
+              <div className="px-4 py-3 bg-primary/5 border-t border-border/40">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-primary">Total COP</span>
+                  <span className="font-mono font-bold text-primary text-base tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</span>
+                </div>
+                {parseFloat(selectedContenedor.tasa_conversion) > 1 && (
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-secondary">Total USD</span>
+                    <span className="font-mono font-bold text-secondary text-base tabular-nums">
+                      ${(parseFloat(selectedContenedor.costo_total) / parseFloat(selectedContenedor.tasa_conversion)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-2 border-t border-border/30">
+                  <span className="text-xs text-muted">Por unidad</span>
+                  <div className="text-right">
+                    <span className="font-mono text-sm font-semibold text-primary tabular-nums">{formatCurrency(selectedContenedor.costo_unitario)}</span>
+                    {parseFloat(selectedContenedor.tasa_conversion) > 1 && (
+                      <span className="text-xs text-secondary font-mono ml-2">
+                        / ${(parseFloat(selectedContenedor.costo_unitario) / parseFloat(selectedContenedor.tasa_conversion)).toFixed(2)} USD
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-            {/* Distribución de pacas por proveedor */}
+            {/* Distribución de unidades por proveedor */}
             <div>
-              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Distribución de Pacas</p>
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Distribución de Unidades</p>
               <div className="space-y-2">
                 {selectedContenedor.proveedores_mercancia.map((prov, i) => (
                   <div key={i} className="rounded-xl border border-border/60 bg-surface overflow-hidden">
@@ -1594,10 +1761,16 @@ export default function Contenedores() {
               <p className="text-sm text-muted italic border-l-2 border-border pl-3">{selectedContenedor.notas}</p>
             )}
             <div className="flex justify-between items-center pt-2 border-t border-border/40 gap-3 flex-wrap">
-              <button onClick={() => handleExportContenedorExcel(selectedContenedor)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                <Download size={15} /> Exportar Excel
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleExportContenedorExcel(selectedContenedor)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                  <Download size={15} /> Exportar Excel
+                </button>
+                <button onClick={() => { setNombrePlantilla(''); setTemplateFromView(true); setSaveTemplateModalOpen(true); }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                  <Save size={15} /> Guardar como plantilla
+                </button>
+              </div>
               {isAdmin && selectedContenedor.estado === 'borrador' && (
                 <div className="flex gap-3 ml-auto">
                   <button onClick={() => openEditModal(selectedContenedor)}
@@ -1624,14 +1797,14 @@ export default function Contenedores() {
             <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
               <div className="flex items-center justify-center gap-2 mb-1">
                 <DollarSign size={16} className="text-muted" />
-                <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por paca</p>
+                <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por unidad</p>
               </div>
               <p className="text-4xl font-display font-bold text-primary">{formatCurrency(selectedContenedor.costo_unitario)}</p>
-              <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada paca</p>
+              <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
             </div>
             <div className="flex items-start gap-3 bg-primary/5 rounded-xl px-4 py-3 text-sm text-muted">
               <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
-              <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas} pacas</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
+              <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas} unidades</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
             </div>
             <div>
               <p className={lbl}>Precio de Venta por Clasificación / Referencia / Calidad</p>
@@ -1639,6 +1812,10 @@ export default function Contenedores() {
                 {combsFinalizacion.map((comb) => (
                   <div key={comb.key} className="flex items-center justify-between px-4 py-3 gap-4">
                     <div className="flex items-center gap-2 flex-1 flex-wrap">
+                      {comb.categoria && (
+                        <><span className="capitalize text-xs font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded">{comb.categoria}</span>
+                        <ArrowRight size={13} className="text-muted flex-shrink-0" /></>
+                      )}
                       <span className="capitalize text-sm font-semibold bg-secondary/10 text-secondary px-2.5 py-1 rounded-lg">{comb.clasificacion}</span>
                       <ArrowRight size={13} className="text-muted flex-shrink-0" />
                       <span className="capitalize text-sm text-muted">{comb.referencia}</span>
@@ -1665,7 +1842,7 @@ export default function Contenedores() {
               </button>
               <button onClick={handleFinalizar} disabled={submitting}
                 className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
-                {submitting ? 'Finalizando...' : <><CheckCircle size={17} /> Confirmar y crear pacas</>}
+                {submitting ? 'Finalizando...' : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
               </button>
             </div>
           </div>
@@ -1720,7 +1897,7 @@ export default function Contenedores() {
       {/* ════════════════════════════════════════════════════════
           GUARDAR PLANTILLA MODAL
       ════════════════════════════════════════════════════════ */}
-      <Modal isOpen={saveTemplateModalOpen} onClose={() => setSaveTemplateModalOpen(false)} title="Guardar plantilla" size="sm">
+      <Modal isOpen={saveTemplateModalOpen} onClose={() => { setSaveTemplateModalOpen(false); setTemplateFromView(false); }} title="Guardar plantilla" size="sm">
         <div className="space-y-4">
           <div>
             <label className={lbl}>Nombre de la plantilla *</label>
@@ -1734,7 +1911,7 @@ export default function Contenedores() {
           <div className="text-xs text-muted bg-primary/5 rounded-xl p-3 space-y-0.5">
             <p className="font-semibold text-primary mb-1">Se guardará:</p>
             <p>· Tasa de conversión ({formData.tasa_conversion || '1'})</p>
-            <p>· Total pacas ({formData.total_pacas || '—'})</p>
+            <p>· Total unidades ({formData.total_pacas || '—'})</p>
             <p>· {proveedores.length} proveedor(es) con distribución</p>
             <p>· {servicios.filter(s => s.tipo_servicio).length} servicio(s)</p>
             <p className="text-muted/60 mt-1.5 italic">No se guardan: número ni fechas.</p>
