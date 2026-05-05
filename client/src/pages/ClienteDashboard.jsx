@@ -187,12 +187,12 @@ export default function ClienteDashboard() {
                         formatter={(value) => formatCurrency(value)}
                         contentStyle={{ borderRadius: '8px', border: '1px solid #eee' }}
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="monto" 
-                        stroke="#d4a373" 
-                        fill="#d4a373" 
-                        fillOpacity={0.3}
+                      <Area
+                        type="monotone"
+                        dataKey="monto"
+                        stroke="#6366f1"
+                        fill="#6366f1"
+                        fillOpacity={0.15}
                       />
                     </AreaChart>
                   </ResponsiveContainer>

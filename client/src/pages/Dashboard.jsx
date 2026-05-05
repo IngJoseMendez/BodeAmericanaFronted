@@ -14,11 +14,11 @@ import {
 } from 'lucide-react';
 
 const CHART_COLORS = {
-  primary: '#d4a373',
-  success: '#6a994e',
-  warning: '#f4a261',
-  accent: '#bc4749',
-  info: '#457b9d',
+  primary: '#6366f1',
+  success: '#16a34a',
+  warning: '#d97706',
+  accent: '#06b6d4',
+  info: '#3b82f6',
 };
 
 const CustomTooltip = ({ active, payload, label }) => {

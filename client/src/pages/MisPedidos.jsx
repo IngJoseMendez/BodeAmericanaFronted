@@ -80,8 +80,8 @@ export default function MisPedidos() {
       wb.creator = 'Bodega Americana';
       wb.created = new Date();
       
-      const primaryColor = '1a1a2e';
-      const secondaryColor = 'd4a373';
+      const primaryColor = '0f172a';
+      const secondaryColor = '6366f1';
       
       const ws = wb.addWorksheet('Pedido');
       ws.properties.tabColor = secondaryColor;
@@ -117,7 +117,7 @@ export default function MisPedidos() {
       ws.getCell(`A${row}`).value = 'Estado:';
       ws.getCell(`A${row}`).font = { bold: true };
       ws.getCell(`B${row}`).value = estadoLabels[detallePedido.estado] || detallePedido.estado;
-      ws.getCell(`B${row}`).font = { bold: true, color: { argb: detallePedido.estado === 'convertido' ? '6a994e' : detallePedido.estado === 'pendiente' ? 'd4a373' : 'bc4749' } };
+      ws.getCell(`B${row}`).font = { bold: true, color: { argb: detallePedido.estado === 'convertido' ? '16a34a' : detallePedido.estado === 'pendiente' ? 'd97706' : 'ef4444' } };
       row++;
       
       ws.getCell(`A${row}`).value = 'Notas:';
@@ -194,18 +194,18 @@ export default function MisPedidos() {
         <title>Pedido #${detallePedido.id}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #1a1a2e; }
-          .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #d4a373; }
-          .header h1 { color: #1a1a2e; font-size: 22px; }
-          .info { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #0f172a; }
+          .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #6366f1; }
+          .header h1 { color: #0f172a; font-size: 22px; }
+          .info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
           .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
           .info-label { font-weight: bold; }
           .status { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: bold; }
-          .status.pendiente { background: #d4a373; color: white; }
-          .status.convertido { background: #6a994e; color: white; }
-          .status.rechazado { background: #bc4749; color: white; }
+          .status.pendiente { background: #d97706; color: white; }
+          .status.convertido { background: #16a34a; color: white; }
+          .status.rechazado { background: #ef4444; color: white; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background: #1a1a2e; color: white; padding: 12px; text-align: left; font-size: 12px; }
+          th { background: #0f172a; color: white; padding: 12px; text-align: left; font-size: 12px; }
           td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 12px; }
           .total-row { background: #f5f5f5; font-weight: bold; font-size: 14px; }
           .footer { margin-top: 30px; text-align: center; color: #999; font-size: 10px; }

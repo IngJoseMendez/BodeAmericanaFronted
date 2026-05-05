@@ -18,27 +18,27 @@ const formatCurrency = (value) => {
 };
 
 const COLORS = {
-  primary: '#1a1a2e',
-  secondary: '#d4a373',
-  success: '#6a994e',
-  accent: '#bc4749',
-  warning: '#f4a261',
+  primary: '#0f172a',
+  secondary: '#6366f1',
+  success: '#16a34a',
+  accent: '#06b6d4',
+  warning: '#d97706',
   info: '#3b82f6'
 };
 
-const CHART_COLORS = ['#d4a373','#6a994e','#3b82f6','#bc4749','#f4a261','#8b5cf6','#14b8a6','#f97316'];
+const CHART_COLORS = ['#6366f1','#16a34a','#3b82f6','#06b6d4','#d97706','#8b5cf6','#14b8a6','#f97316'];
 
 const SCORE_COLORS = {
-  VIP: '#6a994e',
+  VIP: '#16a34a',
   Frecuente: '#3b82f6',
-  Ocasional: '#f4a261',
-  Riesgoso: '#bc4749'
+  Ocasional: '#d97706',
+  Riesgoso: '#ef4444'
 };
 
 const ROTACION_COLORS = {
-  rapida: '#6a994e',
-  media: '#f4a261',
-  lenta: '#bc4749'
+  rapida: '#16a34a',
+  media: '#d97706',
+  lenta: '#ef4444'
 };
 
 const PRIORIDAD_COLORS = {
@@ -610,7 +610,7 @@ function RotacionChart({ data }) {
         </Pie>
         <Tooltip
           formatter={(value, name) => [`${value} pacas`, name]}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
         />
         <Legend />
       </PieChart>
@@ -626,7 +626,7 @@ function VentasChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e0db" />
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
         <XAxis
           dataKey="periodo"
           tick={{ fontSize: 11 }}
@@ -638,7 +638,7 @@ function VentasChart({ data }) {
         <YAxis tick={{ fontSize: 11 }} />
         <Tooltip
           formatter={(value, name) => [formatCurrency(value), name === 'monto_total' ? 'Monto' : name]}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
         />
         <Line
           type="monotone"
@@ -705,7 +705,7 @@ function ContenedoresCostoChart({ data }) {
         <YAxis tickFormatter={(v) => `$${(v/1000).toFixed(1)}k`} tick={{ fontSize: 11 }} />
         <Tooltip
           formatter={(v) => [formatCurrency(v), 'Costo Unitario']}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
         />
         <Area type="monotone" dataKey="costo_unitario" stroke={COLORS.secondary} fill="url(#colorCostoU)" strokeWidth={2.5} dot={{ r: 5, fill: COLORS.secondary, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7 }} />
       </AreaChart>
@@ -736,7 +736,7 @@ function TiposVendidosChart({ data }) {
             name === 'ganancia' ? formatCurrency(value) : value,
             name === 'ganancia' ? 'Ganancia' : 'Cantidad'
           ]}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
         />
         <Legend />
         <Bar yAxisId="left" dataKey="cantidad" name="Cantidad" fill={COLORS.secondary} radius={[4, 4, 0, 0]} />
@@ -1222,7 +1222,7 @@ export default function InteligenciaDeNegocio() {
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip
                           formatter={(v) => [v.toLocaleString('es-MX'), 'Pacas']}
-                          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
                         />
                         <Bar dataKey="cantidad" name="Pacas" radius={[4, 4, 0, 0]}>
                           {contenedores.distribucionTipo.map((_, i) => (
@@ -1261,7 +1261,7 @@ export default function InteligenciaDeNegocio() {
                         </Pie>
                         <Tooltip
                           formatter={(v) => [formatCurrency(v), 'Costo']}
-                          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e0db' }}
+                          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
                         />
                       </PieChart>
                     </ResponsiveContainer>
@@ -1355,6 +1355,171 @@ export default function InteligenciaDeNegocio() {
                 </CardBody>
               </Card>
             </div>
+
+            {/* Desglose mercancía vs servicios */}
+            {contenedores?.desglose?.pctMercancia > 0 && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <MetricCard icon={TrendingDown} label="Mejor Costo/Paca" value={formatCurrency(contenedores.desglose.mejorCostoUnitario)} subtext="mínimo histórico" color="success" />
+                <MetricCard icon={TrendingUp} label="Peor Costo/Paca" value={formatCurrency(contenedores.desglose.peorCostoUnitario)} subtext="máximo histórico" color="accent" />
+                <MetricCard icon={Package} label="Mercancía" value={`${contenedores.desglose.pctMercancia}%`} subtext="del costo promedio" color="secondary" />
+                <MetricCard icon={Zap} label="Servicios" value={`${contenedores.desglose.pctServicios}%`} subtext="del costo promedio" color="info" />
+              </div>
+            )}
+
+            {/* Eficiencia proveedores + Costo por tipo */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">Eficiencia de Proveedores</h3>
+                  <p className="text-xs text-muted mb-4">Costo por paca — los más económicos primero</p>
+                  {contenedores?.rankingProveedores?.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="text-left py-2 text-xs text-muted font-medium">#</th>
+                            <th className="text-left py-2 text-xs text-muted font-medium">Proveedor</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Costo/Paca</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Pacas</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Cont.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contenedores.rankingProveedores.map((p, i) => (
+                            <tr key={i} className={`border-b border-border/50 hover:bg-primary/3 ${i === 0 ? 'bg-success/5' : ''}`}>
+                              <td className="py-2 text-muted tabular-nums">{p.posicion}</td>
+                              <td className="py-2 font-medium truncate max-w-[130px]">
+                                {i === 0 && <span className="text-success mr-1">★</span>}
+                                {p.proveedor_nombre}
+                              </td>
+                              <td className={`py-2 text-right tabular-nums font-semibold ${i === 0 ? 'text-success' : ''}`}>
+                                {formatCurrency(p.costo_por_paca)}
+                              </td>
+                              <td className="py-2 text-right tabular-nums text-muted">{(p.total_pacas || 0).toLocaleString('es-CO')}</td>
+                              <td className="py-2 text-right tabular-nums text-muted">{p.num_contenedores}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted py-6 text-sm">Sin datos suficientes</p>
+                  )}
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">Costo por Tipo de Producto</h3>
+                  <p className="text-xs text-muted mb-4">Costo asignado proporcionalmente por clasificación</p>
+                  {contenedores?.eficienciaTipo?.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="text-left py-2 text-xs text-muted font-medium">Clasificación</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Pacas</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Costo/Paca</th>
+                            <th className="text-right py-2 text-xs text-muted font-medium">Cont.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contenedores.eficienciaTipo.map((t, i) => {
+                            const costs = contenedores.eficienciaTipo.map(x => x.costo_por_paca).filter(Boolean);
+                            const minCosto = costs.length ? Math.min(...costs) : 0;
+                            const isBest = t.costo_por_paca && t.costo_por_paca === minCosto;
+                            return (
+                              <tr key={i} className={`border-b border-border/50 hover:bg-primary/3 ${isBest ? 'bg-success/5' : ''}`}>
+                                <td className="py-2 font-medium">{t.clasificacion}</td>
+                                <td className="py-2 text-right tabular-nums text-muted">{(t.total_pacas || 0).toLocaleString('es-CO')}</td>
+                                <td className={`py-2 text-right tabular-nums font-semibold ${isBest ? 'text-success' : ''}`}>
+                                  {t.costo_por_paca ? formatCurrency(t.costo_por_paca) : '—'}
+                                </td>
+                                <td className="py-2 text-right tabular-nums text-muted">{t.num_contenedores}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted py-6 text-sm">Sin datos de tipos</p>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+
+            {/* Estacionalidad mensual */}
+            {contenedores?.patronesMensuales?.length > 1 && (
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">Estacionalidad — Contenedores por Mes</h3>
+                  <p className="text-xs text-muted mb-4">Volumen de contenedores y costo/paca promedio según el mes del año</p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={contenedores.patronesMensuales} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="nombre_mes" tick={{ fontSize: 11 }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={v => formatCurrency(v)} width={80} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
+                        formatter={(value, name) => [
+                          name === 'Contenedores' ? value : formatCurrency(value),
+                          name
+                        ]}
+                      />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey="contenedores" name="Contenedores" fill={COLORS.secondary} radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="right" dataKey="costo_unitario_promedio" name="Costo/Paca Prom." fill={COLORS.info} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            )}
+
+            {/* ROI por contenedor */}
+            {contenedores?.roiContenedores?.some(r => r.pacas_vinculadas > 0) && (
+              <Card>
+                <CardBody>
+                  <h3 className="font-display text-lg mb-1">ROI por Contenedor</h3>
+                  <p className="text-xs text-muted mb-4">Ganancia estimada basada en ventas de pacas vinculadas</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 text-xs text-muted font-medium">Contenedor</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Pacas</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Vendidas</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Costo</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Ingresos</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">Ganancia</th>
+                          <th className="text-right py-2 text-xs text-muted font-medium">ROI</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contenedores.roiContenedores
+                          .filter(r => r.pacas_vinculadas > 0)
+                          .map((r, i) => (
+                          <tr key={i} className="border-b border-border/50 hover:bg-primary/3">
+                            <td className="py-2 font-medium">{r.numero}</td>
+                            <td className="py-2 text-right tabular-nums text-muted">{r.total_pacas}</td>
+                            <td className="py-2 text-right tabular-nums">{r.pacas_vendidas}</td>
+                            <td className="py-2 text-right tabular-nums">{formatCurrency(r.costo_total)}</td>
+                            <td className="py-2 text-right tabular-nums">{formatCurrency(r.ingresos_ventas)}</td>
+                            <td className={`py-2 text-right tabular-nums font-semibold ${r.ganancia_bruta >= 0 ? 'text-success' : 'text-accent'}`}>
+                              {formatCurrency(r.ganancia_bruta)}
+                            </td>
+                            <td className={`py-2 text-right tabular-nums font-bold ${r.roi_porcentaje >= 0 ? 'text-success' : 'text-accent'}`}>
+                              {r.roi_porcentaje}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardBody>
+              </Card>
+            )}
           </div>
         )}
 
@@ -1834,51 +1999,98 @@ export default function InteligenciaDeNegocio() {
         {/* Qué Comprar */}
         {activeTab === 'que-comprar' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* KPI Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard icon={ShoppingCart} label="Tipos Analizados" value={queComprar?.analisis?.length || 0} color="primary" />
+              <MetricCard icon={CheckCircle} label="Recomendados" value={queComprar?.comprar?.length || 0} subtext="para comprar" color="success" />
+              <MetricCard icon={AlertTriangle} label="Evitar" value={queComprar?.evitar?.length || 0} subtext="no comprar" color="accent" />
               <MetricCard
-                icon={ShoppingCart}
-                label="Tipos Analizados"
-                value={queComprar?.analisis?.length || 0}
-                color="primary"
-              />
-              <MetricCard
-                icon={CheckCircle}
-                label="Recomendados"
-                value={queComprar?.comprar?.length || 0}
-                subtext="para comprar"
-                color="success"
-              />
-              <MetricCard
-                icon={AlertTriangle}
-                label="Evitar"
-                value={queComprar?.evitar?.length || 0}
-                subtext="no comprar"
-                color="accent"
+                icon={Clock}
+                label="Agotándose Pronto"
+                value={queComprar?.analisis?.filter(t => t.dias_agotarse !== null && t.dias_agotarse <= 14).length || 0}
+                subtext="tipos urgentes"
+                color="warning"
               />
             </div>
 
-            {/* Recomendaciones principales */}
+            {/* Reabastecimiento urgente */}
+            {queComprar?.analisis?.filter(t => t.urgencia === 'critica' || t.urgencia === 'alta').length > 0 && (
+              <Card className="border-2 border-accent/30">
+                <CardBody>
+                  <h3 className="font-display text-lg mb-4 flex items-center gap-2 text-accent">
+                    <AlertTriangle className="w-5 h-5" />
+                    Reabastecimiento Urgente
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {queComprar.analisis
+                      .filter(t => t.urgencia === 'critica' || t.urgencia === 'alta')
+                      .sort((a, b) => (a.dias_agotarse ?? 999) - (b.dias_agotarse ?? 999))
+                      .map((item, i) => {
+                        const style = URGENCIA_STYLES[item.urgencia] || URGENCIA_STYLES.baja;
+                        return (
+                          <div key={i} className={`p-3 rounded-xl border ${style.bg} ${style.border}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`font-semibold text-sm ${style.text}`}>{item.clasificacion}</span>
+                              <span className="text-base">{style.icon}</span>
+                            </div>
+                            <div className={`text-2xl font-bold tabular-nums ${style.text}`}>
+                              {item.dias_agotarse === 0 ? 'Agotado' : `${item.dias_agotarse}d`}
+                            </div>
+                            <div className={`text-xs mt-0.5 ${style.text} opacity-75`}>
+                              {item.dias_agotarse === 0 ? 'sin stock disponible' : 'hasta agotarse'}
+                            </div>
+                            <div className="mt-1.5 text-xs text-muted">
+                              {item.disponibles} disp. · {item.ventas_ultimo_mes || 0} vendidas/mes
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+
+            {/* Comprar Más + Evitar */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="border-2 border-success/30 bg-success/5">
                 <CardBody>
                   <h3 className="font-display text-lg mb-4 flex items-center gap-2">
-                    <CheckCircle className="w-6 h-6 text-success" />
-                    <span className="text-success">💰 Comprar Más</span>
+                    <CheckCircle className="w-5 h-5 text-success" />
+                    <span className="text-success">Comprar Más</span>
                   </h3>
-                  <div className="space-y-3">
-                    {queComprar?.recomendaciones?.filter(r => r.tipo === 'compra')?.map((rec, i) => (
-                      <div key={i} className="p-4 bg-surface rounded-xl border border-success/20">
-                        <p className="font-medium">{rec.mensaje}</p>
-                        {rec.detalles?.slice(0, 3).map((d, j) => (
-                          <div key={j} className="mt-2 flex justify-between text-sm">
-                            <span className="text-muted">{d.tipo}</span>
-                            <span className="font-medium">Score: {d.score_total}%</span>
+                  <div className="space-y-2">
+                    {queComprar?.comprar?.length > 0 ? (
+                      (queComprar.analisis || [])
+                        .filter(t => t.recomendacion === 'comprar')
+                        .sort((a, b) => b.score_total - a.score_total)
+                        .slice(0, 5)
+                        .map((item, i) => (
+                          <div key={i} className="flex items-center justify-between p-2.5 bg-surface rounded-xl border border-success/20">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm truncate">{item.clasificacion}</p>
+                              <p className="text-xs text-muted">
+                                {item.ventas_ultimo_mes || 0} ventas/mes
+                                {item.dias_para_vender ? ` · vende en ~${Math.round(item.dias_para_vender)}d` : ''}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                              {item.dias_agotarse !== null && item.dias_agotarse <= 30 && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                                  item.dias_agotarse <= 7 ? 'bg-accent/15 text-accent' :
+                                  item.dias_agotarse <= 14 ? 'bg-warning/15 text-warning' :
+                                  'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {item.dias_agotarse === 0 ? 'Agotado' : `${item.dias_agotarse}d`}
+                                </span>
+                              )}
+                              <span className="inline-flex items-center justify-center w-9 h-9 rounded-full text-xs font-bold bg-success/20 text-success tabular-nums">
+                                {item.score_total}
+                              </span>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    ))}
-                    {(!queComprar?.recomendaciones?.filter(r => r.tipo === 'compra')?.length) && (
-                      <p className="text-muted text-center py-4">No hay recomendaciones de compra aún</p>
+                        ))
+                    ) : (
+                      <p className="text-muted text-center py-4 text-sm">No hay recomendaciones de compra aún</p>
                     )}
                   </div>
                 </CardBody>
@@ -1887,54 +2099,81 @@ export default function InteligenciaDeNegocio() {
               <Card className="border-2 border-accent/30 bg-accent/5">
                 <CardBody>
                   <h3 className="font-display text-lg mb-4 flex items-center gap-2">
-                    <AlertTriangle className="w-6 h-6 text-accent" />
-                    <span className="text-accent">⚠️ Evitar Comprar</span>
+                    <AlertTriangle className="w-5 h-5 text-accent" />
+                    <span className="text-accent">Evitar Comprar</span>
                   </h3>
-                  <div className="space-y-3">
-                    {queComprar?.recomendaciones?.filter(r => r.tipo === 'evitar')?.map((rec, i) => (
-                      <div key={i} className="p-4 bg-surface rounded-xl border border-accent/20">
-                        <p className="font-medium">{rec.mensaje}</p>
-                        {rec.detalles?.slice(0, 3).map((d, j) => (
-                          <div key={j} className="mt-2 flex justify-between text-sm">
-                            <span className="text-muted">{d.tipo}</span>
-                            <span className="font-medium">Score: {d.score_total}%</span>
+                  <div className="space-y-2">
+                    {queComprar?.evitar?.length > 0 ? (
+                      (queComprar.analisis || [])
+                        .filter(t => t.recomendacion === 'evitar')
+                        .sort((a, b) => a.score_total - b.score_total)
+                        .slice(0, 5)
+                        .map((item, i) => (
+                          <div key={i} className="flex items-center justify-between p-2.5 bg-surface rounded-xl border border-accent/20">
+                            <div>
+                              <p className="font-semibold text-sm">{item.clasificacion}</p>
+                              <p className="text-xs text-muted">
+                                {item.disponibles} disponibles · {Math.round(item.dias_promedio || 0)}d en inv.
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center justify-center w-9 h-9 rounded-full text-xs font-bold bg-accent/20 text-accent tabular-nums flex-shrink-0">
+                              {item.score_total}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    ))}
-                    {(!queComprar?.recomendaciones?.filter(r => r.tipo === 'evitar')?.length) && (
-                      <p className="text-muted text-center py-4">No hay advertencias de compra</p>
+                        ))
+                    ) : (
+                      <p className="text-muted text-center py-4 text-sm">No hay advertencias de compra</p>
                     )}
                   </div>
                 </CardBody>
               </Card>
             </div>
 
-            {/* Análisis detallado */}
+            {/* Análisis completo */}
             <Card>
               <CardBody>
-                <h3 className="font-display text-lg mb-4">Análisis Detallado por Tipo</h3>
+                <h3 className="font-display text-lg mb-4">Análisis Completo por Tipo</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-primary/5">
                       <tr>
-                        <th className="px-4 py-2 text-left">Clasificación</th>
-                        <th className="px-4 py-2 text-center">Disponibles</th>
-                        <th className="px-4 py-2 text-center">Vendidas</th>
-                        <th className="px-4 py-2 text-center">Días Inv.</th>
-                        <th className="px-4 py-2 text-center">Margen %</th>
-                        <th className="px-4 py-2 text-center">Score</th>
-                        <th className="px-4 py-2 text-center">Recomendación</th>
+                        <th className="px-4 py-2 text-left font-medium">Clasificación</th>
+                        <th className="px-4 py-2 text-center font-medium">Disp.</th>
+                        <th className="px-4 py-2 text-center font-medium">Vtas/mes</th>
+                        <th className="px-4 py-2 text-center font-medium">Días inv.</th>
+                        <th className="px-4 py-2 text-center font-medium">Se agota en</th>
+                        <th className="px-4 py-2 text-center font-medium">Vel. venta</th>
+                        <th className="px-4 py-2 text-center font-medium">Margen %</th>
+                        <th className="px-4 py-2 text-center font-medium">Score</th>
+                        <th className="px-4 py-2 text-center font-medium">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {queComprar?.analisis?.map((item, i) => (
                         <tr key={i} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">{item.clasificacion}</td>
-                          <td className="px-4 py-2 text-center">{item.disponibles}</td>
-                          <td className="px-4 py-2 text-center">{item.unidades_vendidas || 0}</td>
-                          <td className="px-4 py-2 text-center">{Math.round(item.dias_promedio)}</td>
-                          <td className="px-4 py-2 text-center">{Math.round(item.margen_porcentaje)}%</td>
+                          <td className="px-4 py-2 text-center tabular-nums">{item.disponibles}</td>
+                          <td className="px-4 py-2 text-center tabular-nums">{item.ventas_ultimo_mes || 0}</td>
+                          <td className="px-4 py-2 text-center tabular-nums">{Math.round(item.dias_promedio || 0)}</td>
+                          <td className="px-4 py-2 text-center">
+                            {item.dias_agotarse === null ? (
+                              <span className="text-muted">—</span>
+                            ) : item.dias_agotarse === 0 ? (
+                              <span className="text-accent font-bold text-xs">Agotado</span>
+                            ) : (
+                              <span className={`font-semibold tabular-nums ${
+                                item.dias_agotarse <= 7 ? 'text-accent' :
+                                item.dias_agotarse <= 14 ? 'text-warning' :
+                                item.dias_agotarse <= 30 ? 'text-blue-600' : 'text-success'
+                              }`}>
+                                {item.dias_agotarse}d
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-center text-muted tabular-nums">
+                            {item.dias_para_vender ? `~${Math.round(item.dias_para_vender)}d` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-center tabular-nums">{Math.round(item.margen_porcentaje || 0)}%</td>
                           <td className="px-4 py-2 text-center">
                             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold ${
                               item.score_total >= 70 ? 'bg-success/20 text-success' :
@@ -1945,12 +2184,10 @@ export default function InteligenciaDeNegocio() {
                             </span>
                           </td>
                           <td className="px-4 py-2 text-center">
-                            <Badge
-                              variant={
-                                item.recomendacion === 'comprar' ? 'success' :
-                                item.recomendacion === 'evitar' ? 'error' : 'default'
-                              }
-                            >
+                            <Badge variant={
+                              item.recomendacion === 'comprar' ? 'success' :
+                              item.recomendacion === 'evitar' ? 'error' : 'default'
+                            }>
                               {item.recomendacion === 'comprar' ? 'Comprar' :
                                item.recomendacion === 'evitar' ? 'Evitar' : 'Mantener'}
                             </Badge>

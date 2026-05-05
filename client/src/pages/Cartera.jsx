@@ -196,10 +196,10 @@ export default function Cartera() {
       wb.creator = 'Bodega Americana';
       wb.created = new Date();
       
-      const primaryColor = '1a1a2e';
-      const secondaryColor = 'd4a373';
-      const accentColor = 'bc4749';
-      const successColor = '6a994e';
+      const primaryColor = '0f172a';
+      const secondaryColor = '6366f1';
+      const accentColor = 'ef4444';
+      const successColor = '16a34a';
       
       const fmt = (val) => formatCurrency(val);
       
@@ -361,28 +361,28 @@ export default function Cartera() {
           <title>Estado de Cuenta - ${data.cliente.nombre}</title>
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #1a1a2e; }
-            .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #d4a373; }
-            .header h1 { color: #1a1a2e; font-size: 24px; margin-bottom: 5px; }
-            .header .subtitle { color: #666; font-size: 14px; }
-            .info-cliente { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-            .info-cliente h3 { color: #d4a373; margin-bottom: 10px; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #0f172a; }
+            .header { text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #6366f1; }
+            .header h1 { color: #0f172a; font-size: 24px; margin-bottom: 5px; }
+            .header .subtitle { color: #64748b; font-size: 14px; }
+            .info-cliente { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+            .info-cliente h3 { color: #6366f1; margin-bottom: 10px; }
             .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
             .info-grid span { font-size: 13px; }
             .info-grid strong { color: #333; }
-            .resumen { background: #1a1a2e; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-            .resumen h3 { color: #d4a373; margin-bottom: 15px; }
+            .resumen { background: #0f172a; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .resumen h3 { color: #818cf8; margin-bottom: 15px; }
             .resumen-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; }
             .resumen-item .label { font-size: 12px; opacity: 0.8; }
             .resumen-item .value { font-size: 20px; font-weight: bold; }
-            .resumen-item.total .value { color: #d4a373; }
-            .resumen-item.abonado .value { color: #6a994e; }
-            .resumen-item.pendiente .value { color: #bc4749; }
+            .resumen-item.total .value { color: #818cf8; }
+            .resumen-item.abonado .value { color: #16a34a; }
+            .resumen-item.pendiente .value { color: #ef4444; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #1a1a2e; color: white; padding: 12px; text-align: left; font-size: 12px; }
-            td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 12px; }
-            tr.venta td { color: #1a1a2e; }
-            tr.abono td { color: #6a994e; }
+            th { background: #0f172a; color: white; padding: 12px; text-align: left; font-size: 12px; }
+            td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+            tr.venta td { color: #0f172a; }
+            tr.abono td { color: #16a34a; }
             tr.venta td:nth-child(4) { font-weight: bold; }
             tr.abono td:nth-child(4) { font-weight: bold; }
             .saldo-col { text-align: right; font-weight: bold; }

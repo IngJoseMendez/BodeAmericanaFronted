@@ -95,6 +95,10 @@ export const pacasApi = {
   getByType(data) {
     return api.post('/pacas/vender-tipo', data);
   },
+  getInventario(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/pacas/inventario${query ? `?${query}` : ''}`);
+  },
 };
 
 export const clientesApi = {
@@ -383,6 +387,9 @@ export const tiposPacaApi = {
   getCalidades() { return api.get('/tipos-paca/calidades'); },
   createCalidad(data) { return api.post('/tipos-paca/calidades', data); },
   deleteCalidad(id) { return api.delete(`/tipos-paca/calidades/${id}`); },
+  getTemporadas() { return api.get('/tipos-paca/temporadas'); },
+  createTemporada(data) { return api.post('/tipos-paca/temporadas', data); },
+  deleteTemporada(id) { return api.delete(`/tipos-paca/temporadas/${id}`); },
 };
 
 export const cotizacionesApi = {
@@ -408,6 +415,9 @@ export const cotizacionesApi = {
   },
   convertirAVenta(id, vendedorId) {
     return api.post(`/cotizaciones/${id}/convertir`, { vendedor_id: vendedorId });
+  },
+  crearDespacho(id, paca_ids) {
+    return api.post(`/cotizaciones/${id}/despacho`, paca_ids?.length ? { paca_ids } : {});
   },
 };
 
@@ -456,4 +466,30 @@ export const contenedoresApi = {
   delete(id) {
     return api.delete(`/contenedores/${id}`);
   },
+};
+
+export const cuentasPagarApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/cuentas-pagar${query ? `?${query}` : ''}`);
+  },
+  getOne(id) { return api.get(`/cuentas-pagar/${id}`); },
+  create(data) { return api.post('/cuentas-pagar', data); },
+  update(id, data) { return api.put(`/cuentas-pagar/${id}`, data); },
+  registrarAbono(id, data) { return api.post(`/cuentas-pagar/${id}/abonos`, data); },
+  delete(id) { return api.delete(`/cuentas-pagar/${id}`); },
+};
+
+export const despachosApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/despachos${query ? `?${query}` : ''}`);
+  },
+  getOne(id) { return api.get(`/despachos/${id}`); },
+  confirmar(id, body = {}) { return api.post(`/despachos/${id}/confirmar`, body); },
+  anular(id) { return api.delete(`/despachos/${id}`); },
+};
+
+export const pacasInventarioApi = {
+  getInventario() { return api.get('/pacas/inventario'); },
 };

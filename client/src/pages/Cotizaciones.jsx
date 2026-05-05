@@ -5,7 +5,7 @@ import { cotizacionesApi, clientesApi, pacasApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
-import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, ShoppingCart, Package, AlertCircle, Info } from 'lucide-react';
+import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
@@ -60,25 +60,25 @@ const generarPDF = (cotizacion) => {
       <title>Cotización ${cotizacion.numero}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1a1a2e; font-size: 14px; }
-        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #d4a373; }
-        .header h1 { font-size: 28px; margin-bottom: 5px; color: #1a1a2e; }
-        .header p { color: #666; font-size: 14px; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #0f172a; font-size: 14px; }
+        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #6366f1; }
+        .header h1 { font-size: 28px; margin-bottom: 5px; color: #0f172a; }
+        .header p { color: #64748b; font-size: 14px; }
         .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
-        .info-box { background: #f9f9f9; padding: 15px; border-radius: 8px; }
-        .info-box h3 { color: #d4a373; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; }
+        .info-box { background: #f8fafc; padding: 15px; border-radius: 8px; }
+        .info-box h3 { color: #6366f1; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; }
         .info-box p { margin: 3px 0; }
         .bold { font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th { background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 12px; }
-        td { padding: 12px 15px; border-bottom: 1px solid #eee; }
+        th { background: #0f172a; color: white; padding: 12px 15px; text-align: left; font-size: 12px; }
+        td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; }
         .text-right { text-align: right; }
         .totals { margin-top: 20px; }
         .totals-row { display: flex; justify-content: flex-end; margin: 5px 0; }
-        .totals-label { width: 150px; text-align: right; color: #666; }
+        .totals-label { width: 150px; text-align: right; color: #64748b; }
         .totals-value { width: 120px; text-align: right; font-weight: bold; }
-        .totals-total { font-size: 18px; color: #1a1a2e; border-top: 2px solid #1a1a2e; padding-top: 10px; margin-top: 10px; }
-        .notes { background: #fff8e6; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #d4a373; }
+        .totals-total { font-size: 18px; color: #0f172a; border-top: 2px solid #6366f1; padding-top: 10px; margin-top: 10px; }
+        .notes { background: #eff6ff; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #6366f1; }
         .footer { margin-top: 50px; text-align: center; color: #999; font-size: 11px; }
         .status { display: inline-block; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold; }
         .status-pendiente { background: #fff3cd; color: #856404; }
@@ -381,18 +381,17 @@ export default function Cotizaciones() {
     }
   };
 
-  const handleConvertirVenta = async (id) => {
+  const handleConvertirVenta = async () => {
     const ok = await confirm({
-      title: '¿Confirmar cotización y crear venta?',
-      message: 'Se creará una venta y las pacas reservadas pasarán a estado vendida en el inventario. Esta acción no se puede deshacer.',
-      confirmText: 'Confirmar y crear venta',
-      cancelText: 'Cancelar',
+      title: '¿Convertir a venta?',
+      message: 'Se registrará la venta y se creará un despacho automáticamente. Las pacas seguirán en estado separada hasta confirmar la salida en el módulo de Despachos.',
+      confirmText: 'Convertir',
       variant: 'info',
     });
     if (!ok) return;
     try {
-      const result = await cotizacionesApi.convertirAVenta(id);
-      addToast(`Venta #${result.venta_id} creada — ${result.pacas_vendidas} pacas vendidas`, 'success');
+      const result = await cotizacionesApi.convertirAVenta(selectedCotizacion.id, usuario?.id);
+      addToast(`Venta creada — despacho ${result.despacho_numero} generado automáticamente`, 'success');
       setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
@@ -495,15 +494,28 @@ export default function Cotizaciones() {
               <label className="block text-sm font-medium text-primary mb-1">Cliente *</label>
               <select
                 value={formData.cliente_id}
-                onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
+                onChange={(e) => {
+                  const clienteId = e.target.value;
+                  const cliente = clientes.find(c => String(c.id) === clienteId);
+                  setFormData(f => ({
+                    ...f,
+                    cliente_id: clienteId,
+                    descuento: cliente?.descuento > 0 ? cliente.descuento : f.descuento,
+                  }));
+                }}
                 className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 required
               >
                 <option value="">Seleccionar cliente...</option>
                 {clientes.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                  <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${c.descuento}%)` : ''}</option>
                 ))}
               </select>
+              {formData.cliente_id && clientes.find(c => String(c.id) === String(formData.cliente_id))?.descuento > 0 && (
+                <p className="text-xs text-secondary mt-1 flex items-center gap-1">
+                  <Check size={11} /> Descuento automático del cliente aplicado
+                </p>
+              )}
             </div>
             
             <div>
@@ -751,8 +763,8 @@ export default function Cotizaciones() {
                   <Button variant="secondary" size="sm" onClick={() => handleRechazar(selectedCotizacion.id)} icon={X}>
                     Rechazar
                   </Button>
-                  <Button size="sm" onClick={() => handleConvertirVenta(selectedCotizacion.id)} icon={ShoppingCart}>
-                    Convertir
+                  <Button size="sm" onClick={handleConvertirVenta} icon={ShoppingCart}>
+                    Convertir a Venta
                   </Button>
                 </div>
               )}
