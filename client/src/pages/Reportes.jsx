@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, Badge } from '../components/common';
+import { Card, CardBody, Button, useToast, Badge, TableSkeleton } from '../components/common';
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw } from 'lucide-react';
@@ -565,7 +565,7 @@ export default function Reportes() {
                   </thead>
                   <tbody className="divide-y">
                     {loading ? (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center">Cargando...</td></tr>
+                      <TableSkeleton cols={4} rows={5} />
                     ) : pacasVendidas.length === 0 ? (
                       <tr><td colSpan={4} className="px-3 py-4 text-center text-muted">Sin datos</td></tr>
                     ) : (

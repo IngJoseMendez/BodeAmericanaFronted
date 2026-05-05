@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
 import { pacasApi, lotesApi, tiposPacaApi, reservasApi, clientesApi } from '../services/api';
 import { PACA_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User, X } from 'lucide-react';
@@ -566,12 +566,12 @@ export default function Pacas() {
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loadingAgrupado ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                    <TableSkeleton cols={9} rows={6} />
                   ) : inventarioAgrupado.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay unidades en inventario</td></tr>
+                    <tr><td colSpan={9}><EmptyState title="Sin unidades en inventario" description="Las unidades disponibles y separadas aparecerán aquí" /></td></tr>
                   ) : (
                     inventarioAgrupado.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-primary/3 transition-colors">
+                      <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
                         <td className="px-4 py-2.5">
                           <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.lote}</span>
                         </td>
@@ -610,12 +610,12 @@ export default function Pacas() {
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loading ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                    <TableSkeleton cols={9} rows={6} />
                   ) : pacas.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-muted">No hay unidades</td></tr>
+                    <tr><td colSpan={9}><EmptyState title="Sin unidades" description="No hay unidades que coincidan con los filtros aplicados" /></td></tr>
                   ) : (
                     pacas.map((paca) => (
-                      <tr key={paca.id} className={`hover:bg-primary/3 transition-colors ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
+                      <tr key={paca.id} className={`hover:bg-primary/3 transition-colors duration-150 ${paca.estado === 'separada' ? 'bg-warning/5' : ''}`}>
                         <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>
                         <td className="px-4 py-3 text-sm font-medium text-primary">{paca.clasificacion}</td>
                         <td className="px-4 py-3 text-sm text-muted">{paca.referencia}</td>
@@ -833,7 +833,7 @@ export default function Pacas() {
       <Modal isOpen={assignModalOpen} onClose={() => setAssignModalOpen(false)} title="Asignar a Lote">
         <div className="space-y-4">
           {selectedPaca && (
-            <div className="p-4 bg-gray-50 rounded-xl">
+            <div className="p-4 bg-primary/5 rounded-xl">
               <p className="text-sm text-muted">Paca seleccionada</p>
               <p className="font-medium">{selectedPaca.clasificacion} - {selectedPaca.referencia}</p>
               <p className="text-sm text-muted">Precio: {formatCurrency(selectedPaca.precio_venta)}</p>
@@ -889,7 +889,7 @@ export default function Pacas() {
                   <p className="font-medium text-sm text-secondary">
                     {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.nombre || 'Cliente'}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted">
                     {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.ciudad || ''}
                   </p>
                 </div>
@@ -941,15 +941,15 @@ export default function Pacas() {
                         setBusquedaClienteReserva('');
                         setShowListaClientesReserva(false);
                       }}
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                          <User className="w-4 h-4 text-gray-500" />
+                        <div className="p-2 bg-primary/8 rounded-lg">
+                          <User className="w-4 h-4 text-muted" />
                         </div>
                         <div>
                           <p className="font-medium text-sm">{c.nombre}</p>
-                          <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                          <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
                         </div>
                       </div>
                     </div>

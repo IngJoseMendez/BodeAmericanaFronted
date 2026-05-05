@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
@@ -547,7 +547,7 @@ useEffect(() => {
             {/* Filtros de ventas */}
             <Card>
               <CardBody className="p-0">
-                <div className="p-4 border-b border-border/50 bg-gray-50">
+                <div className="p-4 border-b border-border/50 bg-primary/3">
                   <div className="flex flex-wrap gap-3 items-end">
                     <div className="flex-1 min-w-[200px]">
                       <Input
@@ -609,24 +609,24 @@ useEffect(() => {
                   <table className="w-full">
                     <thead className="bg-primary/5 border-b border-border/50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Pago</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">ID</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {loading ? (
-                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Cargando...</td></tr>
+                        <TableSkeleton cols={7} rows={6} />
                       ) : ventasFiltradas.length === 0 ? (
-                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No hay ventas</td></tr>
+                        <tr><td colSpan={7}><EmptyState title="Sin ventas" description="No hay ventas que coincidan con los filtros aplicados" /></td></tr>
                       ) : (
                         ventasFiltradas.map((venta) => (
                           <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
-                            <td className="px-4 py-3 text-sm text-gray-500 font-mono">#{venta.id}</td>
+                            <td className="px-4 py-3 text-sm text-muted font-mono">#{venta.id}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
                             <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
                             <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
@@ -705,12 +705,12 @@ useEffect(() => {
                         <tr key={reserva.id} className="hover:bg-green-50 transition-colors">
                           <td className="px-4 py-3 text-sm text-gray-800">
                             <div className="font-medium">{reserva.paca_tipo}</div>
-                            <div className="text-xs text-gray-500">{reserva.paca_categoria}</div>
+                            <div className="text-xs text-muted">{reserva.paca_categoria}</div>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-800 font-medium">{reserva.cliente_nombre}</td>
                           <td className="px-4 py-3 text-sm text-gray-700">{formatCurrency(reserva.precio_venta)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{reserva.notas || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-muted">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
+                          <td className="px-4 py-3 text-sm text-muted max-w-xs truncate">{reserva.notas || '-'}</td>
                           <td className="px-4 py-3 text-right">
                             <Button size="sm" onClick={() => convertirReservaAVenta(reserva)} variant="success">
                               Pasar a Venta
@@ -731,7 +731,7 @@ useEffect(() => {
           <Card>
             <CardBody className="p-0">
               {/* Filtros */}
-              <div className="p-4 border-b border-border/50 bg-gray-50">
+              <div className="p-4 border-b border-border/50 bg-primary/3">
                 <div className="flex flex-wrap gap-3 items-end">
                   <div className="flex-1 min-w-[200px]">
                     <Input
@@ -793,12 +793,12 @@ useEffect(() => {
                 <table className="w-full">
                   <thead className="bg-success/10 border-b border-border/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Folio</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Pago</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Folio</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -807,7 +807,7 @@ useEffect(() => {
                     ) : (
                       ventasFiltradas.map((venta) => (
                         <tr key={venta.id} className="hover:bg-success/5 transition-colors">
-                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">{venta.uuid?.slice(0, 8).toUpperCase()}</td>
+                          <td className="px-4 py-3 text-sm text-muted font-mono">{venta.uuid?.slice(0, 8).toUpperCase()}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
                           <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
                           <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
@@ -848,7 +848,7 @@ useEffect(() => {
                     <p className="font-medium text-sm text-secondary">
                       {clientes.find(c => c.id === parseInt(formData.cliente_id))?.nombre || 'Cliente'}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted">
                       {clientes.find(c => c.id === parseInt(formData.cliente_id))?.ciudad || ''}
                     </p>
                   </div>
@@ -899,15 +899,15 @@ useEffect(() => {
                           setBusquedaCliente('');
                           setShowListaClientes(false);
                         }}
-                        className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                        className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-gray-100 rounded-lg">
-                            <User className="w-4 h-4 text-gray-500" />
+                            <User className="w-4 h-4 text-muted" />
                           </div>
                           <div>
                             <p className="font-medium text-sm">{c.nombre}</p>
-                            <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                            <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
                           </div>
                         </div>
                       </div>
@@ -986,7 +986,7 @@ useEffect(() => {
           </div>
 
           <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg">
-            <span className="text-sm text-gray-500">Total ({pacasSeleccionadas.length} pacas)</span>
+            <span className="text-sm text-muted">Total ({pacasSeleccionadas.length} pacas)</span>
             <span className="text-xl font-display text-primary">{formatCurrency(totalVenta)}</span>
           </div>
           
@@ -1099,7 +1099,7 @@ useEffect(() => {
                   <p className="font-medium text-sm text-secondary">
                     {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.nombre || 'Cliente'}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted">
                     {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.ciudad || ''}
                   </p>
                 </div>
@@ -1151,15 +1151,15 @@ useEffect(() => {
                         setBusquedaClienteReserva('');
                         setShowListaClientesReserva(false);
                       }}
-                      className="px-4 py-3 cursor-pointer hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                          <User className="w-4 h-4 text-gray-500" />
+                        <div className="p-2 bg-primary/8 rounded-lg">
+                          <User className="w-4 h-4 text-muted" />
                         </div>
                         <div>
                           <p className="font-medium text-sm">{c.nombre}</p>
-                          <p className="text-xs text-gray-500">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                          <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
                         </div>
                       </div>
                     </div>

@@ -847,7 +847,7 @@ export default function InteligenciaDeNegocio() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                 activeTab === tab.id
-                  ? 'bg-secondary text-primary shadow-md font-semibold'
+                  ? 'bg-secondary text-on-primary shadow-md font-semibold'
                   : 'bg-surface text-muted hover:bg-primary/5 border border-border'
               }`}
             >

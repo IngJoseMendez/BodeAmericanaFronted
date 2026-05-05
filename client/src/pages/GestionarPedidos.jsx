@@ -334,7 +334,7 @@ export default function GestionarPedidos() {
                 <Button variant="ghost" onClick={() => rechazarPedido(detallePedido.id)} className="text-error hover:bg-error/10">
                   <XCircle size={18} /> Rechazar
                 </Button>
-                <Button variant="secondary" onClick={() => aprobarPedido(detallePedido.id)} className="bg-success hover:bg-success/90">
+                <Button variant="success" onClick={() => aprobarPedido(detallePedido.id)}>
                   <CheckCircle size={18} /> Aprobar y Crear Venta
                 </Button>
               </div>

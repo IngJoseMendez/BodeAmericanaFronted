@@ -190,8 +190,8 @@ export default function Clientes() {
             {[...Array(6)].map((_, i) => (
               <Card key={i} className="animate-pulse">
                 <CardBody className="space-y-3">
-                  <div className="h-5 w-3/4 bg-gray-100 rounded" />
-                  <div className="h-4 w-1/2 bg-gray-100 rounded" />
+                  <div className="h-5 w-3/4 bg-primary/8 rounded" />
+                  <div className="h-4 w-1/2 bg-primary/8 rounded" />
                 </CardBody>
               </Card>
             ))}

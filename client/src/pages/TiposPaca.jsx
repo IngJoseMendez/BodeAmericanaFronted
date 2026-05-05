@@ -182,7 +182,7 @@ export default function TiposPaca() {
           <form onSubmit={onCreate} className="space-y-3">
             <Input placeholder={placeholder} value={formState.nombre} onChange={e => setFormState({ ...formState, nombre: e.target.value })} />
             <Input placeholder="Descripción (opcional)" value={formState.descripcion} onChange={e => setFormState({ ...formState, descripcion: e.target.value })} />
-            <Button type="submit" variant="secondary" className="w-full" disabled={submitting}>{submitting ? 'Guardando...' : 'Agregar'}</Button>
+            <Button type="submit" variant="secondary" className="w-full" loading={submitting}>Agregar</Button>
           </form>
         </CardBody>
       </Card>

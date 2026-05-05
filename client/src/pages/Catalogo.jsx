@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge, useToast } from '../components/common';
+import { Card, CardBody, Button, Badge, useToast, TableSkeleton, EmptyState } from '../components/common';
 import { catalogoApi, pedidosApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { ShoppingCart, Package, Filter, Check } from 'lucide-react';
@@ -163,9 +163,9 @@ export default function Catalogo() {
               </thead>
               <tbody className="divide-y divide-border/50">
                 {loading ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted">Cargando...</td></tr>
+                  <TableSkeleton cols={6} rows={5} />
                 ) : pacas.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted">No hay pacas disponibles</td></tr>
+                  <tr><td colSpan={6}><EmptyState title="Sin unidades disponibles" description="No hay unidades disponibles para este catálogo" /></td></tr>
                 ) : (
                   pacas.map((paca) => {
                     const selected = seleccionadas.find(s => s.id === paca.id);
