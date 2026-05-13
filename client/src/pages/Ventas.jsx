@@ -254,7 +254,7 @@ useEffect(() => {
 
   const descargarExcel = async (data) => {
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Bodega Americana';
+    wb.creator = 'Comercio Global Logístico';
     wb.created = new Date();
     
     const ws = wb.addWorksheet('Venta');
@@ -262,7 +262,7 @@ useEffect(() => {
     
     // Título
     ws.mergeCells('A1:D1');
-    ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
+    ws.getCell('A1').value = '🌐 Comercio Global Logístico - Comprobante de Venta';
     ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
     ws.getCell('A1').alignment = { horizontal: 'center' };
@@ -324,7 +324,7 @@ useEffect(() => {
     // Título
     doc.setFontSize(18);
     doc.setTextColor(26, 26, 46);
-    doc.text('BODEGA AMERICANA', 105, 20, { align: 'center' });
+    doc.text('Comercio Global Logístico', 105, 20, { align: 'center' });
     
     doc.setFontSize(12);
     doc.setTextColor(100);
@@ -429,14 +429,14 @@ useEffect(() => {
       const cliente = clientes.find(c => c.id === venta.cliente_id) || {};
       
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'Bodega Americana';
+      wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
       
       const ws = wb.addWorksheet('Venta');
       ws.properties.tabColor = '0f172a';
       
       ws.mergeCells('A1:E1');
-      ws.getCell('A1').value = '📦 BODEGA AMERICANA - Comprobante de Venta';
+      ws.getCell('A1').value = '🌐 Comercio Global Logístico - Comprobante de Venta';
       ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
       ws.getCell('A1').alignment = { horizontal: 'center' };
@@ -1003,7 +1003,7 @@ useEffect(() => {
           <div className="space-y-6">
             {/* Encabezado */}
             <div className="text-center border-b pb-4">
-              <h2 className="text-xl font-bold text-primary">BODEGA AMERICANA</h2>
+              <h2 className="text-xl font-bold text-primary">Comercio Global Logístico</h2>
               <p className="text-sm text-muted">Comprobante de Venta</p>
               <p className="text-xs text-muted">Folio: {despachoData.uuid?.slice(0, 8).toUpperCase()}</p>
             </div>

@@ -77,7 +77,7 @@ export default function MisPedidos() {
     
     try {
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'Bodega Americana';
+      wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
       
       const primaryColor = '0f172a';
@@ -88,7 +88,7 @@ export default function MisPedidos() {
       
       ws.mergeCells('A1:E1');
       const titleCell = ws.getCell('A1');
-      titleCell.value = '📦 BODEGA AMERICANA - Detalle de Pedido';
+      titleCell.value = '🌐 Comercio Global Logístico - Detalle de Pedido';
       titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFF' } };
       titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
       titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -213,7 +213,7 @@ export default function MisPedidos() {
       </head>
       <body>
         <div class="header">
-          <h1>📦 BODEGA AMERICANA</h1>
+          <h1>🌐 Comercio Global Logístico</h1>
           <p>Detalle de Pedido</p>
         </div>
         

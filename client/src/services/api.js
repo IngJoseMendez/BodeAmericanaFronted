@@ -80,6 +80,10 @@ export const pacasApi = {
   getResumen() {
     return api.get('/pacas/resumen');
   },
+  getDisponibilidad(params) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/pacas/disponibilidad?${query}`);
+  },
   create(data) {
     return api.post('/pacas', data);
   },
@@ -380,15 +384,19 @@ export const analyticsApi = {
 export const tiposPacaApi = {
   getTipos() { return api.get('/tipos-paca/tipos'); },
   createTipo(data) { return api.post('/tipos-paca/tipos', data); },
+  updateTipo(id, data) { return api.put(`/tipos-paca/tipos/${id}`, data); },
   deleteTipo(id) { return api.delete(`/tipos-paca/tipos/${id}`); },
   getCategorias() { return api.get('/tipos-paca/categorias'); },
   createCategoria(data) { return api.post('/tipos-paca/categorias', data); },
+  updateCategoria(id, data) { return api.put(`/tipos-paca/categorias/${id}`, data); },
   deleteCategoria(id) { return api.delete(`/tipos-paca/categorias/${id}`); },
   getCalidades() { return api.get('/tipos-paca/calidades'); },
   createCalidad(data) { return api.post('/tipos-paca/calidades', data); },
+  updateCalidad(id, data) { return api.put(`/tipos-paca/calidades/${id}`, data); },
   deleteCalidad(id) { return api.delete(`/tipos-paca/calidades/${id}`); },
   getTemporadas() { return api.get('/tipos-paca/temporadas'); },
   createTemporada(data) { return api.post('/tipos-paca/temporadas', data); },
+  updateTemporada(id, data) { return api.put(`/tipos-paca/temporadas/${id}`, data); },
   deleteTemporada(id) { return api.delete(`/tipos-paca/temporadas/${id}`); },
 };
 
@@ -492,4 +500,27 @@ export const despachosApi = {
 
 export const pacasInventarioApi = {
   getInventario() { return api.get('/pacas/inventario'); },
+};
+
+export const preciosApi = {
+  getAll() { return api.get('/precios'); },
+  buscar({ categoria, calidad }) {
+    return api.get(`/precios/buscar?categoria=${encodeURIComponent(categoria)}&calidad=${encodeURIComponent(calidad)}`);
+  },
+  create(data) { return api.post('/precios', data); },
+  update(id, data) { return api.put(`/precios/${id}`, data); },
+  delete(id) { return api.delete(`/precios/${id}`); },
+};
+
+export const preciosPromocionApi = {
+  getAll(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/precios-promocion${query ? `?${query}` : ''}`);
+  },
+  getActiva({ referencia, calidad }) {
+    return api.get(`/precios-promocion/activa?referencia=${encodeURIComponent(referencia)}&calidad=${encodeURIComponent(calidad)}`);
+  },
+  create(data) { return api.post('/precios-promocion', data); },
+  update(id, data) { return api.put(`/precios-promocion/${id}`, data); },
+  delete(id) { return api.delete(`/precios-promocion/${id}`); },
 };

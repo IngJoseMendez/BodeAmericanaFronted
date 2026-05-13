@@ -48,7 +48,7 @@ export default function Registro() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-gradient-to-br from-secondary to-accent mb-4">
             <Sparkles className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-display font-bold text-white">Bodega Americana</h1>
+          <h1 className="text-3xl font-display font-bold text-white">Comercio Global Logístico</h1>
           <p className="text-white/50 mt-2">Crear cuenta de cliente</p>
         </div>
 

@@ -50,7 +50,7 @@ function KpiCard({ label, value, icon: Icon, color, sub }) {
 
 async function exportarExcel(despacho) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'Bodega Americana';
+  wb.creator = 'Comercio Global Logístico';
   wb.created  = new Date();
 
   const PRIMARY   = '0f172a';
@@ -73,7 +73,7 @@ async function exportarExcel(despacho) {
   // Banner título
   ws.mergeCells('A1:C1');
   const title = ws.getCell('A1');
-  title.value     = 'BODEGA AMERICANA';
+  title.value     = 'COMERCIO GLOBAL LOGÍSTICO';
   title.font      = { size: 18, bold: true, color: { argb: WHITE } };
   title.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
   title.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };

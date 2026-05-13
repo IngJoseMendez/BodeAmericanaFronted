@@ -18,6 +18,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Tag,
+  DollarSign,
+  Percent,
   X,
   Search,
   Shield,
@@ -41,7 +43,9 @@ const adminNavItems = [
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },
   { path: '/clientes',             icon: Users,           label: 'Clientes',        key: 'clientes' },
-  { path: '/tipos-paca',           icon: Tag,             label: 'Tipos de Paca',   key: null },
+  { path: '/tipos-paca',           icon: Tag,             label: 'Productos',        key: null },
+  { path: '/precios',              icon: DollarSign,      label: 'Precios',          key: null },
+  { path: '/precios-promocion',    icon: Percent,         label: 'Promociones',      key: null },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },
@@ -163,8 +167,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
             </div>
 
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Bodega</h1>
-              <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
+              <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Comercio</h1>
+              <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Global Logístico</p>
             </div>
 
             <button
@@ -205,8 +209,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                 </div>
 
                 <div className="min-w-0">
-                  <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Bodega</h1>
-                  <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Americana</p>
+                  <h1 className="text-xl font-display font-bold text-primary tracking-tight leading-none">Comercio</h1>
+                  <p className="text-[10px] text-muted font-heading tracking-[0.2em] uppercase mt-0.5">Global Logístico</p>
                 </div>
 
                 <button
