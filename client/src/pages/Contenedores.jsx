@@ -949,22 +949,31 @@ export default function Contenedores() {
       });
       setCombsFinalizacion(combs);
 
-      // Intentar autocompletar precios preestablecidos (categoria + calidad)
+      // Autocompletar precios preestablecidos — una sola llamada por par único (categoria+calidad)
+      const uniquePairs = [...new Set(
+        combs.filter(c => c.categoria && c.calidad).map(c => `${c.categoria}|||${c.calidad}`)
+      )];
+      const presetMap = {};
+      await Promise.all(uniquePairs.map(async (pk) => {
+        const sep = pk.indexOf('|||');
+        const categoria = pk.slice(0, sep);
+        const calidad = pk.slice(sep + 3);
+        try {
+          const preset = await preciosApi.buscar({ categoria, calidad });
+          if (preset && preset.precio > 0) presetMap[pk] = preset.precio;
+        } catch (_) {}
+      }));
       const init = {};
       const autoKeys = new Set();
-      await Promise.all(combs.map(async (c) => {
-        if (c.categoria && c.calidad) {
-          try {
-            const preset = await preciosApi.buscar({ categoria: c.categoria, calidad: c.calidad });
-            if (preset && preset.precio > 0) {
-              init[c.key] = String(preset.precio);
-              autoKeys.add(c.key);
-              return;
-            }
-          } catch (_) {}
+      for (const c of combs) {
+        const pk = `${c.categoria}|||${c.calidad}`;
+        if (c.categoria && c.calidad && presetMap[pk]) {
+          init[c.key] = String(presetMap[pk]);
+          autoKeys.add(c.key);
+        } else {
+          init[c.key] = '';
         }
-        init[c.key] = '';
-      }));
+      }
       setPreciosVenta(init);
       setPreciosAutocompletados(autoKeys);
       setViewModalOpen(false); setFinalizarModalOpen(true);
@@ -1357,7 +1366,7 @@ export default function Contenedores() {
                                       onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} />
                                     <datalist id={`cats-${pi}-${di}`}>
                                       {categoriasOpts
-                                        .filter(c => !det.categoria || c.temporada_nombre === det.categoria)
+                                        .filter(c => !det.categoria || !c.temporada_nombre || c.temporada_nombre.toLowerCase() === det.categoria.toLowerCase())
                                         .map(c => <option key={c.nombre} value={c.nombre} />)}
                                     </datalist>
                                   </div>
