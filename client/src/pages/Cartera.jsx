@@ -193,7 +193,7 @@ export default function Cartera() {
       const data = await carteraApi.exportOne(clienteId);
       
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'Bodega Americana';
+      wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
       
       const primaryColor = '0f172a';
@@ -208,7 +208,7 @@ export default function Cartera() {
       
       ws.mergeCells('A1:G1');
       const titleCell = ws.getCell('A1');
-      titleCell.value = '📦 BODEGA AMERICANA - Estado de Cuenta';
+      titleCell.value = '🌐 Comercio Global Logístico - Estado de Cuenta';
       titleCell.font = { size: 18, bold: true, color: { argb: 'FFFFFF' } };
       titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
       titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -392,7 +392,7 @@ export default function Cartera() {
         </head>
         <body>
           <div class="header">
-            <h1>📦 BODEGA AMERICANA</h1>
+            <h1>🌐 Comercio Global Logístico</h1>
             <div class="subtitle">Estado de Cuenta</div>
           </div>
           

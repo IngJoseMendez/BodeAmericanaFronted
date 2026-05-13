@@ -56,7 +56,7 @@ export default function Reportes() {
     
     try {
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'Bodega Americana';
+      wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
       
       // Colors
@@ -76,7 +76,7 @@ export default function Reportes() {
       // Title
       ws1.mergeCells('A1:D1');
       const titleCell = ws1.getCell('A1');
-      titleCell.value = '📦 BODEGA AMERICANA';
+      titleCell.value = '🌐 Comercio Global Logístico';
       titleCell.font = { size: 24, bold: true, color: { argb: 'FFFFFF' } };
       titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
       titleCell.alignment = { horizontal: 'center', vertical: 'middle' };

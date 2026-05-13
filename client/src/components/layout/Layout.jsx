@@ -21,7 +21,9 @@ const ROUTE_NAMES = {
   '/catalogo':             'Catálogo',
   '/mis-pedidos':          'Mis Pedidos',
   '/mi-cartera':           'Mi Cartera',
-  '/tipos-paca':           'Tipos de Paca',
+  '/tipos-paca':           'Productos',
+  '/precios':              'Precios Preestablecidos',
+  '/precios-promocion':    'Precios de Promoción',
   '/gestion-usuarios':     'Usuarios',
 };
 

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
-import { contenedoresApi, tiposPacaApi } from '../services/api';
+import { contenedoresApi, tiposPacaApi, preciosApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -350,7 +350,7 @@ export default function Contenedores() {
 
   useEffect(() => {
     tiposPacaApi.getTipos().then(d => setTiposOpts(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d.map(t => t.nombre))).catch(() => {});
+    tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d)).catch(() => {});
     tiposPacaApi.getCalidades().then(d => setCalidadesOpts(d.map(t => t.nombre))).catch(() => {});
     tiposPacaApi.getTemporadas().then(d => setTemporadasOpts(d.map(t => t.nombre))).catch(() => {});
   }, []);
@@ -363,6 +363,7 @@ export default function Contenedores() {
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
   const [combsFinalizacion, setCombsFinalizacion] = useState([]);
+  const [preciosAutocompletados, setPreciosAutocompletados] = useState(new Set());
 
   // ── Templates ─────────────────────────────────────────────────
   const { templates, save: saveTemplate, remove: removeTemplate } = useContenedorTemplates();
@@ -408,7 +409,7 @@ export default function Contenedores() {
     const fmtDate = (v) => v ? new Date(v).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Bodega Americana';
+    wb.creator = 'Comercio Global Logístico';
     wb.created = new Date();
 
     const ws = wb.addWorksheet('Contenedores');
@@ -431,7 +432,7 @@ export default function Contenedores() {
     // ── Fila 1: Título ─────────────────────────────────────────────
     ws.mergeCells('A1:J1');
     const titleCell = ws.getCell('A1');
-    titleCell.value = 'BODEGA AMERICANA — Reporte de Contenedores';
+    titleCell.value = 'Comercio Global Logístico — Reporte de Contenedores';
     titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFF' } };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -598,7 +599,7 @@ export default function Contenedores() {
 
     // ── Pie de página ──────────────────────────────────────────────
     ws.mergeCells(`A${row}:J${row}`);
-    ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-CO')} — Bodega Americana`;
+    ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-CO')} — Comercio Global Logístico`;
     ws.getCell(`A${row}`).font = { size: 8, italic: true, color: { argb: 'AAAAAA' } };
     ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
 
@@ -626,7 +627,7 @@ export default function Contenedores() {
     }
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Bodega Americana';
+    wb.creator = 'Comercio Global Logístico';
     const tasa = parseFloat(full.tasa_conversion) || 1;
     const totalPacas = parseInt(full.total_pacas) || 0;
 
@@ -947,8 +948,25 @@ export default function Contenedores() {
         return { categoria, clasificacion, referencia, calidad, key: c };
       });
       setCombsFinalizacion(combs);
-      const init = {}; combs.forEach((c) => { init[c.key] = ''; });
+
+      // Intentar autocompletar precios preestablecidos (categoria + calidad)
+      const init = {};
+      const autoKeys = new Set();
+      await Promise.all(combs.map(async (c) => {
+        if (c.categoria && c.calidad) {
+          try {
+            const preset = await preciosApi.buscar({ categoria: c.categoria, calidad: c.calidad });
+            if (preset && preset.precio > 0) {
+              init[c.key] = String(preset.precio);
+              autoKeys.add(c.key);
+              return;
+            }
+          } catch (_) {}
+        }
+        init[c.key] = '';
+      }));
       setPreciosVenta(init);
+      setPreciosAutocompletados(autoKeys);
       setViewModalOpen(false); setFinalizarModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
@@ -1284,6 +1302,17 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
+                        {(() => {
+                          const totalPacasProv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                          return totalPacasProv > 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary/10 text-secondary text-xs font-semibold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
+                                {totalPacasProv.toLocaleString()} paca{totalPacasProv !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
                         <input type="text" className={`${inp} text-xs`} placeholder="Notas del proveedor (opcional)"
                           value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                       </div>
@@ -1327,7 +1356,9 @@ export default function Contenedores() {
                                       value={det.referencia} required
                                       onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} />
                                     <datalist id={`cats-${pi}-${di}`}>
-                                      {categoriasOpts.map(c => <option key={c} value={c} />)}
+                                      {categoriasOpts
+                                        .filter(c => !det.categoria || c.temporada_nombre === det.categoria)
+                                        .map(c => <option key={c.nombre} value={c.nombre} />)}
                                     </datalist>
                                   </div>
                                   <div>
@@ -1826,11 +1857,17 @@ export default function Contenedores() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {preciosAutocompletados.has(comb.key) && (
+                        <span className="text-xs text-secondary font-medium whitespace-nowrap">⚡ Preset</span>
+                      )}
                       <span className="text-xs text-muted">$</span>
                       <PriceInput
-                        className={`${inp} w-32 text-right font-mono`} placeholder="0.00"
+                        className={`${inp} w-32 text-right font-mono ${preciosAutocompletados.has(comb.key) ? 'border-secondary/50 bg-secondary/5' : ''}`} placeholder="0.00"
                         value={preciosVenta[comb.key] || ''}
-                        onChange={(val) => setPreciosVenta({ ...preciosVenta, [comb.key]: val })} />
+                        onChange={(val) => {
+                          setPreciosVenta({ ...preciosVenta, [comb.key]: val });
+                          setPreciosAutocompletados(prev => { const s = new Set(prev); s.delete(comb.key); return s; });
+                        }} />
                     </div>
                   </div>
                 ))}

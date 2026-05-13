@@ -22,6 +22,8 @@ import GestionUsuarios from './pages/GestionUsuarios';
 import Contenedores from './pages/Contenedores';
 import CuentasPagar from './pages/CuentasPagar';
 import Despachos from './pages/Despachos';
+import Precios from './pages/Precios';
+import PreciosPromocion from './pages/PreciosPromocion';
 
 function AdminLayout() {
   return (
@@ -70,6 +72,8 @@ function RutasAdmin() {
       <Route path="/despachos" element={<Despachos />} />
       <Route path="/cuentas-pagar" element={<CuentasPagar />} />
       <Route path="/tipos-paca" element={<TiposPaca />} />
+      <Route path="/precios" element={<Precios />} />
+      <Route path="/precios-promocion" element={<PreciosPromocion />} />
       <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
-import { cotizacionesApi, clientesApi, pacasApi } from '../services/api';
-import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
+import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, tiposPacaApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
@@ -90,7 +89,7 @@ const generarPDF = (cotizacion) => {
     </head>
     <body>
       <div class="header">
-        <h1>📦 BODEGA AMERICANA</h1>
+        <h1>🌐 COMERCIO GLOBAL LOGÍSTICO</h1>
         <p>COTIZACIÓN</p>
       </div>
       
@@ -117,8 +116,8 @@ const generarPDF = (cotizacion) => {
       <table>
         <thead>
           <tr>
-            <th>Tipo</th>
-            <th>Categoría</th>
+            <th>Referencia</th>
+            <th>Calidad</th>
             <th class="text-right">Cantidad</th>
             <th class="text-right">Precio Unit.</th>
             <th class="text-right">Subtotal</th>
@@ -127,8 +126,8 @@ const generarPDF = (cotizacion) => {
         <tbody>
           ${cotizacion.detalles?.map(item => `
             <tr>
-              <td>${item.tipo}</td>
-              <td>${item.categoria || '-'}</td>
+              <td>${item.referencia || item.tipo || '-'}</td>
+              <td>${item.calidad || item.categoria || '-'}</td>
               <td class="text-right">${item.cantidad}</td>
               <td class="text-right">${formatCurrency(item.precio_unitario)}</td>
               <td class="text-right">${formatCurrency(item.subtotal)}</td>
@@ -142,10 +141,12 @@ const generarPDF = (cotizacion) => {
           <span class="totals-label">Subtotal:</span>
           <span class="totals-value">${formatCurrency(cotizacion.subtotal)}</span>
         </div>
+        ${cotizacion.descuento > 0 ? `
         <div class="totals-row">
-          <span class="totals-label">Descuento:</span>
-          <span class="totals-value">-${formatCurrency(cotizacion.descuento)}</span>
+          <span class="totals-label">Descuento total:</span>
+          <span class="totals-value" style="color:#ef4444">-${formatCurrency(cotizacion.descuento)}</span>
         </div>
+        ` : ''}
         <div class="totals-row totals-total">
           <span class="totals-label">TOTAL:</span>
           <span class="totals-value">${formatCurrency(cotizacion.total)}</span>
@@ -161,7 +162,7 @@ const generarPDF = (cotizacion) => {
       
       <div class="footer">
         <p>Cotización generada el ${new Date().toLocaleString('es-MX')}</p>
-        <p>Bodega Americana - Sistema de Gestión</p>
+        <p>Comercio Global Logístico - Sistema de Gestión</p>
       </div>
     </body>
     </html>
@@ -193,20 +194,26 @@ export default function Cotizaciones() {
   const confirm = useConfirm();
   const { usuario } = useAuth();
   
+  const [optsReferencia,    setOptsReferencia]    = useState([]);
+  const [optsCalidad,       setOptsCalidad]       = useState([]);
+
   const [formData, setFormData] = useState({
     cliente_id: '',
     validez_dias: 15,
     notas: '',
-    descuento: 0
+    descuento: '',
+    tipo_descuento: 'valor_fijo',
   });
-  
+
   const [items, setItems] = useState([
-    { tipo: '', categoria: '', cantidad: 1, precio_unitario: 0, subtotal: 0 }
+    { referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }
   ]);
 
   useEffect(() => {
     loadCotizaciones();
     loadClientes();
+    tiposPacaApi.getCategorias().then(d => setOptsReferencia(d)).catch(() => {});
+    tiposPacaApi.getCalidades().then(d => setOptsCalidad(d)).catch(() => {});
   }, [filtroEstado]);
 
   const loadCotizaciones = async () => {
@@ -233,8 +240,8 @@ export default function Cotizaciones() {
   };
 
   const openCreateModal = () => {
-    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: 0 });
-    setItems([{ tipo: '', categoria: '', cantidad: 1, precio_unitario: 0, subtotal: 0 }]);
+    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo' });
+    setItems([{ referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }]);
     setModalOpen(true);
   };
 
@@ -249,7 +256,7 @@ export default function Cotizaciones() {
   };
 
   const addItem = () => {
-    setItems([...items, { tipo: '', categoria: '', cantidad: 1, precio_unitario: 0, subtotal: 0 }]);
+    setItems([...items, { referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }]);
   };
 
   const removeItem = (index) => {
@@ -258,26 +265,71 @@ export default function Cotizaciones() {
     }
   };
 
-  const fetchPrecioDefault = async (index, tipo, categoria) => {
-    if (!tipo) return;
-    try {
-      const params = { tipo, estado: 'disponible', limite: 1 };
-      if (categoria) params.categoria = categoria;
-      const res = await pacasApi.getAll(params);
-      const paca = res.data?.[0];
-      if (paca && paca.precio_venta > 0) {
-        setItems(prev => {
-          const next = [...prev];
-          if (next[index].precio_unitario === 0) {
+  // Prioridad: 1° promoción activa (referencia+calidad), 2° precio preestablecido (categoria+calidad)
+  const recheckPrices = async (index, item) => {
+    const { referencia, calidad } = item;
+    const referenciaObj = optsReferencia.find(r => r.nombre === referencia);
+    const categoria = referenciaObj?.temporada_nombre || null;
+
+    // 1. Buscar promoción activa
+    if (referencia && calidad) {
+      try {
+        const promo = await preciosPromocionApi.getActiva({ referencia, calidad });
+        if (promo) {
+          setItems(prev => {
+            const next = [...prev];
             next[index] = {
               ...next[index],
-              precio_unitario: parseFloat(paca.precio_venta),
-              subtotal: (next[index].cantidad || 0) * parseFloat(paca.precio_venta),
+              precio_unitario: parseFloat(promo.precio_promocional),
+              subtotal: (next[index].cantidad || 0) * parseFloat(promo.precio_promocional),
+              precio_promocion: parseFloat(promo.precio_promocional),
             };
-          }
-          return next;
-        });
-      }
+            return next;
+          });
+          return; // promoción gana, no seguir
+        }
+      } catch (_) {}
+    }
+
+    // Sin promoción: limpiar marca
+    setItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], precio_promocion: null };
+      return next;
+    });
+
+    // 2. Buscar precio preestablecido
+    if (categoria && calidad) {
+      try {
+        const preset = await preciosApi.buscar({ categoria, calidad });
+        if (preset && preset.precio > 0) {
+          setItems(prev => {
+            const next = [...prev];
+            if (next[index].precio_promocion != null) return prev; // por si llegó promo en paralelo
+            next[index] = {
+              ...next[index],
+              precio_unitario: parseFloat(preset.precio),
+              subtotal: (next[index].cantidad || 0) * parseFloat(preset.precio),
+            };
+            return next;
+          });
+        }
+      } catch (_) {}
+    }
+  };
+
+  const fetchDisponibilidad = async (index, item) => {
+    const params = {};
+    if (item.referencia) params.referencia = item.referencia;
+    if (item.calidad)    params.calidad    = item.calidad;
+    if (Object.keys(params).length === 0) return;
+    try {
+      const { disponibles } = await pacasApi.getDisponibilidad(params);
+      setItems(prev => {
+        const next = [...prev];
+        next[index] = { ...next[index], disponibles };
+        return next;
+      });
     } catch (_) {}
   };
 
@@ -287,20 +339,50 @@ export default function Cotizaciones() {
     if (field === 'cantidad' || field === 'precio_unitario') {
       newItems[index].subtotal = (newItems[index].cantidad || 0) * (newItems[index].precio_unitario || 0);
     }
+    if (field === 'precio_unitario') {
+      newItems[index].precio_promocion = null;
+    }
     setItems(newItems);
 
-    if (field === 'tipo' || field === 'categoria') {
-      const tipo     = field === 'tipo'      ? value : newItems[index].tipo;
-      const categoria = field === 'categoria' ? value : newItems[index].categoria;
-      fetchPrecioDefault(index, tipo, categoria);
+    if (['referencia', 'calidad'].includes(field)) {
+      recheckPrices(index, newItems[index]);
+    }
+    if (['referencia', 'calidad'].includes(field)) {
+      fetchDisponibilidad(index, newItems[index]);
     }
   };
 
+  // Calcula el precio final por unidad de un ítem según el descuento configurado
+  const precioConDescuento = (precioUnitario) => {
+    const raw = parseFloat(formData.descuento) || 0;
+    if (raw === 0) return precioUnitario;
+    if (formData.tipo_descuento === 'porcentaje') {
+      return Math.round(precioUnitario * (1 - raw / 100));
+    }
+    return Math.max(0, Math.round(precioUnitario - raw)); // valor fijo por unidad
+  };
+
   const calcularTotales = () => {
-    const subtotal = items.reduce((sum, item) => sum + (item.subtotal || 0), 0);
-    const descuento = parseFloat(formData.descuento) || 0;
-    const total = subtotal - descuento;
-    return { subtotal, descuento, total };
+    const subtotalConPromo = items
+      .filter(i => i.precio_promocion != null)
+      .reduce((s, i) => s + (i.subtotal || 0), 0);
+    const subtotalSinPromo = items
+      .filter(i => i.precio_promocion == null)
+      .reduce((s, i) => s + (i.subtotal || 0), 0);
+    const subtotal = subtotalConPromo + subtotalSinPromo;
+
+    // El descuento se aplica por unidad, así que el total descontado es:
+    // porcentaje: % sobre el subtotal sin promo
+    // valor fijo: descuento_por_unidad × total_unidades_sin_promo
+    const raw = parseFloat(formData.descuento) || 0;
+    const unidadesSinPromo = items
+      .filter(i => i.precio_promocion == null)
+      .reduce((s, i) => s + (parseInt(i.cantidad) || 1), 0);
+    const descuentoAmount = formData.tipo_descuento === 'porcentaje'
+      ? subtotalSinPromo * (raw / 100)
+      : Math.min(raw * unidadesSinPromo, subtotalSinPromo);
+
+    return { subtotal, descuento: descuentoAmount, total: subtotal - descuentoAmount, subtotalSinPromo };
   };
 
   const handleSubmit = async (e) => {
@@ -311,20 +393,35 @@ export default function Cotizaciones() {
       return;
     }
     
-    const validItems = items.filter(i => i.tipo && i.precio_unitario > 0);
+    const validItems = items.filter(i => i.precio_unitario > 0 && (i.referencia || i.calidad));
     if (validItems.length === 0) {
-      addToast('Agrega al menos un item', 'error');
+      addToast('Agrega al menos un ítem con precio y referencia o calidad seleccionada', 'error');
       return;
     }
 
     try {
+      const { descuento, subtotalSinPromo } = calcularTotales();
+      const detallesConDescuento = validItems.map(i => {
+        const tienePromo = i.precio_promocion != null;
+        const precioFinal = tienePromo
+          ? parseFloat(i.precio_unitario)
+          : precioConDescuento(parseFloat(i.precio_unitario));
+        return {
+          ...i,
+          precio_unitario: precioFinal,
+          subtotal: (i.cantidad || 1) * precioFinal,
+          tiene_promocion: tienePromo,
+        };
+      });
+
       await cotizacionesApi.create({
         cliente_id: formData.cliente_id,
         vendedor_id: usuario?.id,
         validez_dias: formData.validez_dias,
         notas: formData.notas,
-        descuento: formData.descuento,
-        detalles: validItems
+        descuento,
+        tipo_descuento: formData.tipo_descuento,
+        detalles: detallesConDescuento,
       });
       
       addToast('Cotización creada', 'success');
@@ -410,6 +507,7 @@ export default function Cotizaciones() {
   };
 
   const { subtotal, descuento, total } = calcularTotales();
+  const hayDescuento = (parseFloat(formData.descuento) || 0) > 0;
 
   return (
     <Layout title="Cotizaciones" subtitle="Gestión de cotizaciones y报价">
@@ -503,32 +601,58 @@ export default function Cotizaciones() {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Nueva Cotización" size="xl">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-primary mb-1">Cliente *</label>
-              <select
-                value={formData.cliente_id}
-                onChange={(e) => {
-                  const clienteId = e.target.value;
-                  const cliente = clientes.find(c => String(c.id) === clienteId);
-                  setFormData(f => ({
-                    ...f,
-                    cliente_id: clienteId,
-                    descuento: cliente?.descuento > 0 ? cliente.descuento : f.descuento,
-                  }));
-                }}
-                className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                required
-              >
-                <option value="">Seleccionar cliente...</option>
-                {clientes.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${c.descuento}%)` : ''}</option>
-                ))}
-              </select>
-              {formData.cliente_id && clientes.find(c => String(c.id) === String(formData.cliente_id))?.descuento > 0 && (
-                <p className="text-xs text-secondary mt-1 flex items-center gap-1">
-                  <Check size={11} /> Descuento automático del cliente aplicado
-                </p>
-              )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-primary mb-1">Cliente *</label>
+                <select
+                  value={formData.cliente_id}
+                  onChange={(e) => {
+                    const clienteId = e.target.value;
+                    const cliente = clientes.find(c => String(c.id) === clienteId);
+                    setFormData(f => ({
+                      ...f,
+                      cliente_id: clienteId,
+                      descuento: cliente?.descuento > 0 ? String(cliente.descuento) : f.descuento,
+                      tipo_descuento: cliente?.descuento > 0 ? 'porcentaje' : f.tipo_descuento,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                  required
+                >
+                  <option value="">Seleccionar cliente...</option>
+                  {clientes.map(c => (
+                    <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${c.descuento}%)` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-primary mb-1">Descuento</label>
+                <div className="flex gap-2">
+                  <select
+                    value={formData.tipo_descuento}
+                    onChange={(e) => setFormData(f => ({ ...f, tipo_descuento: e.target.value, descuento: '' }))}
+                    className="px-3 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm bg-surface"
+                  >
+                    <option value="valor_fijo">$ Valor fijo</option>
+                    <option value="porcentaje">% Porcentaje</option>
+                  </select>
+                  <input
+                    type="number"
+                    value={formData.descuento}
+                    onChange={(e) => setFormData(f => ({ ...f, descuento: e.target.value }))}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
+                    min="0"
+                    max={formData.tipo_descuento === 'porcentaje' ? 100 : undefined}
+                    step={formData.tipo_descuento === 'porcentaje' ? 1 : 1000}
+                    placeholder={formData.tipo_descuento === 'porcentaje' ? 'Ej: 10' : 'Ej: 50000'}
+                  />
+                </div>
+                {items.some(i => i.precio_promocion != null) && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <Info size={11} /> El descuento solo aplica a ítems sin precio de promoción
+                  </p>
+                )}
+              </div>
             </div>
             
             <div>
@@ -559,58 +683,94 @@ export default function Cotizaciones() {
               </Button>
             </div>
             
-            <div className="space-y-2 max-h-64 overflow-y-auto border rounded-xl p-3">
+            <div className="space-y-2 max-h-80 overflow-y-auto border rounded-xl p-3">
               {items.map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center p-2 bg-primary/5 rounded-lg">
-                  <select
-                    value={item.tipo}
-                    onChange={(e) => updateItem(index, 'tipo', e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg border text-sm"
-                    required
-                  >
-                    <option value="">Tipo...</option>
-                    {PACA_TIPOS.map(t => (
-                      <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                    ))}
-                  </select>
-                  
-                  <select
-                    value={item.categoria}
-                    onChange={(e) => updateItem(index, 'categoria', e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-lg border text-sm"
-                  >
-                    <option value="">Categoría...</option>
-                    {PACA_CATEGORIAS.map(c => (
-                      <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                    ))}
-                  </select>
-                  
-                  <input
-                    type="number"
-                    value={item.cantidad}
-                    onChange={(e) => updateItem(index, 'cantidad', parseInt(e.target.value) || 1)}
-                    className="w-16 px-2 py-2 rounded-lg border text-sm text-center"
-                    min="1"
-                  />
-                  
-                  <PriceInput
-                    value={item.precio_unitario}
-                    onChange={(v) => updateItem(index, 'precio_unitario', v)}
-                    placeholder="Precio"
-                    className="w-28 px-2 py-2 rounded-lg border text-sm text-right"
-                  />
-                  
-                  <span className="w-24 text-right font-medium text-sm">
-                    {formatCurrency(item.subtotal)}
-                  </span>
-                  
-                  <button
-                    type="button"
-                    onClick={() => removeItem(index)}
-                    className="p-2 text-muted hover:text-red-500"
-                  >
-                    <XIcon size={16} />
-                  </button>
+                <div key={index} className={`flex flex-col gap-2 p-2 rounded-lg ${item.precio_promocion != null ? 'bg-amber-50 border border-amber-200' : 'bg-primary/5'}`}>
+                  {/* Referencia + calidad */}
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      value={item.referencia}
+                      onChange={(e) => updateItem(index, 'referencia', e.target.value)}
+                      className="flex-1 min-w-[110px] px-3 py-2 rounded-lg border text-sm bg-surface"
+                    >
+                      <option value="">Referencia...</option>
+                      {optsReferencia.map(o => (
+                        <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={item.calidad}
+                      onChange={(e) => updateItem(index, 'calidad', e.target.value)}
+                      className="flex-1 min-w-[110px] px-3 py-2 rounded-lg border text-sm bg-surface"
+                    >
+                      <option value="">Calidad...</option>
+                      {optsCalidad.map(o => (
+                        <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Fila 3: disponibilidad */}
+                  {item.disponibles !== null && (
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium w-fit ${
+                      item.disponibles === 0
+                        ? 'bg-red-50 border border-red-200 text-red-600'
+                        : item.disponibles <= 5
+                          ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                          : 'bg-green-50 border border-green-200 text-green-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        item.disponibles === 0 ? 'bg-red-500' : item.disponibles <= 5 ? 'bg-amber-500' : 'bg-green-500'
+                      }`} />
+                      {item.disponibles === 0
+                        ? 'Sin stock disponible'
+                        : `${item.disponibles} unidad${item.disponibles !== 1 ? 'es' : ''} disponible${item.disponibles !== 1 ? 's' : ''}`}
+                    </div>
+                  )}
+
+                  {/* Fila 4: cantidad + precio + subtotal + eliminar */}
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <input
+                      type="number"
+                      value={item.cantidad}
+                      onChange={(e) => updateItem(index, 'cantidad', parseInt(e.target.value) || 1)}
+                      className="w-16 px-2 py-2 rounded-lg border text-sm text-center"
+                      min="1"
+                    />
+
+                    <div className="flex-1 min-w-[100px]">
+                      <PriceInput
+                        value={item.precio_unitario}
+                        onChange={(v) => updateItem(index, 'precio_unitario', v)}
+                        placeholder="Precio"
+                        className={`w-full px-2 py-2 rounded-lg border text-sm text-right ${item.precio_promocion != null ? 'border-amber-400 bg-amber-100 font-semibold' : ''}`}
+                      />
+                      {hayDescuento && item.precio_promocion == null && item.precio_unitario > 0 && (
+                        <p className="text-xs text-green-700 text-right mt-0.5 font-medium">
+                          c/desc: {formatCurrency(precioConDescuento(item.precio_unitario))}
+                        </p>
+                      )}
+                    </div>
+
+                    <span className="w-24 text-right font-medium text-sm">
+                      {formatCurrency(item.subtotal)}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => removeItem(index)}
+                      className="p-2 text-muted hover:text-red-500"
+                    >
+                      <XIcon size={16} />
+                    </button>
+                  </div>
+
+                  {item.precio_promocion != null && (
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-full self-start flex items-center gap-1">
+                      <AlertCircle size={11} /> Precio de promoción aplicado
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -623,15 +783,26 @@ export default function Cotizaciones() {
                 <span className="text-muted">Subtotal:</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted">Descuento:</span>
-                <input
-                  type="number"
-                  value={formData.descuento}
-                  onChange={(e) => setFormData({ ...formData, descuento: parseFloat(e.target.value) || 0 })}
-                  className="w-24 px-2 py-1 rounded-lg border text-sm text-right"
-                />
-              </div>
+              {(parseFloat(formData.descuento) || 0) > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">
+                      Desc. por unidad ({formData.tipo_descuento === 'porcentaje' ? `${formData.descuento}%` : 'valor fijo'}):
+                    </span>
+                    <span className="text-red-400 font-medium">
+                      {formData.tipo_descuento === 'porcentaje'
+                        ? `${formData.descuento}%`
+                        : `-${formatCurrency(parseFloat(formData.descuento))}`}
+                    </span>
+                  </div>
+                  {descuento > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">Descuento total:</span>
+                      <span className="text-red-500 font-medium">-{formatCurrency(descuento)}</span>
+                    </div>
+                  )}
+                </>
+              )}
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total:</span>
                 <span className="text-primary">{formatCurrency(total)}</span>
@@ -690,8 +861,8 @@ export default function Cotizaciones() {
                 <table className="w-full text-xs sm:text-sm min-w-[400px]">
                   <thead className="bg-primary/5">
                     <tr>
-                      <th className="px-2 sm:px-4 py-2 text-left">Tipo</th>
-                      <th className="px-2 sm:px-4 py-2 text-left hidden sm:table-cell">Categoría</th>
+                      <th className="px-2 sm:px-4 py-2 text-left">Referencia</th>
+                      <th className="px-2 sm:px-4 py-2 text-left hidden sm:table-cell">Calidad</th>
                       <th className="px-2 sm:px-4 py-2 text-right">Cant.</th>
                       <th className="px-2 sm:px-4 py-2 text-right">Precio</th>
                       <th className="px-2 sm:px-4 py-2 text-right">Subtotal</th>
@@ -700,8 +871,8 @@ export default function Cotizaciones() {
                   <tbody className="divide-y">
                     {selectedCotizacion.detalles?.map((item, i) => (
                       <tr key={i}>
-                        <td className="px-2 sm:px-4 py-2">{item.tipo}</td>
-                        <td className="px-2 sm:px-4 py-2 text-muted hidden sm:table-cell">{item.categoria || '-'}</td>
+                        <td className="px-2 sm:px-4 py-2">{item.referencia || item.tipo || '-'}</td>
+                        <td className="px-2 sm:px-4 py-2 text-muted hidden sm:table-cell">{item.calidad || item.categoria || '-'}</td>
                         <td className="px-2 sm:px-4 py-2 text-right">{item.cantidad}</td>
                         <td className="px-2 sm:px-4 py-2 text-right">{formatCurrency(item.precio_unitario)}</td>
                         <td className="px-2 sm:px-4 py-2 text-right font-medium">{formatCurrency(item.subtotal)}</td>

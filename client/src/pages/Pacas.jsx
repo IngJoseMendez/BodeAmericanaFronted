@@ -308,7 +308,7 @@ export default function Pacas() {
       }
 
       const wb = new ExcelJS.Workbook();
-      wb.creator = 'Bodega Americana';
+      wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
       const ws = wb.addWorksheet('Inventario Pacas');
       ws.properties.tabColor = { argb: '0f172a' };
@@ -395,7 +395,7 @@ export default function Pacas() {
       const doc = new jsPDF();
       
       doc.setFontSize(18);
-      doc.text('Bodega Americana - Inventario de Pacas', 14, 20);
+      doc.text('Comercio Global Logístico - Inventario', 14, 20);
       
       doc.setFontSize(11);
       doc.text(`Fecha de reporte: ${new Date().toLocaleDateString('es-MX')}`, 14, 28);
@@ -560,15 +560,17 @@ export default function Pacas() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Cantidad</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Costo Unit.</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Costo Total</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loadingAgrupado ? (
-                    <TableSkeleton cols={9} rows={6} />
+                    <TableSkeleton cols={11} rows={6} />
                   ) : inventarioAgrupado.length === 0 ? (
-                    <tr><td colSpan={9}><EmptyState title="Sin unidades en inventario" description="Las unidades disponibles y separadas aparecerán aquí" /></td></tr>
+                    <tr><td colSpan={11}><EmptyState title="Sin unidades en inventario" description="Las unidades disponibles y separadas aparecerán aquí" /></td></tr>
                   ) : (
                     inventarioAgrupado.map((row, idx) => (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
@@ -581,8 +583,10 @@ export default function Pacas() {
                         <td className="px-4 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
                         <td className="px-4 py-2.5"><Badge variant={row.estado}>{row.estado}</Badge></td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">{row.cantidad}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted">{formatCurrency(row.costo_total)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_total)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted">{formatCurrency(row.costo_unitario)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted/70">{formatCurrency(row.costo_total)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm text-secondary/70">{formatCurrency(row.precio_total)}</td>
                       </tr>
                     ))
                   )}
