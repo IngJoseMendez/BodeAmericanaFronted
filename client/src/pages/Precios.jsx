@@ -60,7 +60,7 @@ export default function Precios() {
   const [saving, setSaving]         = useState(false);
 
   const { addToast } = useToast();
-  const { confirm }  = useConfirm();
+  const confirm = useConfirm();
 
   useEffect(() => {
     Promise.all([
