@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
-import { contenedoresApi, tiposPacaApi, preciosApi } from '../services/api';
+import { contenedoresApi, preciosApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -343,17 +344,11 @@ export default function Contenedores() {
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
-  const [tiposOpts,      setTiposOpts]      = useState([]);
-  const [categoriasOpts, setCategoriasOpts] = useState([]);
-  const [calidadesOpts,  setCalidadesOpts]  = useState([]);
-  const [temporadasOpts, setTemporadasOpts] = useState([]);
-
-  useEffect(() => {
-    tiposPacaApi.getTipos().then(d => setTiposOpts(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d)).catch(() => {});
-    tiposPacaApi.getCalidades().then(d => setCalidadesOpts(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getTemporadas().then(d => setTemporadasOpts(d.map(t => t.nombre))).catch(() => {});
-  }, []);
+  const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
+  const tiposOpts      = tiposRaw.map(t => t.nombre);
+  const categoriasOpts = categoriasRaw;
+  const calidadesOpts  = calidadesRaw.map(t => t.nombre);
+  const temporadasOpts = temporadasRaw.map(t => t.nombre);
 
   // ── Form ───────────────────────────────────────────────────────
   const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });

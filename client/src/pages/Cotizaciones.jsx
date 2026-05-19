@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
-import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, tiposPacaApi } from '../services/api';
+import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
+import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
 
 const formatCurrency = (value) => {
@@ -194,8 +196,7 @@ export default function Cotizaciones() {
   const confirm = useConfirm();
   const { usuario } = useAuth();
   
-  const [optsReferencia,    setOptsReferencia]    = useState([]);
-  const [optsCalidad,       setOptsCalidad]       = useState([]);
+  const { categorias: optsReferencia, calidades: optsCalidad } = useCatalog();
 
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -212,8 +213,6 @@ export default function Cotizaciones() {
   useEffect(() => {
     loadCotizaciones();
     loadClientes();
-    tiposPacaApi.getCategorias().then(d => setOptsReferencia(d)).catch(() => {});
-    tiposPacaApi.getCalidades().then(d => setOptsCalidad(d)).catch(() => {});
   }, [filtroEstado]);
 
   const loadCotizaciones = async () => {
@@ -509,6 +508,38 @@ export default function Cotizaciones() {
   const { subtotal, descuento, total } = calcularTotales();
   const hayDescuento = (parseFloat(formData.descuento) || 0) > 0;
 
+  const exportarListaExcel = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Cotizaciones');
+    ws.columns = [
+      { header: 'Número',          key: 'numero',  width: 14 },
+      { header: 'Cliente',         key: 'cliente', width: 26 },
+      { header: 'Total',           key: 'total',   width: 18 },
+      { header: 'Estado',          key: 'estado',  width: 14 },
+      { header: 'Fecha Creación',  key: 'creada',  width: 16 },
+      { header: 'Fecha Venc.',     key: 'vence',   width: 16 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    cotizaciones.forEach(c => {
+      ws.addRow({
+        numero:  c.numero,
+        cliente: c.cliente_nombre || '—',
+        total:   parseFloat(c.total) || 0,
+        estado:  c.estado,
+        creada:  c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—',
+        vence:   c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString('es-CO') : '—',
+      });
+    });
+    ws.getColumn('total').numFmt = '#,##0.00';
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `cotizaciones-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <Layout title="Cotizaciones" subtitle="Gestión de cotizaciones y报价">
       <div className="space-y-4">
@@ -529,9 +560,15 @@ export default function Cotizaciones() {
               {cotizaciones.length} cotización(es)
             </span>
           </div>
-          <Button onClick={openCreateModal} icon={Plus}>
-            Nueva Cotización
-          </Button>
+          <div className="flex gap-2">
+            <button onClick={exportarListaExcel}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+              <Download size={15} /> Excel
+            </button>
+            <Button onClick={openCreateModal} icon={Plus}>
+              Nueva Cotización
+            </Button>
+          </div>
         </div>
 
         {loading ? (

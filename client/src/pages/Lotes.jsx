@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, useToast, useConfirm } from '../components/common';
-import { lotesApi, tiposPacaApi } from '../services/api';
-import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Eye, Link, Unlink, Hash, Layers } from 'lucide-react';
+import { lotesApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
+import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Eye, Link, Unlink, Hash, Layers, Download } from 'lucide-react';
+import ExcelJS from 'exceljs';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
@@ -38,13 +40,12 @@ export default function Lotes() {
     costo_base: '',
     notas: ''
   });
-  const [tiposList, setTiposList] = useState([]);
-  const [categoriasList, setCategoriasList] = useState([]);
+  const { tipos: tiposRaw, categorias: categoriasRaw } = useCatalog();
+  const tiposList      = tiposRaw.map(t => t.nombre);
+  const categoriasList = categoriasRaw.map(c => c.nombre);
 
   useEffect(() => {
     loadLotes();
-    tiposPacaApi.getTipos().then(d => setTiposList(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getCategorias().then(d => setCategoriasList(d.map(c => c.nombre))).catch(() => {});
   }, []);
 
   const loadLotes = async () => {
@@ -240,6 +241,45 @@ export default function Lotes() {
   const totalPacaValue = lotePacas.reduce((sum, p) => sum + (parseFloat(p.precio_venta) || 0), 0);
   const totalCostoPacas = lotePacas.reduce((sum, p) => sum + (parseFloat(p.costo_base) || 0), 0);
 
+  const exportarExcel = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Lotes');
+    ws.columns = [
+      { header: 'Número',        key: 'numero',    width: 16 },
+      { header: 'Proveedor',     key: 'proveedor', width: 24 },
+      { header: 'Fecha Compra',  key: 'fecha',     width: 16 },
+      { header: 'Total Pacas',   key: 'pacas',     width: 14 },
+      { header: 'Costo Total',   key: 'costo',     width: 18 },
+      { header: 'Vendido Total', key: 'vendido',   width: 18 },
+      { header: 'Margen %',      key: 'margen',    width: 12 },
+      { header: 'Estado',        key: 'estado',    width: 14 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    lotes.forEach(l => {
+      const costo   = parseFloat(l.costo_total) || 0;
+      const vendido = parseFloat(l.vendido_total) || 0;
+      const margen  = costo > 0 ? Math.round(((vendido - costo) / costo) * 100) : 0;
+      ws.addRow({
+        numero:   l.numero,
+        proveedor: l.proveedor || '—',
+        fecha:    l.fecha_compra ? new Date(l.fecha_compra).toLocaleDateString('es-CO') : '—',
+        pacas:    parseInt(l.total_pacas) || 0,
+        costo,
+        vendido,
+        margen:   `${margen}%`,
+        estado:   l.estado || '—',
+      });
+    });
+    ['costo', 'vendido'].forEach(k => { ws.getColumn(k).numFmt = '#,##0.00'; });
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `lotes-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <Layout title="Lotes" subtitle="Gestión de lotes de inventario">
       <div className="space-y-6">
@@ -250,9 +290,15 @@ export default function Lotes() {
               Un lote agrupa pacas de una misma compra. Asigna pacas existentes o crea nuevas.
             </p>
           </div>
-          <Button onClick={openCreateModal} icon={Plus}>
-            Nuevo Lote
-          </Button>
+          <div className="flex gap-2">
+            <button onClick={exportarExcel}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+              <Download size={15} /> Excel
+            </button>
+            <Button onClick={openCreateModal} icon={Plus}>
+              Nuevo Lote
+            </Button>
+          </div>
         </div>
 
         {loading ? (

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
-import { preciosApi, tiposPacaApi } from '../services/api';
+import { preciosApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
 
 function PrecioInput({ value, onChange, required }) {
@@ -50,10 +51,9 @@ const formatCurrency = (v) =>
 const emptyForm = { categoria: '', calidad: '', precio: '' };
 
 export default function Precios() {
-  const [precios, setPrecios]       = useState([]);
-  const [categorias, setCategorias] = useState([]);
-  const [calidades, setCalidades]   = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [precios, setPrecios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { categorias, calidades } = useCatalog();
   const [modalOpen, setModalOpen]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form, setForm]             = useState(emptyForm);
@@ -63,15 +63,9 @@ export default function Precios() {
   const confirm = useConfirm();
 
   useEffect(() => {
-    Promise.all([
-      preciosApi.getAll(),
-      tiposPacaApi.getTemporadas(),
-      tiposPacaApi.getCalidades(),
-    ]).then(([p, c, q]) => {
-      setPrecios(p);
-      setCategorias(c);
-      setCalidades(q);
-    }).catch(() => addToast('Error cargando datos', 'error'))
+    preciosApi.getAll()
+      .then(setPrecios)
+      .catch(() => addToast('Error cargando precios', 'error'))
       .finally(() => setLoading(false));
   }, []);
 

@@ -24,7 +24,8 @@ import {
   Search,
   Shield,
   Truck,
-  CreditCard
+  CreditCard,
+  History
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -51,6 +52,7 @@ const adminNavItems = [
   { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },
   { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',       key: null },
   { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',        key: null, rol: 'admin' },
+  { path: '/auditoria',            icon: History,         label: 'Auditoría',       key: null, rol: 'admin' },
 ];
 
 const clienteNavItems = [

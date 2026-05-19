@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { CatalogProvider } from './context/CatalogContext';
 import { ToastProvider, ConfirmProvider } from './components/common';
 import Dashboard from './pages/Dashboard';
 import Pacas from './pages/Pacas';
@@ -24,6 +25,7 @@ import CuentasPagar from './pages/CuentasPagar';
 import Despachos from './pages/Despachos';
 import Precios from './pages/Precios';
 import PreciosPromocion from './pages/PreciosPromocion';
+import Auditoria from './pages/Auditoria';
 
 function AdminLayout() {
   return (
@@ -58,25 +60,28 @@ function RutasAdmin() {
   }
   
   return (
-    <Routes>
-      <Route path="/" element={<Dashboard />} />
-      <Route path="/pacas" element={<Pacas />} />
-      <Route path="/contenedores" element={<Contenedores />} />
-      <Route path="/clientes" element={<Clientes />} />
-      <Route path="/ventas" element={<Ventas />} />
-      <Route path="/cartera" element={<Cartera />} />
-      <Route path="/reportes" element={<Reportes />} />
-      <Route path="/gestionar-pedidos" element={<GestionarPedidos />} />
-      <Route path="/inteligencia-negocio" element={<InteligenciaDeNegocio />} />
-      <Route path="/cotizaciones" element={<Cotizaciones />} />
-      <Route path="/despachos" element={<Despachos />} />
-      <Route path="/cuentas-pagar" element={<CuentasPagar />} />
-      <Route path="/tipos-paca" element={<TiposPaca />} />
-      <Route path="/precios" element={<Precios />} />
-      <Route path="/precios-promocion" element={<PreciosPromocion />} />
-      <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <CatalogProvider>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/pacas" element={<Pacas />} />
+        <Route path="/contenedores" element={<Contenedores />} />
+        <Route path="/clientes" element={<Clientes />} />
+        <Route path="/ventas" element={<Ventas />} />
+        <Route path="/cartera" element={<Cartera />} />
+        <Route path="/reportes" element={<Reportes />} />
+        <Route path="/gestionar-pedidos" element={<GestionarPedidos />} />
+        <Route path="/inteligencia-negocio" element={<InteligenciaDeNegocio />} />
+        <Route path="/cotizaciones" element={<Cotizaciones />} />
+        <Route path="/despachos" element={<Despachos />} />
+        <Route path="/cuentas-pagar" element={<CuentasPagar />} />
+        <Route path="/tipos-paca" element={<TiposPaca />} />
+        <Route path="/precios" element={<Precios />} />
+        <Route path="/precios-promocion" element={<PreciosPromocion />} />
+        <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
+        <Route path="/auditoria" element={<Auditoria />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </CatalogProvider>
   );
 }
 
