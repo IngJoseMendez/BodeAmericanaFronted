@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
-import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, tiposPacaApi } from '../services/api';
+import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
+import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
 
 const formatCurrency = (value) => {
@@ -194,8 +196,7 @@ export default function Cotizaciones() {
   const confirm = useConfirm();
   const { usuario } = useAuth();
   
-  const [optsReferencia,    setOptsReferencia]    = useState([]);
-  const [optsCalidad,       setOptsCalidad]       = useState([]);
+  const { categorias: optsReferencia, calidades: optsCalidad } = useCatalog();
 
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -212,8 +213,6 @@ export default function Cotizaciones() {
   useEffect(() => {
     loadCotizaciones();
     loadClientes();
-    tiposPacaApi.getCategorias().then(d => setOptsReferencia(d)).catch(() => {});
-    tiposPacaApi.getCalidades().then(d => setOptsCalidad(d)).catch(() => {});
   }, [filtroEstado]);
 
   const loadCotizaciones = async () => {
@@ -509,6 +508,38 @@ export default function Cotizaciones() {
   const { subtotal, descuento, total } = calcularTotales();
   const hayDescuento = (parseFloat(formData.descuento) || 0) > 0;
 
+  const exportarListaExcel = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Cotizaciones');
+    ws.columns = [
+      { header: 'Número',          key: 'numero',  width: 14 },
+      { header: 'Cliente',         key: 'cliente', width: 26 },
+      { header: 'Total',           key: 'total',   width: 18 },
+      { header: 'Estado',          key: 'estado',  width: 14 },
+      { header: 'Fecha Creación',  key: 'creada',  width: 16 },
+      { header: 'Fecha Venc.',     key: 'vence',   width: 16 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    cotizaciones.forEach(c => {
+      ws.addRow({
+        numero:  c.numero,
+        cliente: c.cliente_nombre || '—',
+        total:   parseFloat(c.total) || 0,
+        estado:  c.estado,
+        creada:  c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—',
+        vence:   c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString('es-CO') : '—',
+      });
+    });
+    ws.getColumn('total').numFmt = '#,##0.00';
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `cotizaciones-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <Layout title="Cotizaciones" subtitle="Gestión de cotizaciones y报价">
       <div className="space-y-4">
@@ -529,9 +560,15 @@ export default function Cotizaciones() {
               {cotizaciones.length} cotización(es)
             </span>
           </div>
-          <Button onClick={openCreateModal} icon={Plus}>
-            Nueva Cotización
-          </Button>
+          <div className="flex gap-2">
+            <button onClick={exportarListaExcel}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+              <Download size={15} /> Excel
+            </button>
+            <Button onClick={openCreateModal} icon={Plus}>
+              Nueva Cotización
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -682,97 +719,113 @@ export default function Cotizaciones() {
                 Agregar Item
               </Button>
             </div>
-            
-            <div className="space-y-2 max-h-80 overflow-y-auto border rounded-xl p-3">
-              {items.map((item, index) => (
-                <div key={index} className={`flex flex-col gap-2 p-2 rounded-lg ${item.precio_promocion != null ? 'bg-amber-50 border border-amber-200' : 'bg-primary/5'}`}>
-                  {/* Referencia + calidad */}
-                  <div className="flex flex-wrap gap-2">
-                    <select
-                      value={item.referencia}
-                      onChange={(e) => updateItem(index, 'referencia', e.target.value)}
-                      className="flex-1 min-w-[110px] px-3 py-2 rounded-lg border text-sm bg-surface"
-                    >
-                      <option value="">Referencia...</option>
-                      {optsReferencia.map(o => (
-                        <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
-                      ))}
-                    </select>
 
-                    <select
-                      value={item.calidad}
-                      onChange={(e) => updateItem(index, 'calidad', e.target.value)}
-                      className="flex-1 min-w-[110px] px-3 py-2 rounded-lg border text-sm bg-surface"
-                    >
-                      <option value="">Calidad...</option>
-                      {optsCalidad.map(o => (
-                        <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
-                      ))}
-                    </select>
-                  </div>
+            <div className="border border-border rounded-xl overflow-hidden">
+              {/* Cabecera de columnas */}
+              <div className="grid grid-cols-[1fr_1fr_56px_116px_84px_32px] gap-2 px-3 py-2 bg-primary/5 border-b border-border/60 text-xs font-medium text-muted select-none">
+                <span>Referencia</span>
+                <span>Calidad</span>
+                <span className="text-center">Cant.</span>
+                <span className="text-right">Precio unit.</span>
+                <span className="text-right">Subtotal</span>
+                <span />
+              </div>
 
-                  {/* Fila 3: disponibilidad */}
-                  {item.disponibles !== null && (
-                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium w-fit ${
-                      item.disponibles === 0
-                        ? 'bg-red-50 border border-red-200 text-red-600'
-                        : item.disponibles <= 5
-                          ? 'bg-amber-50 border border-amber-200 text-amber-700'
-                          : 'bg-green-50 border border-green-200 text-green-700'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        item.disponibles === 0 ? 'bg-red-500' : item.disponibles <= 5 ? 'bg-amber-500' : 'bg-green-500'
-                      }`} />
-                      {item.disponibles === 0
-                        ? 'Sin stock disponible'
-                        : `${item.disponibles} unidad${item.disponibles !== 1 ? 'es' : ''} disponible${item.disponibles !== 1 ? 's' : ''}`}
-                    </div>
-                  )}
+              {/* Filas de ítems */}
+              <div className="divide-y divide-border/50 max-h-72 overflow-y-auto">
+                {items.map((item, index) => (
+                  <div
+                    key={index}
+                    className={`px-3 py-2.5 transition-colors ${item.precio_promocion != null ? 'bg-amber-50/70' : 'hover:bg-primary/[0.02]'}`}
+                  >
+                    {/* Fila principal */}
+                    <div className="grid grid-cols-[1fr_1fr_56px_116px_84px_32px] gap-2 items-center">
+                      <select
+                        value={item.referencia}
+                        onChange={(e) => updateItem(index, 'referencia', e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 truncate"
+                      >
+                        <option value="">Referencia…</option>
+                        {optsReferencia.map(o => (
+                          <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
+                        ))}
+                      </select>
 
-                  {/* Fila 4: cantidad + precio + subtotal + eliminar */}
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <input
-                      type="number"
-                      value={item.cantidad}
-                      onChange={(e) => updateItem(index, 'cantidad', parseInt(e.target.value) || 1)}
-                      className="w-16 px-2 py-2 rounded-lg border text-sm text-center"
-                      min="1"
-                    />
+                      <select
+                        value={item.calidad}
+                        onChange={(e) => updateItem(index, 'calidad', e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                      >
+                        <option value="">Calidad…</option>
+                        {optsCalidad.map(o => (
+                          <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
+                        ))}
+                      </select>
 
-                    <div className="flex-1 min-w-[100px]">
+                      <input
+                        type="number"
+                        value={item.cantidad}
+                        onChange={(e) => updateItem(index, 'cantidad', parseInt(e.target.value) || 1)}
+                        className="w-full px-2 py-1.5 rounded-lg border border-border text-sm text-center focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                        min="1"
+                      />
+
                       <PriceInput
                         value={item.precio_unitario}
                         onChange={(v) => updateItem(index, 'precio_unitario', v)}
                         placeholder="Precio"
-                        className={`w-full px-2 py-2 rounded-lg border text-sm text-right ${item.precio_promocion != null ? 'border-amber-400 bg-amber-100 font-semibold' : ''}`}
+                        className={`w-full px-2 py-1.5 rounded-lg border text-sm text-right focus:outline-none focus:ring-2 focus:ring-secondary/30 ${
+                          item.precio_promocion != null
+                            ? 'border-amber-400 bg-amber-100 font-semibold'
+                            : 'border-border'
+                        }`}
                       />
-                      {hayDescuento && item.precio_promocion == null && item.precio_unitario > 0 && (
-                        <p className="text-xs text-green-700 text-right mt-0.5 font-medium">
-                          c/desc: {formatCurrency(precioConDescuento(item.precio_unitario))}
-                        </p>
-                      )}
+
+                      <span className="text-right text-sm font-semibold tabular-nums text-primary">
+                        {formatCurrency(item.subtotal)}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="flex items-center justify-center w-7 h-7 rounded-lg text-muted hover:text-red-500 hover:bg-red-50 transition-colors mx-auto"
+                      >
+                        <XIcon size={14} />
+                      </button>
                     </div>
 
-                    <span className="w-24 text-right font-medium text-sm">
-                      {formatCurrency(item.subtotal)}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => removeItem(index)}
-                      className="p-2 text-muted hover:text-red-500"
-                    >
-                      <XIcon size={16} />
-                    </button>
+                    {/* Fila de metadatos: stock · promo · precio con descuento */}
+                    {(item.disponibles !== null || item.precio_promocion != null || (hayDescuento && item.precio_promocion == null && item.precio_unitario > 0)) && (
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {item.disponibles !== null && (
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                            item.disponibles === 0
+                              ? 'bg-red-50 text-red-600'
+                              : item.disponibles <= 5
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-green-50 text-green-700'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              item.disponibles === 0 ? 'bg-red-500' : item.disponibles <= 5 ? 'bg-amber-500' : 'bg-green-500'
+                            }`} />
+                            {item.disponibles === 0 ? 'Sin stock' : `${item.disponibles} disponibles`}
+                          </span>
+                        )}
+                        {item.precio_promocion != null && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            <AlertCircle size={10} /> Precio promoción
+                          </span>
+                        )}
+                        {hayDescuento && item.precio_promocion == null && item.precio_unitario > 0 && (
+                          <span className="ml-auto text-xs text-green-700 font-medium tabular-nums">
+                            c/desc: {formatCurrency(precioConDescuento(item.precio_unitario))}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-
-                  {item.precio_promocion != null && (
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-full self-start flex items-center gap-1">
-                      <AlertCircle size={11} /> Precio de promoción aplicado
-                    </span>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 

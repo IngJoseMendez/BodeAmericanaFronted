@@ -512,6 +512,13 @@ export const preciosApi = {
   delete(id) { return api.delete(`/precios/${id}`); },
 };
 
+export const auditoriaApi = {
+  getAll(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return api.get(`/auditoria${q ? '?' + q : ''}`);
+  },
+};
+
 export const preciosPromocionApi = {
   getAll(params = {}) {
     const query = new URLSearchParams(params).toString();

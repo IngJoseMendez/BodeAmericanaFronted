@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
-import { preciosPromocionApi, tiposPacaApi } from '../services/api';
+import { preciosPromocionApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Percent } from 'lucide-react';
 
 const formatCurrency = (v) =>
@@ -21,11 +22,9 @@ const isActive = (row) => {
 const emptyForm = { referencia: '', calidad: '', precio_promocional: '', fecha_inicio: '', fecha_fin: '', activo: true };
 
 export default function PreciosPromocion() {
-  const [promos, setPromos]           = useState([]);
-  const [referencias, setReferencias] = useState([]);
-  const [calidades, setCalidades]     = useState([]);
-  const [temporadas, setTemporadas]   = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const [promos, setPromos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { categorias: referencias, calidades, temporadas } = useCatalog();
   const [modalOpen, setModalOpen]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form, setForm]             = useState(emptyForm);
@@ -33,20 +32,12 @@ export default function PreciosPromocion() {
   const [saving, setSaving]         = useState(false);
 
   const { addToast } = useToast();
-  const { confirm }  = useConfirm();
+  const confirm = useConfirm();
 
   useEffect(() => {
-    Promise.all([
-      preciosPromocionApi.getAll(),
-      tiposPacaApi.getCategorias(),
-      tiposPacaApi.getCalidades(),
-      tiposPacaApi.getTemporadas(),
-    ]).then(([p, r, q, t]) => {
-      setPromos(p);
-      setReferencias(r);
-      setCalidades(q);
-      setTemporadas(t);
-    }).catch(() => addToast('Error cargando datos', 'error'))
+    preciosPromocionApi.getAll()
+      .then(setPromos)
+      .catch(() => addToast('Error cargando promociones', 'error'))
       .finally(() => setLoading(false));
   }, []);
 

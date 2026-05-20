@@ -25,6 +25,7 @@ const ROUTE_NAMES = {
   '/precios':              'Precios Preestablecidos',
   '/precios-promocion':    'Precios de Promoción',
   '/gestion-usuarios':     'Usuarios',
+  '/auditoria':            'Auditoría',
 };
 
 function Breadcrumbs({ location }) {

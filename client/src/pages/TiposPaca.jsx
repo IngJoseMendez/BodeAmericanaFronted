@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
 import { tiposPacaApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X } from 'lucide-react';
 
 export default function TiposPaca() {
@@ -36,6 +37,7 @@ export default function TiposPaca() {
 
   const { addToast } = useToast();
   const confirm = useConfirm();
+  const { reload: reloadCatalog } = useCatalog();
 
   useEffect(() => {
     loadTipos(); loadCategorias(); loadCalidades(); loadTemporadas();
@@ -75,6 +77,7 @@ export default function TiposPaca() {
       setTipos(prev => [...prev, created]);
       setNuevoTipo({ nombre: '', descripcion: '' });
       addToast(`Clasificación "${created.nombre}" creada`, 'success');
+      reloadCatalog();
     } catch (err) { setErrorTipo(err.message); }
     finally { setGuardandoTipo(false); }
   };
@@ -87,6 +90,7 @@ export default function TiposPaca() {
       setCategorias(prev => [...prev, created]);
       setNuevaCategoria({ nombre: '', descripcion: '', temporada_id: '' });
       addToast(`Referencia "${created.nombre}" creada`, 'success');
+      reloadCatalog();
     } catch (err) { setErrorCat(err.message); }
     finally { setGuardandoCat(false); }
   };
@@ -99,6 +103,7 @@ export default function TiposPaca() {
       setCalidades(prev => [...prev, created]);
       setNuevaCalidad({ nombre: '', descripcion: '' });
       addToast(`Calidad "${created.nombre}" creada`, 'success');
+      reloadCatalog();
     } catch (err) { setErrorCal(err.message); }
     finally { setGuardandoCal(false); }
   };
@@ -111,6 +116,7 @@ export default function TiposPaca() {
       setTemporadas(prev => [...prev, created]);
       setNuevaTemporada({ nombre: '', descripcion: '' });
       addToast(`Categoría "${created.nombre}" creada`, 'success');
+      reloadCatalog();
     } catch (err) { setErrorTemp(err.message); }
     finally { setGuardandoTemp(false); }
   };
@@ -122,6 +128,7 @@ export default function TiposPaca() {
       await tiposPacaApi.deleteTipo(tipo.id);
       setTipos(prev => prev.filter(t => t.id !== tipo.id));
       addToast(`Clasificación "${tipo.nombre}" eliminada`, 'success');
+      reloadCatalog();
     } catch (err) { addToast(err.message, 'error'); }
   };
   const handleEliminarCategoria = async (cat) => {
@@ -131,6 +138,7 @@ export default function TiposPaca() {
       await tiposPacaApi.deleteCategoria(cat.id);
       setCategorias(prev => prev.filter(c => c.id !== cat.id));
       addToast(`Referencia "${cat.nombre}" eliminada`, 'success');
+      reloadCatalog();
     } catch (err) { addToast(err.message, 'error'); }
   };
   const handleEliminarCalidad = async (cal) => {
@@ -140,6 +148,7 @@ export default function TiposPaca() {
       await tiposPacaApi.deleteCalidad(cal.id);
       setCalidades(prev => prev.filter(c => c.id !== cal.id));
       addToast(`Calidad "${cal.nombre}" eliminada`, 'success');
+      reloadCatalog();
     } catch (err) { addToast(err.message, 'error'); }
   };
   const handleEliminarTemporada = async (temp) => {
@@ -149,6 +158,7 @@ export default function TiposPaca() {
       await tiposPacaApi.deleteTemporada(temp.id);
       setTemporadas(prev => prev.filter(t => t.id !== temp.id));
       addToast(`Categoría "${temp.nombre}" eliminada`, 'success');
+      reloadCatalog();
     } catch (err) { addToast(err.message, 'error'); }
   };
 
@@ -176,6 +186,7 @@ export default function TiposPaca() {
       }
       addToast('Nombre actualizado', 'success');
       setEditando(null);
+      reloadCatalog();
     } catch (err) {
       addToast(err.message, 'error');
     } finally {

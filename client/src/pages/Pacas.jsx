@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
-import { pacasApi, lotesApi, tiposPacaApi, reservasApi, clientesApi } from '../services/api';
+import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { PACA_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -43,10 +44,11 @@ export default function Pacas() {
   const [inventarioAgrupado, setInventarioAgrupado] = useState([]);
   const [loadingAgrupado, setLoadingAgrupado] = useState(false);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
-  const [tiposList,      setTiposList]      = useState([]);
-  const [categoriasList, setCategoriasList] = useState([]);
-  const [calidadesList,  setCalidadesList]  = useState([]);
-  const [temporadasList, setTemporadasList] = useState([]);
+  const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
+  const tiposList      = tiposRaw.map(t => t.nombre);
+  const categoriasList = categoriasRaw.map(c => c.nombre);
+  const calidadesList  = calidadesRaw.map(c => c.nombre);
+  const temporadasList = temporadasRaw.map(t => t.nombre);
   const { addToast } = useToast();
   const confirm = useConfirm();
   
@@ -71,7 +73,6 @@ export default function Pacas() {
 
   useEffect(() => {
     loadLotes();
-    loadTiposYCategorias();
     loadClientes();
   }, []);
 
@@ -133,25 +134,6 @@ export default function Pacas() {
     }
   };
 
-  const loadTiposYCategorias = async () => {
-    try {
-      const [tipos, cats, cals, temps] = await Promise.all([
-        tiposPacaApi.getTipos(),
-        tiposPacaApi.getCategorias(),
-        tiposPacaApi.getCalidades(),
-        tiposPacaApi.getTemporadas(),
-      ]);
-      setTiposList(tipos.map(t => t.nombre));
-      setCategoriasList(cats.map(c => c.nombre));
-      setCalidadesList(cals.map(c => c.nombre));
-      setTemporadasList(temps.map(t => t.nombre));
-    } catch (err) {
-      setTiposList(['mixta', 'hombre', 'mujer', 'nino']);
-      setCategoriasList(['mixta', 'chaqueta', 'pantalón', 'shorts', 'blusa', 'vestido']);
-      setCalidadesList(['premium', 'supreme', 'especial']);
-      setTemporadasList(['verano', 'invierno']);
-    }
-  };
 
   const loadClientes = async () => {
     try {

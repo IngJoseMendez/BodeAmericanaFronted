@@ -4,8 +4,9 @@ import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, Emp
 import { cuentasPagarApi, contenedoresApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
-  Search, Package2, ChevronDown, ChevronRight,
+  Search, Package2, ChevronDown, ChevronRight, Download,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 
 const formatCurrency = (value, moneda = 'COP') => {
   if (moneda === 'USD') {
@@ -188,6 +189,44 @@ export default function CuentasPagar() {
     !search || c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) || c.numero?.includes(search)
   );
 
+  const exportarExcel = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Cuentas por Pagar');
+    ws.columns = [
+      { header: 'Proveedor',         key: 'proveedor',  width: 28 },
+      { header: 'Contenedor',        key: 'contenedor', width: 16 },
+      { header: 'Moneda',            key: 'moneda',     width: 10 },
+      { header: 'Total Factura',     key: 'total',      width: 18 },
+      { header: 'Total Abonado',     key: 'abonado',    width: 18 },
+      { header: 'Saldo Pendiente',   key: 'saldo',      width: 18 },
+      { header: 'Estado',            key: 'estado',     width: 12 },
+      { header: 'Fecha Creación',    key: 'fecha',      width: 16 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    filtered.forEach(c => {
+      ws.addRow({
+        proveedor:  c.proveedor_nombre || '—',
+        contenedor: c.contenedor_numero || 'Manual',
+        moneda:     c.moneda || 'COP',
+        total:      parseFloat(c.total_factura) || 0,
+        abonado:    parseFloat(c.total_abonado) || 0,
+        saldo:      (parseFloat(c.total_factura) || 0) - (parseFloat(c.total_abonado) || 0),
+        estado:     c.estado,
+        fecha:      c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—',
+      });
+    });
+    ['total', 'abonado', 'saldo'].forEach(k => {
+      ws.getColumn(k).numFmt = '#,##0.00';
+    });
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `cuentas-pagar-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   const grupos = {};
   filtered.forEach(c => {
     const key = c.contenedor_id ? String(c.contenedor_id) : 'sin';
@@ -246,6 +285,10 @@ export default function CuentasPagar() {
             <option value="parcial">Parcial</option>
             <option value="pagada">Pagada</option>
           </select>
+          <button onClick={exportarExcel}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+            <Download size={15} /> Excel
+          </button>
           <Button onClick={() => setCreateModalOpen(true)} variant="secondary">
             <Plus size={16} /> Nueva Cuenta
           </Button>

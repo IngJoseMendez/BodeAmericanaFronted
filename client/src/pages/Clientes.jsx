@@ -3,7 +3,8 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { clientesApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download } from 'lucide-react';
+import ExcelJS from 'exceljs';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -143,6 +144,42 @@ export default function Clientes() {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
+  const exportarExcel = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Clientes');
+    ws.columns = [
+      { header: 'Nombre',          key: 'nombre',    width: 28 },
+      { header: 'Teléfono',        key: 'telefono',  width: 16 },
+      { header: 'Ciudad',          key: 'ciudad',    width: 18 },
+      { header: 'Tipo',            key: 'tipo',      width: 14 },
+      { header: 'Estado',          key: 'estado',    width: 12 },
+      { header: 'Límite Crédito',  key: 'limite',    width: 18 },
+      { header: 'Descuento %',     key: 'descuento', width: 14 },
+      { header: 'Fecha Registro',  key: 'fecha',     width: 16 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    clientes.forEach(c => {
+      ws.addRow({
+        nombre:    c.nombre,
+        telefono:  c.telefono || '—',
+        ciudad:    c.ciudad || '—',
+        tipo:      c.tipo_cliente,
+        estado:    c.estado,
+        limite:    parseFloat(c.limite_credito) || 0,
+        descuento: parseFloat(c.descuento) || 0,
+        fecha:     c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—',
+      });
+    });
+    ws.getColumn('limite').numFmt = '#,##0.00';
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `clientes-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <Layout title="Clientes" subtitle={`${clientes.length} clientes registrados`}>
       <div className="space-y-6">
@@ -175,6 +212,10 @@ export default function Clientes() {
               <option value="">Todos los estados</option>
               {CLIENTE_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
+            <button onClick={exportarExcel}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+              <Download size={15} /> Excel
+            </button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nuevo Cliente
             </Button>

@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
-import { contenedoresApi, tiposPacaApi, preciosApi } from '../services/api';
+import { contenedoresApi, preciosApi } from '../services/api';
+import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -343,17 +344,11 @@ export default function Contenedores() {
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
-  const [tiposOpts,      setTiposOpts]      = useState([]);
-  const [categoriasOpts, setCategoriasOpts] = useState([]);
-  const [calidadesOpts,  setCalidadesOpts]  = useState([]);
-  const [temporadasOpts, setTemporadasOpts] = useState([]);
-
-  useEffect(() => {
-    tiposPacaApi.getTipos().then(d => setTiposOpts(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getCategorias().then(d => setCategoriasOpts(d)).catch(() => {});
-    tiposPacaApi.getCalidades().then(d => setCalidadesOpts(d.map(t => t.nombre))).catch(() => {});
-    tiposPacaApi.getTemporadas().then(d => setTemporadasOpts(d.map(t => t.nombre))).catch(() => {});
-  }, []);
+  const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
+  const tiposOpts      = tiposRaw.map(t => t.nombre);
+  const categoriasOpts = categoriasRaw;
+  const calidadesOpts  = calidadesRaw.map(t => t.nombre);
+  const temporadasOpts = temporadasRaw.map(t => t.nombre);
 
   // ── Form ───────────────────────────────────────────────────────
   const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });
@@ -939,25 +934,31 @@ export default function Contenedores() {
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
-      const combSet = new Set();
-      full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) =>
-        combSet.add(`${d.categoria || ''}|${d.clasificacion}|${d.referencia}|${d.calidad || ''}`)
-      ));
-      const combs = Array.from(combSet).map((c) => {
-        const [categoria, clasificacion, referencia, calidad] = c.split('|');
-        return { categoria, clasificacion, referencia, calidad, key: c };
-      });
+      const combMap = new Map();
+      full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => {
+        const key = `${d.categoria || ''}|${d.clasificacion}|${d.referencia}|${d.calidad || ''}`;
+        if (!combMap.has(key)) {
+          combMap.set(key, {
+            categoria: d.categoria || '',
+            clasificacion: d.clasificacion,
+            referencia: d.referencia,
+            calidad: d.calidad || '',
+            key,
+          });
+        }
+      }));
+      const combs = Array.from(combMap.values());
       setCombsFinalizacion(combs);
 
       // Autocompletar precios preestablecidos — una sola llamada por par único (categoria+calidad)
       const uniquePairs = [...new Set(
-        combs.filter(c => c.categoria && c.calidad).map(c => `${c.categoria}|||${c.calidad}`)
+        combs.filter(c => c.categoria && c.calidad).map(c => `${c.categoria.trim()}|||${c.calidad.trim()}`)
       )];
       const presetMap = {};
       await Promise.all(uniquePairs.map(async (pk) => {
         const sep = pk.indexOf('|||');
-        const categoria = pk.slice(0, sep);
-        const calidad = pk.slice(sep + 3);
+        const categoria = pk.slice(0, sep).trim();
+        const calidad = pk.slice(sep + 3).trim();
         try {
           const preset = await preciosApi.buscar({ categoria, calidad });
           if (preset && preset.precio > 0) presetMap[pk] = preset.precio;
@@ -966,7 +967,7 @@ export default function Contenedores() {
       const init = {};
       const autoKeys = new Set();
       for (const c of combs) {
-        const pk = `${c.categoria}|||${c.calidad}`;
+        const pk = `${c.categoria.trim()}|||${c.calidad.trim()}`;
         if (c.categoria && c.calidad && presetMap[pk]) {
           init[c.key] = String(presetMap[pk]);
           autoKeys.add(c.key);
