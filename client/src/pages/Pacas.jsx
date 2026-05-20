@@ -280,11 +280,22 @@ export default function Pacas() {
     return res.data || res;
   };
 
+  const fetchInventarioAgrupadoActual = async () => {
+    const params = {};
+    if (filtroEstado)    params.estado = filtroEstado;
+    if (filtroTipo)      params.tipo   = filtroTipo;
+    if (debouncedSearch) params.buscar = debouncedSearch;
+    return await pacasApi.getInventario(params);
+  };
+
   const exportarInventarioExcel = async () => {
     try {
       setExporting(true);
-      const datos = await fetchInventarioActual();
-      if (!datos.length) {
+      const [datos, agrupado] = await Promise.all([
+        fetchInventarioActual(),
+        fetchInventarioAgrupadoActual(),
+      ]);
+      if (!datos.length && !agrupado.length) {
         addToast('No hay datos para exportar', 'warning');
         return;
       }
@@ -292,16 +303,19 @@ export default function Pacas() {
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Comercio Global Logístico';
       wb.created = new Date();
-      const ws = wb.addWorksheet('Inventario Pacas');
+
+      // ── Hoja 1: Detallado (pacas individuales) ─────────────────
+      const ws = wb.addWorksheet('Detallado');
       ws.properties.tabColor = { argb: '0f172a' };
 
       ws.columns = [
         { header: 'Clasificación',   key: 'clasificacion', width: 18 },
         { header: 'Referencia',     key: 'referencia', width: 14 },
+        { header: 'Calidad',        key: 'calidad',    width: 12 },
         { header: 'Peso (kg)',       key: 'peso',       width: 11 },
         { header: 'Costo Base',     key: 'costo',      width: 16 },
         { header: 'Precio Venta',   key: 'precio',     width: 16 },
-        { header: 'Lote',           key: 'lote',       width: 16 },
+        { header: 'Contenedor',     key: 'contenedor', width: 18 },
         { header: 'Estado',         key: 'estado',     width: 13 },
         { header: 'Cotización',     key: 'cot_numero', width: 16 },
         { header: 'Cliente Reserva',key: 'cot_cliente',width: 22 },
@@ -317,17 +331,18 @@ export default function Pacas() {
       });
       ws.getRow(1).height = 22;
 
-      const sepColor = 'FFF8E6'; // fondo suave naranja para separadas
+      const sepColor = 'FFF8E6';
       datos.forEach((p, idx) => {
         const isSep = p.estado === 'separada';
         const bg = isSep ? sepColor : (idx % 2 === 0 ? 'FFFFFF' : 'FAF9F7');
         const row = ws.addRow({
           clasificacion: p.clasificacion,
           referencia:    p.referencia,
+          calidad:       p.calidad || '',
           peso:       parseFloat(p.peso) || 0,
           costo:      parseFloat(p.costo_base) || 0,
           precio:     parseFloat(p.precio_venta) || 0,
-          lote:       getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
+          contenedor: p.contenedor_numero || 'Sin contenedor',
           estado:     p.estado,
           cot_numero: isSep ? (p.cotizacion_numero || '') : '',
           cot_cliente:isSep ? (p.cotizacion_cliente || '') : '',
@@ -350,14 +365,82 @@ export default function Pacas() {
       ws.getColumn('precio').numFmt = '$#,##0.00';
       ws.getColumn('cot_precio').numFmt = '$#,##0.00';
 
+      // ── Hoja 2: Agrupado (cantidades por tipo) ─────────────────
+      const wsAg = wb.addWorksheet('Agrupado');
+      wsAg.properties.tabColor = { argb: '6366f1' };
+
+      wsAg.columns = [
+        { header: 'Contenedor',     key: 'contenedor',     width: 18 },
+        { header: 'Categoría',      key: 'categoria',      width: 14 },
+        { header: 'Clasificación',  key: 'clasificacion',  width: 18 },
+        { header: 'Referencia',     key: 'referencia',     width: 14 },
+        { header: 'Calidad',        key: 'calidad',        width: 12 },
+        { header: 'Estado',         key: 'estado',         width: 13 },
+        { header: 'Cantidad',       key: 'cantidad',       width: 11 },
+        { header: 'Costo Unit.',    key: 'costo_unit',     width: 14 },
+        { header: 'Precio Unit.',   key: 'precio_unit',    width: 14 },
+        { header: 'Costo Total',    key: 'costo_total',    width: 16 },
+        { header: 'Precio Total',   key: 'precio_total',   width: 16 },
+      ];
+
+      wsAg.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 10 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '6366f1' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { bottom: { style: 'thin', color: { argb: '0f172a' } } };
+      });
+      wsAg.getRow(1).height = 22;
+
+      agrupado.forEach((row, idx) => {
+        const bg = idx % 2 === 0 ? 'FFFFFF' : 'F5F3FF';
+        const r = wsAg.addRow({
+          contenedor:    row.contenedor,
+          categoria:     row.categoria || '',
+          clasificacion: row.clasificacion,
+          referencia:    row.referencia,
+          calidad:       row.calidad || '',
+          estado:        row.estado,
+          cantidad:      parseInt(row.cantidad) || 0,
+          costo_unit:    parseFloat(row.costo_unitario) || 0,
+          precio_unit:   parseFloat(row.precio_unitario) || 0,
+          costo_total:   parseFloat(row.costo_total) || 0,
+          precio_total:  parseFloat(row.precio_total) || 0,
+        });
+        r.eachCell({ includeEmpty: true }, (cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.font = { size: 10 };
+          cell.alignment = { vertical: 'middle' };
+        });
+        r.getCell('cantidad').font = { bold: true, size: 10 };
+        r.height = 18;
+      });
+
+      // Fila de total
+      const totalCantidad = agrupado.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
+      const totalCosto    = agrupado.reduce((s, r) => s + (parseFloat(r.costo_total) || 0), 0);
+      const totalPrecio   = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
+      const totalRow = wsAg.addRow({
+        contenedor: 'TOTAL', cantidad: totalCantidad,
+        costo_total: totalCosto, precio_total: totalPrecio,
+      });
+      totalRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
+      });
+
+      wsAg.getColumn('costo_unit').numFmt   = '$#,##0.00';
+      wsAg.getColumn('precio_unit').numFmt  = '$#,##0.00';
+      wsAg.getColumn('costo_total').numFmt  = '$#,##0.00';
+      wsAg.getColumn('precio_total').numFmt = '$#,##0.00';
+
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `Inventario_Pacas_${new Date().toISOString().split('T')[0]}.xlsx`;
       link.click();
-      
-      addToast('Excel exportado', 'success');
+
+      addToast('Excel exportado (Detallado + Agrupado)', 'success');
     } catch (err) {
       addToast('Error al exportar Excel', 'error');
     } finally {
@@ -368,41 +451,104 @@ export default function Pacas() {
   const exportarInventarioPDF = async () => {
     try {
       setExporting(true);
-      const datos = await fetchInventarioActual();
-      if (!datos.length) {
+      const [datos, agrupado] = await Promise.all([
+        fetchInventarioActual(),
+        fetchInventarioAgrupadoActual(),
+      ]);
+      if (!datos.length && !agrupado.length) {
         addToast('No hay datos para exportar', 'warning');
         return;
       }
 
-      const doc = new jsPDF();
-      
-      doc.setFontSize(18);
-      doc.text('Comercio Global Logístico - Inventario', 14, 20);
-      
-      doc.setFontSize(11);
-      doc.text(`Fecha de reporte: ${new Date().toLocaleDateString('es-MX')}`, 14, 28);
-      doc.text(`Total de pacas: ${datos.length}`, 14, 34);
+      const doc = new jsPDF({ orientation: 'landscape' });
 
-      const tableData = datos.map(p => [
-        p.clasificacion,
-        p.referencia,
-        `${p.peso} kg`,
-        formatCurrency(p.precio_venta),
-        getLoteNumero(p.lote_id) || (p.lote_id ? `#${p.lote_id}` : 'Sin lote'),
-        p.estado
-      ]);
+      // ── Encabezado ────────────────────────────────────────────
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('Comercio Global Logístico — Inventario', 14, 18);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Fecha de reporte: ${new Date().toLocaleDateString('es-MX')}`, 14, 25);
+
+      const totalPacas = datos.length;
+      const totalCantidad = agrupado.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
+      const totalPrecio   = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
+      doc.text(`Pacas individuales: ${totalPacas}   ·   Total agrupado: ${totalCantidad}   ·   Valor: ${formatCurrency(totalPrecio)}`, 14, 31);
+
+      // ── Sección 1: Vista Agrupada ─────────────────────────────
+      doc.setFontSize(13);
+      doc.setFont(undefined, 'bold');
+      doc.text('Vista Agrupada (cantidad por tipo)', 14, 41);
 
       autoTable(doc, {
-        startY: 40,
-        head: [['Clasificación', 'Referencia', 'Peso', 'Precio Venta', 'Lote', 'Estado']],
-        body: tableData,
+        startY: 45,
+        head: [['Contenedor', 'Categoría', 'Clasificación', 'Referencia', 'Calidad', 'Estado', 'Cant.', 'Costo Unit.', 'Precio Unit.', 'Precio Total']],
+        body: agrupado.map(r => [
+          r.contenedor || 'Sin contenedor',
+          r.categoria || '—',
+          r.clasificacion,
+          r.referencia,
+          r.calidad || '—',
+          r.estado,
+          parseInt(r.cantidad) || 0,
+          formatCurrency(r.costo_unitario),
+          formatCurrency(r.precio_unitario),
+          formatCurrency(r.precio_total),
+        ]),
+        foot: [[
+          'TOTAL', '', '', '', '', '',
+          totalCantidad, '', '',
+          formatCurrency(totalPrecio),
+        ]],
         theme: 'striped',
-        headStyles: { fillColor: [26, 26, 46] },
-        styles: { fontSize: 9 }
+        headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
+        footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          6: { halign: 'right', fontStyle: 'bold' },
+          7: { halign: 'right' },
+          8: { halign: 'right' },
+          9: { halign: 'right' },
+        },
+      });
+
+      // ── Sección 2: Vista Detallada (pacas individuales) ───────
+      doc.addPage();
+      doc.setFontSize(13);
+      doc.setFont(undefined, 'bold');
+      doc.text('Vista Detallada (pacas individuales)', 14, 18);
+
+      autoTable(doc, {
+        startY: 23,
+        head: [['Clasificación', 'Referencia', 'Calidad', 'Peso', 'Costo', 'Precio Venta', 'Contenedor', 'Estado', 'Cotización']],
+        body: datos.map(p => [
+          p.clasificacion,
+          p.referencia,
+          p.calidad || '—',
+          `${p.peso} kg`,
+          formatCurrency(p.costo_base),
+          formatCurrency(p.precio_venta),
+          p.contenedor_numero || 'Sin contenedor',
+          p.estado,
+          p.estado === 'separada' ? (p.cotizacion_numero || '—') : '—',
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+        },
+        didParseCell: (data) => {
+          // Resaltar filas con estado "separada"
+          if (data.section === 'body' && datos[data.row.index]?.estado === 'separada') {
+            data.cell.styles.fillColor = [255, 248, 230];
+          }
+        },
       });
 
       doc.save(`Inventario_Pacas_${new Date().toISOString().split('T')[0]}.pdf`);
-      addToast('PDF exportado', 'success');
+      addToast('PDF exportado (Agrupado + Detallado)', 'success');
     } catch (err) {
       addToast('Error al exportar PDF: ' + err.message, 'error');
     } finally {
@@ -535,7 +681,7 @@ export default function Pacas() {
               <table className="w-full">
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Lote</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
@@ -557,7 +703,7 @@ export default function Pacas() {
                     inventarioAgrupado.map((row, idx) => (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
                         <td className="px-4 py-2.5">
-                          <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.lote}</span>
+                          <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.contenedor}</span>
                         </td>
                         <td className="px-4 py-2.5 text-sm text-muted">{row.categoria || <span className="text-muted/40">—</span>}</td>
                         <td className="px-4 py-2.5 text-sm font-semibold text-primary capitalize">{row.clasificacion}</td>
@@ -589,7 +735,7 @@ export default function Pacas() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Lote</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado / Cotización</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                   </tr>
@@ -614,12 +760,12 @@ export default function Pacas() {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          {paca.lote_id ? (
+                          {paca.contenedor_numero ? (
                             <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">
-                              {getLoteNumero(paca.lote_id) || `#${paca.lote_id}`}
+                              {paca.contenedor_numero}
                             </span>
                           ) : (
-                            <span className="text-xs text-muted">Sin lote</span>
+                            <span className="text-xs text-muted">Sin contenedor</span>
                           )}
                         </td>
                         <td className="px-4 py-3">
