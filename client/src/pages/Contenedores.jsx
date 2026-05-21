@@ -899,44 +899,225 @@ export default function Contenedores() {
       wsR.getRow(r).height = 18;
     });
 
+    // ── Estilos compartidos ──────────────────────────────────────────
+    const thinBorder = {
+      top:    { style: 'thin', color: { argb: 'E5E7EB' } },
+      bottom: { style: 'thin', color: { argb: 'E5E7EB' } },
+      left:   { style: 'thin', color: { argb: 'E5E7EB' } },
+      right:  { style: 'thin', color: { argb: 'E5E7EB' } },
+    };
+    const rowStripe = (idx) => idx % 2 === 0 ? 'FFFFFF' : 'F8FAFC';
+
+    const drawTableHeader = (ws, headers, headerRow) => {
+      headers.forEach((h, i) => {
+        const c = ws.getCell(`${String.fromCharCode(65 + i)}${headerRow}`);
+        c.value = h;
+        c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        c.border = thinBorder;
+      });
+      ws.getRow(headerRow).height = 24;
+    };
+
     // ── Hoja Mercancía ───────────────────────────────────────────────
     const wsM = wb.addWorksheet('Mercancía');
-    wsM.columns = [{ width: 24 }, { width: 8 }, { width: 18 }, { width: 18 }, { width: 18 }];
-    addHeader(wsM, 'PROVEEDORES DE MERCANCÍA', 'A1:E1');
-    ['Proveedor', 'Moneda', 'Costo Original', 'Costo COP', 'Costo/Paca'].forEach((h, i) => {
-      const c = wsM.getCell(`${String.fromCharCode(65+i)}2`);
-      c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
+    wsM.properties.tabColor = { argb: secondary };
+    wsM.columns = [
+      { width: 22 }, // A Proveedor
+      { width: 14 }, // B Categoría
+      { width: 16 }, // C Clasificación
+      { width: 16 }, // D Referencia
+      { width: 14 }, // E Calidad
+      { width: 10 }, // F Cantidad
+      { width: 14 }, // G Costo Unit
+      { width: 8 },  // H Moneda
+      { width: 16 }, // I Subtotal Moneda
+      { width: 18 }, // J Subtotal COP
+      { width: 16 }, // K Costo/Paca COP
+    ];
+    addHeader(wsM, `MERCANCÍA — Contenedor ${full.numero}`, 'A1:K1');
+
+    drawTableHeader(wsM, [
+      'Proveedor', 'Categoría', 'Clasificación', 'Referencia', 'Calidad',
+      'Cantidad', 'Costo Unit', 'Moneda', 'Subtotal', 'Subtotal COP', 'Costo/Paca COP'
+    ], 2);
+
+    let mRow = 3;
+    let mIdx = 0;
+    let totalMercanciaCOP = 0;
+    (full.proveedores_mercancia || []).forEach((p) => {
+      const moneda = p.moneda || 'USD';
+      const factor = moneda === 'USD' ? tasa : 1;
+      const provStart = mRow;
+      (p.detalles || []).forEach((d) => {
+        const cantidad = parseInt(d.cantidad) || 0;
+        const costoUnit = parseFloat(d.costo_unitario) || 0;
+        const subtotal = cantidad * costoUnit;
+        const subtotalCOP = subtotal * factor;
+        const costoPorPaca = totalPacas > 0 ? subtotalCOP / totalPacas : 0;
+        totalMercanciaCOP += subtotalCOP;
+
+        const bg = rowStripe(mIdx);
+        wsM.getCell(`A${mRow}`).value = p.proveedor_nombre;
+        wsM.getCell(`B${mRow}`).value = d.categoria || '—';
+        wsM.getCell(`C${mRow}`).value = d.clasificacion;
+        wsM.getCell(`D${mRow}`).value = d.referencia;
+        wsM.getCell(`E${mRow}`).value = d.calidad || '—';
+        wsM.getCell(`F${mRow}`).value = cantidad;
+        wsM.getCell(`G${mRow}`).value = costoUnit;
+        wsM.getCell(`G${mRow}`).numFmt = '#,##0.00';
+        wsM.getCell(`H${mRow}`).value = moneda;
+        wsM.getCell(`I${mRow}`).value = subtotal;
+        wsM.getCell(`I${mRow}`).numFmt = '#,##0.00';
+        wsM.getCell(`J${mRow}`).value = subtotalCOP;
+        wsM.getCell(`J${mRow}`).numFmt = '$ #,##0';
+        wsM.getCell(`K${mRow}`).value = costoPorPaca;
+        wsM.getCell(`K${mRow}`).numFmt = '$ #,##0.00';
+
+        ['A','B','C','D','E','F','G','H','I','J','K'].forEach((col, ci) => {
+          const cell = wsM.getCell(`${col}${mRow}`);
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          cell.font = { size: 10, ...(cell.font || {}) };
+          cell.alignment = {
+            horizontal: ['F','G','I','J','K'].includes(col) ? 'right' : (col === 'H' ? 'center' : 'left'),
+            vertical: 'middle',
+          };
+          cell.border = thinBorder;
+        });
+        wsM.getRow(mRow).height = 19;
+        mRow++; mIdx++;
+      });
+
+      // Subtotal por proveedor
+      if ((p.detalles || []).length > 0) {
+        const provEnd = mRow;
+        wsM.mergeCells(`A${provEnd}:H${provEnd}`);
+        wsM.getCell(`A${provEnd}`).value = `Subtotal — ${p.proveedor_nombre}`;
+        wsM.getCell(`A${provEnd}`).font = { bold: true, size: 10, color: { argb: primary } };
+        wsM.getCell(`A${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
+        wsM.getCell(`A${provEnd}`).alignment = { horizontal: 'right', vertical: 'middle' };
+
+        const subProvOriginal = (p.detalles || []).reduce(
+          (s, d) => s + ((parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0)), 0
+        );
+        const subProvCOP = subProvOriginal * factor;
+
+        wsM.getCell(`I${provEnd}`).value = subProvOriginal;
+        wsM.getCell(`I${provEnd}`).numFmt = '#,##0.00';
+        wsM.getCell(`J${provEnd}`).value = subProvCOP;
+        wsM.getCell(`J${provEnd}`).numFmt = '$ #,##0';
+        ['I','J','K'].forEach(col => {
+          wsM.getCell(`${col}${provEnd}`).font = { bold: true, size: 10, color: { argb: primary } };
+          wsM.getCell(`${col}${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
+          wsM.getCell(`${col}${provEnd}`).alignment = { horizontal: 'right', vertical: 'middle' };
+          wsM.getCell(`${col}${provEnd}`).border = thinBorder;
+        });
+        ['A','B','C','D','E','F','G','H'].forEach(col => {
+          wsM.getCell(`${col}${provEnd}`).border = thinBorder;
+        });
+        wsM.getRow(provEnd).height = 20;
+        mRow++; mIdx = 0; // reset stripe per provider
+      }
     });
-    wsM.getRow(2).height = 20;
-    (full.proveedores_mercancia || []).forEach((p, i) => {
-      const r = i + 3;
-      const costoCOP = p.moneda === 'USD' ? parseFloat(p.costo) * tasa : parseFloat(p.costo);
-      wsM.getCell(`A${r}`).value = p.proveedor_nombre;
-      wsM.getCell(`B${r}`).value = p.moneda || 'USD';
-      wsM.getCell(`C${r}`).value = parseFloat(p.costo); wsM.getCell(`C${r}`).numFmt = '#,##0.00';
-      wsM.getCell(`D${r}`).value = costoCOP;             wsM.getCell(`D${r}`).numFmt = '$ #,##0';
-      wsM.getCell(`E${r}`).value = totalPacas > 0 ? costoCOP / totalPacas : 0; wsM.getCell(`E${r}`).numFmt = '$ #,##0';
-      wsM.getRow(r).height = 18;
-    });
+
+    // Total general mercancía
+    wsM.mergeCells(`A${mRow}:I${mRow}`);
+    wsM.getCell(`A${mRow}`).value = 'TOTAL MERCANCÍA (COP)';
+    wsM.getCell(`A${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    wsM.getCell(`A${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    wsM.getCell(`A${mRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+    wsM.getCell(`J${mRow}`).value = totalMercanciaCOP;
+    wsM.getCell(`J${mRow}`).numFmt = '$ #,##0';
+    wsM.getCell(`J${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    wsM.getCell(`J${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    wsM.getCell(`J${mRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+    wsM.getCell(`K${mRow}`).value = totalPacas > 0 ? totalMercanciaCOP / totalPacas : 0;
+    wsM.getCell(`K${mRow}`).numFmt = '$ #,##0.00';
+    wsM.getCell(`K${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    wsM.getCell(`K${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    wsM.getCell(`K${mRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+    wsM.getRow(mRow).height = 24;
 
     // ── Hoja Servicios ───────────────────────────────────────────────
     const wsS = wb.addWorksheet('Servicios');
-    wsS.columns = [{ width: 16 }, { width: 24 }, { width: 18 }, { width: 18 }];
-    addHeader(wsS, 'SERVICIOS', 'A1:D1');
-    ['Tipo', 'Proveedor', 'Costo COP', 'Costo/Paca'].forEach((h, i) => {
-      const c = wsS.getCell(`${String.fromCharCode(65+i)}2`);
-      c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
-    });
-    wsS.getRow(2).height = 20;
+    wsS.properties.tabColor = { argb: success };
+    wsS.columns = [
+      { width: 18 }, // A Tipo
+      { width: 26 }, // B Proveedor
+      { width: 10 }, // C Moneda
+      { width: 16 }, // D Costo Original
+      { width: 18 }, // E Costo COP
+      { width: 16 }, // F Costo/Paca COP
+      { width: 32 }, // G Notas
+    ];
+    addHeader(wsS, `SERVICIOS — Contenedor ${full.numero}`, 'A1:G1');
+
+    drawTableHeader(wsS, ['Tipo', 'Proveedor', 'Moneda', 'Costo Original', 'Costo COP', 'Costo/Paca COP', 'Notas'], 2);
+
+    let sRow = 3;
+    let totalServiciosCOP = 0;
     (full.servicios || []).forEach((s, i) => {
-      const r = i + 3;
-      wsS.getCell(`A${r}`).value = s.tipo_servicio; wsS.getCell(`B${r}`).value = s.proveedor_nombre;
-      wsS.getCell(`C${r}`).value = parseFloat(s.costo); wsS.getCell(`C${r}`).numFmt = '$ #,##0';
-      wsS.getCell(`D${r}`).value = totalPacas > 0 ? parseFloat(s.costo) / totalPacas : 0; wsS.getCell(`D${r}`).numFmt = '$ #,##0';
-      wsS.getRow(r).height = 18;
+      const moneda = s.moneda || 'COP';
+      const costo = parseFloat(s.costo) || 0;
+      const costoCOP = moneda === 'USD' ? costo * tasa : costo;
+      const costoPorPaca = totalPacas > 0 ? costoCOP / totalPacas : 0;
+      totalServiciosCOP += costoCOP;
+      const bg = rowStripe(i);
+
+      wsS.getCell(`A${sRow}`).value = (s.tipo_servicio || '').toString();
+      wsS.getCell(`B${sRow}`).value = s.proveedor_nombre || '—';
+      wsS.getCell(`C${sRow}`).value = moneda;
+      wsS.getCell(`D${sRow}`).value = costo;
+      wsS.getCell(`D${sRow}`).numFmt = '#,##0.00';
+      wsS.getCell(`E${sRow}`).value = costoCOP;
+      wsS.getCell(`E${sRow}`).numFmt = '$ #,##0';
+      wsS.getCell(`F${sRow}`).value = costoPorPaca;
+      wsS.getCell(`F${sRow}`).numFmt = '$ #,##0.00';
+      wsS.getCell(`G${sRow}`).value = s.notas || '';
+
+      ['A','B','C','D','E','F','G'].forEach(col => {
+        const cell = wsS.getCell(`${col}${sRow}`);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        cell.font = { size: 10, ...(col === 'A' ? { bold: true } : {}) };
+        cell.alignment = {
+          horizontal: ['D','E','F'].includes(col) ? 'right' : (col === 'C' ? 'center' : 'left'),
+          vertical: 'middle',
+          wrapText: col === 'G',
+        };
+        cell.border = thinBorder;
+      });
+      // Capitalizar primera letra del tipo
+      if (s.tipo_servicio) {
+        wsS.getCell(`A${sRow}`).value = s.tipo_servicio.charAt(0).toUpperCase() + s.tipo_servicio.slice(1);
+      }
+      wsS.getRow(sRow).height = 22;
+      sRow++;
     });
+
+    // Total general servicios
+    if ((full.servicios || []).length > 0) {
+      wsS.mergeCells(`A${sRow}:D${sRow}`);
+      wsS.getCell(`A${sRow}`).value = 'TOTAL SERVICIOS (COP)';
+      wsS.getCell(`A${sRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+      wsS.getCell(`A${sRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      wsS.getCell(`A${sRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+      wsS.getCell(`E${sRow}`).value = totalServiciosCOP;
+      wsS.getCell(`E${sRow}`).numFmt = '$ #,##0';
+      wsS.getCell(`F${sRow}`).value = totalPacas > 0 ? totalServiciosCOP / totalPacas : 0;
+      wsS.getCell(`F${sRow}`).numFmt = '$ #,##0.00';
+      ['E','F'].forEach(col => {
+        wsS.getCell(`${col}${sRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+        wsS.getCell(`${col}${sRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+        wsS.getCell(`${col}${sRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+      wsS.getRow(sRow).height = 24;
+    } else {
+      wsS.mergeCells(`A${sRow}:G${sRow}`);
+      wsS.getCell(`A${sRow}`).value = 'Sin servicios registrados';
+      wsS.getCell(`A${sRow}`).font = { italic: true, size: 10, color: { argb: '888888' } };
+      wsS.getCell(`A${sRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    }
 
     // ── Hoja Distribución ────────────────────────────────────────────
     const wsD = wb.addWorksheet('Distribución');
@@ -1262,16 +1443,11 @@ export default function Contenedores() {
     setRevisionRows(prev => {
       const next = [...prev];
       const updated = { ...next[idx], [field]: val };
-      // Al cambiar la cantidad recibida, sincroniza siempre la cantidad final.
-      // Si necesitas una final distinta (p.ej. descartar pacas dañadas), edita final después.
+      // Cantidad final siempre refleja lo recibido (lo que entra al inventario).
       if (field === 'cantidad_recibida') updated.cantidad_final = val;
       next[idx] = updated;
       return next;
     });
-  };
-
-  const sincronizarFinalesARecibidas = () => {
-    setRevisionRows(prev => prev.map(r => ({ ...r, cantidad_final: r.cantidad_recibida })));
   };
 
   const handleGuardarRevision = async () => {
@@ -2155,21 +2331,19 @@ export default function Contenedores() {
                 </div>
 
                 {/* Totales globales */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-white rounded-lg px-3 py-2 border border-border/40">
-                    <p className="text-[10px] text-muted uppercase font-semibold">Total enviado</p>
-                    <p className="text-lg font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</p>
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="bg-white rounded-lg px-4 py-3 border border-border/40">
+                    <p className="text-[10px] text-muted uppercase font-semibold">Total Pedido</p>
+                    <p className="text-2xl font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</p>
                   </div>
-                  <div className="bg-white rounded-lg px-3 py-2 border border-blue-200">
-                    <p className="text-[10px] text-blue-600 uppercase font-semibold">Total recibido</p>
-                    <p className="text-lg font-mono font-bold text-blue-700">
-                      {selectedContenedor.proveedores_mercancia.reduce((s, p) =>
-                        s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad_recibida) || 0), 0), 0).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="bg-white rounded-lg px-3 py-2 border border-success/30">
-                    <p className="text-[10px] text-success uppercase font-semibold">Final (inventario)</p>
-                    <p className="text-lg font-mono font-bold text-success">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</p>
+                  <div className="bg-white rounded-lg px-4 py-3 border border-success/30">
+                    <p className="text-[10px] text-success uppercase font-semibold">Total Recibido (al inventario)</p>
+                    <p className="text-2xl font-mono font-bold text-success">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</p>
+                    {parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
+                      <p className="text-xs font-semibold mt-0.5 text-warning">
+                        {parseInt(selectedContenedor.total_pacas_recibidas) - parseInt(selectedContenedor.total_pacas)} vs. pedido
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -2177,7 +2351,6 @@ export default function Contenedores() {
                 {selectedContenedor.proveedores_mercancia.map((prov) => {
                   const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
                   const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
-                  const provFin = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_final) || 0), 0);
                   const provDiff = provRec - provEnv;
                   const hayDiscrepancias = prov.detalles.some(d =>
                     (parseInt(d.cantidad_recibida) || 0) !== (parseInt(d.cantidad) || 0) ||
@@ -2195,11 +2368,9 @@ export default function Contenedores() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-xs font-mono">
-                          <span className="text-muted">Env: <strong className="text-primary">{provEnv}</strong></span>
+                          <span className="text-muted">Pedido: <strong className="text-primary">{provEnv}</strong></span>
                           <ArrowRight size={11} className="text-muted" />
-                          <span className="text-blue-600">Rec: <strong>{provRec}</strong></span>
-                          <ArrowRight size={11} className="text-muted" />
-                          <span className="text-success">Fin: <strong>{provFin}</strong></span>
+                          <span className="text-success">Recibido: <strong>{provRec}</strong></span>
                           {provDiff !== 0 && (
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
                               {provDiff > 0 ? '+' : ''}{provDiff}
@@ -2211,11 +2382,10 @@ export default function Contenedores() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-border/40 bg-primary/2">
-                              <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Lo facturado</th>
+                              <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Producto Pedido</th>
                               <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
-                              <th className="px-3 py-2 text-left font-semibold text-blue-600 uppercase tracking-wider">Lo que llegó</th>
-                              <th className="px-3 py-2 text-center font-semibold text-blue-600 uppercase tracking-wider w-16">Recib.</th>
-                              <th className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-16">Final</th>
+                              <th className="px-3 py-2 text-left font-semibold text-success uppercase tracking-wider">Producto Recibido</th>
+                              <th className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-20">Recibido</th>
                               <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
                             </tr>
                           </thead>
@@ -2223,9 +2393,11 @@ export default function Contenedores() {
                             {prov.detalles.map((det, i) => {
                               const enviado = parseInt(det.cantidad) || 0;
                               const recibido = parseInt(det.cantidad_recibida) || 0;
-                              const final = parseInt(det.cantidad_final) || 0;
                               const diff = recibido - enviado;
                               const cambioTipo = det.clasificacion_recibida || det.referencia_recibida || det.calidad_recibida;
+                              const clasRec = det.clasificacion_recibida || det.clasificacion;
+                              const refRec  = det.referencia_recibida    || det.referencia;
+                              const calRec  = det.calidad_recibida       || det.calidad || '';
                               return (
                                 <tr key={i} className={diff !== 0 || cambioTipo ? 'bg-warning/5' : ''}>
                                   <td className="px-3 py-2">
@@ -2237,20 +2409,28 @@ export default function Contenedores() {
                                   </td>
                                   <td className="px-3 py-2 text-center font-mono font-semibold">{enviado}</td>
                                   <td className="px-3 py-2">
-                                    {cambioTipo ? (
-                                      <span className="capitalize text-blue-700 font-medium">
-                                        {det.clasificacion_recibida || det.clasificacion}
-                                        {' / '}{det.referencia_recibida || det.referencia}
-                                        {(det.calidad_recibida || det.calidad) && <> / <span>{det.calidad_recibida || det.calidad}</span></>}
-                                        <span className="block text-[10px] text-warning italic">⚠ tipo cambiado</span>
-                                      </span>
+                                    {recibido === 0 ? (
+                                      <span className="text-error italic font-medium">No llegó</span>
+                                    ) : cambioTipo ? (
+                                      <>
+                                        <span className="capitalize font-bold text-warning">{clasRec}</span>
+                                        <span className="text-warning"> / </span>
+                                        <span className="capitalize text-warning">{refRec}</span>
+                                        {calRec && <><span className="text-warning"> / </span><span className="capitalize text-warning">{calRec}</span></>}
+                                        <span className="block text-[10px] text-warning italic font-semibold mt-0.5">⚠ tipo distinto al pedido</span>
+                                      </>
                                     ) : (
-                                      <span className="text-muted italic text-[11px]">(igual a lo facturado)</span>
+                                      <>
+                                        {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
+                                        <span className="capitalize font-medium text-success">{clasRec}</span>
+                                        <span className="text-muted"> / </span>
+                                        <span className="capitalize">{refRec}</span>
+                                        {calRec && <><span className="text-muted"> / </span><span className="capitalize text-muted">{calRec}</span></>}
+                                      </>
                                     )}
                                     {det.notas_revision && <p className="text-[10px] text-muted italic mt-0.5">📝 {det.notas_revision}</p>}
                                   </td>
-                                  <td className="px-3 py-2 text-center font-mono font-semibold text-blue-700">{recibido}</td>
-                                  <td className="px-3 py-2 text-center font-mono font-bold text-success">{final}</td>
+                                  <td className="px-3 py-2 text-center font-mono font-bold text-success">{recibido}</td>
                                   <td className="px-3 py-2 text-center font-mono text-xs">
                                     {diff === 0 ? (
                                       <span className="text-muted">—</span>
@@ -2415,29 +2595,25 @@ export default function Contenedores() {
                   {selectedContenedor.estado === 'revision' ? 'Editando revisión física' : 'Verificación física del contenedor'}
                 </p>
                 <p className="text-xs text-blue-700">
-                  Registra las cantidades y tipos de producto que llegaron realmente. La <strong>cantidad final</strong> es la que alimentará el inventario.
+                  Registra solo la <strong>cantidad realmente recibida</strong> de cada producto (esa es la que entra al inventario). Si llegó un producto distinto al pedido, indica el tipo recibido en la columna del medio.
                   {selectedContenedor.estado === 'revision' && <span className="block mt-0.5">Puedes editar esta revisión las veces que necesites antes de finalizar el contenedor.</span>}
                 </p>
               </div>
-            </div>
-            {/* Tip de auto-sync */}
-            <div className="text-xs text-muted bg-cream/40 rounded-lg px-3 py-2 italic">
-              💡 Tip: cuando cambies la <strong>cantidad recibida</strong>, la <strong>cantidad final</strong> se actualizará automáticamente (puedes ajustarla manualmente si necesitas un valor distinto).
             </div>
 
             {/* Resumen header de columnas */}
             <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 text-center">
               <div className="bg-primary/5 rounded-xl px-3 py-2">
                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Enviado</p>
-                <p className="text-xs text-muted mt-0.5">Lo registrado inicialmente</p>
+                <p className="text-xs text-muted mt-0.5">Lo que se pidió/facturó</p>
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Recibido</p>
-                <p className="text-xs text-blue-600 mt-0.5">Lo que llegó físicamente</p>
+                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Tipo Recibido</p>
+                <p className="text-xs text-blue-600 mt-0.5">Si el producto no coincide</p>
               </div>
               <div className="bg-success/8 border border-success/20 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-success uppercase tracking-widest">Cantidad Final</p>
-                <p className="text-xs text-success/80 mt-0.5">Lo que entra al inventario</p>
+                <p className="text-[10px] font-bold text-success uppercase tracking-widest">Cantidad Recibida</p>
+                <p className="text-xs text-success/80 mt-0.5">Va directo al inventario</p>
               </div>
             </div>
 
@@ -2451,18 +2627,15 @@ export default function Contenedores() {
               return Object.entries(porProveedor).map(([prov, rows]) => {
                 const provEnviado = rows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
                 const provRecibido = rows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
-                const provFinal = rows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0);
                 const provDiff = provRecibido - provEnviado;
                 return (
                 <div key={prov} className="rounded-2xl border border-border/60 overflow-hidden">
                   <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
                     <p className="text-sm font-bold text-primary">{prov}</p>
                     <div className="flex items-center gap-3 text-xs font-mono">
-                      <span className="text-muted">Env: <strong className="text-primary">{provEnviado}</strong></span>
+                      <span className="text-muted">Pedido: <strong className="text-primary">{provEnviado}</strong></span>
                       <ArrowRight size={11} className="text-muted" />
-                      <span className="text-blue-600">Rec: <strong>{provRecibido}</strong></span>
-                      <ArrowRight size={11} className="text-muted" />
-                      <span className="text-success">Final: <strong>{provFinal}</strong></span>
+                      <span className="text-success">Recibido: <strong>{provRecibido}</strong></span>
                       {provDiff !== 0 && (
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
                           {provDiff > 0 ? '+' : ''}{provDiff}
@@ -2529,24 +2702,19 @@ export default function Contenedores() {
                             </div>
                           </div>
 
-                          {/* Col 3: Cantidades */}
+                          {/* Col 3: Cantidad recibida = entra al inventario */}
                           <div className="bg-success/5 border border-success/15 rounded-xl p-3 space-y-2">
-                            <p className="text-[9px] font-bold text-success uppercase tracking-widest mb-2">Cantidades</p>
+                            <p className="text-[9px] font-bold text-success uppercase tracking-widest mb-2">Cantidad Recibida</p>
                             <div>
-                              <label className="text-[9px] font-semibold text-muted uppercase">Recibida físicamente</label>
-                              <input type="number" min="0" className={`${inp} text-center font-mono mt-0.5`}
+                              <label className="text-[9px] font-semibold text-success uppercase">Llegó físicamente</label>
+                              <input type="number" min="0" className={`${inp} text-center font-mono font-bold border-success/30 bg-success/5 text-success mt-0.5 text-lg`}
                                 value={row.cantidad_recibida}
                                 onChange={e => updateRevisionRow(idx, 'cantidad_recibida', e.target.value)} />
-                            </div>
-                            <div>
-                              <label className="text-[9px] font-semibold text-success uppercase">Final (al inventario)</label>
-                              <input type="number" min="0" className={`${inp} text-center font-mono font-bold border-success/30 bg-success/5 text-success mt-0.5`}
-                                value={row.cantidad_final}
-                                onChange={e => updateRevisionRow(idx, 'cantidad_final', e.target.value)} />
+                              <p className="text-[9px] text-success/70 mt-1 text-center italic">Esta cantidad entra al inventario</p>
                             </div>
                             {parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada) && (
-                              <p className="text-[10px] text-warning font-semibold">
-                                ⚠ Diferencia: {parseInt(row.cantidad_recibida) - parseInt(row.cantidad_enviada)} unidades
+                              <p className="text-[10px] text-warning font-semibold text-center">
+                                ⚠ Diferencia: {parseInt(row.cantidad_recibida) - parseInt(row.cantidad_enviada)} unidades vs. pedido
                               </p>
                             )}
                           </div>
@@ -2572,38 +2740,23 @@ export default function Contenedores() {
             {(() => {
               const totalEnv = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
               const totalRec = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
-              const totalFin = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0);
-              const desincronizado = totalRec !== totalFin;
+              const diff = totalRec - totalEnv;
               return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between bg-primary/5 rounded-xl px-5 py-3">
-                    <div className="text-center flex-1">
-                      <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
-                      <p className="text-xl font-bold font-mono text-primary">{totalEnv.toLocaleString()}</p>
-                    </div>
-                    <ArrowRight size={20} className="text-muted" />
-                    <div className="text-center flex-1">
-                      <p className="text-xs text-blue-600 uppercase font-semibold">Total recibido</p>
-                      <p className="text-xl font-bold font-mono text-blue-600">{totalRec.toLocaleString()}</p>
-                    </div>
-                    <ArrowRight size={20} className="text-muted" />
-                    <div className="text-center flex-1">
-                      <p className="text-xs text-success uppercase font-semibold">Total final</p>
-                      <p className={`text-xl font-bold font-mono ${desincronizado ? 'text-warning' : 'text-success'}`}>{totalFin.toLocaleString()}</p>
-                    </div>
+                <div className="flex items-center justify-between bg-primary/5 rounded-xl px-6 py-4">
+                  <div className="text-center flex-1">
+                    <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
+                    <p className="text-2xl font-bold font-mono text-primary">{totalEnv.toLocaleString()}</p>
                   </div>
-                  {desincronizado && (
-                    <div className="flex items-center justify-between bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
-                      <div className="flex items-center gap-2 text-xs text-warning">
-                        <AlertTriangle size={14} className="flex-shrink-0" />
-                        <span><strong>Atención:</strong> el total recibido ({totalRec}) no coincide con el total final ({totalFin}). Si quieres que sean iguales, usa el botón →</span>
-                      </div>
-                      <button type="button" onClick={sincronizarFinalesARecibidas}
-                        className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-warning text-white text-xs font-semibold hover:bg-warning/85 transition-colors">
-                        Igualar Final = Recibida
-                      </button>
-                    </div>
-                  )}
+                  <ArrowRight size={24} className="text-muted mx-2" />
+                  <div className="text-center flex-1">
+                    <p className="text-xs text-success uppercase font-semibold">Total recibido (al inventario)</p>
+                    <p className="text-2xl font-bold font-mono text-success">{totalRec.toLocaleString()}</p>
+                    {diff !== 0 && (
+                      <p className={`text-xs font-semibold mt-1 ${diff < 0 ? 'text-error' : 'text-warning'}`}>
+                        {diff > 0 ? '+' : ''}{diff} respecto a lo pedido
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
             })()}
