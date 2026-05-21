@@ -956,14 +956,17 @@ export default function Contenedores() {
       setSelectedContenedor(full);
       const combMap = new Map();
       full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => {
-        if ((parseInt(d.cantidad_final) || 0) === 0 && full.estado === 'revision') return;
+        const cantidad = parseInt(d.cantidad_final) || 0;
+        if (cantidad === 0 && full.estado === 'revision') return;
         const clasificacion = d.clasificacion_recibida || d.clasificacion;
         const referencia    = d.referencia_recibida    || d.referencia;
         const calidad       = d.calidad_recibida       || d.calidad || '';
         const categoria     = d.categoria || '';
         const key = `${categoria}|${clasificacion}|${referencia}|${calidad}`;
         if (!combMap.has(key)) {
-          combMap.set(key, { categoria, clasificacion, referencia, calidad, key });
+          combMap.set(key, { categoria, clasificacion, referencia, calidad, key, cantidad });
+        } else {
+          combMap.get(key).cantidad += cantidad;
         }
       }));
       const combs = Array.from(combMap.values());
@@ -1036,7 +1039,14 @@ export default function Contenedores() {
   const updateRevisionRow = (idx, field, val) => {
     setRevisionRows(prev => {
       const next = [...prev];
-      next[idx] = { ...next[idx], [field]: val };
+      const old = next[idx];
+      const updated = { ...old, [field]: val };
+      // Auto-sync: si cambias cantidad_recibida y cantidad_final aún coincide con
+      // la recibida anterior (no la has editado manualmente), actualiza también la final.
+      if (field === 'cantidad_recibida' && String(old.cantidad_final) === String(old.cantidad_recibida)) {
+        updated.cantidad_final = val;
+      }
+      next[idx] = updated;
       return next;
     });
   };
@@ -1253,11 +1263,18 @@ export default function Contenedores() {
                     </td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">{formatDate(cont.fecha_llegada)}</td>
                     <td className="px-4 py-3 font-mono font-semibold text-primary text-center">
-                      {parseInt(cont.total_pacas).toLocaleString()}
-                      {cont.estado === 'revision' && cont.total_pacas_recibidas != null && cont.total_pacas_recibidas !== parseInt(cont.total_pacas) && (
-                        <span className="ml-1.5 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
-                          →{cont.total_pacas_recibidas}
-                        </span>
+                      {(cont.estado === 'revision' || cont.estado === 'finalizado') && cont.total_pacas_recibidas != null ? (
+                        cont.total_pacas_recibidas !== parseInt(cont.total_pacas) ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="text-muted line-through text-xs font-normal">{parseInt(cont.total_pacas).toLocaleString()}</span>
+                            <ArrowRight size={11} className="text-muted" />
+                            <span className="text-blue-600 font-bold">{parseInt(cont.total_pacas_recibidas).toLocaleString()}</span>
+                          </div>
+                        ) : (
+                          parseInt(cont.total_pacas_recibidas).toLocaleString()
+                        )
+                      ) : (
+                        parseInt(cont.total_pacas).toLocaleString()
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
@@ -1285,7 +1302,10 @@ export default function Contenedores() {
                           </>
                         )}
                         {isAdmin && cont.estado === 'revision' && (
-                          <ActionBtn icon={CheckCircle} title="Finalizar" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
+                          <>
+                            <ActionBtn icon={ClipboardCheck} title="Editar revisión" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
+                            <ActionBtn icon={CheckCircle} title="Finalizar" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
+                          </>
                         )}
                       </div>
                     </td>
@@ -1972,6 +1992,10 @@ export default function Contenedores() {
               )}
               {isAdmin && selectedContenedor.estado === 'revision' && (
                 <div className="flex gap-3 ml-auto">
+                  <button onClick={() => openRevisionModal(selectedContenedor)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-300 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors">
+                    <ClipboardCheck size={15} /> Editar Revisión
+                  </button>
                   <button onClick={() => openFinalizarModal(selectedContenedor)}
                     className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
                     <CheckCircle size={17} /> Finalizar Contenedor
@@ -1989,17 +2013,30 @@ export default function Contenedores() {
       {selectedContenedor && (
         <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title="Finalizar Contenedor" size="lg">
           <div className="space-y-5">
-            <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <DollarSign size={16} className="text-muted" />
-                <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por unidad</p>
-              </div>
-              <p className="text-4xl font-display font-bold text-primary">{formatCurrency(selectedContenedor.costo_unitario)}</p>
-              <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
-            </div>
+            {(() => {
+              const totalFinal = parseInt(selectedContenedor.total_pacas_recibidas) || parseInt(selectedContenedor.total_pacas);
+              const costoFinal = totalFinal > 0 ? parseFloat(selectedContenedor.costo_total) / totalFinal : parseFloat(selectedContenedor.costo_unitario);
+              const costoOriginal = parseFloat(selectedContenedor.costo_unitario);
+              const recalculado = totalFinal !== parseInt(selectedContenedor.total_pacas);
+              return (
+                <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <DollarSign size={16} className="text-muted" />
+                    <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por unidad</p>
+                  </div>
+                  <p className="text-4xl font-display font-bold text-primary">{formatCurrency(costoFinal)}</p>
+                  {recalculado && (
+                    <p className="text-[11px] text-blue-600 mt-1 font-medium">
+                      Recalculado para {totalFinal} unidades (originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas})
+                    </p>
+                  )}
+                  <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
+                </div>
+              );
+            })()}
             <div className="flex items-start gap-3 bg-primary/5 rounded-xl px-4 py-3 text-sm text-muted">
               <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
-              <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas} unidades</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
+              <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas_recibidas ?? selectedContenedor.total_pacas} unidades</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
             </div>
             <div>
               <p className={lbl}>Precio de Venta por Clasificación / Referencia / Calidad</p>
@@ -2020,6 +2057,12 @@ export default function Contenedores() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      {comb.cantidad != null && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/8 text-primary text-xs font-bold tabular-nums whitespace-nowrap">
+                          <Boxes size={11} />
+                          {comb.cantidad} {comb.cantidad === 1 ? 'paca' : 'pacas'}
+                        </span>
+                      )}
                       {preciosAutocompletados.has(comb.key) && (
                         <span className="text-xs text-secondary font-medium whitespace-nowrap">⚡ Preset</span>
                       )}
@@ -2060,9 +2103,18 @@ export default function Contenedores() {
             <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
               <ClipboardCheck size={16} className="flex-shrink-0 mt-0.5 text-blue-600" />
               <div>
-                <p className="font-semibold mb-0.5">Verificación física del contenedor</p>
-                <p className="text-xs text-blue-700">Registra las cantidades y tipos de producto que llegaron realmente. La <strong>cantidad final</strong> es la que alimentará el inventario. Esta acción es irreversible.</p>
+                <p className="font-semibold mb-0.5">
+                  {selectedContenedor.estado === 'revision' ? 'Editando revisión física' : 'Verificación física del contenedor'}
+                </p>
+                <p className="text-xs text-blue-700">
+                  Registra las cantidades y tipos de producto que llegaron realmente. La <strong>cantidad final</strong> es la que alimentará el inventario.
+                  {selectedContenedor.estado === 'revision' && <span className="block mt-0.5">Puedes editar esta revisión las veces que necesites antes de finalizar el contenedor.</span>}
+                </p>
               </div>
+            </div>
+            {/* Tip de auto-sync */}
+            <div className="text-xs text-muted bg-cream/40 rounded-lg px-3 py-2 italic">
+              💡 Tip: cuando cambies la <strong>cantidad recibida</strong>, la <strong>cantidad final</strong> se actualizará automáticamente (puedes ajustarla manualmente si necesitas un valor distinto).
             </div>
 
             {/* Resumen header de columnas */}
