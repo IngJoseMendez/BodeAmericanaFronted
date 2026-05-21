@@ -468,6 +468,9 @@ export const contenedoresApi = {
   update(id, data) {
     return api.put(`/contenedores/${id}`, data);
   },
+  revisar(id, data) {
+    return api.post(`/contenedores/${id}/revisar`, data);
+  },
   finalizar(id, data) {
     return api.post(`/contenedores/${id}/finalizar`, data);
   },
