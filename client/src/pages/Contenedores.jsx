@@ -630,6 +630,228 @@ export default function Contenedores() {
   };
 
   // ── Export Excel individual por contenedor ─────────────────────
+  // ── Export Reclamación por Proveedor ───────────────────────────
+  const handleExportReclamacionExcel = async (cont) => {
+    const primary   = '0f172a';
+    const blue      = '2563eb';
+    const success   = '16a34a';
+    const error     = 'dc2626';
+    const warning   = 'd97706';
+    const lightGray = 'f8fafc';
+
+    let full = cont;
+    if (!cont.proveedores_mercancia) {
+      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(err.message, 'error'); return; }
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Comercio Global Logístico';
+    wb.created = new Date();
+
+    // Hoja índice / resumen
+    const wsR = wb.addWorksheet('Resumen');
+    wsR.properties.tabColor = { argb: blue };
+    wsR.columns = [{ width: 32 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }];
+    wsR.mergeCells('A1:E1');
+    const tCell = wsR.getCell('A1');
+    tCell.value = `RECLAMACIÓN — Contenedor ${full.numero}`;
+    tCell.font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
+    tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    tCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    wsR.getRow(1).height = 28;
+
+    wsR.mergeCells('A2:E2');
+    wsR.getCell('A2').value = `Generado: ${new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+    wsR.getCell('A2').font = { size: 10, italic: true, color: { argb: '888888' } };
+    wsR.getCell('A2').alignment = { horizontal: 'center' };
+
+    // Cabecera de tabla resumen por proveedor
+    const headers = ['Proveedor', 'Enviado', 'Recibido', 'Final', 'Diferencia'];
+    headers.forEach((h, i) => {
+      const c = wsR.getCell(`${String.fromCharCode(65 + i)}4`);
+      c.value = h;
+      c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } };
+      c.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+    wsR.getRow(4).height = 22;
+
+    let rRow = 5;
+    full.proveedores_mercancia.forEach(p => {
+      const env = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+      const rec = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
+      const fin = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad_final) || 0), 0);
+      const diff = rec - env;
+      wsR.getCell(`A${rRow}`).value = p.proveedor_nombre;
+      wsR.getCell(`A${rRow}`).font = { bold: true, size: 10 };
+      wsR.getCell(`B${rRow}`).value = env;
+      wsR.getCell(`C${rRow}`).value = rec;
+      wsR.getCell(`C${rRow}`).font = { color: { argb: blue }, bold: true };
+      wsR.getCell(`D${rRow}`).value = fin;
+      wsR.getCell(`D${rRow}`).font = { color: { argb: success }, bold: true };
+      wsR.getCell(`E${rRow}`).value = diff;
+      wsR.getCell(`E${rRow}`).font = { bold: true, color: { argb: diff < 0 ? error : diff > 0 ? warning : '888888' } };
+      ['B','C','D','E'].forEach(col => wsR.getCell(`${col}${rRow}`).alignment = { horizontal: 'center' });
+      wsR.getRow(rRow).height = 18;
+      rRow++;
+    });
+
+    // Totales
+    rRow++;
+    wsR.getCell(`A${rRow}`).value = 'TOTAL';
+    wsR.getCell(`A${rRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    wsR.getCell(`A${rRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    const totalEnv = full.proveedores_mercancia.reduce((s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0);
+    const totalRec = full.proveedores_mercancia.reduce((s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad_recibida) || 0), 0), 0);
+    const totalFin = parseInt(full.total_pacas_recibidas) || 0;
+    [[`B${rRow}`, totalEnv], [`C${rRow}`, totalRec], [`D${rRow}`, totalFin], [`E${rRow}`, totalRec - totalEnv]].forEach(([cell, val]) => {
+      wsR.getCell(cell).value = val;
+      wsR.getCell(cell).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+      wsR.getCell(cell).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      wsR.getCell(cell).alignment = { horizontal: 'center' };
+    });
+    wsR.getRow(rRow).height = 22;
+
+    // Una hoja por proveedor con el detalle
+    full.proveedores_mercancia.forEach((prov, pi) => {
+      const sheetName = (prov.proveedor_nombre || `Proveedor ${pi+1}`).substring(0, 30).replace(/[*?:/\\\[\]]/g, ' ');
+      const ws = wb.addWorksheet(sheetName);
+      ws.properties.tabColor = { argb: blue };
+      ws.columns = [
+        { width: 14 }, { width: 18 }, { width: 18 }, { width: 14 }, // facturado
+        { width: 8 },  // pedido
+        { width: 18 }, { width: 18 }, { width: 14 }, // recibido
+        { width: 10 }, { width: 10 }, { width: 10 }, // recib/final/dif
+        { width: 30 }, // notas
+      ];
+
+      ws.mergeCells('A1:L1');
+      const t = ws.getCell('A1');
+      t.value = `Reclamación — ${prov.proveedor_nombre}`;
+      t.font = { size: 13, bold: true, color: { argb: 'FFFFFF' } };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(1).height = 26;
+
+      // Cabeceras de grupos
+      ws.mergeCells('A3:E3');
+      const g1 = ws.getCell('A3');
+      g1.value = 'LO FACTURADO';
+      g1.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      g1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '475569' } };
+      g1.alignment = { horizontal: 'center' };
+
+      ws.mergeCells('F3:H3');
+      const g2 = ws.getCell('F3');
+      g2.value = 'LO QUE LLEGÓ';
+      g2.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      g2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: blue } };
+      g2.alignment = { horizontal: 'center' };
+
+      ws.mergeCells('I3:K3');
+      const g3 = ws.getCell('I3');
+      g3.value = 'CANTIDADES';
+      g3.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      g3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: success }};
+      g3.alignment = { horizontal: 'center' };
+
+      ws.getCell('L3').value = 'OBSERVACIONES';
+      ws.getCell('L3').font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      ws.getCell('L3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: warning } };
+      ws.getCell('L3').alignment = { horizontal: 'center' };
+      ws.getRow(3).height = 18;
+
+      const cols = ['Categoría','Clasificación','Referencia','Calidad','Cant.','Clasificación','Referencia','Calidad','Recibida','Final','Dif.','Notas'];
+      cols.forEach((h, i) => {
+        const c = ws.getCell(`${String.fromCharCode(65 + i)}4`);
+        c.value = h;
+        c.font = { bold: true, size: 9, color: { argb: 'FFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+      ws.getRow(4).height = 18;
+
+      let row = 5;
+      prov.detalles.forEach(det => {
+        const enviado = parseInt(det.cantidad) || 0;
+        const recibido = parseInt(det.cantidad_recibida) || 0;
+        const final = parseInt(det.cantidad_final) || 0;
+        const diff = recibido - enviado;
+        const cambioTipo = det.clasificacion_recibida || det.referencia_recibida || det.calidad_recibida;
+
+        ws.getCell(`A${row}`).value = det.categoria || '—';
+        ws.getCell(`B${row}`).value = det.clasificacion;
+        ws.getCell(`C${row}`).value = det.referencia;
+        ws.getCell(`D${row}`).value = det.calidad || '—';
+        ws.getCell(`E${row}`).value = enviado;
+
+        ws.getCell(`F${row}`).value = det.clasificacion_recibida || det.clasificacion;
+        ws.getCell(`G${row}`).value = det.referencia_recibida || det.referencia;
+        ws.getCell(`H${row}`).value = det.calidad_recibida || det.calidad || '—';
+        if (cambioTipo) {
+          ['F','G','H'].forEach(c => {
+            ws.getCell(`${c}${row}`).font = { bold: true, color: { argb: warning } };
+          });
+        }
+
+        ws.getCell(`I${row}`).value = recibido;
+        ws.getCell(`I${row}`).font = { bold: true, color: { argb: blue } };
+        ws.getCell(`J${row}`).value = final;
+        ws.getCell(`J${row}`).font = { bold: true, color: { argb: success } };
+        ws.getCell(`K${row}`).value = diff;
+        if (diff !== 0) {
+          ws.getCell(`K${row}`).font = { bold: true, color: { argb: diff < 0 ? error : warning } };
+        }
+        ws.getCell(`L${row}`).value = det.notas_revision || '';
+
+        // Highlight row if discrepancy
+        if (diff !== 0 || cambioTipo) {
+          for (let c = 0; c < 12; c++) {
+            const cell = ws.getCell(`${String.fromCharCode(65 + c)}${row}`);
+            if (!cell.fill || cell.fill.fgColor?.argb !== warning) {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } };
+            }
+          }
+        }
+        ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c => {
+          ws.getCell(`${c}${row}`).alignment = { horizontal: ['E','I','J','K'].includes(c) ? 'center' : 'left', vertical: 'middle', wrapText: true };
+        });
+        ws.getRow(row).height = 22;
+        row++;
+      });
+
+      // Totales del proveedor
+      row++;
+      ws.mergeCells(`A${row}:D${row}`);
+      ws.getCell(`A${row}`).value = 'TOTAL DEL PROVEEDOR';
+      ws.getCell(`A${row}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
+      const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+      const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
+      const provFin = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_final) || 0), 0);
+      ws.getCell(`E${row}`).value = provEnv;
+      ws.getCell(`I${row}`).value = provRec;
+      ws.getCell(`J${row}`).value = provFin;
+      ws.getCell(`K${row}`).value = provRec - provEnv;
+      ['E','I','J','K'].forEach(c => {
+        ws.getCell(`${c}${row}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+        ws.getCell(`${c}${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+        ws.getCell(`${c}${row}`).alignment = { horizontal: 'center' };
+      });
+      ws.getRow(row).height = 22;
+    });
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Reclamacion_${full.numero}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    addToast('Reclamación exportada', 'success');
+  };
+
   const handleExportContenedorExcel = async (cont) => {
     const primary   = '0f172a';
     const secondary = '6366f1';
@@ -1039,16 +1261,17 @@ export default function Contenedores() {
   const updateRevisionRow = (idx, field, val) => {
     setRevisionRows(prev => {
       const next = [...prev];
-      const old = next[idx];
-      const updated = { ...old, [field]: val };
-      // Auto-sync: si cambias cantidad_recibida y cantidad_final aún coincide con
-      // la recibida anterior (no la has editado manualmente), actualiza también la final.
-      if (field === 'cantidad_recibida' && String(old.cantidad_final) === String(old.cantidad_recibida)) {
-        updated.cantidad_final = val;
-      }
+      const updated = { ...next[idx], [field]: val };
+      // Al cambiar la cantidad recibida, sincroniza siempre la cantidad final.
+      // Si necesitas una final distinta (p.ej. descartar pacas dañadas), edita final después.
+      if (field === 'cantidad_recibida') updated.cantidad_final = val;
       next[idx] = updated;
       return next;
     });
+  };
+
+  const sincronizarFinalesARecibidas = () => {
+    setRevisionRows(prev => prev.map(r => ({ ...r, cantidad_final: r.cantidad_recibida })));
   };
 
   const handleGuardarRevision = async () => {
@@ -1917,50 +2140,135 @@ export default function Contenedores() {
                 ))}
               </div>
             </div>
-            {/* Resumen de revisión si ya fue revisado */}
-            {selectedContenedor.estado === 'revision' && selectedContenedor.total_pacas_recibidas != null && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3 space-y-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <ClipboardCheck size={14} className="text-blue-600" />
-                  <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Revisión física completada</p>
-                </div>
-                <div className="flex items-center gap-6 text-sm">
-                  <div>
-                    <span className="text-xs text-muted">Enviado: </span>
-                    <span className="font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</span>
+            {/* Comparación detallada por proveedor — visible cuando hay revisión */}
+            {(selectedContenedor.estado === 'revision' || selectedContenedor.estado === 'finalizado') && selectedContenedor.total_pacas_recibidas != null && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <ClipboardCheck size={15} className="text-blue-600" />
+                    <p className="text-sm font-bold text-blue-700 uppercase tracking-wider">Comparación por Proveedor</p>
                   </div>
-                  <ArrowRight size={14} className="text-muted" />
-                  <div>
-                    <span className="text-xs text-blue-600">Final validado: </span>
-                    <span className="font-mono font-bold text-blue-700">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</span>
-                  </div>
-                  {parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
-                    <span className="text-xs text-warning font-semibold">
-                      Diferencia: {parseInt(selectedContenedor.total_pacas_recibidas) - parseInt(selectedContenedor.total_pacas)} uds
-                    </span>
-                  )}
+                  <button onClick={() => handleExportReclamacionExcel(selectedContenedor)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors">
+                    <Download size={13} /> Exportar reclamación
+                  </button>
                 </div>
-                {/* Mostrar cambios de tipo de producto si los hay */}
-                {selectedContenedor.proveedores_mercancia.some(p => p.detalles.some(d => d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida)) && (
-                  <div className="pt-1 border-t border-blue-200">
-                    <p className="text-[10px] text-blue-700 font-semibold uppercase tracking-wide mb-1.5">Cambios de producto registrados</p>
-                    <div className="space-y-1">
-                      {selectedContenedor.proveedores_mercancia.flatMap(p =>
-                        p.detalles
-                          .filter(d => d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida)
-                          .map((d, i) => (
-                            <div key={i} className="flex items-center gap-2 text-xs text-blue-800 flex-wrap">
-                              <span className="text-muted">{p.proveedor_nombre}:</span>
-                              <span className="line-through text-muted">{d.clasificacion}/{d.referencia}{d.calidad ? `/${d.calidad}` : ''}</span>
-                              <ArrowRight size={11} className="text-blue-500" />
-                              <span className="font-semibold">{d.clasificacion_recibida || d.clasificacion}/{d.referencia_recibida || d.referencia}{(d.calidad_recibida || d.calidad) ? `/${d.calidad_recibida || d.calidad}` : ''}</span>
-                              {d.notas_revision && <span className="text-muted italic">— {d.notas_revision}</span>}
-                            </div>
-                          ))
-                      )}
+
+                {/* Totales globales */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-white rounded-lg px-3 py-2 border border-border/40">
+                    <p className="text-[10px] text-muted uppercase font-semibold">Total enviado</p>
+                    <p className="text-lg font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2 border border-blue-200">
+                    <p className="text-[10px] text-blue-600 uppercase font-semibold">Total recibido</p>
+                    <p className="text-lg font-mono font-bold text-blue-700">
+                      {selectedContenedor.proveedores_mercancia.reduce((s, p) =>
+                        s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad_recibida) || 0), 0), 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2 border border-success/30">
+                    <p className="text-[10px] text-success uppercase font-semibold">Final (inventario)</p>
+                    <p className="text-lg font-mono font-bold text-success">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {/* Por proveedor */}
+                {selectedContenedor.proveedores_mercancia.map((prov) => {
+                  const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                  const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
+                  const provFin = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_final) || 0), 0);
+                  const provDiff = provRec - provEnv;
+                  const hayDiscrepancias = prov.detalles.some(d =>
+                    (parseInt(d.cantidad_recibida) || 0) !== (parseInt(d.cantidad) || 0) ||
+                    d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida
+                  );
+                  return (
+                    <div key={prov.id} className="bg-white rounded-xl border border-border/60 overflow-hidden">
+                      <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-primary">{prov.proveedor_nombre}</p>
+                          {hayDiscrepancias && (
+                            <span className="text-[10px] font-bold bg-warning/15 text-warning px-2 py-0.5 rounded-full">
+                              ⚠ Discrepancias
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-mono">
+                          <span className="text-muted">Env: <strong className="text-primary">{provEnv}</strong></span>
+                          <ArrowRight size={11} className="text-muted" />
+                          <span className="text-blue-600">Rec: <strong>{provRec}</strong></span>
+                          <ArrowRight size={11} className="text-muted" />
+                          <span className="text-success">Fin: <strong>{provFin}</strong></span>
+                          {provDiff !== 0 && (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
+                              {provDiff > 0 ? '+' : ''}{provDiff}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-border/40 bg-primary/2">
+                              <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Lo facturado</th>
+                              <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
+                              <th className="px-3 py-2 text-left font-semibold text-blue-600 uppercase tracking-wider">Lo que llegó</th>
+                              <th className="px-3 py-2 text-center font-semibold text-blue-600 uppercase tracking-wider w-16">Recib.</th>
+                              <th className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-16">Final</th>
+                              <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/30">
+                            {prov.detalles.map((det, i) => {
+                              const enviado = parseInt(det.cantidad) || 0;
+                              const recibido = parseInt(det.cantidad_recibida) || 0;
+                              const final = parseInt(det.cantidad_final) || 0;
+                              const diff = recibido - enviado;
+                              const cambioTipo = det.clasificacion_recibida || det.referencia_recibida || det.calidad_recibida;
+                              return (
+                                <tr key={i} className={diff !== 0 || cambioTipo ? 'bg-warning/5' : ''}>
+                                  <td className="px-3 py-2">
+                                    {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
+                                    <span className="capitalize font-medium text-primary">{det.clasificacion}</span>
+                                    <span className="text-muted"> / </span>
+                                    <span className="capitalize">{det.referencia}</span>
+                                    {det.calidad && <><span className="text-muted"> / </span><span className="capitalize text-muted">{det.calidad}</span></>}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-mono font-semibold">{enviado}</td>
+                                  <td className="px-3 py-2">
+                                    {cambioTipo ? (
+                                      <span className="capitalize text-blue-700 font-medium">
+                                        {det.clasificacion_recibida || det.clasificacion}
+                                        {' / '}{det.referencia_recibida || det.referencia}
+                                        {(det.calidad_recibida || det.calidad) && <> / <span>{det.calidad_recibida || det.calidad}</span></>}
+                                        <span className="block text-[10px] text-warning italic">⚠ tipo cambiado</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted italic text-[11px]">(igual a lo facturado)</span>
+                                    )}
+                                    {det.notas_revision && <p className="text-[10px] text-muted italic mt-0.5">📝 {det.notas_revision}</p>}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-mono font-semibold text-blue-700">{recibido}</td>
+                                  <td className="px-3 py-2 text-center font-mono font-bold text-success">{final}</td>
+                                  <td className="px-3 py-2 text-center font-mono text-xs">
+                                    {diff === 0 ? (
+                                      <span className="text-muted">—</span>
+                                    ) : (
+                                      <span className={`font-bold ${diff < 0 ? 'text-error' : 'text-warning'}`}>
+                                        {diff > 0 ? '+' : ''}{diff}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
             )}
 
@@ -2140,10 +2448,27 @@ export default function Contenedores() {
                 if (!porProveedor[row.proveedor_nombre]) porProveedor[row.proveedor_nombre] = [];
                 porProveedor[row.proveedor_nombre].push({ ...row, idx });
               });
-              return Object.entries(porProveedor).map(([prov, rows]) => (
+              return Object.entries(porProveedor).map(([prov, rows]) => {
+                const provEnviado = rows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
+                const provRecibido = rows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
+                const provFinal = rows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0);
+                const provDiff = provRecibido - provEnviado;
+                return (
                 <div key={prov} className="rounded-2xl border border-border/60 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40">
+                  <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
                     <p className="text-sm font-bold text-primary">{prov}</p>
+                    <div className="flex items-center gap-3 text-xs font-mono">
+                      <span className="text-muted">Env: <strong className="text-primary">{provEnviado}</strong></span>
+                      <ArrowRight size={11} className="text-muted" />
+                      <span className="text-blue-600">Rec: <strong>{provRecibido}</strong></span>
+                      <ArrowRight size={11} className="text-muted" />
+                      <span className="text-success">Final: <strong>{provFinal}</strong></span>
+                      {provDiff !== 0 && (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
+                          {provDiff > 0 ? '+' : ''}{provDiff}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="divide-y divide-border/30">
                     {rows.map(({ idx, ...row }) => (
@@ -2239,32 +2564,49 @@ export default function Contenedores() {
                     ))}
                   </div>
                 </div>
-              ));
+                );
+              });
             })()}
 
             {/* Resumen totales */}
-            <div className="flex items-center justify-between bg-primary/5 rounded-xl px-5 py-3">
-              <div className="text-center">
-                <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
-                <p className="text-xl font-bold font-mono text-primary">
-                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0).toLocaleString()}
-                </p>
-              </div>
-              <ArrowRight size={20} className="text-muted" />
-              <div className="text-center">
-                <p className="text-xs text-blue-600 uppercase font-semibold">Total recibido</p>
-                <p className="text-xl font-bold font-mono text-blue-600">
-                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0).toLocaleString()}
-                </p>
-              </div>
-              <ArrowRight size={20} className="text-muted" />
-              <div className="text-center">
-                <p className="text-xs text-success uppercase font-semibold">Total final</p>
-                <p className="text-xl font-bold font-mono text-success">
-                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
+            {(() => {
+              const totalEnv = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
+              const totalRec = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
+              const totalFin = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0);
+              const desincronizado = totalRec !== totalFin;
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between bg-primary/5 rounded-xl px-5 py-3">
+                    <div className="text-center flex-1">
+                      <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
+                      <p className="text-xl font-bold font-mono text-primary">{totalEnv.toLocaleString()}</p>
+                    </div>
+                    <ArrowRight size={20} className="text-muted" />
+                    <div className="text-center flex-1">
+                      <p className="text-xs text-blue-600 uppercase font-semibold">Total recibido</p>
+                      <p className="text-xl font-bold font-mono text-blue-600">{totalRec.toLocaleString()}</p>
+                    </div>
+                    <ArrowRight size={20} className="text-muted" />
+                    <div className="text-center flex-1">
+                      <p className="text-xs text-success uppercase font-semibold">Total final</p>
+                      <p className={`text-xl font-bold font-mono ${desincronizado ? 'text-warning' : 'text-success'}`}>{totalFin.toLocaleString()}</p>
+                    </div>
+                  </div>
+                  {desincronizado && (
+                    <div className="flex items-center justify-between bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
+                      <div className="flex items-center gap-2 text-xs text-warning">
+                        <AlertTriangle size={14} className="flex-shrink-0" />
+                        <span><strong>Atención:</strong> el total recibido ({totalRec}) no coincide con el total final ({totalFin}). Si quieres que sean iguales, usa el botón →</span>
+                      </div>
+                      <button type="button" onClick={sincronizarFinalesARecibidas}
+                        className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-warning text-white text-xs font-semibold hover:bg-warning/85 transition-colors">
+                        Igualar Final = Recibida
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Acciones */}
             <div className="flex justify-end gap-3 pt-1">
