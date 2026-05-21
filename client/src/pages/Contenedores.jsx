@@ -5,6 +5,7 @@ import {
   TrendingUp, DollarSign, Archive, Boxes,
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
@@ -69,11 +70,26 @@ const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wi
 
 // ── Status badge ─────────────────────────────────────────────────
 function StatusBadge({ estado }) {
-  const isFinal = estado === 'finalizado';
+  if (estado === 'finalizado') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-success/10 text-success">
+        <span className="w-1.5 h-1.5 rounded-full bg-success" />
+        Finalizado
+      </span>
+    );
+  }
+  if (estado === 'revision') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        En Revisión
+      </span>
+    );
+  }
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isFinal ? 'bg-success/10 text-success' : 'bg-warning/15 text-warning'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${isFinal ? 'bg-success' : 'bg-warning'}`} />
-      {isFinal ? 'Finalizado' : 'Borrador'}
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-warning/15 text-warning">
+      <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+      Borrador
     </span>
   );
 }
@@ -337,6 +353,10 @@ export default function Contenedores() {
   const [modalOpen, setModalOpen]                   = useState(false);
   const [viewModalOpen, setViewModalOpen]           = useState(false);
   const [finalizarModalOpen, setFinalizarModalOpen] = useState(false);
+  const [revisionModalOpen, setRevisionModalOpen]   = useState(false);
+
+  // ── Revisión ────────────────────────────────────────────────────
+  const [revisionRows, setRevisionRows] = useState([]);
 
   // ── Selection ──────────────────────────────────────────────────
   const [selectedContenedor, setSelectedContenedor] = useState(null);
@@ -936,15 +956,14 @@ export default function Contenedores() {
       setSelectedContenedor(full);
       const combMap = new Map();
       full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => {
-        const key = `${d.categoria || ''}|${d.clasificacion}|${d.referencia}|${d.calidad || ''}`;
+        if ((parseInt(d.cantidad_final) || 0) === 0 && full.estado === 'revision') return;
+        const clasificacion = d.clasificacion_recibida || d.clasificacion;
+        const referencia    = d.referencia_recibida    || d.referencia;
+        const calidad       = d.calidad_recibida       || d.calidad || '';
+        const categoria     = d.categoria || '';
+        const key = `${categoria}|${clasificacion}|${referencia}|${calidad}`;
         if (!combMap.has(key)) {
-          combMap.set(key, {
-            categoria: d.categoria || '',
-            clasificacion: d.clasificacion,
-            referencia: d.referencia,
-            calidad: d.calidad || '',
-            key,
-          });
+          combMap.set(key, { categoria, clasificacion, referencia, calidad, key });
         }
       }));
       const combs = Array.from(combMap.values());
@@ -981,6 +1000,73 @@ export default function Contenedores() {
     } catch (err) { addToast(err.message, 'error'); }
   };
 
+  // ── Revisión ──────────────────────────────────────────────────
+  const openRevisionModal = async (contenedor) => {
+    try {
+      const full = await contenedoresApi.getOne(contenedor.id);
+      setSelectedContenedor(full);
+      const rows = [];
+      for (const prov of full.proveedores_mercancia) {
+        for (const det of prov.detalles) {
+          rows.push({
+            detalle_id: det.id,
+            proveedor_nombre: prov.proveedor_nombre,
+            // Enviado (read-only)
+            categoria: det.categoria || '',
+            clasificacion: det.clasificacion,
+            referencia: det.referencia,
+            calidad: det.calidad || '',
+            cantidad_enviada: det.cantidad,
+            // Revisión (editable, pre-rellenado)
+            cantidad_recibida: det.cantidad_recibida != null ? String(det.cantidad_recibida) : String(det.cantidad),
+            cantidad_final: det.cantidad_final != null ? String(det.cantidad_final) : String(det.cantidad),
+            clasificacion_recibida: det.clasificacion_recibida || '',
+            referencia_recibida: det.referencia_recibida || '',
+            calidad_recibida: det.calidad_recibida || '',
+            notas_revision: det.notas_revision || '',
+          });
+        }
+      }
+      setRevisionRows(rows);
+      setViewModalOpen(false);
+      setRevisionModalOpen(true);
+    } catch (err) { addToast(err.message, 'error'); }
+  };
+
+  const updateRevisionRow = (idx, field, val) => {
+    setRevisionRows(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: val };
+      return next;
+    });
+  };
+
+  const handleGuardarRevision = async () => {
+    for (const r of revisionRows) {
+      if (parseInt(r.cantidad_final) < 0) {
+        addToast('La cantidad final no puede ser negativa', 'error');
+        return;
+      }
+    }
+    setSubmitting(true);
+    try {
+      const revisiones = revisionRows.map(r => ({
+        detalle_id: r.detalle_id,
+        cantidad_recibida: parseInt(r.cantidad_recibida) || 0,
+        cantidad_final: parseInt(r.cantidad_final) || 0,
+        clasificacion_recibida: r.clasificacion_recibida.trim() || null,
+        referencia_recibida: r.referencia_recibida.trim() || null,
+        calidad_recibida: r.calidad_recibida.trim() || null,
+        notas_revision: r.notas_revision.trim() || null,
+      }));
+      await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
+      addToast('Revisión guardada — el contenedor está listo para finalizar', 'success');
+      setRevisionModalOpen(false);
+      loadContenedores();
+    } catch (err) { addToast(err.message, 'error'); }
+    finally { setSubmitting(false); }
+  };
+
   const handleFinalizar = async () => {
     for (const c of combsFinalizacion) {
       const pv = parseFloat(preciosVenta[c.key]);
@@ -1000,6 +1086,7 @@ export default function Contenedores() {
 
   // ── Derived stats ──────────────────────────────────────────────
   const borradores  = contenedores.filter((c) => c.estado === 'borrador').length;
+  const enRevision  = contenedores.filter((c) => c.estado === 'revision').length;
   const finalizados = contenedores.filter((c) => c.estado === 'finalizado').length;
   const totalPacas  = contenedores.reduce((s, c) => s + parseInt(c.total_pacas || 0), 0);
   const costoPromedio = finalizados > 0
@@ -1027,10 +1114,10 @@ export default function Contenedores() {
     >
       {/* ── KPI Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${borradores} en borrador`} />
-        <KpiCard label="Borradores"   value={borradores}                   icon={Layers}   color="bg-warning/70"   sub="Pendientes de finalizar" />
-        <KpiCard label="Finalizados"  value={finalizados}                  icon={Archive}  color="bg-success/70"   sub="Lotes creados en inventario" />
-        <KpiCard label="Unidades Totales" value={totalPacas.toLocaleString()} icon={TrendingUp} color="bg-accent/70" sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Sin datos aún'} />
+        <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${borradores} borrador · ${enRevision} en revisión`} />
+        <KpiCard label="Borradores"   value={borradores}                   icon={Layers}   color="bg-warning/70"   sub="Registro inicial pendiente" />
+        <KpiCard label="En Revisión"  value={enRevision}                   icon={ClipboardCheck} color="bg-blue-500/70" sub="Verificación física" />
+        <KpiCard label="Finalizados"  value={finalizados}                  icon={Archive}  color="bg-success/70"   sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Lotes en inventario'} />
       </div>
 
       {/* ── Toolbar ───────────────────────────────────────────── */}
@@ -1060,6 +1147,7 @@ export default function Contenedores() {
         >
           <option value="">Todos los estados</option>
           <option value="borrador">Borrador</option>
+          <option value="revision">En Revisión</option>
           <option value="finalizado">Finalizado</option>
         </select>
 
@@ -1164,7 +1252,14 @@ export default function Contenedores() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">{formatDate(cont.fecha_llegada)}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-primary text-center">{parseInt(cont.total_pacas).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-primary text-center">
+                      {parseInt(cont.total_pacas).toLocaleString()}
+                      {cont.estado === 'revision' && cont.total_pacas_recibidas != null && cont.total_pacas_recibidas !== parseInt(cont.total_pacas) && (
+                        <span className="ml-1.5 text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                          →{cont.total_pacas_recibidas}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
                       {isAdmin
                         ? <span className="text-secondary font-semibold">{formatCurrency(cont.costo_unitario)}</span>
@@ -1185,9 +1280,12 @@ export default function Contenedores() {
                         )}
                         {isAdmin && cont.estado === 'borrador' && (
                           <>
-                            <ActionBtn icon={CheckCircle} title="Finalizar" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
+                            <ActionBtn icon={ClipboardCheck} title="Revisar contenedor" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
                             <ActionBtn icon={Trash2} title="Eliminar" color="hover:text-error hover:bg-error/10" onClick={() => handleDelete(cont)} />
                           </>
+                        )}
+                        {isAdmin && cont.estado === 'revision' && (
+                          <ActionBtn icon={CheckCircle} title="Finalizar" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
                         )}
                       </div>
                     </td>
@@ -1799,6 +1897,53 @@ export default function Contenedores() {
                 ))}
               </div>
             </div>
+            {/* Resumen de revisión si ya fue revisado */}
+            {selectedContenedor.estado === 'revision' && selectedContenedor.total_pacas_recibidas != null && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <ClipboardCheck size={14} className="text-blue-600" />
+                  <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Revisión física completada</p>
+                </div>
+                <div className="flex items-center gap-6 text-sm">
+                  <div>
+                    <span className="text-xs text-muted">Enviado: </span>
+                    <span className="font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</span>
+                  </div>
+                  <ArrowRight size={14} className="text-muted" />
+                  <div>
+                    <span className="text-xs text-blue-600">Final validado: </span>
+                    <span className="font-mono font-bold text-blue-700">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</span>
+                  </div>
+                  {parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
+                    <span className="text-xs text-warning font-semibold">
+                      Diferencia: {parseInt(selectedContenedor.total_pacas_recibidas) - parseInt(selectedContenedor.total_pacas)} uds
+                    </span>
+                  )}
+                </div>
+                {/* Mostrar cambios de tipo de producto si los hay */}
+                {selectedContenedor.proveedores_mercancia.some(p => p.detalles.some(d => d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida)) && (
+                  <div className="pt-1 border-t border-blue-200">
+                    <p className="text-[10px] text-blue-700 font-semibold uppercase tracking-wide mb-1.5">Cambios de producto registrados</p>
+                    <div className="space-y-1">
+                      {selectedContenedor.proveedores_mercancia.flatMap(p =>
+                        p.detalles
+                          .filter(d => d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida)
+                          .map((d, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs text-blue-800 flex-wrap">
+                              <span className="text-muted">{p.proveedor_nombre}:</span>
+                              <span className="line-through text-muted">{d.clasificacion}/{d.referencia}{d.calidad ? `/${d.calidad}` : ''}</span>
+                              <ArrowRight size={11} className="text-blue-500" />
+                              <span className="font-semibold">{d.clasificacion_recibida || d.clasificacion}/{d.referencia_recibida || d.referencia}{(d.calidad_recibida || d.calidad) ? `/${d.calidad_recibida || d.calidad}` : ''}</span>
+                              {d.notas_revision && <span className="text-muted italic">— {d.notas_revision}</span>}
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {selectedContenedor.notas && (
               <p className="text-sm text-muted italic border-l-2 border-border pl-3">{selectedContenedor.notas}</p>
             )}
@@ -1819,6 +1964,14 @@ export default function Contenedores() {
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
                     <Edit2 size={15} /> Editar
                   </button>
+                  <button onClick={() => openRevisionModal(selectedContenedor)}
+                    className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-all duration-150">
+                    <ClipboardCheck size={17} /> Revisar Contenedor
+                  </button>
+                </div>
+              )}
+              {isAdmin && selectedContenedor.estado === 'revision' && (
+                <div className="flex gap-3 ml-auto">
                   <button onClick={() => openFinalizarModal(selectedContenedor)}
                     className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
                     <CheckCircle size={17} /> Finalizar Contenedor
@@ -1891,6 +2044,188 @@ export default function Contenedores() {
               <button onClick={handleFinalizar} disabled={submitting}
                 className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
                 {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          REVISIÓN MODAL — Etapa 2: verificación física
+      ════════════════════════════════════════════════════════ */}
+      {selectedContenedor && (
+        <Modal isOpen={revisionModalOpen} onClose={() => setRevisionModalOpen(false)} title={`Revisión — ${selectedContenedor.numero}`} size="full">
+          <div className="space-y-5">
+            {/* Banner informativo */}
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+              <ClipboardCheck size={16} className="flex-shrink-0 mt-0.5 text-blue-600" />
+              <div>
+                <p className="font-semibold mb-0.5">Verificación física del contenedor</p>
+                <p className="text-xs text-blue-700">Registra las cantidades y tipos de producto que llegaron realmente. La <strong>cantidad final</strong> es la que alimentará el inventario. Esta acción es irreversible.</p>
+              </div>
+            </div>
+
+            {/* Resumen header de columnas */}
+            <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 text-center">
+              <div className="bg-primary/5 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Enviado</p>
+                <p className="text-xs text-muted mt-0.5">Lo registrado inicialmente</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Recibido</p>
+                <p className="text-xs text-blue-600 mt-0.5">Lo que llegó físicamente</p>
+              </div>
+              <div className="bg-success/8 border border-success/20 rounded-xl px-3 py-2">
+                <p className="text-[10px] font-bold text-success uppercase tracking-widest">Cantidad Final</p>
+                <p className="text-xs text-success/80 mt-0.5">Lo que entra al inventario</p>
+              </div>
+            </div>
+
+            {/* Agrupar filas por proveedor */}
+            {(() => {
+              const porProveedor = {};
+              revisionRows.forEach((row, idx) => {
+                if (!porProveedor[row.proveedor_nombre]) porProveedor[row.proveedor_nombre] = [];
+                porProveedor[row.proveedor_nombre].push({ ...row, idx });
+              });
+              return Object.entries(porProveedor).map(([prov, rows]) => (
+                <div key={prov} className="rounded-2xl border border-border/60 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40">
+                    <p className="text-sm font-bold text-primary">{prov}</p>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {rows.map(({ idx, ...row }) => (
+                      <div key={row.detalle_id} className="p-4 space-y-3">
+                        {/* Fila de 3 columnas */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                          {/* Col 1: Enviado (read-only) */}
+                          <div className="bg-primary/3 rounded-xl p-3 space-y-1.5">
+                            <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-2">Enviado</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {row.categoria && (
+                                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium capitalize">{row.categoria}</span>
+                              )}
+                              <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded font-semibold capitalize">{row.clasificacion}</span>
+                              <span className="text-xs text-muted capitalize">{row.referencia}</span>
+                              {row.calidad && <span className="text-xs text-muted/80 capitalize">/ {row.calidad}</span>}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="text-[10px] text-muted">Cantidad:</span>
+                              <span className="text-sm font-bold font-mono text-primary">{row.cantidad_enviada}</span>
+                            </div>
+                          </div>
+
+                          {/* Col 2: Recibido (editable — tipo de producto) */}
+                          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 space-y-2">
+                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-widest mb-2">Tipo recibido <span className="normal-case font-normal text-blue-500">(dejar vacío si es igual)</span></p>
+                            <div className="grid grid-cols-1 gap-2">
+                              <div>
+                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Clasificación</label>
+                                <input list={`rev-tipos-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
+                                  placeholder={row.clasificacion}
+                                  value={row.clasificacion_recibida}
+                                  onChange={e => updateRevisionRow(idx, 'clasificacion_recibida', e.target.value)} />
+                                <datalist id={`rev-tipos-${row.detalle_id}`}>
+                                  {tiposOpts.map(t => <option key={t} value={t} />)}
+                                </datalist>
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Referencia</label>
+                                <input list={`rev-refs-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
+                                  placeholder={row.referencia}
+                                  value={row.referencia_recibida}
+                                  onChange={e => updateRevisionRow(idx, 'referencia_recibida', e.target.value)} />
+                                <datalist id={`rev-refs-${row.detalle_id}`}>
+                                  {categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}
+                                </datalist>
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Calidad</label>
+                                <input list={`rev-cals-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
+                                  placeholder={row.calidad || 'Sin calidad'}
+                                  value={row.calidad_recibida}
+                                  onChange={e => updateRevisionRow(idx, 'calidad_recibida', e.target.value)} />
+                                <datalist id={`rev-cals-${row.detalle_id}`}>
+                                  {calidadesOpts.map(c => <option key={c} value={c} />)}
+                                </datalist>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Col 3: Cantidades */}
+                          <div className="bg-success/5 border border-success/15 rounded-xl p-3 space-y-2">
+                            <p className="text-[9px] font-bold text-success uppercase tracking-widest mb-2">Cantidades</p>
+                            <div>
+                              <label className="text-[9px] font-semibold text-muted uppercase">Recibida físicamente</label>
+                              <input type="number" min="0" className={`${inp} text-center font-mono mt-0.5`}
+                                value={row.cantidad_recibida}
+                                onChange={e => updateRevisionRow(idx, 'cantidad_recibida', e.target.value)} />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-semibold text-success uppercase">Final (al inventario)</label>
+                              <input type="number" min="0" className={`${inp} text-center font-mono font-bold border-success/30 bg-success/5 text-success mt-0.5`}
+                                value={row.cantidad_final}
+                                onChange={e => updateRevisionRow(idx, 'cantidad_final', e.target.value)} />
+                            </div>
+                            {parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada) && (
+                              <p className="text-[10px] text-warning font-semibold">
+                                ⚠ Diferencia: {parseInt(row.cantidad_recibida) - parseInt(row.cantidad_enviada)} unidades
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Notas de revisión */}
+                        <div>
+                          <label className="text-[9px] font-semibold text-muted uppercase tracking-widest">Notas / Diferencias observadas</label>
+                          <input type="text" className={`${inp} text-xs mt-0.5`}
+                            placeholder="Ej: 1 paca llegó dañada, tipo de producto no coincide..."
+                            value={row.notas_revision}
+                            onChange={e => updateRevisionRow(idx, 'notas_revision', e.target.value)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
+
+            {/* Resumen totales */}
+            <div className="flex items-center justify-between bg-primary/5 rounded-xl px-5 py-3">
+              <div className="text-center">
+                <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
+                <p className="text-xl font-bold font-mono text-primary">
+                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0).toLocaleString()}
+                </p>
+              </div>
+              <ArrowRight size={20} className="text-muted" />
+              <div className="text-center">
+                <p className="text-xs text-blue-600 uppercase font-semibold">Total recibido</p>
+                <p className="text-xl font-bold font-mono text-blue-600">
+                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0).toLocaleString()}
+                </p>
+              </div>
+              <ArrowRight size={20} className="text-muted" />
+              <div className="text-center">
+                <p className="text-xs text-success uppercase font-semibold">Total final</p>
+                <p className="text-xl font-bold font-mono text-success">
+                  {revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_final) || 0), 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex justify-end gap-3 pt-1">
+              <button type="button" onClick={() => setRevisionModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
+                Cancelar
+              </button>
+              <button onClick={handleGuardarRevision} disabled={submitting}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 disabled:opacity-40 active:scale-95 transition-all duration-150">
+                {submitting
+                  ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Guardando...</>
+                  : <><ClipboardCheck size={17} /> Guardar Revisión</>
+                }
               </button>
             </div>
           </div>
