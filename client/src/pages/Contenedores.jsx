@@ -403,6 +403,16 @@ export default function Contenedores() {
   };
   useEffect(() => { loadContenedores(); }, [filtroEstado]);
 
+  // Auto-calcula total_pacas como la suma de cantidades de todos los proveedores.
+  useEffect(() => {
+    const suma = proveedores.reduce(
+      (s, p) => s + (p.detalles || []).reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0),
+      0
+    );
+    const sumaStr = suma > 0 ? String(suma) : '';
+    setFormData(prev => prev.total_pacas === sumaStr ? prev : { ...prev, total_pacas: sumaStr });
+  }, [proveedores]);
+
   // ── Filtered list (client-side search) ────────────────────────
   const contenedoresFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -1783,9 +1793,15 @@ export default function Contenedores() {
                       value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
                   </div>
                   <div>
-                    <label className={lbl}>Total de Unidades *</label>
-                    <input type="number" min="1" className={inp} placeholder="200"
-                      value={formData.total_pacas} onChange={(e) => setFormData({ ...formData, total_pacas: e.target.value })} required />
+                    <label className={lbl}>
+                      Total de Unidades
+                      <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
+                    </label>
+                    <input type="number" readOnly tabIndex={-1}
+                      className={`${inp} bg-primary/5 text-primary font-mono font-bold text-center cursor-not-allowed select-none`}
+                      placeholder="0"
+                      value={formData.total_pacas}
+                      title="Se calcula automáticamente desde las cantidades de cada proveedor" />
                   </div>
                   <div>
                     <label className={lbl}>Tasa USD→COP</label>
