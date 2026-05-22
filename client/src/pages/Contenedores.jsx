@@ -1825,55 +1825,92 @@ export default function Contenedores() {
                     <p className="text-[11px] text-muted mt-0.5">Quién suministra qué tipos de paca y en qué cantidad</p>
                   </div>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-6">
                   {proveedores.map((prov, pi) => (
-                    <div key={pi} className="rounded-2xl border border-border/60 bg-surface overflow-hidden">
-                      <div className="px-4 py-3 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-secondary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{pi + 1}</span>
-                          <input type="text" className={`${inp} flex-1`} placeholder="Nombre del proveedor *"
-                            value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
-                          <select className={`${inpBase} w-20 flex-shrink-0`} value={prov.moneda || 'USD'}
+                    <div key={pi} className="rounded-2xl border-2 border-secondary/20 bg-surface overflow-hidden shadow-sm hover:shadow-md hover:border-secondary/40 transition-all duration-200">
+                      {/* ── Cabecera del proveedor (color destacado) ─── */}
+                      <div className="px-4 py-3 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-xl bg-secondary text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">
+                            P{pi + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-secondary uppercase tracking-widest leading-none mb-0.5">Proveedor {pi + 1}</p>
+                            <input type="text" className={`${inp} font-semibold`} placeholder="Nombre del proveedor *"
+                              value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
+                          </div>
+                          <select className={`${inpBase} w-20 flex-shrink-0 font-semibold`} value={prov.moneda || 'USD'}
                             onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
                             <option value="USD">USD</option>
                             <option value="COP">COP</option>
                           </select>
                           {proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
-                              className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
-                              <X size={15} />
+                              title="Eliminar proveedor"
+                              className="p-2 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                              <X size={16} />
                             </button>
                           )}
                         </div>
-                        {(() => {
-                          const totalPacasProv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
-                          return totalPacasProv > 0 ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary/10 text-secondary text-xs font-semibold">
-                                <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
-                                {totalPacasProv.toLocaleString()} paca{totalPacasProv !== 1 ? 's' : ''}
+                        <div className="flex items-center gap-2 mt-2.5">
+                          {(() => {
+                            const totalPacasProv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                            return totalPacasProv > 0 ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary text-white text-xs font-bold shadow-sm">
+                                <Boxes size={11} />
+                                {totalPacasProv.toLocaleString()} {totalPacasProv === 1 ? 'paca' : 'pacas'}
                               </span>
-                            </div>
-                          ) : null;
-                        })()}
-                        <input type="text" className={`${inp} text-xs`} placeholder="Notas del proveedor (opcional)"
-                          value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
+                            ) : null;
+                          })()}
+                          <input type="text" className={`${inp} text-xs flex-1`} placeholder="Notas del proveedor (opcional)"
+                            value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
+                        </div>
                       </div>
-                      <div className="px-4 pb-4 pt-3 bg-cream/50 border-t border-border/30">
-                        <div className="flex items-center justify-between mb-2.5">
-                          <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Distribución — Categoría · Clasificación · Referencia · Calidad</p>
-                          <span className="text-[10px] font-semibold text-secondary tabular-nums">
+
+                      {/* ── Líneas de distribución ─────────────────── */}
+                      <div className="px-4 pb-4 pt-3 bg-cream/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Layers size={12} className="text-muted" />
+                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">
+                              Líneas de Distribución ({prov.detalles.length})
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold text-secondary tabular-nums bg-secondary/10 px-2 py-0.5 rounded-full">
                             Total: {formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0))}
                             {(prov.moneda==='USD') && (parseFloat(formData.tasa_conversion)||1) > 1 &&
                               ` ≈ ${formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0)*(parseFloat(formData.tasa_conversion)||1))} COP`
                             }
                           </span>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           {prov.detalles.map((det, di) => {
                             const subtotal = (parseInt(det.cantidad)||0)*(parseFloat(det.costo_unitario)||0);
                             return (
-                              <div key={di} className="bg-surface rounded-xl px-3 pt-2.5 pb-3 border border-border/40 space-y-2">
+                              <div key={di} className="bg-surface rounded-xl border border-border/60 border-l-4 border-l-secondary/50 shadow-sm hover:shadow-md hover:border-l-secondary transition-all duration-150 overflow-hidden">
+                                {/* Cabecera de la línea */}
+                                <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/5 border-b border-border/30">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-5 h-5 rounded-md bg-secondary/15 text-secondary text-[10px] font-bold flex items-center justify-center">
+                                      {di + 1}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Línea {di + 1}</span>
+                                    {subtotal > 0 && (
+                                      <span className="ml-2 text-[10px] text-muted font-mono">
+                                        Subtotal: <span className="font-bold text-secondary">{subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0})}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {prov.detalles.length > 1 && (
+                                    <button type="button" onClick={() => removeDetalle(pi, di)}
+                                      title="Eliminar línea"
+                                      className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                                      <X size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                                {/* Campos */}
+                                <div className="px-3 pt-2.5 pb-3 space-y-2">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                   <div>
                                     <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
@@ -1933,28 +1970,23 @@ export default function Contenedores() {
                                       {subtotal > 0 ? subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0}) : '—'}
                                     </div>
                                   </div>
-                                  {prov.detalles.length > 1 && (
-                                    <button type="button" onClick={() => removeDetalle(pi, di)}
-                                      className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0 mt-4">
-                                      <X size={13} />
-                                    </button>
-                                  )}
+                                </div>
                                 </div>
                               </div>
                             );
                           })}
                         </div>
                         <button type="button" onClick={() => addDetalle(pi)}
-                          className="mt-2.5 flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-secondary transition-colors">
-                          <Plus size={13} /> Agregar línea
+                          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5 hover:border-secondary transition-all">
+                          <Plus size={13} /> Agregar línea a {prov.proveedor_nombre || `Proveedor ${pi+1}`}
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
                 <button type="button" onClick={addProveedor}
-                  className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-primary/30 text-primary text-sm font-semibold hover:bg-primary/5 hover:border-primary/50 transition-all">
-                  <Plus size={15} /> Agregar proveedor
+                  className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-secondary/40 text-secondary text-sm font-bold hover:bg-secondary/5 hover:border-secondary transition-all">
+                  <Plus size={16} /> Agregar otro proveedor
                 </button>
               </div>
 

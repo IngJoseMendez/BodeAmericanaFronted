@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X } from 'lucide-react';
 
+// Pila global de modales abiertos: solo el modal de la cima maneja Escape y
+// el lock de scroll del body. Esto evita que abrir un modal interno cierre
+// también el modal padre al pulsar Escape.
+const modalStack = [];
+
 export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   const [visible, setVisible] = useState(false);
   const [animatingOut, setAnimatingOut] = useState(false);
   const modalRef = useRef(null);
   const triggerRef = useRef(null);
   const previousFocusRef = useRef(null);
+  const instanceIdRef = useRef(null);
+  if (instanceIdRef.current === null) {
+    instanceIdRef.current = Symbol('modal');
+  }
 
   // Guardar el elemento que abrió el modal para restaurar el foco al cerrar
   useEffect(() => {
@@ -46,8 +55,15 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   useEffect(() => {
     if (!visible) return;
 
+    const myId = instanceIdRef.current;
+    modalStack.push(myId);
+
     const handleKeyDown = (e) => {
+      // Solo el modal de la cima de la pila maneja Escape y Tab.
+      if (modalStack[modalStack.length - 1] !== myId) return;
+
       if (e.key === 'Escape') {
+        e.stopPropagation();
         handleClose();
         return;
       }
@@ -79,7 +95,12 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      const idx = modalStack.indexOf(myId);
+      if (idx !== -1) modalStack.splice(idx, 1);
+      // Solo libera el scroll del body cuando no queda ningún modal abierto.
+      if (modalStack.length === 0) {
+        document.body.style.overflow = '';
+      }
     };
   }, [visible, handleClose]);
 
@@ -100,9 +121,14 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
     full: 'max-h-[84vh]',
   };
 
+  // z-index escalonado: cada modal nuevo se renderiza por encima del anterior.
+  const stackIndex = Math.max(0, modalStack.indexOf(instanceIdRef.current));
+  const zIndex = 50 + stackIndex * 10;
+
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4`}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
