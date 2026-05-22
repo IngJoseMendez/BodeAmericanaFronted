@@ -1467,6 +1467,13 @@ export default function Contenedores() {
         return;
       }
     }
+    // Detecta discrepancias antes de guardar para ofrecer exportar después.
+    const discrepancias = revisionRows.filter(r =>
+      (parseInt(r.cantidad_recibida) || 0) !== (parseInt(r.cantidad_enviada) || 0) ||
+      r.clasificacion_recibida.trim() || r.referencia_recibida.trim() || r.calidad_recibida.trim()
+    );
+    const hayDiscrepancias = discrepancias.length > 0;
+
     setSubmitting(true);
     try {
       const revisiones = revisionRows.map(r => ({
@@ -1478,10 +1485,23 @@ export default function Contenedores() {
         calidad_recibida: r.calidad_recibida.trim() || null,
         notas_revision: r.notas_revision.trim() || null,
       }));
-      await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
+      const contenedorActualizado = await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
       addToast('Revisión guardada — el contenedor está listo para finalizar', 'success');
       setRevisionModalOpen(false);
       loadContenedores();
+
+      // Si hay discrepancias, ofrecer exportar reclamación inmediatamente.
+      if (hayDiscrepancias) {
+        const exportar = await confirm({
+          title: '⚠ Se detectaron discrepancias',
+          message: `Se encontraron ${discrepancias.length} línea${discrepancias.length !== 1 ? 's' : ''} con diferencias entre lo pedido y lo recibido. ¿Quieres exportar ahora la reclamación por proveedor (Excel) para enviársela?\n\nPodrás hacerlo más tarde desde el botón "Ver detalle" (👁) del contenedor.`,
+          confirmText: 'Exportar Excel ahora',
+          cancelText: 'Más tarde',
+        });
+        if (exportar) {
+          await handleExportReclamacionExcel(contenedorActualizado);
+        }
+      }
     } catch (err) { addToast(err.message, 'error'); }
     finally { setSubmitting(false); }
   };

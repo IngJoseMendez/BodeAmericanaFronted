@@ -53,7 +53,7 @@ const emptyForm = { categoria: '', calidad: '', precio: '' };
 export default function Precios() {
   const [precios, setPrecios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { categorias, calidades } = useCatalog();
+  const { temporadas, calidades } = useCatalog();
   const [modalOpen, setModalOpen]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form, setForm]             = useState(emptyForm);
@@ -193,9 +193,9 @@ export default function Precios() {
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
                   required
                 >
-                  <option value="">Seleccionar...</option>
-                  {categorias.map((c) => (
-                    <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                  <option value="">Seleccionar temporada...</option>
+                  {temporadas.map((t) => (
+                    <option key={t.id} value={t.nombre}>{t.nombre}</option>
                   ))}
                 </select>
               </div>
