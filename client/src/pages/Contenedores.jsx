@@ -2634,177 +2634,170 @@ export default function Contenedores() {
       ════════════════════════════════════════════════════════ */}
       {selectedContenedor && (
         <Modal isOpen={revisionModalOpen} onClose={() => setRevisionModalOpen(false)} title={`Revisión — ${selectedContenedor.numero}`} size="full">
-          <div className="space-y-5">
-            {/* Banner informativo */}
-            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
-              <ClipboardCheck size={16} className="flex-shrink-0 mt-0.5 text-blue-600" />
-              <div>
-                <p className="font-semibold mb-0.5">
-                  {selectedContenedor.estado === 'revision' ? 'Editando revisión física' : 'Verificación física del contenedor'}
-                </p>
-                <p className="text-xs text-blue-700">
-                  Registra solo la <strong>cantidad realmente recibida</strong> de cada producto (esa es la que entra al inventario). Si llegó un producto distinto al pedido, indica el tipo recibido en la columna del medio.
-                  {selectedContenedor.estado === 'revision' && <span className="block mt-0.5">Puedes editar esta revisión las veces que necesites antes de finalizar el contenedor.</span>}
-                </p>
-              </div>
-            </div>
-
-            {/* Resumen header de columnas */}
-            <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 text-center">
-              <div className="bg-primary/5 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Enviado</p>
-                <p className="text-xs text-muted mt-0.5">Lo que se pidió/facturó</p>
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-blue-700 uppercase tracking-widest">Tipo Recibido</p>
-                <p className="text-xs text-blue-600 mt-0.5">Si el producto no coincide</p>
-              </div>
-              <div className="bg-success/8 border border-success/20 rounded-xl px-3 py-2">
-                <p className="text-[10px] font-bold text-success uppercase tracking-widest">Cantidad Recibida</p>
-                <p className="text-xs text-success/80 mt-0.5">Va directo al inventario</p>
-              </div>
+          <div className="space-y-3">
+            {/* Banner compacto */}
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
+              <ClipboardCheck size={14} className="flex-shrink-0 text-blue-600" />
+              <p>
+                <strong>{selectedContenedor.estado === 'revision' ? 'Editando revisión.' : 'Verificación física.'}</strong>
+                {' '}Registra la <strong>cantidad recibida</strong> de cada producto (entra al inventario). Si llegó un producto distinto al pedido, indícalo en la columna "Tipo Recibido".
+              </p>
             </div>
 
             {/* Agrupar filas por proveedor */}
+            <div className="space-y-3">
             {(() => {
               const porProveedor = {};
               revisionRows.forEach((row, idx) => {
                 if (!porProveedor[row.proveedor_nombre]) porProveedor[row.proveedor_nombre] = [];
                 porProveedor[row.proveedor_nombre].push({ ...row, idx });
               });
-              return Object.entries(porProveedor).map(([prov, rows]) => {
+              const provEntries = Object.entries(porProveedor);
+              return provEntries.map(([prov, rows], provIdx) => {
                 const provEnviado = rows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
                 const provRecibido = rows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
                 const provDiff = provRecibido - provEnviado;
+                const hayDiscrepancias = rows.some(r =>
+                  parseInt(r.cantidad_recibida) !== parseInt(r.cantidad_enviada) ||
+                  r.clasificacion_recibida || r.referencia_recibida || r.calidad_recibida
+                );
                 return (
-                <div key={prov} className="rounded-2xl border border-border/60 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
-                    <p className="text-sm font-bold text-primary">{prov}</p>
-                    <div className="flex items-center gap-3 text-xs font-mono">
-                      <span className="text-muted">Pedido: <strong className="text-primary">{provEnviado}</strong></span>
+                <div key={prov} className="rounded-xl border-2 border-secondary/20 bg-surface overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
+                  {/* ── Cabecera compacta del proveedor ─────────────── */}
+                  <div className="px-3 py-2 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-7 h-7 rounded-lg bg-secondary text-white text-xs font-bold flex items-center justify-center flex-shrink-0 shadow-sm">
+                        P{provIdx + 1}
+                      </span>
+                      <p className="text-sm font-bold text-primary truncate">{prov}</p>
+                      {hayDiscrepancias && (
+                        <span className="text-[10px] font-bold bg-warning/15 text-warning px-2 py-0.5 rounded-full flex-shrink-0">⚠</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-mono">
+                      <span className="bg-white/80 rounded px-2 py-0.5 border border-primary/10">
+                        <span className="text-muted">Ped:</span> <strong className="text-primary">{provEnviado}</strong>
+                      </span>
                       <ArrowRight size={11} className="text-muted" />
-                      <span className="text-success">Recibido: <strong>{provRecibido}</strong></span>
+                      <span className="bg-white/80 rounded px-2 py-0.5 border border-success/20">
+                        <span className="text-success/80">Rec:</span> <strong className="text-success">{provRecibido}</strong>
+                      </span>
                       {provDiff !== 0 && (
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${provDiff < 0 ? 'bg-error text-white' : 'bg-warning text-white'}`}>
                           {provDiff > 0 ? '+' : ''}{provDiff}
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="divide-y divide-border/30">
-                    {rows.map(({ idx, ...row }) => (
-                      <div key={row.detalle_id} className="p-4 space-y-3">
-                        {/* Fila de 3 columnas */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+                  {/* ── Cabecera de columnas compacta ──────────────────── */}
+                  <div className="hidden lg:grid grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 px-3 py-1 bg-cream/40 border-b border-border/40 text-[9px] font-bold uppercase tracking-widest">
+                    <div className="text-muted">📦 Enviado / Facturado</div>
+                    <div className="text-blue-700">🔄 Tipo Recibido <span className="normal-case font-normal text-blue-500/70">(si difiere)</span></div>
+                    <div className="text-success text-center">✅ Cant. Inventario</div>
+                    <div className="text-muted">📝 Notas</div>
+                  </div>
+
+                  {/* ── Líneas (filas compactas) ───────────────────────── */}
+                  <div className="divide-y divide-border/30 bg-cream/10">
+                    {rows.map(({ idx, ...row }, lineaIdx) => {
+                      const hayDiff = parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada);
+                      const hayCambioTipo = row.clasificacion_recibida || row.referencia_recibida || row.calidad_recibida;
+                      return (
+                      <div key={row.detalle_id} className={`border-l-4 ${hayDiff || hayCambioTipo ? 'border-l-warning' : 'border-l-secondary/40'} hover:border-l-secondary hover:bg-surface transition-all duration-150`}>
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
                           {/* Col 1: Enviado (read-only) */}
-                          <div className="bg-primary/3 rounded-xl p-3 space-y-1.5">
-                            <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-2">Enviado</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {row.categoria && (
-                                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium capitalize">{row.categoria}</span>
-                              )}
-                              <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded font-semibold capitalize">{row.clasificacion}</span>
-                              <span className="text-xs text-muted capitalize">{row.referencia}</span>
-                              {row.calidad && <span className="text-xs text-muted/80 capitalize">/ {row.calidad}</span>}
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className="text-[10px] text-muted">Cantidad:</span>
-                              <span className="text-sm font-bold font-mono text-primary">{row.cantidad_enviada}</span>
-                            </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="w-5 h-5 rounded-md bg-secondary/15 text-secondary text-[10px] font-bold flex items-center justify-center flex-shrink-0">{lineaIdx + 1}</span>
+                            {row.categoria && (
+                              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium capitalize">{row.categoria}</span>
+                            )}
+                            <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-semibold capitalize">{row.clasificacion}</span>
+                            <span className="text-xs text-muted capitalize">{row.referencia}</span>
+                            {row.calidad && <span className="text-xs text-muted/80 capitalize">/ {row.calidad}</span>}
+                            <span className="ml-auto text-xs font-bold font-mono text-primary bg-primary/5 px-2 py-0.5 rounded">×{row.cantidad_enviada}</span>
                           </div>
 
-                          {/* Col 2: Recibido (editable — tipo de producto) */}
-                          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 space-y-2">
-                            <p className="text-[9px] font-bold text-blue-700 uppercase tracking-widest mb-2">Tipo recibido <span className="normal-case font-normal text-blue-500">(dejar vacío si es igual)</span></p>
-                            <div className="grid grid-cols-1 gap-2">
-                              <div>
-                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Clasificación</label>
-                                <input list={`rev-tipos-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
-                                  placeholder={row.clasificacion}
-                                  value={row.clasificacion_recibida}
-                                  onChange={e => updateRevisionRow(idx, 'clasificacion_recibida', e.target.value)} />
-                                <datalist id={`rev-tipos-${row.detalle_id}`}>
-                                  {tiposOpts.map(t => <option key={t} value={t} />)}
-                                </datalist>
-                              </div>
-                              <div>
-                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Referencia</label>
-                                <input list={`rev-refs-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
-                                  placeholder={row.referencia}
-                                  value={row.referencia_recibida}
-                                  onChange={e => updateRevisionRow(idx, 'referencia_recibida', e.target.value)} />
-                                <datalist id={`rev-refs-${row.detalle_id}`}>
-                                  {categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}
-                                </datalist>
-                              </div>
-                              <div>
-                                <label className="text-[9px] font-semibold text-blue-700 uppercase">Calidad</label>
-                                <input list={`rev-cals-${row.detalle_id}`} className={`${inp} text-xs mt-0.5`}
-                                  placeholder={row.calidad || 'Sin calidad'}
-                                  value={row.calidad_recibida}
-                                  onChange={e => updateRevisionRow(idx, 'calidad_recibida', e.target.value)} />
-                                <datalist id={`rev-cals-${row.detalle_id}`}>
-                                  {calidadesOpts.map(c => <option key={c} value={c} />)}
-                                </datalist>
-                              </div>
-                            </div>
+                          {/* Col 2: Tipo recibido (inline, compacto) */}
+                          <div className="flex items-center gap-1 bg-blue-50/40 border border-blue-100 rounded-lg p-1">
+                            <p className="text-[9px] font-bold text-blue-700 uppercase lg:hidden mr-1">🔄 Tipo recibido:</p>
+                            <input list={`rev-tipos-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={row.clasificacion}
+                              title="Clasificación recibida"
+                              value={row.clasificacion_recibida}
+                              onChange={e => updateRevisionRow(idx, 'clasificacion_recibida', e.target.value)} />
+                            <datalist id={`rev-tipos-${row.detalle_id}`}>
+                              {tiposOpts.map(t => <option key={t} value={t} />)}
+                            </datalist>
+                            <input list={`rev-refs-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={row.referencia}
+                              title="Referencia recibida"
+                              value={row.referencia_recibida}
+                              onChange={e => updateRevisionRow(idx, 'referencia_recibida', e.target.value)} />
+                            <datalist id={`rev-refs-${row.detalle_id}`}>
+                              {categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}
+                            </datalist>
+                            <input list={`rev-cals-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={row.calidad || 'Calidad'}
+                              title="Calidad recibida"
+                              value={row.calidad_recibida}
+                              onChange={e => updateRevisionRow(idx, 'calidad_recibida', e.target.value)} />
+                            <datalist id={`rev-cals-${row.detalle_id}`}>
+                              {calidadesOpts.map(c => <option key={c} value={c} />)}
+                            </datalist>
                           </div>
 
-                          {/* Col 3: Cantidad recibida = entra al inventario */}
-                          <div className="bg-success/5 border border-success/15 rounded-xl p-3 space-y-2">
-                            <p className="text-[9px] font-bold text-success uppercase tracking-widest mb-2">Cantidad Recibida</p>
-                            <div>
-                              <label className="text-[9px] font-semibold text-success uppercase">Llegó físicamente</label>
-                              <input type="number" min="0" className={`${inp} text-center font-mono font-bold border-success/30 bg-success/5 text-success mt-0.5 text-lg`}
-                                value={row.cantidad_recibida}
-                                onChange={e => updateRevisionRow(idx, 'cantidad_recibida', e.target.value)} />
-                              <p className="text-[9px] text-success/70 mt-1 text-center italic">Esta cantidad entra al inventario</p>
-                            </div>
+                          {/* Col 3: Cantidad recibida (input grande, compacto verticalmente) */}
+                          <div className="flex items-center gap-2">
+                            <p className="text-[9px] font-bold text-success uppercase lg:hidden">✅</p>
+                            <input type="number" min="0" className={`${inpBase} text-center font-mono font-bold border-2 border-success/40 bg-success/5 text-success text-xl py-2 w-20 flex-shrink-0`}
+                              value={row.cantidad_recibida}
+                              onChange={e => updateRevisionRow(idx, 'cantidad_recibida', e.target.value)} />
                             {parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada) && (
-                              <p className="text-[10px] text-warning font-semibold text-center">
-                                ⚠ Diferencia: {parseInt(row.cantidad_recibida) - parseInt(row.cantidad_enviada)} unidades vs. pedido
-                              </p>
+                              <span className="text-[10px] text-warning font-bold whitespace-nowrap">
+                                {(parseInt(row.cantidad_recibida) || 0) - (parseInt(row.cantidad_enviada) || 0) > 0 ? '+' : ''}
+                                {(parseInt(row.cantidad_recibida) || 0) - (parseInt(row.cantidad_enviada) || 0)}
+                              </span>
                             )}
                           </div>
-                        </div>
 
-                        {/* Notas de revisión */}
-                        <div>
-                          <label className="text-[9px] font-semibold text-muted uppercase tracking-widest">Notas / Diferencias observadas</label>
-                          <input type="text" className={`${inp} text-xs mt-0.5`}
-                            placeholder="Ej: 1 paca llegó dañada, tipo de producto no coincide..."
+                          {/* Col 4: Notas (inline) */}
+                          <input type="text" className={`${inpBase} text-xs py-1.5`}
+                            placeholder="Notas / diferencias (opcional)"
                             value={row.notas_revision}
                             onChange={e => updateRevisionRow(idx, 'notas_revision', e.target.value)} />
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 );
               });
             })()}
+            </div>
 
-            {/* Resumen totales */}
+            {/* Resumen totales (compacto, sticky) */}
             {(() => {
               const totalEnv = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_enviada) || 0), 0);
               const totalRec = revisionRows.reduce((s, r) => s + (parseInt(r.cantidad_recibida) || 0), 0);
               const diff = totalRec - totalEnv;
               return (
-                <div className="flex items-center justify-between bg-primary/5 rounded-xl px-6 py-4">
-                  <div className="text-center flex-1">
-                    <p className="text-xs text-muted uppercase font-semibold">Total enviado</p>
-                    <p className="text-2xl font-bold font-mono text-primary">{totalEnv.toLocaleString()}</p>
+                <div className="flex items-center justify-center gap-3 bg-primary/5 rounded-lg px-4 py-2 sticky bottom-0">
+                  <div className="text-center">
+                    <span className="text-[10px] text-muted uppercase font-bold mr-1">Pedido:</span>
+                    <span className="text-lg font-bold font-mono text-primary">{totalEnv.toLocaleString()}</span>
                   </div>
-                  <ArrowRight size={24} className="text-muted mx-2" />
-                  <div className="text-center flex-1">
-                    <p className="text-xs text-success uppercase font-semibold">Total recibido (al inventario)</p>
-                    <p className="text-2xl font-bold font-mono text-success">{totalRec.toLocaleString()}</p>
-                    {diff !== 0 && (
-                      <p className={`text-xs font-semibold mt-1 ${diff < 0 ? 'text-error' : 'text-warning'}`}>
-                        {diff > 0 ? '+' : ''}{diff} respecto a lo pedido
-                      </p>
-                    )}
+                  <ArrowRight size={16} className="text-muted" />
+                  <div className="text-center">
+                    <span className="text-[10px] text-success uppercase font-bold mr-1">Recibido (inventario):</span>
+                    <span className="text-lg font-bold font-mono text-success">{totalRec.toLocaleString()}</span>
                   </div>
+                  {diff !== 0 && (
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${diff < 0 ? 'bg-error text-white' : 'bg-warning text-white'}`}>
+                      {diff > 0 ? '+' : ''}{diff}
+                    </span>
+                  )}
                 </div>
               );
             })()}
