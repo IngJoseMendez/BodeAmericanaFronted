@@ -478,6 +478,9 @@ export const contenedoresApi = {
   finalizar(id, data) {
     return api.post(`/contenedores/${id}/finalizar`, data);
   },
+  convertirNormal(id) {
+    return api.post(`/contenedores/${id}/convertir-normal`);
+  },
   delete(id) {
     return api.delete(`/contenedores/${id}`);
   },

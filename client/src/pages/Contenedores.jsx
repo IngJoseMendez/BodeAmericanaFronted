@@ -5,7 +5,7 @@ import {
   TrendingUp, DollarSign, Archive, Boxes,
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
-  ClipboardCheck,
+  ClipboardCheck, Sparkles, RefreshCw,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
@@ -87,6 +87,14 @@ function StatusBadge({ estado }) {
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600">
         <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
         En Revisión
+      </span>
+    );
+  }
+  if (estado === 'estimacion') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/50">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        Estimación
       </span>
     );
   }
@@ -371,6 +379,7 @@ export default function Contenedores() {
   // ── Selection ──────────────────────────────────────────────────
   const [selectedContenedor, setSelectedContenedor] = useState(null);
   const [editMode, setEditMode]                     = useState(false);
+  const [modoEstimacion, setModoEstimacion]         = useState(false);
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
@@ -413,15 +422,19 @@ export default function Contenedores() {
   };
   useEffect(() => { loadContenedores(); }, [filtroEstado]);
 
-  // Auto-calcula total_pacas como la suma de cantidades de todos los proveedores.
+  // Auto-calcula total_pacas: suma de cantidades de las líneas; en estimación,
+  // suma de las cantidades estimadas de cada proveedor.
   useEffect(() => {
-    const suma = proveedores.reduce(
+    const sumaLineas = proveedores.reduce(
       (s, p) => s + (p.detalles || []).reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0),
       0
     );
+    const suma = sumaLineas > 0
+      ? sumaLineas
+      : (modoEstimacion ? proveedores.reduce((s, p) => s + (parseInt(p.cantidad_estimada) || 0), 0) : 0);
     const sumaStr = suma > 0 ? String(suma) : '';
     setFormData(prev => prev.total_pacas === sumaStr ? prev : { ...prev, total_pacas: sumaStr });
-  }, [proveedores]);
+  }, [proveedores, modoEstimacion]);
 
   // ── Filtered list (client-side search) ────────────────────────
   const contenedoresFiltrados = useMemo(() => {
@@ -1174,19 +1187,28 @@ export default function Contenedores() {
   // ── Derived summary (live) ─────────────────────────────────────
   const calcularResumen = () => {
     const tasa       = parseFloat(formData.tasa_conversion) || 1;
-    const totalPacas = parseInt(formData.total_pacas) || 0;
+    // En estimación, el total de unidades es la suma de las cantidades estimadas.
+    const sumEstimada = proveedores.reduce((s, p) => s + (parseInt(p.cantidad_estimada) || 0), 0);
+    const totalPacas = (parseInt(formData.total_pacas) || 0) || (modoEstimacion ? sumEstimada : 0);
 
     const proveedoresDetalle = proveedores.map(p => {
-      const costoOriginal = (p.detalles || []).reduce(
+      // Costo real de las líneas; si no hay, la estimación (cantidad_estimada × valor_unidad_estimado).
+      const costoReal = (p.detalles || []).reduce(
         (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
       );
+      const costoOriginal = costoReal > 0
+        ? costoReal
+        : (parseInt(p.cantidad_estimada) || 0) * (parseFloat(p.valor_unidad_estimado) || 0);
       const costoEnCOP = p.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
       return { nombre: p.proveedor_nombre, moneda: p.moneda || 'USD', costoOriginal, costoEnCOP,
                costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
     });
 
     const serviciosDetalle = servicios.map(sv => {
-      const costoOriginal = parseFloat(sv.costo) || 0;
+      const costoReal = parseFloat(sv.costo) || 0;
+      const costoOriginal = costoReal > 0
+        ? costoReal
+        : ((parseInt(sv.cantidad_estimada) || 0) * (parseFloat(sv.valor_unidad_estimado) || 0)) || (parseFloat(sv.valor_unidad_estimado) || 0);
       const moneda = sv.moneda || 'COP';
       const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
       return { tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda, costoOriginal, costo: costoEnCOP,
@@ -1285,12 +1307,13 @@ export default function Contenedores() {
   };
 
   // ── Open modals ────────────────────────────────────────────────
-  const openCreateModal = () => { resetForm(); setEditMode(false); setSelectedContenedor(null); setModalOpen(true); };
+  const openCreateModal = (estimacion = false) => { resetForm(); setEditMode(false); setModoEstimacion(estimacion); setSelectedContenedor(null); setModalOpen(true); };
 
   const openEditModal = async (contenedor) => {
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
+      setModoEstimacion(full.estado === 'estimacion');
       setFormData({
         numero: full.numero,
         fecha_llegada: full.fecha_llegada?.split('T')[0] || '',
@@ -1341,8 +1364,13 @@ export default function Contenedores() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const r = calcularResumen();
-    if (!r.cantidadValida) {
+    // En modo estimación no se exige cuadrar líneas de distribución.
+    if (!modoEstimacion && !r.cantidadValida) {
       addToast(`Detalles (${r.sumDetalles}) ≠ total unidades (${formData.total_pacas || '?'})`, 'error');
+      return;
+    }
+    if (modoEstimacion && !proveedores.some(p => p.proveedor_nombre?.trim())) {
+      addToast('Agrega al menos un proveedor con su estimación', 'error');
       return;
     }
     setSubmitting(true);
@@ -1354,6 +1382,7 @@ export default function Contenedores() {
         tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
         total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
+        ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
           moneda: p.moneda || 'USD',
@@ -1380,10 +1409,10 @@ export default function Contenedores() {
       };
       if (editMode && selectedContenedor) {
         await contenedoresApi.update(selectedContenedor.id, payload);
-        addToast('Contenedor actualizado', 'success');
+        addToast(modoEstimacion ? 'Estimación actualizada' : 'Contenedor actualizado', 'success');
       } else {
         await contenedoresApi.create(payload);
-        addToast('Contenedor creado', 'success');
+        addToast(modoEstimacion ? 'Estimación creada — revisa Cuentas por Pagar para registrar abonos' : 'Contenedor creado', 'success');
       }
       setModalOpen(false); resetForm(); loadContenedores();
     } catch (err) { addToast(err.message, 'error'); }
@@ -1396,6 +1425,23 @@ export default function Contenedores() {
     if (!ok) return;
     try { await contenedoresApi.delete(contenedor.id); addToast('Contenedor eliminado', 'success'); loadContenedores(); }
     catch (err) { addToast(err.message, 'error'); }
+  };
+
+  // ── Convertir estimación → contenedor normal ───────────────────
+  const handleConvertirNormal = async (contenedor) => {
+    const ok = await confirm({
+      title: '¿Convertir a contenedor normal?',
+      message: `El contenedor "${contenedor.numero}" pasará de estimación a borrador para registrar lo que realmente llegó (líneas de distribución, revisión y finalización). Las Cuentas por Pagar y sus abonos se conservan.`,
+      confirmText: 'Convertir',
+      variant: 'info',
+    });
+    if (!ok) return;
+    try {
+      const full = await contenedoresApi.convertirNormal(contenedor.id);
+      addToast('Convertido a contenedor normal — completa las líneas reales', 'success');
+      loadContenedores();
+      openEditModal(full); // abre el formulario normal para diligenciar lo real
+    } catch (err) { addToast(err.message, 'error'); }
   };
 
   // ── Finalizar ──────────────────────────────────────────────────
@@ -1577,13 +1623,23 @@ export default function Contenedores() {
       subtitle="Gestión de costos, proveedores y cálculo unitario"
       actions={
         canEdit && (
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-95 transition-all duration-150 shadow-sm"
-          >
-            <Plus size={17} />
-            <span className="hidden sm:inline">Nuevo Contenedor</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60 rounded-xl text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition-all duration-150"
+              title="Crear un contenedor estimado (lo que crees que llegará) para empezar a registrar abonos"
+            >
+              <Sparkles size={17} />
+              <span className="hidden sm:inline">Nueva estimación</span>
+            </button>
+            <button
+              onClick={() => openCreateModal(false)}
+              className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-95 transition-all duration-150 shadow-sm"
+            >
+              <Plus size={17} />
+              <span className="hidden sm:inline">Nuevo Contenedor</span>
+            </button>
+          </div>
         )
       }
     >
@@ -1621,6 +1677,7 @@ export default function Contenedores() {
           className="px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 cursor-pointer"
         >
           <option value="">Todos los estados</option>
+          <option value="estimacion">Estimación</option>
           <option value="borrador">Borrador</option>
           <option value="revision">En Revisión</option>
           <option value="finalizado">Finalizado</option>
@@ -1765,8 +1822,14 @@ export default function Contenedores() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <ActionBtn icon={Eye} title="Ver detalle" onClick={() => openViewModal(cont)} />
-                        {canEdit && cont.estado === 'borrador' && (
-                          <ActionBtn icon={Edit2} title="Editar" color="hover:text-secondary hover:bg-secondary/10" onClick={() => openEditModal(cont)} />
+                        {canEdit && (cont.estado === 'borrador' || cont.estado === 'estimacion') && (
+                          <ActionBtn icon={Edit2} title={cont.estado === 'estimacion' ? 'Editar estimación' : 'Editar'} color="hover:text-secondary hover:bg-secondary/10" onClick={() => openEditModal(cont)} />
+                        )}
+                        {canEdit && cont.estado === 'estimacion' && (
+                          <ActionBtn icon={RefreshCw} title="Convertir a contenedor normal" color="hover:text-amber-600 hover:bg-amber-500/10" onClick={() => handleConvertirNormal(cont)} />
+                        )}
+                        {isAdmin && cont.estado === 'estimacion' && (
+                          <ActionBtn icon={Trash2} title="Eliminar" color="hover:text-error hover:bg-error/10" onClick={() => handleDelete(cont)} />
                         )}
                         {isAdmin && cont.estado === 'borrador' && (
                           <>
@@ -1812,7 +1875,9 @@ export default function Contenedores() {
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); resetForm(); }}
-        title={editMode ? `Editar — ${selectedContenedor?.numero}` : 'Nuevo Contenedor'}
+        title={editMode
+          ? `${modoEstimacion ? 'Editar estimación' : 'Editar'} — ${selectedContenedor?.numero}`
+          : (modoEstimacion ? 'Nueva estimación de contenedor' : 'Nuevo Contenedor')}
         size="full"
       >
         <form onSubmit={handleSubmit}>
@@ -1820,6 +1885,21 @@ export default function Contenedores() {
 
             {/* ── LEFT: form sections ─────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
+
+              {/* Banner modo estimación */}
+              {modoEstimacion && (
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-amber-400/60 bg-amber-500/5 px-4 py-3">
+                  <Sparkles size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-amber-700">
+                    <p className="font-semibold">Modo estimación</p>
+                    <p className="text-xs text-amber-700/80 mt-0.5">
+                      Registra lo que <strong>crees que llegará</strong> en cada parte (factura, cantidad y valor por unidad estimados).
+                      Al guardar se generan las <strong>Cuentas por Pagar</strong> para que registres abonos antes de que llegue.
+                      Cuando llegue, conviértelo a contenedor normal para registrar lo real.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* [1] Información Básica */}
               <div className="rounded-2xl border border-border/60 overflow-hidden">
@@ -1940,7 +2020,8 @@ export default function Contenedores() {
                         </div>
                       </div>
 
-                      {/* ── Líneas de distribución ─────────────────── */}
+                      {/* ── Líneas de distribución (oculto en modo estimación) ─── */}
+                      {!modoEstimacion && (
                       <div className="px-4 pb-4 pt-3 bg-cream/30">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -2054,6 +2135,7 @@ export default function Contenedores() {
                           <Plus size={13} /> Agregar línea a {prov.proveedor_nombre || `Proveedor ${pi+1}`}
                         </button>
                       </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2141,10 +2223,12 @@ export default function Contenedores() {
                   <span className="text-xs text-muted">Por unidad</span>
                   <span className="text-sm font-mono font-bold text-secondary tabular-nums">{formatCurrency(resumen.costoUnitario)}</span>
                 </div>
-                <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
-                  {resumen.cantidadValida
-                    ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
-                    : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar distribución</>
+                <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${modoEstimacion ? 'bg-amber-500/10 text-amber-600' : resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
+                  {modoEstimacion
+                    ? <><Sparkles size={13} /> Estimación · {formData.total_pacas || 0} unidades estimadas</>
+                    : resumen.cantidadValida
+                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
+                      : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar distribución</>
                   }
                 </div>
               </div>
@@ -2155,7 +2239,7 @@ export default function Contenedores() {
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" disabled={submitting || !resumen.cantidadValida}
+                <button type="submit" disabled={submitting || (!modoEstimacion && !resumen.cantidadValida)}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
                   {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                   {submitting ? 'Guardando...' : editMode ? 'Actualizar' : 'Crear'}
@@ -2285,18 +2369,20 @@ export default function Contenedores() {
                     </div>
                   </div>
 
-                  <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
-                    {resumen.cantidadValida
-                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
-                      : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
+                  <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${modoEstimacion ? 'bg-amber-500/10 text-amber-600' : resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
+                    {modoEstimacion
+                      ? <><Sparkles size={13} /> Estimación · {formData.total_pacas || 0} unidades estimadas</>
+                      : resumen.cantidadValida
+                        ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
+                        : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
                     }
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <button type="submit" disabled={submitting || !resumen.cantidadValida}
+                  <button type="submit" disabled={submitting || (!modoEstimacion && !resumen.cantidadValida)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
                     {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-                    {submitting ? 'Guardando...' : editMode ? 'Actualizar Contenedor' : 'Crear Contenedor'}
+                    {submitting ? 'Guardando...' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
                   </button>
                   <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
                     className="w-full py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
