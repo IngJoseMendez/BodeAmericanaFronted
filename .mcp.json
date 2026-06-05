@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "code-review-graph": {
-      "command": "code-review-graph",
+      "command": "C:\\Users\\Jose Pc\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\code-review-graph.exe",
       "args": [
         "serve"
       ],

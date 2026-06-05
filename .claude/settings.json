@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "code-review-graph update --skip-flows",
+            "command": "C:\\Users\\Jose Pc\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\code-review-graph.exe update --skip-flows",
             "timeout": 30
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "code-review-graph status",
+            "command": "C:\\Users\\Jose Pc\\AppData\\Local\\Python\\pythoncore-3.14-64\\Scripts\\code-review-graph.exe status",
             "timeout": 10
           }
         ]
