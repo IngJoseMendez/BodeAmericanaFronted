@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CatalogProvider } from './context/CatalogContext';
-import { ToastProvider, ConfirmProvider } from './components/common';
+import { ToastProvider, ConfirmProvider, PreviewProvider } from './components/common';
 import Dashboard from './pages/Dashboard';
 import Pacas from './pages/Pacas';
 import Clientes from './pages/Clientes';
@@ -132,11 +132,13 @@ export default function App() {
         <ConfirmProvider>
           <BrowserRouter>
             <AuthProvider>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/registro" element={<Registro />} />
-                <Route path="/*" element={<RutasDinamicas />} />
-              </Routes>
+              <PreviewProvider>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/registro" element={<Registro />} />
+                  <Route path="/*" element={<RutasDinamicas />} />
+                </Routes>
+              </PreviewProvider>
             </AuthProvider>
           </BrowserRouter>
         </ConfirmProvider>

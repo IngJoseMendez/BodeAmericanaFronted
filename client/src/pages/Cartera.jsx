@@ -48,6 +48,7 @@ export default function Cartera() {
     cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: ''
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
+  const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'abonos'
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
@@ -122,6 +123,7 @@ export default function Cartera() {
     try {
       const data = await carteraApi.getOne(clienteId);
       setDetalleCliente(data);
+      setDetalleTab('ventas');
     } catch (err) {
       setError(err.message);
     }
@@ -148,6 +150,30 @@ export default function Cartera() {
     } catch (err) {
       addToast(err.message, 'error');
     }
+  };
+
+  // Abrir el modal de abono con el cliente ya seleccionado (desde su cartera)
+  const openPagoModalParaCliente = async (cliente) => {
+    try {
+      const data = await clientesApi.getAll({ estado: 'activo' });
+      setClientes(data);
+      setFormData({
+        cliente_id: cliente.id, monto: '', fecha: new Date().toISOString().split('T')[0],
+        metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: ''
+      });
+      setClienteSearch(cliente.nombre || '');
+      setError('');
+      await cargarSaldoCliente(cliente.id);
+      setModalOpen(true);
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  // Abrir el modal de abono pre-atribuido a una cotización específica
+  const openPagoModalConCotizacion = async (cliente, cotizacionId) => {
+    await openPagoModalParaCliente(cliente);
+    setFormData(prev => ({ ...prev, cotizacion_id: cotizacionId ? String(cotizacionId) : '' }));
   };
 
   // Cargar saldo del cliente seleccionado para mostrar aviso de sobreabono
@@ -195,6 +221,13 @@ export default function Cartera() {
       setModalOpen(false);
       setSaldoCliente(null);
       loadCartera();
+      // Si el detalle del mismo cliente está abierto detrás, refrescarlo
+      if (detalleCliente?.cliente?.id === parseInt(formData.cliente_id)) {
+        try {
+          const data = await carteraApi.getOne(detalleCliente.cliente.id);
+          setDetalleCliente(data);
+        } catch {}
+      }
     } catch (err) {
       setError(err.message);
       addToast('Error al registrar el abono: ' + err.message, 'error');
@@ -780,48 +813,72 @@ export default function Cartera() {
               </div>
             </div>
 
-            {/* Resumen de pagos por cotización (Nivel 2) */}
-            {(() => {
-              const { cotizaciones, generalAbonado } = resumenPorCotizacion(detalleCliente.movimientos);
-              if (cotizaciones.length === 0 && generalAbonado === 0) return null;
+            {/* Pestañas: Ventas | Abonos */}
+            <div className="flex gap-1 border-b border-border">
+              <button type="button" onClick={() => setDetalleTab('ventas')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'ventas' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
+                Ventas
+              </button>
+              <button type="button" onClick={() => setDetalleTab('abonos')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'abonos' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
+                Abonos
+              </button>
+            </div>
+
+            {/* PESTAÑA VENTAS: cada cotización con su saldo, abonable directamente */}
+            {detalleTab === 'ventas' && (() => {
+              const { cotizaciones, generalVenta, generalAbonado } = resumenPorCotizacion(detalleCliente.movimientos);
+              if (cotizaciones.length === 0 && generalVenta === 0) {
+                return <p className="text-center text-muted py-6 text-sm">Este cliente no tiene ventas registradas.</p>;
+              }
               return (
-                <div className="space-y-2">
-                  <h4 className="font-display text-primary">Pagos por cotización</h4>
-                  <div className="rounded-xl border border-border/60 divide-y divide-border/40 overflow-hidden">
-                    {cotizaciones.map((c) => (
-                      <div key={c.cotizacion_id} className="px-3 py-2.5 hover:bg-primary/3">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <RefLink to="/cotizaciones" id={c.cotizacion_id} title="Ver cotización"
-                            className="text-sm font-semibold">
-                            {c.cotizacion_numero || `Cotización #${c.cotizacion_id}`}
-                          </RefLink>
-                          <div className="flex items-center gap-3 text-xs">
-                            <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(c.venta)}</strong></span>
-                            <span className="text-success">Abonado <strong>{formatCurrency(c.abonado)}</strong></span>
-                            <span className={c.saldo > 0 ? 'text-accent' : 'text-success'}>Saldo <strong>{formatCurrency(c.saldo)}</strong></span>
-                          </div>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {cotizaciones.map((c) => (
+                    <div key={c.cotizacion_id} className="rounded-xl border border-border/60 p-3 hover:border-secondary/40 transition-colors">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <RefLink to="/cotizaciones" id={c.cotizacion_id} title="Ver la cotización en su panel"
+                          className="text-sm font-semibold">
+                          {c.cotizacion_numero || `Cotización #${c.cotizacion_id}`}
+                        </RefLink>
+                        <Button size="sm" variant="secondary" icon={Plus}
+                          onClick={() => openPagoModalConCotizacion(detalleCliente.cliente, c.cotizacion_id)}>
+                          Abonar
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs mt-1.5">
+                        <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(c.venta)}</strong></span>
+                        <span className="text-success">Abonado <strong>{formatCurrency(c.abonado)}</strong></span>
+                        <span className={c.saldo > 0 ? 'text-accent' : 'text-success'}>Saldo <strong>{formatCurrency(c.saldo)}</strong></span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-border/50 overflow-hidden">
+                          <div className={`h-full rounded-full ${c.pct >= 100 ? 'bg-success' : 'bg-secondary'}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
                         </div>
-                        {/* Barra de % pagado */}
-                        <div className="mt-1.5 flex items-center gap-2">
-                          <div className="flex-1 h-1.5 rounded-full bg-border/50 overflow-hidden">
-                            <div className={`h-full rounded-full ${c.pct >= 100 ? 'bg-success' : 'bg-secondary'}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
-                          </div>
-                          <span className="text-[11px] font-bold text-muted tabular-nums w-10 text-right">{c.pct}%</span>
+                        <span className="text-[11px] font-bold text-muted tabular-nums w-10 text-right">{c.pct}%</span>
+                      </div>
+                    </div>
+                  ))}
+                  {(generalVenta > 0 || generalAbonado > 0) && (
+                    <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <p className="text-sm font-medium text-muted">Otras ventas / abonos (sin cotización)</p>
+                        <div className="flex items-center gap-3 text-xs mt-0.5">
+                          {generalVenta > 0 && <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(generalVenta)}</strong></span>}
+                          <span className="text-success">Abonado <strong>{formatCurrency(generalAbonado)}</strong></span>
                         </div>
                       </div>
-                    ))}
-                    {generalAbonado > 0 && (
-                      <div className="px-3 py-2.5 flex items-center justify-between bg-primary/3">
-                        <span className="text-sm font-medium text-muted">Abonos generales (sin cotización)</span>
-                        <span className="text-xs text-success font-semibold">{formatCurrency(generalAbonado)}</span>
-                      </div>
-                    )}
-                  </div>
+                      <Button size="sm" variant="ghost" icon={Plus}
+                        onClick={() => openPagoModalConCotizacion(detalleCliente.cliente, null)}>
+                        Abono general
+                      </Button>
+                    </div>
+                  )}
                 </div>
               );
             })()}
 
-            <h4 className="font-display text-primary">Movimientos</h4>
+            {/* PESTAÑA ABONOS: historial de abonos del cliente */}
+            {detalleTab === 'abonos' && (
             <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
@@ -834,25 +891,10 @@ export default function Cartera() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {/* Fila fija: Saldo Inicial (deuda de migración) */}
-                  {parseFloat(detalleCliente.saldo_inicial) > 0 && (
-                    <tr className="bg-orange-50">
-                      <td className="px-3 py-2 text-xs text-orange-500">
-                        {new Date(detalleCliente.cliente.created_at).toLocaleDateString('es-MX')}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
-                          📋 Saldo Inicial
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-semibold text-orange-600">
-                        +{formatCurrency(detalleCliente.saldo_inicial)}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-orange-400 italic">Deuda migrada</td>
-                      <td className="px-3 py-2"></td>
-                    </tr>
+                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono').length === 0 && (
+                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted text-sm">Sin abonos registrados para este cliente</td></tr>
                   )}
-                  {detalleCliente.movimientos.map(m => (
+                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono').map(m => (
                     <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
                       {editandoAbono?.id === m.id ? (
                         // Fila en modo edición
@@ -908,6 +950,22 @@ export default function Cartera() {
                               {m.tipo === 'venta' ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}
                               {m.tipo}
                             </Badge>
+                            {/* Origen: cotización + despacho para saber de dónde proviene */}
+                            {m.cotizacion_id && (
+                              <RefLink to="/cotizaciones" id={m.cotizacion_id} title="Ver cotización"
+                                className="block text-[11px] mt-0.5 font-semibold" icon={false}>
+                                {m.cotizacion_numero || `Cot. #${m.cotizacion_id}`}
+                              </RefLink>
+                            )}
+                            {m.despacho_id ? (
+                              <RefLink to="/despachos" id={m.despacho_id} title="Ver despacho"
+                                className="block text-[10px] text-gray-400" icon={false}>
+                                {m.despacho_numero}
+                              </RefLink>
+                            ) : (m.referencia && !m.es_legacy && (
+                              <span className="block text-[10px] text-gray-400">{m.referencia}</span>
+                            ))}
+                            {m.es_legacy && <span className="block text-[10px] font-bold text-amber-600">LEGACY</span>}
                           </td>
                           <td className={`px-3 py-2 text-right ${m.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>
                             {m.tipo === 'venta' ? '+' : '-'}{formatCurrency(m.monto)}
@@ -917,13 +975,6 @@ export default function Cartera() {
                             {m.cuenta_nombre && (
                               <RefLink to="/cuentas" id={m.cuenta_id} title="Ver cuenta" icon={false} className="block text-[11px]">{m.cuenta_nombre}</RefLink>
                             )}
-                            {m.cotizacion_id && (
-                              <RefLink to="/cotizaciones" id={m.cotizacion_id} title="Ver cotización"
-                                className="block text-[11px]" icon={false}>
-                                {m.cotizacion_numero || `Cot. #${m.cotizacion_id}`}
-                              </RefLink>
-                            )}
-                            {m.es_legacy && <span className="ml-1 text-[10px] font-bold text-amber-600">LEGACY</span>}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {m.tipo === 'abono' && (
@@ -952,6 +1003,7 @@ export default function Cartera() {
                 </tbody>
               </table>
             </div>
+            )}
 
             <div className="flex justify-between pt-2">
               <div className="flex gap-2">
@@ -962,15 +1014,20 @@ export default function Cartera() {
                 >
                   Excel
                 </Button>
-                <Button 
-                  variant="secondary" 
+                <Button
+                  variant="secondary"
                   onClick={() => exportarPDF(detalleCliente.cliente.id, detalleCliente.cliente.nombre)}
                   icon={Download}
                 >
                   PDF
                 </Button>
               </div>
-              <Button variant="ghost" onClick={() => setDetalleCliente(null)}>Cerrar</Button>
+              <div className="flex gap-2">
+                <Button onClick={() => openPagoModalParaCliente(detalleCliente.cliente)} icon={Plus}>
+                  Registrar abono
+                </Button>
+                <Button variant="ghost" onClick={() => setDetalleCliente(null)}>Cerrar</Button>
+              </div>
             </div>
           </div>
         )}
@@ -1144,19 +1201,24 @@ export default function Cartera() {
             options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
           />
 
-          {cotizacionesCliente.length > 0 && (
-            <Select
-              label="Aplicar a cotización"
-              value={formData.cotizacion_id}
-              onChange={(e) => setFormData({ ...formData, cotizacion_id: e.target.value })}
-              options={[
-                { value: '', label: '— Abono general (sin cotización) —' },
-                ...cotizacionesCliente.map(c => ({
-                  value: String(c.cotizacion_id),
-                  label: `${c.cotizacion_numero || `Cot. #${c.cotizacion_id}`} · saldo ${formatCurrency(c.saldo)} (${c.pct}% pagado)`,
-                })),
-              ]}
-            />
+          {formData.cliente_id && (
+            <div>
+              <Select
+                label="Aplicar a cotización"
+                value={formData.cotizacion_id}
+                onChange={(e) => setFormData({ ...formData, cotizacion_id: e.target.value })}
+                options={[
+                  { value: '', label: '— Abono general (sin cotización específica) —' },
+                  ...cotizacionesCliente.map(c => ({
+                    value: String(c.cotizacion_id),
+                    label: `${c.cotizacion_numero || `Cot. #${c.cotizacion_id}`} · saldo ${formatCurrency(c.saldo)} (${c.pct}% pagado)`,
+                  })),
+                ]}
+              />
+              {cotizacionesCliente.length === 0 && (
+                <p className="text-xs text-muted mt-1">Este cliente no tiene ventas por cotización; se registrará como abono general.</p>
+              )}
+            </div>
           )}
 
           <div className="flex justify-end gap-2 pt-4">
