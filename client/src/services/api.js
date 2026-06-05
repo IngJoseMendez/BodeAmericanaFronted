@@ -103,6 +103,10 @@ export const pacasApi = {
     const query = new URLSearchParams(params).toString();
     return api.get(`/pacas/inventario${query ? `?${query}` : ''}`);
   },
+  getComprometidas(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/pacas/comprometidas${query ? `?${query}` : ''}`);
+  },
 };
 
 export const clientesApi = {

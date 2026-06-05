@@ -37,6 +37,30 @@ function resumenPorCotizacion(movimientos = []) {
   return { cotizaciones, generalAbonado, generalVenta };
 }
 
+// Helpers de búsqueda universal dentro del detalle del cliente.
+const _txt = (s) => String(s ?? '').toLowerCase();
+const _digits = (s) => String(s ?? '').replace(/[^0-9]/g, '');
+// Coincidencia de una venta-cotización contra la búsqueda (número, montos).
+function matchVenta(c, q) {
+  if (!q) return true;
+  const ql = q.toLowerCase().trim();
+  const qd = _digits(q);
+  if (_txt(c.cotizacion_numero).includes(ql)) return true;
+  if (qd && [c.venta, c.abonado, c.saldo, c.pct].some(v => _digits(v).includes(qd))) return true;
+  return false;
+}
+// Coincidencia de un abono contra la búsqueda (fecha, monto, método, cuenta, cotización, referencia).
+function matchAbono(m, q) {
+  if (!q) return true;
+  const ql = q.toLowerCase().trim();
+  const qd = _digits(q);
+  const fechaStr = `${String(m.fecha || '')} ${m.fecha ? new Date(m.fecha).toLocaleDateString('es-MX') : ''}`.toLowerCase();
+  const campos = [m.metodo_pago, m.cuenta_nombre, m.cotizacion_numero, m.despacho_numero, m.referencia, fechaStr];
+  if (campos.some(v => _txt(v).includes(ql))) return true;
+  if (qd && _digits(m.monto).includes(qd)) return true;
+  return false;
+}
+
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
   const [carteraOriginal, setCarteraOriginal] = useState([]);
@@ -49,6 +73,7 @@ export default function Cartera() {
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
   const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'abonos'
+  const [detalleBusqueda, setDetalleBusqueda] = useState(''); // búsqueda dentro del detalle del cliente
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
@@ -124,6 +149,7 @@ export default function Cartera() {
       const data = await carteraApi.getOne(clienteId);
       setDetalleCliente(data);
       setDetalleTab('ventas');
+      setDetalleBusqueda('');
     } catch (err) {
       setError(err.message);
     }
@@ -813,6 +839,23 @@ export default function Cartera() {
               </div>
             </div>
 
+            {/* Buscador universal del detalle (cotización, fecha, monto, método...) */}
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                value={detalleBusqueda}
+                onChange={(e) => setDetalleBusqueda(e.target.value)}
+                placeholder="Buscar por cotización, fecha, monto, método, cuenta..."
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              />
+              {detalleBusqueda && (
+                <button onClick={() => setDetalleBusqueda('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-primary" title="Limpiar">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
             {/* Pestañas: Ventas | Abonos */}
             <div className="flex gap-1 border-b border-border">
               <button type="button" onClick={() => setDetalleTab('ventas')}
@@ -827,9 +870,15 @@ export default function Cartera() {
 
             {/* PESTAÑA VENTAS: cada cotización con su saldo, abonable directamente */}
             {detalleTab === 'ventas' && (() => {
-              const { cotizaciones, generalVenta, generalAbonado } = resumenPorCotizacion(detalleCliente.movimientos);
-              if (cotizaciones.length === 0 && generalVenta === 0) {
+              const resumen = resumenPorCotizacion(detalleCliente.movimientos);
+              const { generalVenta, generalAbonado } = resumen;
+              const cotizaciones = resumen.cotizaciones.filter(c => matchVenta(c, detalleBusqueda));
+              if (resumen.cotizaciones.length === 0 && generalVenta === 0) {
                 return <p className="text-center text-muted py-6 text-sm">Este cliente no tiene ventas registradas.</p>;
+              }
+              const q = detalleBusqueda.trim();
+              if (q && cotizaciones.length === 0) {
+                return <p className="text-center text-muted py-6 text-sm">Ninguna venta coincide con "{q}".</p>;
               }
               return (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -858,7 +907,9 @@ export default function Cartera() {
                       </div>
                     </div>
                   ))}
-                  {(generalVenta > 0 || generalAbonado > 0) && (
+                  {(generalVenta > 0 || generalAbonado > 0) &&
+                    (!q || 'general sin cotizacion otras'.includes(q.toLowerCase()) ||
+                      (_digits(q) && (_digits(generalVenta).includes(_digits(q)) || _digits(generalAbonado).includes(_digits(q))))) && (
                     <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <p className="text-sm font-medium text-muted">Otras ventas / abonos (sin cotización)</p>
@@ -891,10 +942,12 @@ export default function Cartera() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono').length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted text-sm">Sin abonos registrados para este cliente</td></tr>
+                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)).length === 0 && (
+                    <tr><td colSpan={5} className="px-3 py-6 text-center text-muted text-sm">
+                      {detalleBusqueda.trim() ? `Ningún abono coincide con "${detalleBusqueda.trim()}"` : 'Sin abonos registrados para este cliente'}
+                    </td></tr>
                   )}
-                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono').map(m => (
+                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)).map(m => (
                     <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
                       {editandoAbono?.id === m.id ? (
                         // Fila en modo edición

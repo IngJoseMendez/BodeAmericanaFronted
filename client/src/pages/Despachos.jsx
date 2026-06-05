@@ -65,7 +65,13 @@ async function exportarExcel(despacho) {
   // En el nuevo flujo, las pacas que ya salieron físicamente quedan en estado 'despachada'.
   const despachadas = items.filter(i => i.paca_estado === 'despachada');
   const pendientes  = items.filter(i => i.paca_estado !== 'despachada');
-  const total       = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  // Desglose de la cotización: subtotal (suma de pacas) − descuento + transporte = total real.
+  const subtotalPacas = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  const descuento     = parseFloat(despacho.cot_descuento || 0);
+  const transporte    = parseFloat(despacho.cot_transporte || 0);
+  const subtotalCot   = despacho.cot_subtotal != null ? parseFloat(despacho.cot_subtotal) : subtotalPacas;
+  // Total REAL = el de la cotización (ya con descuentos y transporte). Fallback: suma de pacas.
+  const total         = despacho.cot_total != null ? parseFloat(despacho.cot_total) : subtotalPacas;
 
   // Resumen de inventario por tipo: total inventario − despacho = quedan.
   // Se consulta el inventario agrupado actual para reflejar lo que queda en bodega.
@@ -174,9 +180,28 @@ async function exportarExcel(despacho) {
     l.alignment = { horizontal: 'center', vertical: 'middle' };
   });
 
-  // Total
-  const totalRow = kpiRow + 3;
-  ws.getRow(totalRow - 1).height = 12;
+  // Desglose financiero (subtotal − descuento + transporte = total real de la cotización)
+  let fr = kpiRow + 3;
+  ws.getRow(fr - 1).height = 10;
+  const finanRows = [['Subtotal (pacas)', subtotalCot]];
+  if (descuento > 0)  finanRows.push(['Descuento', -descuento]);
+  if (transporte > 0) finanRows.push(['Transporte', transporte]);
+  finanRows.forEach(([lbl, val]) => {
+    ws.mergeCells(`A${fr}:B${fr}`);
+    const c1 = ws.getCell(`A${fr}`);
+    c1.value = lbl;
+    c1.font = { size: 10, color: { argb: PRIMARY } };
+    c1.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    const c2 = ws.getCell(`C${fr}`);
+    c2.value = val; c2.numFmt = '$#,##0';
+    c2.font = { size: 10, color: { argb: val < 0 ? WARNING : PRIMARY } };
+    c2.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    ws.getRow(fr).height = 18;
+    fr++;
+  });
+
+  // Total real
+  const totalRow = fr;
   ws.mergeCells(`A${totalRow}:B${totalRow}`);
   const tc1 = ws.getCell(`A${totalRow}`);
   tc1.value     = 'TOTAL DESPACHO';
@@ -324,7 +349,11 @@ async function exportarExcel(despacho) {
 
 function imprimirDespacho(despacho) {
   const items = despacho.items || [];
-  const total = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  const subtotalPacas = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  const descuento  = parseFloat(despacho.cot_descuento || 0);
+  const transporte = parseFloat(despacho.cot_transporte || 0);
+  const subtotalCot = despacho.cot_subtotal != null ? parseFloat(despacho.cot_subtotal) : subtotalPacas;
+  const total = despacho.cot_total != null ? parseFloat(despacho.cot_total) : subtotalPacas;
   const filas = items.map(i => `
     <tr>
       <td>${i.paca_uuid?.slice(0, 8) || ''}</td>
@@ -356,7 +385,12 @@ function imprimirDespacho(despacho) {
     <table>
       <thead><tr><th>UUID</th><th>Clasificación</th><th>Referencia</th><th>Calidad</th><th>Precio</th></tr></thead>
       <tbody>${filas}</tbody>
-      <tfoot><tr><td colspan="4">Total</td><td style="text-align:right">${formatCurrency(total)}</td></tr></tfoot>
+      <tfoot>
+        <tr><td colspan="4" style="text-align:right">Subtotal</td><td style="text-align:right">${formatCurrency(subtotalCot)}</td></tr>
+        ${descuento > 0 ? `<tr><td colspan="4" style="text-align:right">Descuento</td><td style="text-align:right">- ${formatCurrency(descuento)}</td></tr>` : ''}
+        ${transporte > 0 ? `<tr><td colspan="4" style="text-align:right">Transporte</td><td style="text-align:right">${formatCurrency(transporte)}</td></tr>` : ''}
+        <tr><td colspan="4" style="text-align:right">TOTAL</td><td style="text-align:right">${formatCurrency(total)}</td></tr>
+      </tfoot>
     </table>
     <script>window.onload=()=>{window.print();window.close();}</script>
     </body></html>`;
@@ -784,12 +818,42 @@ export default function Despachos() {
                     ))}
                   </tbody>
                   <tfoot className="bg-primary/5 border-t border-border/40">
-                    <tr>
-                      <td colSpan={5} className="px-4 py-3 text-sm font-bold text-primary">Total</td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-primary">
-                        {formatCurrency((selectedDespacho.items || []).reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0))}
-                      </td>
-                    </tr>
+                    {(() => {
+                      const subPacas = (selectedDespacho.items || []).reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+                      const sub = selectedDespacho.cot_subtotal != null ? parseFloat(selectedDespacho.cot_subtotal) : subPacas;
+                      const desc = parseFloat(selectedDespacho.cot_descuento || 0);
+                      const trans = parseFloat(selectedDespacho.cot_transporte || 0);
+                      const tot = selectedDespacho.cot_total != null ? parseFloat(selectedDespacho.cot_total) : subPacas;
+                      const hayDesglose = desc > 0 || trans > 0;
+                      return (
+                        <>
+                          {hayDesglose && (
+                            <>
+                              <tr>
+                                <td colSpan={5} className="px-4 py-1.5 text-right text-xs text-muted">Subtotal</td>
+                                <td className="px-4 py-1.5 text-right font-mono text-xs text-muted">{formatCurrency(sub)}</td>
+                              </tr>
+                              {desc > 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-1.5 text-right text-xs text-muted">Descuento</td>
+                                  <td className="px-4 py-1.5 text-right font-mono text-xs text-warning">- {formatCurrency(desc)}</td>
+                                </tr>
+                              )}
+                              {trans > 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-1.5 text-right text-xs text-muted">Transporte</td>
+                                  <td className="px-4 py-1.5 text-right font-mono text-xs text-muted">{formatCurrency(trans)}</td>
+                                </tr>
+                              )}
+                            </>
+                          )}
+                          <tr>
+                            <td colSpan={5} className="px-4 py-3 text-sm font-bold text-primary">Total{hayDesglose ? ' (cotización)' : ''}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-primary">{formatCurrency(tot)}</td>
+                          </tr>
+                        </>
+                      );
+                    })()}
                   </tfoot>
                 </table>
               </div>

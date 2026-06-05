@@ -44,6 +44,8 @@ export default function Pacas() {
   const [inventarioAgrupado, setInventarioAgrupado] = useState([]);
   const [loadingAgrupado, setLoadingAgrupado] = useState(false);
   const [tiposExpandidos, setTiposExpandidos] = useState({});
+  // Modal "por quién están separadas"
+  const [comprometidas, setComprometidas] = useState(null); // { label, loading, rows }
   const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
   const tiposList      = tiposRaw.map(t => t.nombre);
   const categoriasList = categoriasRaw.map(c => c.nombre);
@@ -89,6 +91,24 @@ export default function Pacas() {
       console.error(err);
     } finally {
       setLoadingAgrupado(false);
+    }
+  };
+
+  // Abre el modal con las pacas separadas de un grupo y a quién pertenecen.
+  const verComprometidas = async (row) => {
+    const label = [row.clasificacion, row.referencia, row.calidad].filter(Boolean).join(' / ');
+    setComprometidas({ label, loading: true, rows: [] });
+    try {
+      const rows = await pacasApi.getComprometidas({
+        clasificacion: row.clasificacion || '',
+        referencia: row.referencia || '',
+        calidad: row.calidad || '',
+        ...(row.contenedor_id ? { contenedor_id: row.contenedor_id } : {}),
+      });
+      setComprometidas({ label, loading: false, rows: Array.isArray(rows) ? rows : [] });
+    } catch (err) {
+      addToast('No se pudo cargar la lista', 'error');
+      setComprometidas(null);
     }
   };
 
@@ -727,7 +747,15 @@ export default function Pacas() {
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-primary">{row.fisico}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">{row.separadas}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">
+                          {row.separadas > 0 ? (
+                            <button onClick={() => verComprometidas(row)}
+                              className="text-warning font-semibold hover:underline underline-offset-2 cursor-pointer"
+                              title="Ver por quién están separadas">
+                              {row.separadas}
+                            </button>
+                          ) : row.separadas}
+                        </td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-600">{row.disponibles}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
@@ -1142,6 +1170,66 @@ export default function Pacas() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: por quién están separadas las pacas de un grupo */}
+      <Modal isOpen={!!comprometidas} onClose={() => setComprometidas(null)}
+        title={comprometidas ? `Separadas · ${comprometidas.label}` : ''} size="lg">
+        {comprometidas && (
+          <div className="space-y-3">
+            {comprometidas.loading ? (
+              <p className="text-center text-muted py-8 text-sm">Cargando…</p>
+            ) : comprometidas.rows.length === 0 ? (
+              <p className="text-center text-muted py-8 text-sm">No hay pacas separadas en este grupo.</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted">{comprometidas.rows.length} paca(s) comprometida(s). Agrupadas por cliente / cotización:</p>
+                {(() => {
+                  // Agrupar por cotización para ver claramente a quién pertenecen
+                  const grupos = {};
+                  comprometidas.rows.forEach(r => {
+                    const k = r.cotizacion_id || `sin-${r.id}`;
+                    if (!grupos[k]) grupos[k] = { cotizacion_id: r.cotizacion_id, cotizacion_numero: r.cotizacion_numero, cliente_nombre: r.cliente_nombre, despacho_id: r.despacho_id, despacho_numero: r.despacho_numero, pacas: [] };
+                    grupos[k].pacas.push(r);
+                  });
+                  return Object.values(grupos).map((g, i) => (
+                    <div key={i} className="rounded-xl border border-border/60 p-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {g.cotizacion_id ? (
+                            <RefLink to="/cotizaciones" id={g.cotizacion_id} title="Ver cotización" className="text-sm font-semibold">
+                              {g.cotizacion_numero || `Cot. #${g.cotizacion_id}`}
+                            </RefLink>
+                          ) : (
+                            <span className="text-sm font-semibold text-muted">Sin cotización</span>
+                          )}
+                          {g.cliente_nombre && <span className="text-xs text-muted">· {g.cliente_nombre}</span>}
+                          {g.despacho_id && (
+                            <RefLink to="/despachos" id={g.despacho_id} title="Ver despacho" className="text-xs" icon={false}>
+                              {g.despacho_numero}
+                            </RefLink>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-warning">{g.pacas.length} paca(s)</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {g.pacas.map(p => (
+                          <span key={p.id} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${p.estado === 'vendida' ? 'bg-accent/15 text-accent' : 'bg-warning/15 text-warning'}`}
+                            title={`${p.estado} · ${formatCurrency(p.precio_venta)}`}>
+                            {p.uuid?.slice(0, 8)} · {p.estado}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </>
+            )}
+            <div className="flex justify-end pt-1">
+              <Button variant="ghost" onClick={() => setComprometidas(null)}>Cerrar</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </Layout>
   );
