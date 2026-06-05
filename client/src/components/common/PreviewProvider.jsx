@@ -151,10 +151,12 @@ export function PreviewProvider({ children }) {
   return (
     <PreviewContext.Provider value={{ openPreview }}>
       {children}
-      <Modal isOpen={!!state} onClose={close} title={state ? `Vista previa · ${TITLES[state.type] || ''}` : ''} size="sm">
-        {state && (
+      {/* El Modal se monta solo cuando hay algo que previsualizar y se desmonta
+          al cerrar: así nunca queda un panel vacío montado bloqueando clics. */}
+      {state && (
+        <Modal isOpen onClose={close} title={`Vista previa · ${TITLES[state.type] || ''}`} size="sm">
           <div className="space-y-4">
-            <PreviewBody type={state.type} id={state.id} />
+            <PreviewBody key={`${state.type}-${state.id}`} type={state.type} id={state.id} />
             <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
               <button onClick={close}
                 className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
@@ -166,8 +168,8 @@ export function PreviewProvider({ children }) {
               </button>
             </div>
           </div>
-        )}
-      </Modal>
+        </Modal>
+      )}
     </PreviewContext.Provider>
   );
 }

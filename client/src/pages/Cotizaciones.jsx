@@ -1014,6 +1014,13 @@ export default function Cotizaciones() {
                   </div>
                 </div>
               )}
+              {selectedCotizacion.cliente_id && (
+                <div>
+                  <p className="text-xs sm:text-sm text-muted">Cartera</p>
+                  <RefLink to="/cartera" id={selectedCotizacion.cliente_id} title="Ver la cartera del cliente"
+                    className="font-medium text-sm sm:text-base">Ver cartera del cliente</RefLink>
+                </div>
+              )}
             </div>
 
             <div>
