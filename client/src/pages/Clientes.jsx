@@ -26,7 +26,7 @@ export default function Clientes() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
-    nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', limite_credito: '', descuento: '0', estado: 'activo',
+    nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', clasificacion_pago: 'contado', limite_credito: '', descuento: '0', estado: 'activo',
     crear_usuario: false, username: '', password: '', saldo_inicial: ''
   });
   const [error, setError] = useState('');
@@ -64,6 +64,7 @@ export default function Clientes() {
         direccion: formData.direccion,
         ciudad: formData.ciudad,
         tipo_cliente: formData.tipo_cliente,
+        clasificacion_pago: formData.clasificacion_pago,
         limite_credito: parseFloat(formData.limite_credito) || 0,
         descuento: parseFloat(formData.descuento) || 0,
         estado: formData.estado,
@@ -104,6 +105,7 @@ export default function Clientes() {
       direccion: cliente.direccion || '',
       ciudad: cliente.ciudad || '',
       tipo_cliente: cliente.tipo_cliente,
+      clasificacion_pago: cliente.clasificacion_pago || 'contado',
       limite_credito: cliente.limite_credito || '',
       descuento: cliente.descuento != null ? String(cliente.descuento) : '0',
       estado: cliente.estado,
@@ -135,7 +137,7 @@ export default function Clientes() {
   const resetForm = () => {
     setEditando(null);
     setFormData({
-      nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista',
+      nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', clasificacion_pago: 'contado',
       limite_credito: '', descuento: '0', estado: 'activo', crear_usuario: false, username: '', password: '', saldo_inicial: ''
     });
   };
@@ -154,7 +156,7 @@ export default function Clientes() {
       { header: 'Tipo',            key: 'tipo',      width: 14 },
       { header: 'Estado',          key: 'estado',    width: 12 },
       { header: 'Límite Crédito',  key: 'limite',    width: 18 },
-      { header: 'Descuento %',     key: 'descuento', width: 14 },
+      { header: 'Descuento ($/u)', key: 'descuento', width: 14 },
       { header: 'Fecha Registro',  key: 'fecha',     width: 16 },
     ];
     ws.getRow(1).font = { bold: true };
@@ -261,9 +263,12 @@ export default function Clientes() {
                         <h3 className="font-display text-lg text-primary">{cliente.nombre}</h3>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <Badge variant={cliente.tipo_cliente} size="sm">{cliente.tipo_cliente}</Badge>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${cliente.clasificacion_pago === 'credito' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {cliente.clasificacion_pago === 'credito' ? 'Crédito' : 'Contado'}
+                          </span>
                           {parseFloat(cliente.descuento) > 0 && (
                             <span className="text-xs bg-secondary/15 text-secondary px-2 py-0.5 rounded-full font-semibold">
-                              -{parseFloat(cliente.descuento)}%
+                              -{formatCurrency(cliente.descuento)}/u
                             </span>
                           )}
                         </div>
@@ -347,6 +352,18 @@ export default function Clientes() {
               onChange={(e) => setFormData({ ...formData, tipo_cliente: e.target.value })}
               options={CLIENTE_TIPOS.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
             />
+            <Select
+              label="Forma de pago"
+              value={formData.clasificacion_pago}
+              onChange={(e) => setFormData({ ...formData, clasificacion_pago: e.target.value })}
+              options={[
+                { value: 'contado', label: 'Contado (paga todo)' },
+                { value: 'credito', label: 'Crédito (se le fía)' },
+              ]}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <Input
               label="Límite de Crédito"
               type="number"
@@ -354,20 +371,18 @@ export default function Clientes() {
               onChange={(e) => setFormData({ ...formData, limite_credito: e.target.value })}
               placeholder="$0.00"
             />
-          </div>
-
-          <div className="space-y-1">
-            <Input
-              label="Descuento (%)"
-              type="number"
-              min="0"
-              max="100"
-              step="0.5"
-              value={formData.descuento}
-              onChange={(e) => setFormData({ ...formData, descuento: e.target.value })}
-              placeholder="0"
-            />
-            <p className="text-xs text-muted">Se aplica automáticamente en cotizaciones</p>
+            <div className="space-y-1">
+              <Input
+                label="Descuento por unidad ($)"
+                type="number"
+                min="0"
+                step="500"
+                value={formData.descuento}
+                onChange={(e) => setFormData({ ...formData, descuento: e.target.value })}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted">En pesos por unidad; se aplica en cotizaciones (no a pacas en promoción)</p>
+            </div>
           </div>
           
           {!editando && (

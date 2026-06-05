@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
-import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi } from '../services/api';
+import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
@@ -204,16 +204,28 @@ export default function Cotizaciones() {
     notas: '',
     descuento: '',
     tipo_descuento: 'valor_fijo',
+    transporte_unitario: '',
+    tasa: '',
   });
 
   const [items, setItems] = useState([
     { referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }
   ]);
 
+  // Conversión a venta (abono + cuenta)
+  const [convertModalOpen, setConvertModalOpen] = useState(false);
+  const [convertForm, setConvertForm] = useState({ abono: '', metodo_pago: 'efectivo', cuenta_id: '' });
+  const [convertSubmitting, setConvertSubmitting] = useState(false);
+  const [cuentasBanco, setCuentasBanco] = useState([]);
+
   useEffect(() => {
     loadCotizaciones();
     loadClientes();
   }, [filtroEstado]);
+
+  useEffect(() => {
+    cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
+  }, []);
 
   const loadCotizaciones = async () => {
     try {
@@ -239,7 +251,7 @@ export default function Cotizaciones() {
   };
 
   const openCreateModal = () => {
-    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo' });
+    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo', transporte_unitario: '', tasa: '' });
     setItems([{ referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }]);
     setModalOpen(true);
   };
@@ -381,7 +393,19 @@ export default function Cotizaciones() {
       ? subtotalSinPromo * (raw / 100)
       : Math.min(raw * unidadesSinPromo, subtotalSinPromo);
 
-    return { subtotal, descuento: descuentoAmount, total: subtotal - descuentoAmount, subtotalSinPromo };
+    // Transporte por unidad × total de unidades, sumado al total
+    const totalCantidades = items.reduce((s, i) => s + (parseInt(i.cantidad) || 0), 0);
+    const transporteUnit = parseFloat(formData.transporte_unitario) || 0;
+    const transporteTotal = transporteUnit * totalCantidades;
+
+    const tasa = parseFloat(formData.tasa) || 1;
+    const total = subtotal - descuentoAmount + transporteTotal;
+    const totalUsd = tasa > 0 ? total / tasa : 0;
+
+    return {
+      subtotal, descuento: descuentoAmount, subtotalSinPromo,
+      totalCantidades, transporteUnit, transporteTotal, tasa, total, totalUsd,
+    };
   };
 
   const handleSubmit = async (e) => {
@@ -399,16 +423,16 @@ export default function Cotizaciones() {
     }
 
     try {
-      const { descuento, subtotalSinPromo } = calcularTotales();
-      const detallesConDescuento = validItems.map(i => {
+      // El descuento se aplica UNA sola vez como monto total (no se baja el precio por
+      // unidad y se vuelve a restar). Los detalles llevan el precio unitario original.
+      const { descuento } = calcularTotales();
+      const detalles = validItems.map(i => {
         const tienePromo = i.precio_promocion != null;
-        const precioFinal = tienePromo
-          ? parseFloat(i.precio_unitario)
-          : precioConDescuento(parseFloat(i.precio_unitario));
+        const precioUnit = parseFloat(i.precio_unitario);
         return {
           ...i,
-          precio_unitario: precioFinal,
-          subtotal: (i.cantidad || 1) * precioFinal,
+          precio_unitario: precioUnit,
+          subtotal: (i.cantidad || 1) * precioUnit,
           tiene_promocion: tienePromo,
         };
       });
@@ -420,7 +444,9 @@ export default function Cotizaciones() {
         notas: formData.notas,
         descuento,
         tipo_descuento: formData.tipo_descuento,
-        detalles: detallesConDescuento,
+        transporte_unitario: parseFloat(formData.transporte_unitario) || 0,
+        tasa: parseFloat(formData.tasa) || 1,
+        detalles,
       });
       
       addToast('Cotización creada', 'success');
@@ -477,21 +503,30 @@ export default function Cotizaciones() {
     }
   };
 
-  const handleConvertirVenta = async () => {
-    const ok = await confirm({
-      title: '¿Convertir a venta?',
-      message: 'Se registrará la venta y se creará un despacho automáticamente. Las pacas seguirán en estado separada hasta confirmar la salida en el módulo de Despachos.',
-      confirmText: 'Convertir',
-      variant: 'info',
-    });
-    if (!ok) return;
+  const handleConvertirVenta = () => {
+    setConvertForm({ abono: '', metodo_pago: 'efectivo', cuenta_id: '' });
+    setConvertModalOpen(true);
+  };
+
+  const submitConvertirVenta = async () => {
     try {
-      const result = await cotizacionesApi.convertirAVenta(selectedCotizacion.id, usuario?.id);
-      addToast(`Venta creada — despacho ${result.despacho_numero} generado automáticamente`, 'success');
+      setConvertSubmitting(true);
+      const result = await cotizacionesApi.convertirAVenta(selectedCotizacion.id, usuario?.id, {
+        abono: convertForm.abono ? parseFloat(convertForm.abono) : 0,
+        metodo_pago: convertForm.metodo_pago || null,
+        cuenta_id: convertForm.cuenta_id ? parseInt(convertForm.cuenta_id) : null,
+      });
+      addToast(
+        `Venta creada — despacho ${result.despacho_numero} generado${result.abono_registrado > 0 ? ` · abono ${formatCurrency(result.abono_registrado)}` : ''}`,
+        'success'
+      );
+      setConvertModalOpen(false);
       setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
       addToast(err.message, 'error');
+    } finally {
+      setConvertSubmitting(false);
     }
   };
 
@@ -505,7 +540,7 @@ export default function Cotizaciones() {
     return <Badge variant={variants[estado] || 'default'}>{estado}</Badge>;
   };
 
-  const { subtotal, descuento, total } = calcularTotales();
+  const { subtotal, descuento, total, totalUsd, transporteTotal, transporteUnit, totalCantidades, tasa } = calcularTotales();
   const hayDescuento = (parseFloat(formData.descuento) || 0) > 0;
 
   const exportarListaExcel = async () => {
@@ -649,8 +684,9 @@ export default function Cotizaciones() {
                     setFormData(f => ({
                       ...f,
                       cliente_id: clienteId,
+                      // Descuento del cliente en PESOS por unidad (sobre pacas sin promo)
                       descuento: cliente?.descuento > 0 ? String(cliente.descuento) : f.descuento,
-                      tipo_descuento: cliente?.descuento > 0 ? 'porcentaje' : f.tipo_descuento,
+                      tipo_descuento: cliente?.descuento > 0 ? 'valor_fijo' : f.tipo_descuento,
                     }));
                   }}
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
@@ -658,7 +694,7 @@ export default function Cotizaciones() {
                 >
                   <option value="">Seleccionar cliente...</option>
                   {clientes.map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${c.descuento}%)` : ''}</option>
+                    <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${formatCurrency(c.descuento)}/u)` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -689,6 +725,28 @@ export default function Cotizaciones() {
                     <Info size={11} /> El descuento solo aplica a ítems sin precio de promoción
                   </p>
                 )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-1">Transporte por unidad ($)</label>
+                  <input
+                    type="number"
+                    value={formData.transporte_unitario}
+                    onChange={(e) => setFormData(f => ({ ...f, transporte_unitario: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
+                    min="0" step="500" placeholder="Ej: 2000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-1">Tasa (COP por USD)</label>
+                  <input
+                    type="number"
+                    value={formData.tasa}
+                    onChange={(e) => setFormData(f => ({ ...f, tasa: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
+                    min="0" step="1" placeholder="Ej: 4000"
+                  />
+                </div>
               </div>
             </div>
             
@@ -836,30 +894,32 @@ export default function Cotizaciones() {
                 <span className="text-muted">Subtotal:</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
-              {(parseFloat(formData.descuento) || 0) > 0 && (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">
-                      Desc. por unidad ({formData.tipo_descuento === 'porcentaje' ? `${formData.descuento}%` : 'valor fijo'}):
-                    </span>
-                    <span className="text-red-400 font-medium">
-                      {formData.tipo_descuento === 'porcentaje'
-                        ? `${formData.descuento}%`
-                        : `-${formatCurrency(parseFloat(formData.descuento))}`}
-                    </span>
-                  </div>
-                  {descuento > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted">Descuento total:</span>
-                      <span className="text-red-500 font-medium">-{formatCurrency(descuento)}</span>
-                    </div>
-                  )}
-                </>
+              {descuento > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">
+                    Descuento {formData.tipo_descuento === 'porcentaje' ? `(${formData.descuento}%)` : `(${formatCurrency(parseFloat(formData.descuento) || 0)}/u)`}:
+                  </span>
+                  <span className="text-red-500 font-medium">-{formatCurrency(descuento)}</span>
+                </div>
+              )}
+              {transporteTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">
+                    Transporte ({formatCurrency(transporteUnit)} × {totalCantidades}):
+                  </span>
+                  <span className="text-blue-600 font-medium">+{formatCurrency(transporteTotal)}</span>
+                </div>
               )}
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total:</span>
                 <span className="text-primary">{formatCurrency(total)}</span>
               </div>
+              {tasa > 1 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted">Total USD (tasa {formatCurrency(tasa)}):</span>
+                  <span className="font-medium">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1008,6 +1068,57 @@ export default function Cotizaciones() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Convertir a venta (abono inicial) */}
+      <Modal isOpen={convertModalOpen} onClose={() => setConvertModalOpen(false)} title="Convertir a venta" size="sm">
+        <div className="space-y-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-start gap-2">
+            <Info size={14} className="flex-shrink-0 mt-0.5" />
+            <span>Al convertir, las pacas pasan a <strong>vendida</strong> y se crea el despacho. Si registras un abono, se reflejará en la cartera del cliente. La salida física se confirma luego en Despachos.</span>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-primary mb-1">Abono inicial (opcional)</label>
+            <input type="number" min="0" step="0.01"
+              value={convertForm.abono}
+              onChange={(e) => setConvertForm({ ...convertForm, abono: e.target.value })}
+              placeholder="0"
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Método</label>
+              <select
+                value={convertForm.metodo_pago}
+                onChange={(e) => setConvertForm({ ...convertForm, metodo_pago: e.target.value })}
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30">
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="cheque">Cheque</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-primary mb-1">Cuenta</label>
+              <select
+                value={convertForm.cuenta_id}
+                onChange={(e) => setConvertForm({ ...convertForm, cuenta_id: e.target.value })}
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30">
+                <option value="">— Sin cuenta —</option>
+                {cuentasBanco.map((cu) => <option key={cu.id} value={cu.id}>{cu.nombre}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setConvertModalOpen(false)}>Cancelar</Button>
+            <Button size="sm" onClick={submitConvertirVenta} disabled={convertSubmitting} icon={ShoppingCart}>
+              {convertSubmitting ? 'Convirtiendo…' : 'Confirmar venta'}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );

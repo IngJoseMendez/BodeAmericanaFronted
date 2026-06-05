@@ -371,12 +371,14 @@ export default function Pacas() {
 
       wsAg.columns = [
         { header: 'Contenedor',     key: 'contenedor',     width: 18 },
-        { header: 'Categoría',      key: 'categoria',      width: 14 },
+        { header: 'Proveedor',      key: 'proveedor',      width: 18 },
         { header: 'Clasificación',  key: 'clasificacion',  width: 18 },
         { header: 'Referencia',     key: 'referencia',     width: 14 },
         { header: 'Calidad',        key: 'calidad',        width: 12 },
-        { header: 'Estado',         key: 'estado',         width: 13 },
-        { header: 'Cantidad',       key: 'cantidad',       width: 11 },
+        { header: 'Físico',         key: 'fisico',         width: 10 },
+        { header: 'Separadas',      key: 'separadas',      width: 11 },
+        { header: 'Despachadas',    key: 'despachadas',    width: 12 },
+        { header: 'Disponibles',    key: 'disponibles',    width: 12 },
         { header: 'Costo Unit.',    key: 'costo_unit',     width: 14 },
         { header: 'Precio Unit.',   key: 'precio_unit',    width: 14 },
         { header: 'Costo Total',    key: 'costo_total',    width: 16 },
@@ -395,12 +397,14 @@ export default function Pacas() {
         const bg = idx % 2 === 0 ? 'FFFFFF' : 'F5F3FF';
         const r = wsAg.addRow({
           contenedor:    row.contenedor,
-          categoria:     row.categoria || '',
+          proveedor:     row.proveedor_nombre || '',
           clasificacion: row.clasificacion,
           referencia:    row.referencia,
           calidad:       row.calidad || '',
-          estado:        row.estado,
-          cantidad:      parseInt(row.cantidad) || 0,
+          fisico:        parseInt(row.fisico) || 0,
+          separadas:     parseInt(row.separadas) || 0,
+          despachadas:   parseInt(row.despachadas) || 0,
+          disponibles:   parseInt(row.disponibles) || 0,
           costo_unit:    parseFloat(row.costo_unitario) || 0,
           precio_unit:   parseFloat(row.precio_unitario) || 0,
           costo_total:   parseFloat(row.costo_total) || 0,
@@ -411,16 +415,17 @@ export default function Pacas() {
           cell.font = { size: 10 };
           cell.alignment = { vertical: 'middle' };
         });
-        r.getCell('cantidad').font = { bold: true, size: 10 };
+        r.getCell('disponibles').font = { bold: true, size: 10 };
         r.height = 18;
       });
 
       // Fila de total
-      const totalCantidad = agrupado.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
+      const totalFisico   = agrupado.reduce((s, r) => s + (parseInt(r.fisico) || 0), 0);
+      const totalDisp     = agrupado.reduce((s, r) => s + (parseInt(r.disponibles) || 0), 0);
       const totalCosto    = agrupado.reduce((s, r) => s + (parseFloat(r.costo_total) || 0), 0);
       const totalPrecio   = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
       const totalRow = wsAg.addRow({
-        contenedor: 'TOTAL', cantidad: totalCantidad,
+        contenedor: 'TOTAL', fisico: totalFisico, disponibles: totalDisp,
         costo_total: totalCosto, precio_total: totalPrecio,
       });
       totalRow.eachCell({ includeEmpty: true }, (cell) => {
@@ -471,44 +476,48 @@ export default function Pacas() {
       doc.text(`Fecha de reporte: ${new Date().toLocaleDateString('es-MX')}`, 14, 25);
 
       const totalPacas = datos.length;
-      const totalCantidad = agrupado.reduce((s, r) => s + (parseInt(r.cantidad) || 0), 0);
-      const totalPrecio   = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
-      doc.text(`Pacas individuales: ${totalPacas}   ·   Total agrupado: ${totalCantidad}   ·   Valor: ${formatCurrency(totalPrecio)}`, 14, 31);
+      const totalFisico = agrupado.reduce((s, r) => s + (parseInt(r.fisico) || 0), 0);
+      const totalDisp   = agrupado.reduce((s, r) => s + (parseInt(r.disponibles) || 0), 0);
+      const totalPrecio = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
+      doc.text(`Pacas individuales: ${totalPacas}   ·   Físico: ${totalFisico}   ·   Disponibles: ${totalDisp}   ·   Valor: ${formatCurrency(totalPrecio)}`, 14, 31);
 
       // ── Sección 1: Vista Agrupada ─────────────────────────────
       doc.setFontSize(13);
       doc.setFont(undefined, 'bold');
-      doc.text('Vista Agrupada (cantidad por tipo)', 14, 41);
+      doc.text('Vista Agrupada (inventario por tipo)', 14, 41);
 
       autoTable(doc, {
         startY: 45,
-        head: [['Contenedor', 'Categoría', 'Clasificación', 'Referencia', 'Calidad', 'Estado', 'Cant.', 'Costo Unit.', 'Precio Unit.', 'Precio Total']],
+        head: [['Contenedor', 'Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Físico', 'Separadas', 'Despachadas', 'Disponibles', 'Precio Unit.', 'Precio Total']],
         body: agrupado.map(r => [
           r.contenedor || 'Sin contenedor',
-          r.categoria || '—',
+          r.proveedor_nombre || '—',
           r.clasificacion,
           r.referencia,
           r.calidad || '—',
-          r.estado,
-          parseInt(r.cantidad) || 0,
-          formatCurrency(r.costo_unitario),
+          parseInt(r.fisico) || 0,
+          parseInt(r.separadas) || 0,
+          parseInt(r.despachadas) || 0,
+          parseInt(r.disponibles) || 0,
           formatCurrency(r.precio_unitario),
           formatCurrency(r.precio_total),
         ]),
         foot: [[
-          'TOTAL', '', '', '', '', '',
-          totalCantidad, '', '',
-          formatCurrency(totalPrecio),
+          'TOTAL', '', '', '', '',
+          totalFisico, '', '', totalDisp,
+          '', formatCurrency(totalPrecio),
         ]],
         theme: 'striped',
         headStyles: { fillColor: [99, 102, 241], textColor: 255, fontStyle: 'bold' },
         footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
         styles: { fontSize: 8, cellPadding: 2 },
         columnStyles: {
-          6: { halign: 'right', fontStyle: 'bold' },
+          5: { halign: 'right' },
+          6: { halign: 'right' },
           7: { halign: 'right' },
-          8: { halign: 'right' },
+          8: { halign: 'right', fontStyle: 'bold' },
           9: { halign: 'right' },
+          10: { halign: 'right' },
         },
       });
 
@@ -681,40 +690,43 @@ export default function Pacas() {
               <table className="w-full">
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Cantidad</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Costo Unit.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Costo Total</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Proveedor</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Físico</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Despachadas</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Disponibles</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loadingAgrupado ? (
                     <TableSkeleton cols={11} rows={6} />
                   ) : inventarioAgrupado.length === 0 ? (
-                    <tr><td colSpan={11}><EmptyState title="Sin unidades en inventario" description="Las unidades disponibles y separadas aparecerán aquí" /></td></tr>
+                    <tr><td colSpan={11}><EmptyState title="Sin unidades en inventario" description="Las unidades del inventario aparecerán aquí" /></td></tr>
                   ) : (
                     inventarioAgrupado.map((row, idx) => (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5">
                           <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.contenedor}</span>
                         </td>
-                        <td className="px-4 py-2.5 text-sm text-muted">{row.categoria || <span className="text-muted/40">—</span>}</td>
-                        <td className="px-4 py-2.5 text-sm font-semibold text-primary capitalize">{row.clasificacion}</td>
-                        <td className="px-4 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
-                        <td className="px-4 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
-                        <td className="px-4 py-2.5"><Badge variant={row.estado}>{row.estado}</Badge></td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">{row.cantidad}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted">{formatCurrency(row.costo_unitario)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm text-muted/70">{formatCurrency(row.costo_total)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-sm text-secondary/70">{formatCurrency(row.precio_total)}</td>
+                        <td className="px-3 py-2.5 text-sm text-muted">{row.proveedor_nombre || <span className="text-muted/40">—</span>}</td>
+                        <td className="px-3 py-2.5 text-sm font-semibold text-primary capitalize">
+                          {row.clasificacion}
+                          {row.tiene_promocion && <span className="ml-1 text-xs text-amber-600">●promo</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
+                        <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-primary">{row.fisico}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">{row.separadas}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-600">{row.disponibles}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-secondary/70">{formatCurrency(row.precio_total)}</td>
                       </tr>
                     ))
                   )}

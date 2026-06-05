@@ -26,9 +26,13 @@ const formatDate = (d) =>
 
 const emptyProveedor = () => ({
   proveedor_nombre: '', moneda: 'USD', notas: '',
+  factura_estimada: '', cantidad_estimada: '', valor_unidad_estimado: '',
   detalles: [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
 });
-const emptyServicio = () => ({ proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '' });
+const emptyServicio = () => ({
+  proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '',
+  factura_estimada: '', cantidad_estimada: '', valor_unidad_estimado: '',
+});
 
 // ── Price input with auto-formatting ─────────────────────────────
 function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
@@ -157,9 +161,15 @@ function TimelineView({ items, onView }) {
                   <div>
                     <p className="font-semibold text-primary font-heading text-sm">{cont.numero}</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {new Date(cont.fecha_llegada).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                      {cont.fecha_salida && <>Sal. {new Date(cont.fecha_salida).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}{' → '}</>}
+                      Lleg. {new Date(cont.fecha_llegada).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
                       {' · '}{parseInt(cont.total_pacas).toLocaleString()} unidades
                     </p>
+                    {cont.proveedores_nombres && (
+                      <p className="text-[11px] text-muted/80 mt-0.5 truncate max-w-[260px]" title={cont.proveedores_nombres}>
+                        {cont.proveedores_nombres.split(', ').slice(0, 3).join(', ')}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {isAdmin && parseFloat(cont.costo_unitario) > 0 && (
@@ -1190,8 +1200,10 @@ export default function Contenedores() {
     const sumDetalles    = proveedores.reduce(
       (s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0
     );
-    const cantidadValida = totalPacas > 0 && sumDetalles === totalPacas;
-    return { proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal, costoUnitario, sumDetalles, cantidadValida };
+    // Contenedor "estimado": sin líneas de distribución todavía (solo datos estimados) → se permite crear.
+    const esEstimado = sumDetalles === 0;
+    const cantidadValida = esEstimado || (totalPacas > 0 && sumDetalles === totalPacas);
+    return { proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal, costoUnitario, sumDetalles, cantidadValida, esEstimado };
   };
 
   // ── Provider row management ────────────────────────────────────
@@ -1237,6 +1249,9 @@ export default function Contenedores() {
         proveedor_nombre: p.proveedor_nombre,
         moneda: p.moneda || 'USD',
         notas: p.notas || '',
+        factura_estimada: p.factura_estimada || '',
+        cantidad_estimada: p.cantidad_estimada != null ? String(p.cantidad_estimada) : '',
+        valor_unidad_estimado: p.valor_unidad_estimado != null ? String(p.valor_unidad_estimado) : '',
         detalles: (p.detalles || []).map(d => ({
           categoria: d.categoria || '',
           clasificacion: d.clasificacion || '',
@@ -1252,6 +1267,9 @@ export default function Contenedores() {
         moneda: s.moneda || 'COP',
         costo: String(s.costo || ''),
         notas: s.notas || '',
+        factura_estimada: s.factura_estimada || '',
+        cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
+        valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
       }));
       saveTemplate(nombrePlantilla, {
         tasa_conversion: String(c.tasa_conversion || '1'),
@@ -1286,6 +1304,9 @@ export default function Contenedores() {
             proveedor_nombre: p.proveedor_nombre,
             moneda: p.moneda || 'USD',
             notas: p.notas || '',
+            factura_estimada: p.factura_estimada || '',
+            cantidad_estimada: p.cantidad_estimada != null ? String(p.cantidad_estimada) : '',
+            valor_unidad_estimado: p.valor_unidad_estimado != null ? String(p.valor_unidad_estimado) : '',
             detalles: p.detalles.length > 0
               ? p.detalles.map((d) => ({
                   categoria: d.categoria || '',
@@ -1299,7 +1320,13 @@ export default function Contenedores() {
           }))
         : [emptyProveedor()]);
       setServicios(full.servicios.length > 0
-        ? full.servicios.map((s) => ({ proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP', costo: String(s.costo || ''), notas: s.notas || '' }))
+        ? full.servicios.map((s) => ({
+            proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP',
+            costo: String(s.costo || ''), notas: s.notas || '',
+            factura_estimada: s.factura_estimada || '',
+            cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
+            valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
+          }))
         : [emptyServicio()]);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
@@ -1325,12 +1352,15 @@ export default function Contenedores() {
         fecha_llegada: formData.fecha_llegada || null,
         fecha_salida: formData.fecha_salida || null,
         tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
-        total_pacas: parseInt(formData.total_pacas),
+        total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
           moneda: p.moneda || 'USD',
           notas: p.notas || null,
+          factura_estimada: p.factura_estimada || null,
+          cantidad_estimada: p.cantidad_estimada ? parseInt(p.cantidad_estimada) : null,
+          valor_unidad_estimado: p.valor_unidad_estimado ? parseFloat(p.valor_unidad_estimado) : null,
           detalles: p.detalles.map((d) => ({
             categoria: d.categoria || null,
             clasificacion: d.clasificacion,
@@ -1340,7 +1370,13 @@ export default function Contenedores() {
             costo_unitario: parseFloat(d.costo_unitario) || 0,
           })),
         })),
-        servicios: servicios.filter((s) => s.proveedor_nombre || s.tipo_servicio).map((s) => ({ ...s, costo: parseFloat(s.costo) || 0 })),
+        servicios: servicios.filter((s) => s.proveedor_nombre || s.tipo_servicio || s.factura_estimada).map((s) => ({
+          ...s,
+          costo: parseFloat(s.costo) || 0,
+          factura_estimada: s.factura_estimada || null,
+          cantidad_estimada: s.cantidad_estimada ? parseInt(s.cantidad_estimada) : null,
+          valor_unidad_estimado: s.valor_unidad_estimado ? parseFloat(s.valor_unidad_estimado) : null,
+        })),
       };
       if (editMode && selectedContenedor) {
         await contenedoresApi.update(selectedContenedor.id, payload);
@@ -1685,12 +1721,20 @@ export default function Contenedores() {
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-semibold text-primary font-heading">{cont.numero}</p>
-                        {cont.num_proveedores_mercancia > 0 && (
-                          <p className="text-xs text-muted mt-0.5">{cont.num_proveedores_mercancia} prov. mercancía</p>
+                        {cont.proveedores_nombres && (
+                          <p className="text-xs text-muted mt-0.5" title={cont.proveedores_nombres}>
+                            {cont.proveedores_nombres.split(', ').slice(0, 3).join(', ')}
+                            {cont.proveedores_nombres.split(', ').length > 3 ? '…' : ''}
+                          </p>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">{formatDate(cont.fecha_llegada)}</td>
+                    <td className="px-4 py-3 text-muted whitespace-nowrap text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span><span className="text-[10px] uppercase text-muted/60">Salida:</span> {formatDate(cont.fecha_salida)}</span>
+                        <span><span className="text-[10px] uppercase text-muted/60">Llegada:</span> {formatDate(cont.fecha_llegada)}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 font-mono font-semibold text-primary text-center">
                       {(cont.estado === 'revision' || cont.estado === 'finalizado') && cont.total_pacas_recibidas != null ? (
                         cont.total_pacas_recibidas !== parseInt(cont.total_pacas) ? (
@@ -1885,6 +1929,15 @@ export default function Contenedores() {
                           <input type="text" className={`${inp} text-xs flex-1`} placeholder="Notas del proveedor (opcional)"
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
+                        {/* ── Datos estimados (antes de que llegue el contenedor) ─── */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2.5">
+                          <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
+                            value={prov.factura_estimada || ''} onChange={(e) => updateProveedor(pi, 'factura_estimada', e.target.value)} />
+                          <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
+                            value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
+                          <PriceInput className={`${inp} text-xs`} placeholder="Valor x unidad estimado"
+                            value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
+                        </div>
                       </div>
 
                       {/* ── Líneas de distribución ─────────────────── */}
@@ -2056,6 +2109,15 @@ export default function Contenedores() {
                         )}
                         <input type="text" className={inp} placeholder="Notas (opcional)"
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
+                        {/* ── Datos estimados ─── */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
+                            value={srv.factura_estimada || ''} onChange={(e) => updateServicio(si, 'factura_estimada', e.target.value)} />
+                          <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
+                            value={srv.cantidad_estimada || ''} onChange={(e) => updateServicio(si, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
+                          <PriceInput className={`${inp} text-xs`} placeholder="Valor x unidad estimado"
+                            value={srv.valor_unidad_estimado || ''} onChange={(val) => updateServicio(si, 'valor_unidad_estimado', val)} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2362,11 +2424,18 @@ export default function Contenedores() {
               <div className="space-y-2">
                 {selectedContenedor.proveedores_mercancia.map((prov, i) => (
                   <div key={i} className="rounded-xl border border-border/60 bg-surface overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 bg-primary/3">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 bg-primary/3 flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
                         {prov.moneda && <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{prov.moneda}</span>}
                       </div>
+                      {(prov.factura_estimada || prov.cantidad_estimada || prov.valor_unidad_estimado) && (
+                        <div className="flex items-center gap-2 text-[10px] text-muted">
+                          {prov.factura_estimada && <span>Fact. est.: <strong className="text-primary">{prov.factura_estimada}</strong></span>}
+                          {prov.cantidad_estimada != null && <span>Cant. est.: <strong className="text-primary">{prov.cantidad_estimada}</strong></span>}
+                          {prov.valor_unidad_estimado != null && <span>Val/u est.: <strong className="text-primary">{formatCurrency(prov.valor_unidad_estimado)}</strong></span>}
+                        </div>
+                      )}
                     </div>
                     <div className="px-4 py-2.5 flex flex-wrap gap-2">
                       {prov.detalles.map((det, di) => (
@@ -2587,6 +2656,10 @@ export default function Contenedores() {
                     </p>
                   )}
                   <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
+                  <div className="mt-3 pt-3 border-t border-primary/10 flex items-center justify-center gap-2">
+                    <span className="text-xs text-muted uppercase tracking-wider">Costo total del contenedor</span>
+                    <span className="text-lg font-display font-bold text-secondary tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</span>
+                  </div>
                 </div>
               );
             })()}
@@ -2663,6 +2736,30 @@ export default function Contenedores() {
                 {' '}Registra la <strong>cantidad recibida</strong> de cada producto (entra al inventario). Si llegó un producto distinto al pedido, indícalo en la columna "Tipo Recibido".
               </p>
             </div>
+
+            {/* Distribución de unidades (pedido) — referencia rápida */}
+            {selectedContenedor.proveedores_mercancia && selectedContenedor.proveedores_mercancia.length > 0 && (
+              <div className="rounded-xl border border-border/60 bg-cream/20 p-3">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Distribución de Unidades (pedido)</p>
+                <div className="space-y-2">
+                  {selectedContenedor.proveedores_mercancia.map((prov, i) => (
+                    <div key={i} className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-primary mr-1">{prov.proveedor_nombre}:</span>
+                      {prov.detalles.map((det, di) => (
+                        <span key={di} className="inline-flex items-center gap-1.5 bg-surface border border-border/50 rounded-lg px-2 py-0.5 text-[11px]">
+                          <span className="capitalize font-semibold text-secondary">{det.clasificacion}</span>
+                          <span className="text-muted">/</span>
+                          <span className="capitalize text-muted">{det.referencia}</span>
+                          {det.calidad && <><span className="text-muted">/</span><span className="capitalize text-muted">{det.calidad}</span></>}
+                          <span className="w-px h-3 bg-border/60" />
+                          <span className="font-bold text-primary tabular-nums">{det.cantidad}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Agrupar filas por proveedor */}
             <div className="space-y-3">

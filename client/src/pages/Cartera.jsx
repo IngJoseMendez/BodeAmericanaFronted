@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
-import { carteraApi, clientesApi, pagosApi } from '../services/api';
+import { carteraApi, clientesApi, pagosApi, cuentasApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
@@ -15,14 +15,24 @@ export default function Cartera() {
   const [detalleCliente, setDetalleCliente] = useState(null);
   const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia }
   const [formData, setFormData] = useState({
-    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', referencia: ''
+    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', referencia: ''
   });
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
+  const [cuentasBanco, setCuentasBanco] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
+
+  // Carga histórica (legacy)
+  const [legacyModalOpen, setLegacyModalOpen] = useState(false);
+  const [legacyTab, setLegacyTab] = useState('manual'); // 'manual' | 'csv'
+  const [legacyRows, setLegacyRows] = useState([]); // [{ cliente_id, tipo, fecha, monto, cuenta_id, referencia }]
+  const [legacyManual, setLegacyManual] = useState({ cliente_id: '', tipo: 'venta', fecha: new Date().toISOString().split('T')[0], monto: '', cuenta_id: '', referencia: '' });
+  const [legacySubmitting, setLegacySubmitting] = useState(false);
+  const legacyFileRef = useRef(null);
+
   const clienteListRef = useRef(null);
   const { addToast } = useToast();
   const confirm = useConfirm();
@@ -40,6 +50,7 @@ export default function Cartera() {
 
   useEffect(() => {
     loadCartera();
+    cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -85,6 +96,7 @@ export default function Cartera() {
         monto: '',
         fecha: new Date().toISOString().split('T')[0],
         metodo_pago: 'efectivo',
+        cuenta_id: '',
         referencia: ''
       });
       setClienteSearch('');
@@ -126,6 +138,7 @@ export default function Cartera() {
         monto: parseFloat(formData.monto),
         fecha: formData.fecha,
         metodo_pago: formData.metodo_pago,
+        cuenta_id: formData.cuenta_id ? parseInt(formData.cuenta_id) : null,
         referencia: formData.referencia
       });
 
@@ -484,11 +497,147 @@ export default function Cartera() {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
   };
 
+  // ── Carga histórica (legacy) ──────────────────────────────────
+  const openLegacyModal = async () => {
+    try {
+      const data = await clientesApi.getAll({ estado: 'activo' });
+      setClientes(data);
+      setLegacyTab('manual');
+      setLegacyRows([]);
+      setLegacyManual({ cliente_id: '', tipo: 'venta', fecha: new Date().toISOString().split('T')[0], monto: '', cuenta_id: '', referencia: '' });
+      setError('');
+      setLegacyModalOpen(true);
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const clienteNombre = (id) => clientes.find(c => String(c.id) === String(id))?.nombre || `#${id}`;
+  const cuentaNombre = (id) => cuentasBanco.find(c => String(c.id) === String(id))?.nombre || '';
+
+  const addLegacyManualRow = () => {
+    if (!legacyManual.cliente_id) { addToast('Selecciona un cliente', 'error'); return; }
+    if (!legacyManual.monto || parseFloat(legacyManual.monto) <= 0) { addToast('Monto inválido', 'error'); return; }
+    setLegacyRows(prev => [...prev, {
+      cliente_id: parseInt(legacyManual.cliente_id),
+      tipo: legacyManual.tipo,
+      fecha: legacyManual.fecha,
+      monto: parseFloat(legacyManual.monto),
+      cuenta_id: legacyManual.cuenta_id ? parseInt(legacyManual.cuenta_id) : null,
+      referencia: legacyManual.referencia || 'LEGACY',
+    }]);
+    setLegacyManual(m => ({ ...m, monto: '', referencia: '' }));
+  };
+
+  const removeLegacyRow = (idx) => setLegacyRows(prev => prev.filter((_, i) => i !== idx));
+
+  // Importa CSV o Excel. Columnas esperadas: cliente, tipo, fecha, monto, cuenta, referencia.
+  const handleLegacyFile = async (file) => {
+    if (!file) return;
+    try {
+      const matchCliente = (val) => {
+        if (val == null) return null;
+        const s = String(val).trim();
+        if (/^\d+$/.test(s)) return parseInt(s);
+        const c = clientes.find(cl => cl.nombre?.trim().toLowerCase() === s.toLowerCase());
+        return c ? c.id : null;
+      };
+      const matchCuenta = (val) => {
+        if (!val) return null;
+        const s = String(val).trim();
+        if (/^\d+$/.test(s)) return parseInt(s);
+        const c = cuentasBanco.find(cb => cb.nombre?.trim().toLowerCase() === s.toLowerCase());
+        return c ? c.id : null;
+      };
+      const parseFecha = (val) => {
+        if (!val) return new Date().toISOString().split('T')[0];
+        if (val instanceof Date) return val.toISOString().split('T')[0];
+        const s = String(val).trim();
+        // dd/mm/yyyy → yyyy-mm-dd
+        const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+        if (m) {
+          const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+          return `${yyyy}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+        }
+        return s;
+      };
+
+      const rawRows = [];
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+      if (isExcel) {
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.load(await file.arrayBuffer());
+        const ws = wb.worksheets[0];
+        ws.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return; // header
+          const vals = row.values; // 1-indexed
+          rawRows.push([vals[1], vals[2], vals[3], vals[4], vals[5], vals[6]]);
+        });
+      } else {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        lines.slice(1).forEach(line => {
+          const cells = line.split(/[,;]/).map(c => c.trim().replace(/^"|"$/g, ''));
+          rawRows.push(cells);
+        });
+      }
+
+      const parsed = [];
+      const errores = [];
+      rawRows.forEach((cells, i) => {
+        const [cli, tipo, fecha, monto, cuenta, ref] = cells;
+        const cliente_id = matchCliente(cli);
+        const tipoNorm = String(tipo || '').trim().toLowerCase().startsWith('v') ? 'venta' : 'abono';
+        const montoNum = parseFloat(String(monto || '').replace(/[^0-9.-]/g, ''));
+        if (!cliente_id) { errores.push(`Fila ${i + 2}: cliente "${cli}" no encontrado`); return; }
+        if (!montoNum || montoNum <= 0) { errores.push(`Fila ${i + 2}: monto inválido`); return; }
+        parsed.push({
+          cliente_id,
+          tipo: tipoNorm,
+          fecha: parseFecha(fecha),
+          monto: montoNum,
+          cuenta_id: matchCuenta(cuenta),
+          referencia: (ref && String(ref).trim()) || 'LEGACY',
+        });
+      });
+
+      if (errores.length) addToast(`${errores.length} fila(s) con errores omitidas`, 'warning');
+      if (!parsed.length) { addToast('No se pudo leer ningún registro válido', 'error'); return; }
+      setLegacyRows(prev => [...prev, ...parsed]);
+      addToast(`${parsed.length} registro(s) cargado(s) del archivo`, 'success');
+    } catch (err) {
+      addToast('Error al leer el archivo: ' + err.message, 'error');
+    } finally {
+      if (legacyFileRef.current) legacyFileRef.current.value = '';
+    }
+  };
+
+  const submitLegacy = async () => {
+    if (!legacyRows.length) { addToast('No hay registros para importar', 'error'); return; }
+    try {
+      setLegacySubmitting(true);
+      await carteraApi.importarLegacy(legacyRows);
+      addToast(`${legacyRows.length} movimiento(s) histórico(s) importado(s)`, 'success');
+      setLegacyModalOpen(false);
+      setLegacyRows([]);
+      loadCartera();
+    } catch (err) {
+      addToast('Error al importar: ' + err.message, 'error');
+    } finally {
+      setLegacySubmitting(false);
+    }
+  };
+
   return (
     <Layout title="Cartera" subtitle="Estado de cuentas por cobrar" actions={
-      <Button onClick={openPagoModal} variant="secondary">
-        <Plus size={18} className="mr-1" /> Registrar Abono
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button onClick={openLegacyModal} variant="ghost">
+          <Upload size={18} className="mr-1" /> Cargar histórico
+        </Button>
+        <Button onClick={openPagoModal} variant="secondary">
+          <Plus size={18} className="mr-1" /> Registrar Abono
+        </Button>
+      </div>
     }>
       <div className="space-y-4">
         {error && (
@@ -676,7 +825,11 @@ export default function Cartera() {
                           <td className={`px-3 py-2 text-right ${m.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>
                             {m.tipo === 'venta' ? '+' : '-'}{formatCurrency(m.monto)}
                           </td>
-                          <td className="px-3 py-2 text-gray-500">{m.metodo_pago || '-'}</td>
+                          <td className="px-3 py-2 text-gray-500">
+                            {m.metodo_pago || '-'}
+                            {m.cuenta_nombre && <span className="block text-[11px] text-gray-400">{m.cuenta_nombre}</span>}
+                            {m.es_legacy && <span className="ml-1 text-[10px] font-bold text-amber-600">LEGACY</span>}
+                          </td>
                           <td className="px-3 py-2 text-right">
                             {m.tipo === 'abono' && (
                               <div className="flex justify-end gap-1">
@@ -889,6 +1042,13 @@ export default function Cartera() {
             />
           </div>
 
+          <Select
+            label="Cuenta (banco / caja)"
+            value={formData.cuenta_id}
+            onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
+            options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
+          />
+
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button
@@ -900,6 +1060,105 @@ export default function Cartera() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: Carga histórica (legacy) */}
+      <Modal isOpen={legacyModalOpen} onClose={() => setLegacyModalOpen(false)} title="Cargar histórico de cartera" size="lg">
+        <div className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>Estos movimientos se registran como <strong>histórico</strong> (no validan saldo) y respetan la fecha indicada. Útil para migrar deudas y abonos antiguos.</span>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-border">
+            <button onClick={() => setLegacyTab('manual')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${legacyTab === 'manual' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
+              Manual
+            </button>
+            <button onClick={() => setLegacyTab('csv')}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${legacyTab === 'csv' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
+              Archivo (CSV / Excel)
+            </button>
+          </div>
+
+          {legacyTab === 'manual' ? (
+            <div className="grid grid-cols-2 gap-3 items-end">
+              <Select
+                label="Cliente"
+                value={legacyManual.cliente_id}
+                onChange={(e) => setLegacyManual({ ...legacyManual, cliente_id: e.target.value })}
+                options={[{ value: '', label: 'Selecciona…' }, ...clientes.map(c => ({ value: String(c.id), label: c.nombre }))]}
+              />
+              <Select
+                label="Tipo"
+                value={legacyManual.tipo}
+                onChange={(e) => setLegacyManual({ ...legacyManual, tipo: e.target.value })}
+                options={[{ value: 'venta', label: 'Venta (deuda)' }, { value: 'abono', label: 'Abono (pago)' }]}
+              />
+              <Input label="Fecha" type="date" value={legacyManual.fecha}
+                onChange={(e) => setLegacyManual({ ...legacyManual, fecha: e.target.value })} />
+              <Input label="Monto" type="number" min="0" step="0.01" value={legacyManual.monto}
+                onChange={(e) => setLegacyManual({ ...legacyManual, monto: e.target.value })} placeholder="0" />
+              <Select
+                label="Cuenta"
+                value={legacyManual.cuenta_id}
+                onChange={(e) => setLegacyManual({ ...legacyManual, cuenta_id: e.target.value })}
+                options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
+              />
+              <Input label="Referencia" value={legacyManual.referencia}
+                onChange={(e) => setLegacyManual({ ...legacyManual, referencia: e.target.value })} placeholder="Opcional" />
+              <div className="col-span-2 flex justify-end">
+                <Button type="button" variant="ghost" onClick={addLegacyManualRow}>
+                  <Plus size={16} className="mr-1" /> Agregar a la lista
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-muted">
+                Columnas (en orden): <strong>cliente, tipo, fecha, monto, cuenta, referencia</strong>.
+                Cliente y cuenta pueden ser por nombre o ID. Tipo: venta o abono. La primera fila se ignora (encabezado).
+              </p>
+              <input ref={legacyFileRef} type="file" accept=".csv,.xlsx,.xls"
+                onChange={(e) => handleLegacyFile(e.target.files?.[0])}
+                className="block w-full text-sm text-muted file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-secondary file:text-white file:text-sm file:font-medium hover:file:bg-secondary/85 cursor-pointer" />
+            </div>
+          )}
+
+          {/* Lista de registros a importar */}
+          {legacyRows.length > 0 && (
+            <div className="rounded-xl border border-border/60 overflow-hidden">
+              <div className="px-4 py-2 bg-primary/3 border-b border-border/40 flex items-center justify-between">
+                <p className="text-xs font-bold text-muted uppercase tracking-wider">{legacyRows.length} registro(s)</p>
+                <button onClick={() => setLegacyRows([])} className="text-xs text-error hover:underline">Limpiar todo</button>
+              </div>
+              <div className="max-h-60 overflow-y-auto divide-y divide-border/30">
+                {legacyRows.map((r, idx) => (
+                  <div key={idx} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <div className="min-w-0">
+                      <span className="font-medium text-primary">{clienteNombre(r.cliente_id)}</span>
+                      <span className={`ml-2 text-xs font-semibold ${r.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>{r.tipo}</span>
+                      <span className="ml-2 text-xs text-muted">{r.fecha}</span>
+                      {r.cuenta_id && <span className="ml-2 text-xs text-muted">· {cuentaNombre(r.cuenta_id)}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="font-mono font-semibold text-primary">{formatCurrency(r.monto)}</span>
+                      <button onClick={() => removeLegacyRow(idx)} className="p-1 text-muted hover:text-error"><X size={14} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setLegacyModalOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="secondary" onClick={submitLegacy} disabled={legacySubmitting || legacyRows.length === 0}>
+              {legacySubmitting ? 'Importando…' : `Importar ${legacyRows.length || ''} registro(s)`}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );

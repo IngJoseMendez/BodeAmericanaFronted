@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
-import { despachosApi } from '../services/api';
+import { despachosApi, pacasApi } from '../services/api';
 import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
 
 const formatCurrency = (value) =>
@@ -61,10 +61,35 @@ async function exportarExcel(despacho) {
   const WHITE     = 'FFFFFF';
 
   const items     = despacho.items || [];
-  const vendidas  = items.filter(i => i.paca_estado === 'vendida');
-  const pendientes= items.filter(i => i.paca_estado !== 'vendida');
-  const total     = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
-  const totalVend = vendidas.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+  // En el nuevo flujo, las pacas que ya salieron físicamente quedan en estado 'despachada'.
+  const despachadas = items.filter(i => i.paca_estado === 'despachada');
+  const pendientes  = items.filter(i => i.paca_estado !== 'despachada');
+  const total       = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
+
+  // Resumen de inventario por tipo: total inventario − despacho = quedan.
+  // Se consulta el inventario agrupado actual para reflejar lo que queda en bodega.
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const tipoKey = (c, r, q) => `${norm(c)}|${norm(r)}|${norm(q)}`;
+  let invMap = {};
+  try {
+    const inv = await pacasApi.getInventario();
+    (inv || []).forEach(row => {
+      const k = tipoKey(row.clasificacion, row.referencia, row.calidad);
+      const prev = invMap[k] || { fisico: 0, disponibles: 0 };
+      invMap[k] = {
+        fisico: prev.fisico + (parseInt(row.fisico) || 0),
+        disponibles: prev.disponibles + (parseInt(row.disponibles) || 0),
+      };
+    });
+  } catch { invMap = {}; }
+
+  // Conteo de unidades de este despacho por tipo.
+  const despachoPorTipo = {};
+  despachadas.forEach(i => {
+    const k = tipoKey(i.clasificacion, i.referencia, i.calidad);
+    if (!despachoPorTipo[k]) despachoPorTipo[k] = { clasificacion: i.clasificacion || '—', referencia: i.referencia || '—', calidad: i.calidad || '—', cantidad: 0 };
+    despachoPorTipo[k].cantidad += 1;
+  });
 
   // ── Hoja 1: Resumen ─────────────────────────────────────────────
   const ws = wb.addWorksheet('Resumen');
@@ -91,6 +116,10 @@ async function exportarExcel(despacho) {
   ws.getRow(3).height = 8;
 
   // Info del despacho
+  const TIPO_TRANSPORTE_LBL = {
+    terrestre: 'Terrestre', maritimo: 'Marítimo', aereo: 'Aéreo',
+    recoge_cliente: 'Recoge el cliente', paqueteria: 'Paquetería / encomienda',
+  };
   const infoRows = [
     ['Número de Despacho', despacho.numero],
     ['Cliente', despacho.cliente_nombre],
@@ -98,6 +127,11 @@ async function exportarExcel(despacho) {
     ['Fecha Despacho', formatDate(despacho.fecha)],
     ['Fecha Salida', formatDate(despacho.fecha_salida)],
     ['Estado', despacho.estado === 'confirmado' ? 'CONFIRMADO' : despacho.estado === 'en_proceso' ? 'EN PROCESO' : 'ANULADO'],
+    ['Tipo de Transporte', TIPO_TRANSPORTE_LBL[despacho.tipo_transporte] || despacho.tipo_transporte || '—'],
+    ['Destinatario', despacho.destinatario || despacho.cliente_nombre || '—'],
+    ['Dirección de Entrega', despacho.direccion_entrega || '—'],
+    ['Ciudad', despacho.ciudad_entrega || '—'],
+    ['Celular', despacho.celular || '—'],
   ];
 
   infoRows.forEach(([campo, valor], idx) => {
@@ -119,7 +153,7 @@ async function exportarExcel(despacho) {
   const kpiRow = 4 + infoRows.length + 1;
   ws.getRow(kpiRow - 1).height = 12;
 
-  [[vendidas.length, 'Unidades despachadas', SUCCESS],
+  [[despachadas.length, 'Unidades despachadas', SUCCESS],
    [pendientes.length, 'Unidades pendientes', WARNING],
    [items.length, 'Total unidades', PRIMARY]].forEach(([val, lbl, color], ci) => {
     const col = ci + 1;
@@ -180,7 +214,7 @@ async function exportarExcel(despacho) {
   items.forEach((item, idx) => {
     const r = wi.getRow(2 + idx);
     r.height = 20;
-    const isVendida = item.paca_estado === 'vendida';
+    const isDespachada = item.paca_estado === 'despachada';
     const bg = idx % 2 === 0 ? LIGHT : WHITE;
 
     const vals = [
@@ -190,7 +224,7 @@ async function exportarExcel(despacho) {
       item.referencia || '—',
       item.calidad || '—',
       parseFloat(item.precio_unitario || 0),
-      isVendida ? 'Despachado' : 'Pendiente',
+      isDespachada ? 'Despachado' : 'Pendiente',
     ];
     vals.forEach((val, ci) => {
       const cell = r.getCell(ci + 1);
@@ -201,7 +235,7 @@ async function exportarExcel(despacho) {
         cell.numFmt = '$#,##0';
         cell.font   = { bold: true, color: { argb: SECONDARY } };
       } else if (ci === 6) {
-        cell.font = { bold: true, color: { argb: isVendida ? SUCCESS : WARNING } };
+        cell.font = { bold: true, color: { argb: isDespachada ? SUCCESS : WARNING } };
       } else {
         cell.font = { size: 9, color: { argb: PRIMARY } };
       }
@@ -232,6 +266,49 @@ async function exportarExcel(despacho) {
   wi.getColumn(5).width  = 16;
   wi.getColumn(6).width  = 18;
   wi.getColumn(7).width  = 14;
+
+  // ── Hoja 3: Resumen por Tipo (inventario − despacho = quedan) ───
+  const tipos = Object.values(despachoPorTipo);
+  if (tipos.length) {
+    const wr = wb.addWorksheet('Resumen por Tipo');
+    wr.properties.tabColor = { argb: SUCCESS };
+    const rHeaders = ['Clasificación', 'Referencia', 'Calidad', 'Despachadas', 'Físico (queda)', 'Total (antes)', 'Disponibles'];
+    const rh = wr.getRow(1);
+    rh.height = 26;
+    rHeaders.forEach((h, ci) => {
+      const cell = rh.getCell(ci + 1);
+      cell.value     = h;
+      cell.font      = { bold: true, size: 10, color: { argb: WHITE } };
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+      cell.alignment = { horizontal: ci >= 3 ? 'center' : 'left', vertical: 'middle', indent: ci < 3 ? 1 : 0 };
+    });
+    tipos.forEach((t, idx) => {
+      const k = tipoKey(t.clasificacion, t.referencia, t.calidad);
+      const fisicoActual = invMap[k]?.fisico ?? 0;          // ya descontado el despacho
+      const dispActual   = invMap[k]?.disponibles ?? 0;
+      const totalAntes   = fisicoActual + t.cantidad;        // inventario antes del despacho
+      const r = wr.getRow(2 + idx);
+      r.height = 20;
+      const bg = idx % 2 === 0 ? LIGHT : WHITE;
+      const vals = [t.clasificacion, t.referencia, t.calidad, t.cantidad, fisicoActual, totalAntes, dispActual];
+      vals.forEach((val, ci) => {
+        const cell = r.getCell(ci + 1);
+        cell.value     = val;
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        cell.alignment = { vertical: 'middle', horizontal: ci >= 3 ? 'center' : 'left', indent: ci < 3 ? 1 : 0 };
+        cell.font      = ci === 3
+          ? { bold: true, color: { argb: SUCCESS } }
+          : { size: 9, color: { argb: PRIMARY } };
+      });
+    });
+    wr.getColumn(1).width = 20;
+    wr.getColumn(2).width = 20;
+    wr.getColumn(3).width = 16;
+    wr.getColumn(4).width = 14;
+    wr.getColumn(5).width = 16;
+    wr.getColumn(6).width = 16;
+    wr.getColumn(7).width = 14;
+  }
 
   // Descarga
   const buf  = await wb.xlsx.writeBuffer();
@@ -297,6 +374,7 @@ export default function Despachos() {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [seleccion, setSeleccion]               = useState({});
   const [submitting, setSubmitting]             = useState(false);
+  const [entrega, setEntrega]                   = useState({ tipo_transporte: '', destinatario: '', direccion_entrega: '', ciudad_entrega: '', celular: '' });
 
   // Sección Despachados
   const [vistaActiva, setVistaActiva]               = useState('pendientes');
@@ -349,11 +427,20 @@ export default function Despachos() {
   };
 
   const abrirConfirmModal = () => {
-    const pendientes = (selectedDespacho?.items || []).filter(i => i.paca_estado === 'separada');
-    if (!pendientes.length) { addToast('No hay unidades pendientes de despacho', 'warning'); return; }
+    const pendientes = (selectedDespacho?.items || []).filter(i => i.paca_estado === 'vendida');
+    if (!pendientes.length) { addToast('No hay unidades vendidas pendientes de despacho', 'warning'); return; }
     const init = {};
     pendientes.forEach(i => { init[i.paca_id] = true; });
     setSeleccion(init);
+    // Prefill datos de entrega: del despacho si existen, si no del cliente.
+    const d = selectedDespacho || {};
+    setEntrega({
+      tipo_transporte:   d.tipo_transporte || '',
+      destinatario:      d.destinatario || d.cliente_nombre || '',
+      direccion_entrega: d.direccion_entrega || d.cliente_direccion || '',
+      ciudad_entrega:    d.ciudad_entrega || d.cliente_ciudad || '',
+      celular:           d.celular || d.cliente_telefono || '',
+    });
     setConfirmModalOpen(true);
   };
 
@@ -364,7 +451,14 @@ export default function Despachos() {
     if (!pacaIds.length) { addToast('Selecciona al menos una unidad', 'warning'); return; }
     try {
       setSubmitting(true);
-      const result = await despachosApi.confirmar(selectedDespacho.id, { paca_ids: pacaIds });
+      const result = await despachosApi.confirmar(selectedDespacho.id, {
+        paca_ids: pacaIds,
+        tipo_transporte:   entrega.tipo_transporte || null,
+        destinatario:      entrega.destinatario || null,
+        direccion_entrega: entrega.direccion_entrega || null,
+        ciudad_entrega:    entrega.ciudad_entrega || null,
+        celular:           entrega.celular || null,
+      });
       addToast(
         `${result.pacas_vendidas} unidad(es) despachada(s)${result.pacas_pendientes ? ` · ${result.pacas_pendientes} pendiente(s)` : ''}`,
         'success'
@@ -549,7 +643,7 @@ export default function Despachos() {
                 description="Los despachos con al menos una salida aparecerán aquí agrupados por cliente"
               />
             ) : despachadosAgrupados.map(([cliente, items]) => {
-              const totalUds   = items.reduce((s, d) => s + (parseInt(d.num_vendidas) || 0), 0);
+              const totalUds   = items.reduce((s, d) => s + (parseInt(d.num_despachadas) || 0), 0);
               const totalMonto = items.reduce((s, d) => s + parseFloat(d.total || 0), 0);
               return (
                 <Card key={cliente} padding={false}>
@@ -591,8 +685,8 @@ export default function Despachos() {
                             </td>
                             <td className="px-4 py-3 text-sm text-success font-medium whitespace-nowrap">{formatDate(d.fecha_salida)}</td>
                             <td className="px-4 py-3 text-center font-mono font-bold text-primary">
-                              <span>{d.num_vendidas || 0}</span>
-                              {d.num_items > d.num_vendidas && (
+                              <span>{d.num_despachadas || 0}</span>
+                              {d.num_items > d.num_despachadas && (
                                 <span className="text-muted font-normal">/{d.num_items}</span>
                               )}
                             </td>
@@ -656,13 +750,13 @@ export default function Despachos() {
                   </thead>
                   <tbody className="divide-y divide-border/30">
                     {(selectedDespacho.items || []).map((item, i) => (
-                      <tr key={i} className={`hover:bg-primary/3 transition-colors ${item.paca_estado === 'vendida' ? 'opacity-70' : ''}`}>
+                      <tr key={i} className={`hover:bg-primary/3 transition-colors ${item.paca_estado === 'despachada' ? 'opacity-70' : ''}`}>
                         <td className="px-4 py-2 text-xs text-muted font-mono">{item.paca_uuid?.slice(0, 8)}</td>
                         <td className="px-4 py-2 text-sm font-medium text-primary capitalize">{item.clasificacion}</td>
                         <td className="px-4 py-2 text-sm text-muted capitalize">{item.referencia}</td>
                         <td className="px-4 py-2 text-sm text-muted capitalize">{item.calidad || '—'}</td>
                         <td className="px-4 py-2">
-                          {item.paca_estado === 'vendida'
+                          {item.paca_estado === 'despachada'
                             ? <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-success/15 text-success">Despachado</span>
                             : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-warning/15 text-warning">Pendiente</span>
                           }
@@ -746,7 +840,7 @@ export default function Despachos() {
                   onClick={() => {
                     const all = {};
                     (selectedDespacho.items || [])
-                      .filter(i => i.paca_estado === 'separada')
+                      .filter(i => i.paca_estado === 'vendida')
                       .forEach(i => { all[i.paca_id] = true; });
                     setSeleccion(all);
                   }}
@@ -757,7 +851,7 @@ export default function Despachos() {
               </div>
               <div className="max-h-64 overflow-y-auto space-y-1.5">
                 {(selectedDespacho.items || [])
-                  .filter(i => i.paca_estado === 'separada')
+                  .filter(i => i.paca_estado === 'vendida')
                   .map(item => (
                     <label
                       key={item.paca_id}
@@ -784,6 +878,52 @@ export default function Despachos() {
                       </span>
                     </label>
                   ))}
+              </div>
+            </div>
+
+            {/* Datos de entrega para el documento de bodega */}
+            <div className="space-y-2 pt-3 border-t border-border/40">
+              <p className="text-xs font-bold text-muted uppercase tracking-wider">Datos de entrega</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted mb-1">Tipo de transporte</label>
+                  <select
+                    value={entrega.tipo_transporte}
+                    onChange={e => setEntrega(s => ({ ...s, tipo_transporte: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                  >
+                    <option value="">Selecciona…</option>
+                    <option value="terrestre">Terrestre</option>
+                    <option value="maritimo">Marítimo</option>
+                    <option value="aereo">Aéreo</option>
+                    <option value="recoge_cliente">Recoge el cliente</option>
+                    <option value="paqueteria">Paquetería / encomienda</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted mb-1">Destinatario</label>
+                  <input type="text" value={entrega.destinatario}
+                    onChange={e => setEntrega(s => ({ ...s, destinatario: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted mb-1">Dirección de entrega</label>
+                  <input type="text" value={entrega.direccion_entrega}
+                    onChange={e => setEntrega(s => ({ ...s, direccion_entrega: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted mb-1">Ciudad</label>
+                  <input type="text" value={entrega.ciudad_entrega}
+                    onChange={e => setEntrega(s => ({ ...s, ciudad_entrega: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted mb-1">Celular</label>
+                  <input type="text" value={entrega.celular}
+                    onChange={e => setEntrega(s => ({ ...s, celular: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                </div>
               </div>
             </div>
 

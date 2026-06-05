@@ -177,6 +177,10 @@ export const carteraApi = {
   exportOne(clienteId) {
     return api.get(`/cartera/exportar/${clienteId}`);
   },
+  // Carga histórica (legacy): un registro o un arreglo de { cliente_id, tipo, fecha, monto, cuenta_id?, referencia? }
+  importarLegacy(registros) {
+    return api.post('/cartera/legacy', registros);
+  },
 };
 
 export const dashboardApi = {
@@ -421,8 +425,8 @@ export const cotizacionesApi = {
   delete(id) {
     return api.delete(`/cotizaciones/${id}`);
   },
-  convertirAVenta(id, vendedorId) {
-    return api.post(`/cotizaciones/${id}/convertir`, { vendedor_id: vendedorId });
+  convertirAVenta(id, vendedorId, extra = {}) {
+    return api.post(`/cotizaciones/${id}/convertir`, { vendedor_id: vendedorId, ...extra });
   },
   crearDespacho(id, paca_ids) {
     return api.post(`/cotizaciones/${id}/despacho`, paca_ids?.length ? { paca_ids } : {});
@@ -513,6 +517,23 @@ export const preciosApi = {
   create(data) { return api.post('/precios', data); },
   update(id, data) { return api.put(`/precios/${id}`, data); },
   delete(id) { return api.delete(`/precios/${id}`); },
+};
+
+export const cuentasApi = {
+  getAll(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return api.get(`/cuentas${q ? '?' + q : ''}`);
+  },
+  create(data) { return api.post('/cuentas', data); },
+  update(id, data) { return api.put(`/cuentas/${id}`, data); },
+  delete(id) { return api.delete(`/cuentas/${id}`); },
+};
+
+export const listaPreciosApi = {
+  getAll(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return api.get(`/lista-precios${q ? '?' + q : ''}`);
+  },
 };
 
 export const auditoriaApi = {

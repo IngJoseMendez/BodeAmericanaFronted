@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, Fragment } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
-import { cuentasPagarApi, contenedoresApi } from '../services/api';
+import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
   Search, Package2, ChevronDown, ChevronRight, Download,
@@ -18,7 +18,7 @@ const formatCurrency = (value, moneda = 'COP') => {
 const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const TODAY = new Date().toISOString().split('T')[0];
-const emptyInline = () => ({ monto: '', fecha: TODAY, metodo_pago: 'efectivo', notas: '' });
+const emptyInline = () => ({ monto: '', fecha: TODAY, metodo_pago: 'efectivo', cuenta_banco_id: '', notas: '' });
 
 function EstadoBadge({ estado }) {
   const map = {
@@ -55,6 +55,7 @@ function KpiCard({ label, value, icon: Icon, color, sub }) {
 export default function CuentasPagar() {
   const [cuentas, setCuentas] = useState([]);
   const [contenedores, setContenedores] = useState([]);
+  const [cuentasBanco, setCuentasBanco] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -79,6 +80,7 @@ export default function CuentasPagar() {
 
   useEffect(() => {
     contenedoresApi.getAll().then(setContenedores).catch(() => {});
+    cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
 
   useEffect(() => { loadCuentas(); }, [filtroEstado, filtroContenedor]);
@@ -118,6 +120,7 @@ export default function CuentasPagar() {
         monto: parseFloat(inlineForm.monto),
         fecha: inlineForm.fecha,
         metodo_pago: inlineForm.metodo_pago,
+        cuenta_banco_id: inlineForm.cuenta_banco_id ? Number(inlineForm.cuenta_banco_id) : null,
         notas: inlineForm.notas || null,
       });
       addToast(`Abono registrado — ${cuenta.proveedor_nombre}`, 'success');
@@ -408,7 +411,7 @@ export default function CuentasPagar() {
                                   </div>
 
                                   {/* Campos del abono */}
-                                  <div className="grid grid-cols-4 gap-3 items-end">
+                                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 items-end">
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Monto *</label>
                                       <input type="number" min="0.01" step="0.01" autoFocus
@@ -426,6 +429,17 @@ export default function CuentasPagar() {
                                         <option value="transferencia">Transferencia</option>
                                         <option value="cheque">Cheque</option>
                                         <option value="otro">Otro</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
+                                      <select className={inpSm}
+                                        value={inlineForm.cuenta_banco_id}
+                                        onChange={(e) => setInlineForm({ ...inlineForm, cuenta_banco_id: e.target.value })}>
+                                        <option value="">— Sin cuenta —</option>
+                                        {cuentasBanco.map((cu) => (
+                                          <option key={cu.id} value={cu.id}>{cu.nombre}</option>
+                                        ))}
                                       </select>
                                     </div>
                                     <div>
@@ -515,7 +529,7 @@ export default function CuentasPagar() {
                     <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-primary/3">
                       <div>
                         <p className="text-sm font-semibold text-primary">{formatCurrency(ab.monto, selectedCuenta.moneda)}</p>
-                        <p className="text-xs text-muted">{formatDate(ab.fecha)}{ab.metodo_pago ? ` · ${ab.metodo_pago}` : ''}</p>
+                        <p className="text-xs text-muted">{formatDate(ab.fecha)}{ab.metodo_pago ? ` · ${ab.metodo_pago}` : ''}{ab.cuenta_banco_nombre ? ` · ${ab.cuenta_banco_nombre}` : ''}</p>
                         {ab.notas && <p className="text-xs text-muted/70 italic">{ab.notas}</p>}
                       </div>
                       <CheckCircle size={16} className="text-success flex-shrink-0" />

@@ -25,6 +25,8 @@ import CuentasPagar from './pages/CuentasPagar';
 import Despachos from './pages/Despachos';
 import Precios from './pages/Precios';
 import PreciosPromocion from './pages/PreciosPromocion';
+import ListaPrecios from './pages/ListaPrecios';
+import Cuentas from './pages/Cuentas';
 import Auditoria from './pages/Auditoria';
 
 function AdminLayout() {
@@ -77,6 +79,8 @@ function RutasAdmin() {
         <Route path="/tipos-paca" element={<TiposPaca />} />
         <Route path="/precios" element={<Precios />} />
         <Route path="/precios-promocion" element={<PreciosPromocion />} />
+        <Route path="/lista-precios" element={<ListaPrecios />} />
+        <Route path="/cuentas" element={<Cuentas />} />
         <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
         <Route path="/auditoria" element={<Auditoria />} />
         <Route path="*" element={<Navigate to="/" replace />} />
