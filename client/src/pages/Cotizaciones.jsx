@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -192,6 +193,7 @@ export default function Cotizaciones() {
   const [selectedCotizacion, setSelectedCotizacion] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [filtroEstado, setFiltroEstado] = useState('');
+  const [busqueda, setBusqueda] = useState('');
   const { addToast } = useToast();
   const confirm = useConfirm();
   const { usuario } = useAuth();
@@ -226,6 +228,17 @@ export default function Cotizaciones() {
   useEffect(() => {
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
+
+  // Deep-link: ?focus=<id> abre el detalle de esa cotización (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!focus) return;
+    cotizacionesApi.getOne(focus)
+      .then(data => { setSelectedCotizacion(data); setViewModalOpen(true); })
+      .catch(() => addToast('No se encontró la cotización', 'error'));
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
 
   const loadCotizaciones = async () => {
     try {
@@ -543,6 +556,14 @@ export default function Cotizaciones() {
   const { subtotal, descuento, total, totalUsd, transporteTotal, transporteUnit, totalCantidades, tasa } = calcularTotales();
   const hayDescuento = (parseFloat(formData.descuento) || 0) > 0;
 
+  // Búsqueda client-side por número o cliente (el filtro de estado es por servidor)
+  const cotizacionesFiltradas = cotizaciones.filter((c) => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return true;
+    return (c.numero || '').toLowerCase().includes(q) ||
+           (c.cliente_nombre || '').toLowerCase().includes(q);
+  });
+
   const exportarListaExcel = async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Cotizaciones');
@@ -580,6 +601,15 @@ export default function Cotizaciones() {
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex gap-2 items-center flex-wrap">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+              <input
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar por número o cliente..."
+                className="pl-9 pr-3 py-2.5 rounded-xl border border-border bg-surface text-sm w-60 focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              />
+            </div>
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
@@ -592,7 +622,7 @@ export default function Cotizaciones() {
               <option value="vencida">Vencidas</option>
             </select>
             <span className="text-sm text-muted">
-              {cotizaciones.length} cotización(es)
+              {cotizacionesFiltradas.length} cotización(es)
             </span>
           </div>
           <div className="flex gap-2">
@@ -623,18 +653,18 @@ export default function Cotizaciones() {
               </div>
             ))}
           </div>
-        ) : cotizaciones.length === 0 ? (
+        ) : cotizacionesFiltradas.length === 0 ? (
           <Card>
             <CardBody className="text-center py-12">
               <FileText className="w-16 h-16 mx-auto text-muted mb-4" />
-              <h3 className="text-lg font-medium mb-2">No hay cotizaciones</h3>
-              <p className="text-muted mb-4">Crea tu primera cotización</p>
-              <Button onClick={openCreateModal} icon={Plus}>Crear Cotización</Button>
+              <h3 className="text-lg font-medium mb-2">{busqueda ? 'Sin resultados' : 'No hay cotizaciones'}</h3>
+              <p className="text-muted mb-4">{busqueda ? `Ninguna cotización coincide con "${busqueda}"` : 'Crea tu primera cotización'}</p>
+              {!busqueda && <Button onClick={openCreateModal} icon={Plus}>Crear Cotización</Button>}
             </CardBody>
           </Card>
         ) : (
           <div className="space-y-3">
-            {cotizaciones.map((cot) => (
+            {cotizacionesFiltradas.map((cot) => (
               <Card key={cot.id} hover className="cursor-pointer" onClick={() => openViewModal(cot)}>
                 <CardBody>
                   <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
@@ -952,7 +982,14 @@ export default function Cotizaciones() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 bg-primary/5 rounded-xl">
               <div>
                 <p className="text-xs sm:text-sm text-muted">Cliente</p>
-                <p className="font-medium text-sm sm:text-base">{selectedCotizacion.cliente_nombre}</p>
+                {selectedCotizacion.cliente_id ? (
+                  <RefLink to="/cartera" id={selectedCotizacion.cliente_id} title="Ver cartera del cliente"
+                    className="font-medium text-sm sm:text-base">
+                    {selectedCotizacion.cliente_nombre}
+                  </RefLink>
+                ) : (
+                  <p className="font-medium text-sm sm:text-base">{selectedCotizacion.cliente_nombre}</p>
+                )}
               </div>
               <div>
                 <p className="text-xs sm:text-sm text-muted">Vendedor</p>
@@ -966,6 +1003,17 @@ export default function Cotizaciones() {
                 <p className="text-xs sm:text-sm text-muted">Vence</p>
                 <p className="font-medium text-sm sm:text-base">{new Date(selectedCotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
               </div>
+              {selectedCotizacion.despachos?.length > 0 && (
+                <div>
+                  <p className="text-xs sm:text-sm text-muted">Despacho{selectedCotizacion.despachos.length > 1 ? 's' : ''}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCotizacion.despachos.map(d => (
+                      <RefLink key={d.id} to="/despachos" id={d.id} title="Ver despacho"
+                        className="font-medium text-sm sm:text-base">{d.numero}</RefLink>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

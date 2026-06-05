@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
@@ -628,7 +628,9 @@ useEffect(() => {
                           <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
                             <td className="px-4 py-3 text-sm text-muted font-mono">#{venta.id}</td>
                             <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
-                            <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
+                            <td className="px-4 py-3 text-sm text-primary font-medium">
+                              <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{getClienteNombre(venta.cliente_id)}</RefLink>
+                            </td>
                             <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
                             <td className="px-4 py-3 text-sm text-primary font-medium">{formatCurrency(venta.total)}</td>
                             <td className="px-4 py-3"><Badge variant="disponible">{venta.estado}</Badge></td>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, Badge, TableSkeleton } from '../components/common';
+import { Card, CardBody, Button, useToast, Badge, TableSkeleton, RefLink } from '../components/common';
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw } from 'lucide-react';
@@ -472,7 +472,9 @@ export default function Reportes() {
                           {reporteMensual.ventas?.slice(0, 10).map((v, i) => (
                             <tr key={i}>
                               <td className="px-2 py-1">{new Date(v.fecha).toLocaleDateString('es-MX')}</td>
-                              <td className="px-2 py-1">{v.cliente_nombre}</td>
+                              <td className="px-2 py-1">
+                                <RefLink to="/cartera" id={v.cliente_id} title="Ver cartera del cliente" icon={false}>{v.cliente_nombre}</RefLink>
+                              </td>
                               <td className="px-2 py-1 text-right">{formatCurrency(v.total)}</td>
                             </tr>
                           ))}
@@ -599,7 +601,7 @@ export default function Reportes() {
                   deudores.map(c => (
                     <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg min-w-0">
                       <div className="min-w-0 flex-1 mr-2">
-                        <p className="font-medium text-primary truncate">{c.nombre}</p>
+                        <RefLink to="/cartera" id={c.id} title="Ver cartera del cliente" icon={false} className="font-medium truncate">{c.nombre}</RefLink>
                         <p className="text-sm text-muted truncate">{c.ciudad || 'Sin ciudad'}</p>
                       </div>
                       <div className="text-right flex-shrink-0 min-w-0">

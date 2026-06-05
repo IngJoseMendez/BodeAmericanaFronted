@@ -1,11 +1,41 @@
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink } from '../components/common';
 import { carteraApi, clientesApi, pagosApi, cuentasApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
+
+// Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
+// Devuelve cada cotización con su venta, abonado, saldo y % pagado,
+// más los movimientos "generales" (sin cotización atribuida).
+function resumenPorCotizacion(movimientos = []) {
+  const grupos = new Map();
+  let generalAbonado = 0, generalVenta = 0;
+  for (const m of movimientos) {
+    const monto = parseFloat(m.monto) || 0;
+    if (m.cotizacion_id) {
+      if (!grupos.has(m.cotizacion_id)) {
+        grupos.set(m.cotizacion_id, { cotizacion_id: m.cotizacion_id, cotizacion_numero: m.cotizacion_numero || null, venta: 0, abonado: 0 });
+      }
+      const g = grupos.get(m.cotizacion_id);
+      if (m.cotizacion_numero && !g.cotizacion_numero) g.cotizacion_numero = m.cotizacion_numero;
+      if (m.tipo === 'venta') g.venta += monto;
+      else if (m.tipo === 'abono') g.abonado += monto;
+    } else {
+      if (m.tipo === 'venta') generalVenta += monto;
+      else if (m.tipo === 'abono') generalAbonado += monto;
+    }
+  }
+  const cotizaciones = [...grupos.values()].map(g => ({
+    ...g,
+    saldo: g.venta - g.abonado,
+    pct: g.venta > 0 ? Math.round((g.abonado / g.venta) * 100) : (g.abonado > 0 ? 100 : 0),
+  }));
+  return { cotizaciones, generalAbonado, generalVenta };
+}
 
 export default function Cartera() {
   const [cartera, setCartera] = useState([]);
@@ -13,10 +43,11 @@ export default function Cartera() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [detalleCliente, setDetalleCliente] = useState(null);
-  const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia }
+  const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia, cotizacion_id }
   const [formData, setFormData] = useState({
-    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', referencia: ''
+    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: ''
   });
+  const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
@@ -52,6 +83,15 @@ export default function Cartera() {
     loadCartera();
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
+
+  // Deep-link: ?focus=<cliente_id> abre el detalle de cartera de ese cliente (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!focus) return;
+    openDetalle(focus);
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -97,10 +137,12 @@ export default function Cartera() {
         fecha: new Date().toISOString().split('T')[0],
         metodo_pago: 'efectivo',
         cuenta_id: '',
+        cotizacion_id: '',
         referencia: ''
       });
       setClienteSearch('');
       setSaldoCliente(null);
+      setCotizacionesCliente([]);
       setError('');
       setModalOpen(true);
     } catch (err) {
@@ -110,12 +152,14 @@ export default function Cartera() {
 
   // Cargar saldo del cliente seleccionado para mostrar aviso de sobreabono
   const cargarSaldoCliente = async (clienteId) => {
-    if (!clienteId) { setSaldoCliente(null); return; }
+    if (!clienteId) { setSaldoCliente(null); setCotizacionesCliente([]); return; }
     try {
       const data = await carteraApi.getOne(clienteId);
       setSaldoCliente(data.saldo_pendiente);
+      setCotizacionesCliente(resumenPorCotizacion(data.movimientos).cotizaciones);
     } catch {
       setSaldoCliente(null);
+      setCotizacionesCliente([]);
     }
   };
 
@@ -139,6 +183,7 @@ export default function Cartera() {
         fecha: formData.fecha,
         metodo_pago: formData.metodo_pago,
         cuenta_id: formData.cuenta_id ? parseInt(formData.cuenta_id) : null,
+        cotizacion_id: formData.cotizacion_id ? parseInt(formData.cotizacion_id) : null,
         referencia: formData.referencia
       });
 
@@ -189,6 +234,7 @@ export default function Cartera() {
         monto: parseFloat(editandoAbono.monto),
         fecha: editandoAbono.fecha,
         metodo_pago: editandoAbono.metodo_pago,
+        cotizacion_id: editandoAbono.cotizacion_id || null,
         referencia: editandoAbono.referencia,
       });
       addToast('Abono actualizado', 'success');
@@ -734,6 +780,47 @@ export default function Cartera() {
               </div>
             </div>
 
+            {/* Resumen de pagos por cotización (Nivel 2) */}
+            {(() => {
+              const { cotizaciones, generalAbonado } = resumenPorCotizacion(detalleCliente.movimientos);
+              if (cotizaciones.length === 0 && generalAbonado === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <h4 className="font-display text-primary">Pagos por cotización</h4>
+                  <div className="rounded-xl border border-border/60 divide-y divide-border/40 overflow-hidden">
+                    {cotizaciones.map((c) => (
+                      <div key={c.cotizacion_id} className="px-3 py-2.5 hover:bg-primary/3">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <RefLink to="/cotizaciones" id={c.cotizacion_id} title="Ver cotización"
+                            className="text-sm font-semibold">
+                            {c.cotizacion_numero || `Cotización #${c.cotizacion_id}`}
+                          </RefLink>
+                          <div className="flex items-center gap-3 text-xs">
+                            <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(c.venta)}</strong></span>
+                            <span className="text-success">Abonado <strong>{formatCurrency(c.abonado)}</strong></span>
+                            <span className={c.saldo > 0 ? 'text-accent' : 'text-success'}>Saldo <strong>{formatCurrency(c.saldo)}</strong></span>
+                          </div>
+                        </div>
+                        {/* Barra de % pagado */}
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-border/50 overflow-hidden">
+                            <div className={`h-full rounded-full ${c.pct >= 100 ? 'bg-success' : 'bg-secondary'}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
+                          </div>
+                          <span className="text-[11px] font-bold text-muted tabular-nums w-10 text-right">{c.pct}%</span>
+                        </div>
+                      </div>
+                    ))}
+                    {generalAbonado > 0 && (
+                      <div className="px-3 py-2.5 flex items-center justify-between bg-primary/3">
+                        <span className="text-sm font-medium text-muted">Abonos generales (sin cotización)</span>
+                        <span className="text-xs text-success font-semibold">{formatCurrency(generalAbonado)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             <h4 className="font-display text-primary">Movimientos</h4>
             <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
@@ -827,14 +914,22 @@ export default function Cartera() {
                           </td>
                           <td className="px-3 py-2 text-gray-500">
                             {m.metodo_pago || '-'}
-                            {m.cuenta_nombre && <span className="block text-[11px] text-gray-400">{m.cuenta_nombre}</span>}
+                            {m.cuenta_nombre && (
+                              <RefLink to="/cuentas" id={m.cuenta_id} title="Ver cuenta" icon={false} className="block text-[11px]">{m.cuenta_nombre}</RefLink>
+                            )}
+                            {m.cotizacion_id && (
+                              <RefLink to="/cotizaciones" id={m.cotizacion_id} title="Ver cotización"
+                                className="block text-[11px]" icon={false}>
+                                {m.cotizacion_numero || `Cot. #${m.cotizacion_id}`}
+                              </RefLink>
+                            )}
                             {m.es_legacy && <span className="ml-1 text-[10px] font-bold text-amber-600">LEGACY</span>}
                           </td>
                           <td className="px-3 py-2 text-right">
                             {m.tipo === 'abono' && (
                               <div className="flex justify-end gap-1">
                                 <button
-                                  onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia })}
+                                  onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia, cotizacion_id: m.cotizacion_id })}
                                   className="p-1.5 rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
                                   title="Editar abono"
                                 >
@@ -1048,6 +1143,21 @@ export default function Cartera() {
             onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
             options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
           />
+
+          {cotizacionesCliente.length > 0 && (
+            <Select
+              label="Aplicar a cotización"
+              value={formData.cotizacion_id}
+              onChange={(e) => setFormData({ ...formData, cotizacion_id: e.target.value })}
+              options={[
+                { value: '', label: '— Abono general (sin cotización) —' },
+                ...cotizacionesCliente.map(c => ({
+                  value: String(c.cotizacion_id),
+                  label: `${c.cotizacion_numero || `Cot. #${c.cotizacion_id}`} · saldo ${formatCurrency(c.saldo)} (${c.pct}% pagado)`,
+                })),
+              ]}
+            />
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>

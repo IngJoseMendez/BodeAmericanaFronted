@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge } from '../components/common';
+import { Card, CardBody, Button, Badge, RefLink } from '../components/common';
 import { analyticsApi } from '../services/api';
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1113,7 +1113,7 @@ export default function InteligenciaDeNegocio() {
                               <span className="font-bold text-success">{cliente.score}</span>
                             </div>
                             <div>
-                              <p className="font-medium">{cliente.nombre}</p>
+                              <RefLink to="/cartera" id={cliente.id} title="Ver cartera del cliente" icon={false} className="font-medium">{cliente.nombre}</RefLink>
                               <p className="text-xs text-muted">{cliente.ciudad || 'Sin ciudad'}</p>
                             </div>
                           </div>
@@ -1146,7 +1146,9 @@ export default function InteligenciaDeNegocio() {
                     <tbody className="divide-y">
                       {clientesScore?.clientes?.slice(0, 20).map((cliente, i) => (
                         <tr key={i} className="hover:bg-primary/5">
-                          <td className="px-4 py-2 font-medium">{cliente.nombre}</td>
+                          <td className="px-4 py-2 font-medium">
+                            <RefLink to="/cartera" id={cliente.id} title="Ver cartera del cliente" icon={false}>{cliente.nombre}</RefLink>
+                          </td>
                           <td className="px-4 py-2 text-muted">{cliente.ciudad || '-'}</td>
                           <td className="px-4 py-2 text-right">{cliente.total_compras}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(cliente.monto_total)}</td>
@@ -2254,7 +2256,9 @@ export default function InteligenciaDeNegocio() {
                     <tbody className="divide-y">
                       {riesgoCartera?.clientes?.map((cliente, i) => (
                         <tr key={i} className="hover:bg-primary/5">
-                          <td className="px-4 py-2 font-medium">{cliente.nombre}</td>
+                          <td className="px-4 py-2 font-medium">
+                            <RefLink to="/cartera" id={cliente.id} title="Ver cartera del cliente" icon={false}>{cliente.nombre}</RefLink>
+                          </td>
                           <td className="px-4 py-2 text-muted">{cliente.ciudad || '-'}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(cliente.deuda_pendiente)}</td>
                           <td className="px-4 py-2 text-center">

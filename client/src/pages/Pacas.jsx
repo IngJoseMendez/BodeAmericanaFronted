@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { PACA_ESTADOS } from '../types';
@@ -712,7 +712,12 @@ export default function Pacas() {
                     inventarioAgrupado.map((row, idx) => (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
                         <td className="px-3 py-2.5">
-                          <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.contenedor}</span>
+                          {row.contenedor_id ? (
+                            <RefLink to="/contenedores" id={row.contenedor_id} title="Ver contenedor"
+                              className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full font-semibold">{row.contenedor}</RefLink>
+                          ) : (
+                            <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">{row.contenedor}</span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-sm text-muted">{row.proveedor_nombre || <span className="text-muted/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-sm font-semibold text-primary capitalize">
@@ -782,12 +787,19 @@ export default function Pacas() {
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant={paca.estado}>{paca.estado}</Badge>
-                          {paca.estado === 'separada' && paca.cotizacion_numero && (
+                          {paca.cotizacion_numero && (
                             <div className="mt-0.5">
-                              <span className="text-xs font-semibold text-warning">{paca.cotizacion_numero}</span>
+                              <RefLink to="/cotizaciones" id={paca.cotizacion_id} title="Ver cotización"
+                                className="text-xs font-semibold" icon={false}>{paca.cotizacion_numero}</RefLink>
                               {paca.cotizacion_cliente && (
                                 <span className="block text-xs text-muted truncate max-w-[130px]">{paca.cotizacion_cliente}</span>
                               )}
+                            </div>
+                          )}
+                          {paca.despacho_numero && (
+                            <div className="mt-0.5">
+                              <RefLink to="/despachos" id={paca.despacho_id} title="Ver despacho"
+                                className="text-xs" icon={false}>{paca.despacho_numero}</RefLink>
                             </div>
                           )}
                         </td>
