@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Badge, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Badge, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { auditoriaApi } from '../services/api';
 import { useToast } from '../components/common';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +15,14 @@ const ACTION_COLORS = {
 
 const ENTIDADES = ['precio', 'contenedor', 'venta', 'paca'];
 const ACCIONES  = ['CREATE', 'UPDATE', 'DELETE', 'FINALIZAR'];
+
+// Entidades que tienen panel destino para seguir el rastro
+const ENTIDAD_RUTA = {
+  contenedor: '/contenedores',
+  cotizacion: '/cotizaciones',
+  cliente:    '/cartera',
+  despacho:   '/despachos',
+};
 
 const formatDate = (d) =>
   d ? new Date(d).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -120,7 +128,15 @@ export default function Auditoria() {
                             {log.accion}
                           </span>
                         </td>
-                        <td className="px-4 py-3 capitalize text-muted">{log.entidad}{log.entidad_id ? ` #${log.entidad_id}` : ''}</td>
+                        <td className="px-4 py-3 capitalize text-muted">
+                          {ENTIDAD_RUTA[log.entidad] && log.entidad_id ? (
+                            <RefLink to={ENTIDAD_RUTA[log.entidad]} id={log.entidad_id} title={`Ver ${log.entidad}`}>
+                              {log.entidad} #{log.entidad_id}
+                            </RefLink>
+                          ) : (
+                            <span>{log.entidad}{log.entidad_id ? ` #${log.entidad_id}` : ''}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-muted max-w-xs truncate">{log.descripcion || '—'}</td>
                       </tr>
                     ))}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
@@ -8,7 +9,7 @@ import {
   ClipboardCheck, Sparkles, RefreshCw,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
-import { Modal, useToast, useConfirm, TableSkeleton } from '../components/common';
+import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../components/common';
 import { contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -421,6 +422,17 @@ export default function Contenedores() {
     }
   };
   useEffect(() => { loadContenedores(); }, [filtroEstado]);
+
+  // Deep-link: ?focus=<id> abre el detalle de ese contenedor (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!focus) return;
+    contenedoresApi.getOne(focus)
+      .then(data => { setSelectedContenedor(data); setViewModalOpen(true); })
+      .catch(() => addToast('No se encontró el contenedor', 'error'));
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
 
   // Auto-calcula total_pacas: suma de cantidades de las líneas; en estimación,
   // suma de las cantidades estimadas de cada proveedor.
@@ -2416,6 +2428,8 @@ export default function Contenedores() {
               {selectedContenedor.lote_id && (
                 <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
               )}
+              <RefLink to="/cuentas-pagar" param="contenedor" id={selectedContenedor.id} title="Ver cuentas por pagar de este contenedor"
+                className="text-xs bg-warning/10 px-2 py-0.5 rounded-full font-semibold">Cuentas por pagar</RefLink>
             </div>
 
             {/* Desglose de costos por proveedor y servicio */}

@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
@@ -82,6 +83,15 @@ export default function CuentasPagar() {
     contenedoresApi.getAll().then(setContenedores).catch(() => {});
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
+
+  // Deep-link: ?contenedor=<id> pre-filtra las CxP de ese contenedor (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const cont = searchParams.get('contenedor');
+    if (!cont) return;
+    setFiltroContenedor(cont);
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
 
   useEffect(() => { loadCuentas(); }, [filtroEstado, filtroContenedor]);
 
@@ -322,9 +332,12 @@ export default function CuentasPagar() {
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <Package2 size={14} className="text-secondary" />
-                            <span className="text-sm font-bold text-secondary">
-                              {key === 'sin' ? 'Sin Contenedor' : `Contenedor ${grupo.label}`}
-                            </span>
+                            {key === 'sin' ? (
+                              <span className="text-sm font-bold text-secondary">Sin Contenedor</span>
+                            ) : (
+                              <RefLink to="/contenedores" id={key} title="Ver contenedor"
+                                className="text-sm font-bold">Contenedor {grupo.label}</RefLink>
+                            )}
                             <span className="text-xs text-muted">({grupo.cuentas.length} cuenta{grupo.cuentas.length !== 1 ? 's' : ''})</span>
                           </div>
                           <div className="flex items-center gap-4 text-xs font-semibold">
@@ -492,7 +505,8 @@ export default function CuentasPagar() {
               <EstadoBadge estado={selectedCuenta.estado} />
               <span className="text-xs bg-primary/8 text-primary px-2 py-0.5 rounded-full font-semibold">{selectedCuenta.moneda}</span>
               {selectedCuenta.contenedor_numero && (
-                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">Contenedor {selectedCuenta.contenedor_numero}</span>
+                <RefLink to="/contenedores" id={selectedCuenta.contenedor_id} title="Ver contenedor"
+                  className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">Contenedor {selectedCuenta.contenedor_numero}</RefLink>
               )}
             </div>
 
@@ -529,7 +543,12 @@ export default function CuentasPagar() {
                     <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-primary/3">
                       <div>
                         <p className="text-sm font-semibold text-primary">{formatCurrency(ab.monto, selectedCuenta.moneda)}</p>
-                        <p className="text-xs text-muted">{formatDate(ab.fecha)}{ab.metodo_pago ? ` · ${ab.metodo_pago}` : ''}{ab.cuenta_banco_nombre ? ` · ${ab.cuenta_banco_nombre}` : ''}</p>
+                        <p className="text-xs text-muted">
+                          {formatDate(ab.fecha)}{ab.metodo_pago ? ` · ${ab.metodo_pago}` : ''}
+                          {ab.cuenta_banco_nombre && (
+                            <> · <RefLink to="/cuentas" id={ab.cuenta_banco_id} title="Ver cuenta" icon={false}>{ab.cuenta_banco_nombre}</RefLink></>
+                          )}
+                        </p>
                         {ab.notas && <p className="text-xs text-muted/70 italic">{ab.notas}</p>}
                       </div>
                       <CheckCircle size={16} className="text-success flex-shrink-0" />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, useToast, useConfirm } from '../components/common';
 import { cuentasApi } from '../services/api';
@@ -18,6 +19,18 @@ export default function Cuentas() {
   const [form, setForm] = useState({ nombre: '', tipo: 'banco' });
   const { addToast } = useToast();
   const confirm = useConfirm();
+
+  // Deep-link: ?focus=<id> resalta la cuenta referenciada (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [highlightId, setHighlightId] = useState(null);
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!focus) return;
+    setHighlightId(Number(focus));
+    setSearchParams({}, { replace: true });
+    const t = setTimeout(() => setHighlightId(null), 3000);
+    return () => clearTimeout(t);
+  }, [searchParams]);
 
   const load = async () => {
     try {
@@ -84,7 +97,7 @@ export default function Cuentas() {
             ) : (
               <div className="space-y-2">
                 {cuentas.map(c => (
-                  <div key={c.id} className={`flex items-center justify-between p-3 rounded-xl border border-border ${!c.activo ? 'opacity-50' : ''}`}>
+                  <div key={c.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${highlightId === c.id ? 'border-secondary bg-secondary/10 ring-2 ring-secondary/30' : 'border-border'} ${!c.activo ? 'opacity-50' : ''}`}>
                     <div>
                       <span className="font-medium">{c.nombre}</span>
                       <span className="ml-2 text-xs uppercase text-muted">{c.tipo}</span>

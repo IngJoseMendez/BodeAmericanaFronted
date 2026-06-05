@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { despachosApi, pacasApi } from '../services/api';
 import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
 
@@ -392,6 +393,17 @@ export default function Despachos() {
     }
   }, [vistaActiva]);
 
+  // Deep-link: ?focus=<id> abre el detalle de ese despacho (trazabilidad)
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!focus) return;
+    despachosApi.getOne(focus)
+      .then(data => { setSelectedDespacho(data); setViewModalOpen(true); })
+      .catch(() => addToast('No se encontró el despacho', 'error'));
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
+
   const loadDespachos = async () => {
     try {
       setLoading(true);
@@ -605,10 +617,13 @@ export default function Despachos() {
                     ) : filtered.map(d => (
                       <tr key={d.id} className="hover:bg-primary/3 transition-colors duration-150 bg-warning/3">
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-primary">{d.cliente_nombre}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-primary">
+                          <RefLink to="/cartera" id={d.cliente_id} title="Ver cartera del cliente">{d.cliente_nombre}</RefLink>
+                        </td>
                         <td className="px-4 py-3">
                           {d.cotizacion_numero
-                            ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
+                            ? <RefLink to="/cotizaciones" id={d.cotizacion_id} title="Ver cotización"
+                                className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">{d.cotizacion_numero}</RefLink>
                             : <span className="text-muted/40 text-xs">—</span>}
                         </td>
                         <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(d.fecha)}</td>
@@ -654,7 +669,8 @@ export default function Despachos() {
                         <Users size={15} className="text-secondary" />
                       </div>
                       <div>
-                        <p className="font-display font-bold text-primary text-sm">{cliente}</p>
+                        <RefLink to="/cartera" id={items[0]?.cliente_id} title="Ver cartera del cliente"
+                          className="font-display font-bold text-primary text-sm">{cliente}</RefLink>
                         <p className="text-xs text-muted">{items.length} despacho{items.length !== 1 ? 's' : ''} · {totalUds} unidades</p>
                       </div>
                     </div>
@@ -680,7 +696,8 @@ export default function Despachos() {
                             <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
                             <td className="px-4 py-3">
                               {d.cotizacion_numero
-                                ? <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">{d.cotizacion_numero}</span>
+                                ? <RefLink to="/cotizaciones" id={d.cotizacion_id} title="Ver cotización"
+                                    className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">{d.cotizacion_numero}</RefLink>
                                 : <span className="text-muted/40 text-xs">—</span>}
                             </td>
                             <td className="px-4 py-3 text-sm text-success font-medium whitespace-nowrap">{formatDate(d.fecha_salida)}</td>
@@ -723,9 +740,10 @@ export default function Despachos() {
             {/* Info general */}
             <div className="flex flex-wrap items-center gap-3">
               <EstadoBadge estado={selectedDespacho.estado} />
-              <span className="text-xs text-muted">Cliente: <strong className="text-primary">{selectedDespacho.cliente_nombre}</strong></span>
+              <span className="text-xs text-muted">Cliente: <RefLink to="/cartera" id={selectedDespacho.cliente_id} title="Ver cartera del cliente"><strong>{selectedDespacho.cliente_nombre}</strong></RefLink></span>
               {selectedDespacho.cotizacion_numero && (
-                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full">Cot. {selectedDespacho.cotizacion_numero}</span>
+                <RefLink to="/cotizaciones" id={selectedDespacho.cotizacion_id} title="Ver cotización"
+                  className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">Cot. {selectedDespacho.cotizacion_numero}</RefLink>
               )}
               <span className="text-xs text-muted">Fecha cotización: <strong className="text-primary">{formatDate(selectedDespacho.fecha)}</strong></span>
               {selectedDespacho.fecha_salida && (
