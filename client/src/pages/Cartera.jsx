@@ -11,30 +11,56 @@ import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadshe
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
 // más los movimientos "generales" (sin cotización atribuida).
-function resumenPorCotizacion(movimientos = []) {
+function resumenPorCotizacion(movimientos = [], saldoInicial = 0) {
   const grupos = new Map();
   let generalAbonado = 0, generalVenta = 0;
   for (const m of movimientos) {
     const monto = parseFloat(m.monto) || 0;
     if (m.cotizacion_id) {
       if (!grupos.has(m.cotizacion_id)) {
-        grupos.set(m.cotizacion_id, { cotizacion_id: m.cotizacion_id, cotizacion_numero: m.cotizacion_numero || null, venta: 0, abonado: 0 });
+        grupos.set(m.cotizacion_id, { cotizacion_id: m.cotizacion_id, cotizacion_numero: m.cotizacion_numero || null, venta: 0, abonadoDirecto: 0, fecha: m.fecha });
       }
       const g = grupos.get(m.cotizacion_id);
       if (m.cotizacion_numero && !g.cotizacion_numero) g.cotizacion_numero = m.cotizacion_numero;
       if (m.tipo === 'venta') g.venta += monto;
-      else if (m.tipo === 'abono') g.abonado += monto;
+      else if (m.tipo === 'abono') g.abonadoDirecto += monto;
+      if (m.fecha && (!g.fecha || new Date(m.fecha) < new Date(g.fecha))) g.fecha = m.fecha;
     } else {
       if (m.tipo === 'venta') generalVenta += monto;
       else if (m.tipo === 'abono') generalAbonado += monto;
     }
   }
-  const cotizaciones = [...grupos.values()].map(g => ({
-    ...g,
-    saldo: g.venta - g.abonado,
-    pct: g.venta > 0 ? Math.round((g.abonado / g.venta) * 100) : (g.abonado > 0 ? 100 : 0),
-  }));
-  return { cotizaciones, generalAbonado, generalVenta };
+  // Los abonos "generales" (sin cotización) se reparten sobre la deuda pendiente,
+  // de la más antigua a la más nueva: 1º deuda de migración, 2º cotizaciones.
+  // El sobrante queda como saldo a favor del cliente.
+  let pool = generalAbonado;
+  // 1) Deuda de migración (la más antigua de todas)
+  const migDeuda = parseFloat(saldoInicial) || 0;
+  const migAbonado = migDeuda > 0 ? Math.min(pool, migDeuda) : 0;
+  pool -= migAbonado;
+  const migracion = {
+    deuda: migDeuda, abonado: migAbonado, saldo: migDeuda - migAbonado,
+    pct: migDeuda > 0 ? Math.round((migAbonado / migDeuda) * 100) : 0,
+  };
+  // 2) Cotizaciones (más antigua primero)
+  const ordenadas = [...grupos.values()].sort((a, b) => new Date(a.fecha || 0) - new Date(b.fecha || 0));
+  const cotizaciones = ordenadas.map(g => {
+    const saldoDirecto = g.venta - g.abonadoDirecto;
+    let aplicadoGeneral = 0;
+    if (pool > 0 && saldoDirecto > 0) {
+      aplicadoGeneral = Math.min(pool, saldoDirecto);
+      pool -= aplicadoGeneral;
+    }
+    const abonado = g.abonadoDirecto + aplicadoGeneral;
+    const saldo = g.venta - abonado;
+    return {
+      cotizacion_id: g.cotizacion_id, cotizacion_numero: g.cotizacion_numero,
+      venta: g.venta, abonado, abonadoDirecto: g.abonadoDirecto, aplicadoGeneral, saldo,
+      pct: g.venta > 0 ? Math.round((abonado / g.venta) * 100) : (abonado > 0 ? 100 : 0),
+    };
+  });
+  // Lo que sobró del pool tras cubrir migración + cotizaciones es el remanente (a favor).
+  return { cotizaciones, migracion, generalAbonado, generalVenta, generalAbonadoRemanente: pool };
 }
 
 // Helpers de búsqueda universal dentro del detalle del cliente.
@@ -208,7 +234,7 @@ export default function Cartera() {
     try {
       const data = await carteraApi.getOne(clienteId);
       setSaldoCliente(data.saldo_pendiente);
-      setCotizacionesCliente(resumenPorCotizacion(data.movimientos).cotizaciones);
+      setCotizacionesCliente(resumenPorCotizacion(data.movimientos, data.saldo_inicial).cotizaciones);
     } catch {
       setSaldoCliente(null);
       setCotizacionesCliente([]);
@@ -870,18 +896,43 @@ export default function Cartera() {
 
             {/* PESTAÑA VENTAS: cada cotización con su saldo, abonable directamente */}
             {detalleTab === 'ventas' && (() => {
-              const resumen = resumenPorCotizacion(detalleCliente.movimientos);
-              const { generalVenta, generalAbonado } = resumen;
+              const resumen = resumenPorCotizacion(detalleCliente.movimientos, detalleCliente.saldo_inicial);
+              const { generalVenta, generalAbonadoRemanente, migracion } = resumen;
               const cotizaciones = resumen.cotizaciones.filter(c => matchVenta(c, detalleBusqueda));
-              if (resumen.cotizaciones.length === 0 && generalVenta === 0) {
+              if (resumen.cotizaciones.length === 0 && generalVenta === 0 && migracion.deuda === 0) {
                 return <p className="text-center text-muted py-6 text-sm">Este cliente no tiene ventas registradas.</p>;
               }
               const q = detalleBusqueda.trim();
-              if (q && cotizaciones.length === 0) {
+              const mostrarMig = migracion.deuda > 0 && (!q || 'migracion migración deuda inicial'.includes(q.toLowerCase()) || (_digits(q) && (_digits(migracion.deuda).includes(_digits(q)) || _digits(migracion.saldo).includes(_digits(q)))));
+              if (q && cotizaciones.length === 0 && !mostrarMig) {
                 return <p className="text-center text-muted py-6 text-sm">Ninguna venta coincide con "{q}".</p>;
               }
               return (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {mostrarMig && (
+                    <div className="rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-orange-700">📋 Deuda de migración</span>
+                        <span className={`text-xs font-bold ${migracion.saldo > 0 ? 'text-accent' : 'text-success'}`}>
+                          {migracion.saldo > 0 ? 'Pendiente' : 'Pagada'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs mt-1.5 flex-wrap">
+                        <span className="text-muted">Deuda <strong className="text-primary">{formatCurrency(migracion.deuda)}</strong></span>
+                        <span className="text-success">Abonado <strong>{formatCurrency(migracion.abonado)}</strong></span>
+                        <span className={migracion.saldo > 0 ? 'text-accent' : 'text-success'}>Saldo <strong>{formatCurrency(migracion.saldo)}</strong></span>
+                      </div>
+                      {migracion.abonado > 0 && (
+                        <p className="text-[10px] text-muted/80 mt-0.5">Cubierta con {formatCurrency(migracion.abonado)} de abono(s) general(es)</p>
+                      )}
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-orange-200/60 overflow-hidden">
+                          <div className={`h-full rounded-full ${migracion.pct >= 100 ? 'bg-success' : 'bg-orange-400'}`} style={{ width: `${Math.min(migracion.pct, 100)}%` }} />
+                        </div>
+                        <span className="text-[11px] font-bold text-muted tabular-nums w-10 text-right">{migracion.pct}%</span>
+                      </div>
+                    </div>
+                  )}
                   {cotizaciones.map((c) => (
                     <div key={c.cotizacion_id} className="rounded-xl border border-border/60 p-3 hover:border-secondary/40 transition-colors">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -894,11 +945,14 @@ export default function Cartera() {
                           Abonar
                         </Button>
                       </div>
-                      <div className="flex items-center gap-3 text-xs mt-1.5">
+                      <div className="flex items-center gap-3 text-xs mt-1.5 flex-wrap">
                         <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(c.venta)}</strong></span>
                         <span className="text-success">Abonado <strong>{formatCurrency(c.abonado)}</strong></span>
                         <span className={c.saldo > 0 ? 'text-accent' : 'text-success'}>Saldo <strong>{formatCurrency(c.saldo)}</strong></span>
                       </div>
+                      {c.aplicadoGeneral > 0 && (
+                        <p className="text-[10px] text-muted/80 mt-0.5">Incluye {formatCurrency(c.aplicadoGeneral)} de abono(s) general(es)</p>
+                      )}
                       <div className="mt-1.5 flex items-center gap-2">
                         <div className="flex-1 h-1.5 rounded-full bg-border/50 overflow-hidden">
                           <div className={`h-full rounded-full ${c.pct >= 100 ? 'bg-success' : 'bg-secondary'}`} style={{ width: `${Math.min(c.pct, 100)}%` }} />
@@ -907,16 +961,19 @@ export default function Cartera() {
                       </div>
                     </div>
                   ))}
-                  {(generalVenta > 0 || generalAbonado > 0) &&
-                    (!q || 'general sin cotizacion otras'.includes(q.toLowerCase()) ||
-                      (_digits(q) && (_digits(generalVenta).includes(_digits(q)) || _digits(generalAbonado).includes(_digits(q))))) && (
+                  {(generalVenta > 0 || generalAbonadoRemanente > 0) &&
+                    (!q || 'general sin cotizacion otras remanente'.includes(q.toLowerCase()) ||
+                      (_digits(q) && (_digits(generalVenta).includes(_digits(q)) || _digits(generalAbonadoRemanente).includes(_digits(q))))) && (
                     <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
                       <div>
-                        <p className="text-sm font-medium text-muted">Otras ventas / abonos (sin cotización)</p>
+                        <p className="text-sm font-medium text-muted">Sin cotización específica</p>
                         <div className="flex items-center gap-3 text-xs mt-0.5">
                           {generalVenta > 0 && <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(generalVenta)}</strong></span>}
-                          <span className="text-success">Abonado <strong>{formatCurrency(generalAbonado)}</strong></span>
+                          <span className="text-success">Abono a favor <strong>{formatCurrency(generalAbonadoRemanente)}</strong></span>
                         </div>
+                        {generalAbonadoRemanente > 0 && (
+                          <p className="text-[10px] text-muted/80 mt-0.5">Saldo a favor del cliente (no aplicado a ninguna cotización)</p>
+                        )}
                       </div>
                       <Button size="sm" variant="ghost" icon={Plus}
                         onClick={() => openPagoModalConCotizacion(detalleCliente.cliente, null)}>
