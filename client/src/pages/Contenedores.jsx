@@ -329,11 +329,12 @@ function useContenedorTemplates() {
     try { return JSON.parse(localStorage.getItem('ba-contenedor-templates') || '[]'); }
     catch { return []; }
   });
-  const save = (nombre, formData, proveedores, servicios) => {
+  const save = (nombre, formData, proveedores, servicios, tipo = 'normal') => {
     const nueva = {
       id: crypto.randomUUID(),
       nombre: nombre.trim(),
       creadoEn: new Date().toISOString(),
+      tipo,
       tasa_conversion: formData.tasa_conversion,
       total_pacas: formData.total_pacas,
       notas: formData.notas,
@@ -1244,7 +1245,15 @@ export default function Contenedores() {
   const addProveedor    = () => setProveedores([...proveedores, emptyProveedor()]);
   const removeProveedor = (pi) => proveedores.length > 1 && setProveedores(proveedores.filter((_, i) => i !== pi));
   const updateProveedor = (pi, field, val) => {
-    const n = [...proveedores]; n[pi] = { ...n[pi], [field]: val }; setProveedores(n);
+    const n = [...proveedores];
+    const updated = { ...n[pi], [field]: val };
+    if (field === 'factura_estimada' || field === 'cantidad_estimada') {
+      const factura  = parseFloat(field === 'factura_estimada'  ? val : updated.factura_estimada)  || 0;
+      const cantidad = parseInt(field === 'cantidad_estimada' ? val : updated.cantidad_estimada) || 0;
+      if (factura > 0 && cantidad > 0) updated.valor_unidad_estimado = String((factura / cantidad).toFixed(2));
+    }
+    n[pi] = updated;
+    setProveedores(n);
   };
   const addDetalle    = (pi) => {
     const n = [...proveedores];
@@ -1265,7 +1274,19 @@ export default function Contenedores() {
   const addServicio    = () => setServicios([...servicios, emptyServicio()]);
   const removeServicio = (si) => servicios.length > 1 && setServicios(servicios.filter((_, i) => i !== si));
   const updateServicio = (si, field, val) => {
-    const n = [...servicios]; n[si] = { ...n[si], [field]: val }; setServicios(n);
+    const n = [...servicios];
+    const updated = { ...n[si], [field]: val };
+    if (field === 'factura_estimada' || field === 'cantidad_estimada') {
+      const factura  = parseFloat(field === 'factura_estimada'  ? val : updated.factura_estimada)  || 0;
+      const cantidad = parseInt(field === 'cantidad_estimada' ? val : updated.cantidad_estimada) || 0;
+      if (factura > 0 && cantidad > 0) {
+        updated.valor_unidad_estimado = String((factura / cantidad).toFixed(2));
+      } else if (field === 'factura_estimada' && factura > 0 && !updated.cantidad_estimada) {
+        updated.valor_unidad_estimado = String(factura.toFixed(2));
+      }
+    }
+    n[si] = updated;
+    setServicios(n);
   };
 
   // ── Reset ──────────────────────────────────────────────────────
@@ -1309,9 +1330,9 @@ export default function Contenedores() {
         tasa_conversion: String(c.tasa_conversion || '1'),
         total_pacas: String(c.total_pacas || ''),
         notas: c.notas || '',
-      }, provs, srvs);
+      }, provs, srvs, c.estado === 'estimacion' ? 'estimacion' : 'normal');
     } else {
-      saveTemplate(nombrePlantilla, formData, proveedores, servicios);
+      saveTemplate(nombrePlantilla, formData, proveedores, servicios, modoEstimacion ? 'estimacion' : 'normal');
     }
     addToast(`Plantilla "${nombrePlantilla.trim()}" guardada`, 'success');
     setSaveTemplateModalOpen(false);
@@ -2027,7 +2048,7 @@ export default function Contenedores() {
                             value={prov.factura_estimada || ''} onChange={(e) => updateProveedor(pi, 'factura_estimada', e.target.value)} />
                           <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
                             value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
-                          <PriceInput className={`${inp} text-xs`} placeholder="Valor x unidad estimado"
+                          <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
                             value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
                         </div>
                       </div>
@@ -2209,7 +2230,7 @@ export default function Contenedores() {
                             value={srv.factura_estimada || ''} onChange={(e) => updateServicio(si, 'factura_estimada', e.target.value)} />
                           <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
                             value={srv.cantidad_estimada || ''} onChange={(e) => updateServicio(si, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
-                          <PriceInput className={`${inp} text-xs`} placeholder="Valor x unidad estimado"
+                          <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
                             value={srv.valor_unidad_estimado || ''} onChange={(val) => updateServicio(si, 'valor_unidad_estimado', val)} />
                         </div>
                       </div>
@@ -3050,36 +3071,40 @@ export default function Contenedores() {
           CARGAR PLANTILLA MODAL
       ════════════════════════════════════════════════════════ */}
       <Modal isOpen={templateModalOpen} onClose={() => setTemplateModalOpen(false)} title="Plantillas guardadas" size="sm">
-        {templates.length === 0 ? (
-          <div className="text-center py-10 space-y-2">
-            <BookTemplate size={28} className="mx-auto text-muted/30" />
-            <p className="text-sm text-muted">No hay plantillas guardadas aún</p>
-            <p className="text-xs text-muted/60">Llena un formulario y usa "Guardar como plantilla"</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {templates.map(t => (
-              <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-all group">
-                <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
-                  setFormData(f => ({ ...f, tasa_conversion: t.tasa_conversion, total_pacas: t.total_pacas, notas: t.notas }));
-                  setProveedores(t.proveedores);
-                  setServicios(t.servicios);
-                  setTemplateModalOpen(false);
-                  addToast(`Plantilla "${t.nombre}" cargada`, 'success');
-                }}>
-                  <p className="text-sm font-semibold text-primary truncate">{t.nombre}</p>
-                  <p className="text-xs text-muted mt-0.5">
-                    {t.proveedores.length} prov. · {t.servicios.length} serv. · {new Date(t.creadoEn).toLocaleDateString('es-CO')}
-                  </p>
+        {(() => {
+          const tipoActual = modoEstimacion ? 'estimacion' : 'normal';
+          const templatesFiltradas = templates.filter(t => (t.tipo || 'normal') === tipoActual);
+          return templatesFiltradas.length === 0 ? (
+            <div className="text-center py-10 space-y-2">
+              <BookTemplate size={28} className="mx-auto text-muted/30" />
+              <p className="text-sm text-muted">No hay plantillas de {modoEstimacion ? 'estimación' : 'contenedor normal'}</p>
+              <p className="text-xs text-muted/60">Llena el formulario y usa "Guardar como plantilla"</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {templatesFiltradas.map(t => (
+                <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-all group">
+                  <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                    setFormData(f => ({ ...f, tasa_conversion: t.tasa_conversion, total_pacas: t.total_pacas, notas: t.notas }));
+                    setProveedores(t.proveedores);
+                    setServicios(t.servicios);
+                    setTemplateModalOpen(false);
+                    addToast(`Plantilla "${t.nombre}" cargada`, 'success');
+                  }}>
+                    <p className="text-sm font-semibold text-primary truncate">{t.nombre}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      {t.proveedores.length} prov. · {t.servicios.length} serv. · {new Date(t.creadoEn).toLocaleDateString('es-CO')}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => removeTemplate(t.id)}
+                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <button type="button" onClick={() => removeTemplate(t.id)}
-                  className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* ════════════════════════════════════════════════════════
