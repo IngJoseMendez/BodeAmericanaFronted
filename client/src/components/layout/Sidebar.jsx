@@ -25,7 +25,10 @@ import {
   Shield,
   Truck,
   CreditCard,
-  History
+  History,
+  ListChecks,
+  BarChart3,
+  Coins
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -43,12 +46,15 @@ const adminNavItems = [
   { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },
+  { path: '/deuda-masiva',         icon: ListChecks,      label: 'Deuda masiva',    key: null, rol: 'admin' },
   { path: '/clientes',             icon: Users,           label: 'Clientes',        key: 'clientes' },
   { path: '/tipos-paca',           icon: Tag,             label: 'Productos',        key: null },
   { path: '/precios',              icon: DollarSign,      label: 'Precios',          key: null },
   { path: '/lista-precios',        icon: Tag,             label: 'Lista de Precios', key: null },
   { path: '/precios-promocion',    icon: Percent,         label: 'Promociones',      key: null },
   { path: '/cuentas',              icon: Wallet,          label: 'Cuentas',          key: null, rol: 'admin' },
+  { path: '/gastos',               icon: Coins,           label: 'Gastos',           key: null, rol: 'admin' },
+  { path: '/historico',            icon: BarChart3,       label: 'Histórico',        key: null, rol: 'admin' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },

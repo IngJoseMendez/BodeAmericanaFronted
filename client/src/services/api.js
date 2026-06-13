@@ -536,6 +536,22 @@ export const cuentasApi = {
   delete(id) { return api.delete(`/cuentas/${id}`); },
 };
 
+export const gastosApi = {
+  getAll(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos${q ? '?' + q : ''}`); },
+  getReporte(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos/reporte${q ? '?' + q : ''}`); },
+  create(data) { return api.post('/gastos', data); },
+  update(id, data) { return api.put(`/gastos/${id}`, data); },
+  delete(id) { return api.delete(`/gastos/${id}`); },
+};
+
+export const historicoApi = {
+  importar(payload) { return api.post('/historico/importar', payload); },
+  getAll(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/historico${q ? '?' + q : ''}`); },
+  getReporte(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/historico/reporte${q ? '?' + q : ''}`); },
+  getAnios() { return api.get('/historico/anios'); },
+  deleteLote(lote) { return api.delete(`/historico/lote/${lote}`); },
+};
+
 export const listaPreciosApi = {
   getAll(params = {}) {
     const q = new URLSearchParams(params).toString();
