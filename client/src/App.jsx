@@ -28,6 +28,9 @@ import PreciosPromocion from './pages/PreciosPromocion';
 import ListaPrecios from './pages/ListaPrecios';
 import Cuentas from './pages/Cuentas';
 import Auditoria from './pages/Auditoria';
+import DeudaMasiva from './pages/DeudaMasiva';
+import Historico from './pages/Historico';
+import Gastos from './pages/Gastos';
 
 function AdminLayout() {
   return (
@@ -83,6 +86,9 @@ function RutasAdmin() {
         <Route path="/cuentas" element={<Cuentas />} />
         <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
         <Route path="/auditoria" element={<Auditoria />} />
+        <Route path="/deuda-masiva" element={<DeudaMasiva />} />
+        <Route path="/historico" element={<Historico />} />
+        <Route path="/gastos" element={<Gastos />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </CatalogProvider>
