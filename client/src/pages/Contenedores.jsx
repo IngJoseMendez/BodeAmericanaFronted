@@ -2042,7 +2042,8 @@ export default function Contenedores() {
                           <input type="text" className={`${inp} text-xs flex-1`} placeholder="Notas del proveedor (opcional)"
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
-                        {/* ── Datos estimados (antes de que llegue el contenedor) ─── */}
+                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
+                        {modoEstimacion && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2.5">
                           <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
                             value={prov.factura_estimada || ''} onChange={(e) => updateProveedor(pi, 'factura_estimada', e.target.value)} />
@@ -2051,6 +2052,7 @@ export default function Contenedores() {
                           <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
                             value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
                         </div>
+                        )}
                       </div>
 
                       {/* ── Líneas de distribución (oculto en modo estimación) ─── */}
@@ -2224,7 +2226,8 @@ export default function Contenedores() {
                         )}
                         <input type="text" className={inp} placeholder="Notas (opcional)"
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
-                        {/* ── Datos estimados ─── */}
+                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
+                        {modoEstimacion && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
                             value={srv.factura_estimada || ''} onChange={(e) => updateServicio(si, 'factura_estimada', e.target.value)} />
@@ -2233,6 +2236,7 @@ export default function Contenedores() {
                           <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
                             value={srv.valor_unidad_estimado || ''} onChange={(val) => updateServicio(si, 'valor_unidad_estimado', val)} />
                         </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2464,7 +2468,9 @@ export default function Contenedores() {
                   <div className="divide-y divide-border/30">
                     {selectedContenedor.proveedores_mercancia.map((prov, i) => {
                       const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-                      const costoOriginal = (prov.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+                      // Costo real de las líneas; si aún no hay, usa la estimación (igual que el backend).
+                      const costoReal = (prov.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+                      const costoOriginal = costoReal > 0 ? costoReal : (parseInt(prov.cantidad_estimada) || 0) * (parseFloat(prov.valor_unidad_estimado) || 0);
                       const costoCOP = prov.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
                       const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
                       return (
@@ -2550,7 +2556,7 @@ export default function Contenedores() {
                         <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
                         {prov.moneda && <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{prov.moneda}</span>}
                       </div>
-                      {(prov.factura_estimada || prov.cantidad_estimada || prov.valor_unidad_estimado) && (
+                      {selectedContenedor.estado === 'estimacion' && (prov.factura_estimada || prov.cantidad_estimada || prov.valor_unidad_estimado) && (
                         <div className="flex items-center gap-2 text-[10px] text-muted">
                           {prov.factura_estimada && <span>Fact. est.: <strong className="text-primary">{prov.factura_estimada}</strong></span>}
                           {prov.cantidad_estimada != null && <span>Cant. est.: <strong className="text-primary">{prov.cantidad_estimada}</strong></span>}
