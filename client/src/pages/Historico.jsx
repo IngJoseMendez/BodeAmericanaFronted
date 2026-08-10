@@ -5,17 +5,16 @@ import { historicoApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { History, Upload, Download, FileSpreadsheet, Trash2, CheckCircle2 } from 'lucide-react';
+import { parseMonto } from '../lib/money';
 
 const hoy = () => new Date().toISOString().split('T')[0];
 const fmt = (n) => '$' + (parseFloat(n) || 0).toLocaleString('es-CO');
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
-const num = (v) => {
-  if (v === null || v === undefined || v === '') return 0;
-  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
-  return isNaN(n) ? 0 : n;
-};
+// Los montos del Excel vienen escritos en formato es-CO ("1.500.000"): parsearlos
+// con parseFloat directo los convertía en 1.5.
+const num = (v) => (v === null || v === undefined || v === '' ? 0 : parseMonto(v));
 const cellVal = (v) => {
   if (v == null) return v;
   if (v instanceof Date) return v;

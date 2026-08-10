@@ -124,7 +124,10 @@ function KpiCard({ label, value, sub, icon: Icon, color }) {
 }
 
 // ── Timeline View ─────────────────────────────────────────────────
-function TimelineView({ items, onView }) {
+// isAdmin llega por prop: antes se leía la variable del componente padre, que no
+// está en el ámbito de esta función, y abrir la vista Línea de tiempo lanzaba
+// "ReferenceError: isAdmin is not defined" y dejaba la pantalla en blanco.
+function TimelineView({ items, onView, isAdmin = false }) {
   const withDate = [...items]
     .filter(c => c.fecha_llegada)
     .sort((a, b) => new Date(a.fecha_llegada) - new Date(b.fecha_llegada));
@@ -1235,10 +1238,36 @@ export default function Contenedores() {
     const sumDetalles    = proveedores.reduce(
       (s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0
     );
-    // Contenedor "estimado": sin líneas de distribución todavía (solo datos estimados) → se permite crear.
+    // Contenedor "estimado": sin líneas de distribución todavía (solo datos estimados).
     const esEstimado = sumDetalles === 0;
     const cantidadValida = esEstimado || (totalPacas > 0 && sumDetalles === totalPacas);
-    return { proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal, costoUnitario, sumDetalles, cantidadValida, esEstimado };
+
+    // Avance por proveedor: permite ir cargando la distribución de a un proveedor
+    // por vez y ver en todo momento a quién le falta. Ya no hace falta tener el
+    // contenedor completo para poder guardar.
+    const avanceProveedores = proveedores.map(p => {
+      const registrada = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+      const estimada = parseInt(p.cantidad_estimada) || 0;
+      return {
+        nombre: p.proveedor_nombre?.trim() || 'Proveedor sin nombre',
+        estimada,
+        registrada,
+        falta: estimada > 0 ? Math.max(0, estimada - registrada) : 0,
+        sobra: estimada > 0 ? Math.max(0, registrada - estimada) : 0,
+        // Sin estimación previa no hay contra qué comparar: basta con tener líneas.
+        completo: estimada > 0 ? registrada === estimada : registrada > 0,
+        sinEmpezar: registrada === 0,
+      };
+    });
+
+    const faltanUnidades = totalPacas > 0 ? totalPacas - sumDetalles : 0;
+    const provsCompletos = avanceProveedores.filter(a => a.completo).length;
+
+    return {
+      proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal,
+      costoUnitario, sumDetalles, cantidadValida, esEstimado, totalPacas,
+      avanceProveedores, faltanUnidades, provsCompletos,
+    };
   };
 
   // ── Provider row management ────────────────────────────────────
@@ -1397,11 +1426,9 @@ export default function Contenedores() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const r = calcularResumen();
-    // En modo estimación no se exige cuadrar líneas de distribución.
-    if (!modoEstimacion && !r.cantidadValida) {
-      addToast(`Detalles (${r.sumDetalles}) ≠ total unidades (${formData.total_pacas || '?'})`, 'error');
-      return;
-    }
+    // Se permite guardar a medias: el contenedor se puede ir cargando proveedor por
+    // proveedor a lo largo de varios días. Que las líneas cuadren con el total solo
+    // se exige al FINALIZAR, que es el paso irreversible que crea las unidades.
     if (modoEstimacion && !proveedores.some(p => p.proveedor_nombre?.trim())) {
       addToast('Agrega al menos un proveedor con su estimación', 'error');
       return;
@@ -1440,12 +1467,20 @@ export default function Contenedores() {
           valor_unidad_estimado: s.valor_unidad_estimado ? parseFloat(s.valor_unidad_estimado) : null,
         })),
       };
+      // Aviso de avance: deja claro que quedó guardado a medias y qué falta.
+      const parcial = !modoEstimacion && !r.esEstimado && r.totalPacas > 0 && r.sumDetalles !== r.totalPacas;
+      const avisoParcial = parcial
+        ? ` — guardado parcial: ${r.sumDetalles} de ${r.totalPacas} unidades (${r.faltanUnidades > 0 ? `faltan ${r.faltanUnidades}` : `sobran ${Math.abs(r.faltanUnidades)}`})`
+        : '';
+
       if (editMode && selectedContenedor) {
         await contenedoresApi.update(selectedContenedor.id, payload);
-        addToast(modoEstimacion ? 'Estimación actualizada' : 'Contenedor actualizado', 'success');
+        addToast((modoEstimacion ? 'Estimación actualizada' : 'Contenedor actualizado') + avisoParcial, parcial ? 'warning' : 'success');
       } else {
         await contenedoresApi.create(payload);
-        addToast(modoEstimacion ? 'Estimación creada — revisa Cuentas por Pagar para registrar abonos' : 'Contenedor creado', 'success');
+        addToast(modoEstimacion
+          ? 'Estimación creada — revisa Cuentas por Pagar para registrar abonos'
+          : 'Contenedor creado' + avisoParcial, parcial ? 'warning' : 'success');
       }
       setModalOpen(false); resetForm(); loadContenedores();
     } catch (err) { addToast(err.message, 'error'); }
@@ -1621,6 +1656,31 @@ export default function Contenedores() {
     finally { setSubmitting(false); }
   };
 
+  // Cuánto queda por distribuir en un contenedor ya guardado. Se usa para avisar
+  // antes de finalizar, que es el único punto donde la incompletitud importa.
+  const avanceFinalizacion = (cont) => {
+    if (!cont) return null;
+    const totalDeclarado = parseInt(cont.total_pacas) || 0;
+    const provs = cont.proveedores_mercancia || [];
+    const sumLineas = provs.reduce(
+      (s, p) => s + (p.detalles || []).reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0
+    );
+    const pendientes = provs
+      .map(p => ({
+        nombre: p.proveedor_nombre || 'Sin nombre',
+        estimada: parseInt(p.cantidad_estimada) || 0,
+        registrada: (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0),
+      }))
+      .filter(p => (p.estimada > 0 ? p.registrada !== p.estimada : p.registrada === 0));
+
+    return {
+      totalDeclarado, sumLineas,
+      faltan: totalDeclarado - sumLineas,
+      cuadra: totalDeclarado === 0 || sumLineas === totalDeclarado,
+      pendientes,
+    };
+  };
+
   const handleFinalizar = async () => {
     for (const c of combsFinalizacion) {
       const pv = parseFloat(preciosVenta[c.key]);
@@ -1628,6 +1688,20 @@ export default function Contenedores() {
         addToast(`Falta precio de venta para "${c.clasificacion} / ${c.referencia} / ${c.calidad}"`, 'error'); return;
       }
     }
+
+    // No se bloquea, pero no puede pasar inadvertido: es irreversible.
+    const av = avanceFinalizacion(selectedContenedor);
+    if (av && !av.cuadra) {
+      const ok = await confirm({
+        title: 'El contenedor está incompleto',
+        message: `Hay ${av.sumLineas} unidades distribuidas de las ${av.totalDeclarado} declaradas (${av.faltan > 0 ? `faltan ${av.faltan}` : `sobran ${Math.abs(av.faltan)}`}).\n\nSi continúas, el costo por unidad se repartirá entre ${av.totalDeclarado} unidades y solo entrarán al inventario las distribuidas. Esta acción es irreversible.\n\n¿Finalizar de todas formas?`,
+        confirmText: 'Finalizar así',
+        cancelText: 'Volver y completar',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+
     setSubmitting(true);
     try {
       const precios = combsFinalizacion.map((c) => ({ categoria: c.categoria || null, clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
@@ -1897,7 +1971,7 @@ export default function Contenedores() {
 
         /* ── TIMELINE VIEW ──────────────────────────────────── */
         <div className="bg-surface rounded-2xl border border-border/60 shadow-card px-5 py-4">
-          <TimelineView items={contenedoresFiltrados} onView={openViewModal} />
+          <TimelineView items={contenedoresFiltrados} onView={openViewModal} isAdmin={isAdmin} />
         </div>
 
       )}
@@ -2264,10 +2338,23 @@ export default function Contenedores() {
                   {modoEstimacion
                     ? <><Sparkles size={13} /> Estimación · {formData.total_pacas || 0} unidades estimadas</>
                     : resumen.cantidadValida
-                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
-                      : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar distribución</>
+                      ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — completo</>
+                      : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — en progreso, puedes guardar así</>
                   }
                 </div>
+
+                {!modoEstimacion && resumen.avanceProveedores.length > 0 && !resumen.cantidadValida && (
+                  <div className="pt-2 border-t border-border/40 space-y-1">
+                    {resumen.avanceProveedores.filter(a => !a.completo).map((a, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px]">
+                        <span className="truncate text-muted">{a.nombre}</span>
+                        <span className="font-mono tabular-nums text-warning font-semibold flex-shrink-0">
+                          {a.registrada}{a.estimada > 0 && `/${a.estimada}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Mobile action row */}
@@ -2276,7 +2363,7 @@ export default function Contenedores() {
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" disabled={submitting || (!modoEstimacion && !resumen.cantidadValida)}
+                <button type="submit" disabled={submitting}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
                   {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                   {submitting ? 'Guardando...' : editMode ? 'Actualizar' : 'Crear'}
@@ -2410,13 +2497,50 @@ export default function Contenedores() {
                     {modoEstimacion
                       ? <><Sparkles size={13} /> Estimación · {formData.total_pacas || 0} unidades estimadas</>
                       : resumen.cantidadValida
-                        ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — OK</>
-                        : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — ajustar</>
+                        ? <><CheckCircle size={13} /> {resumen.sumDetalles}/{formData.total_pacas} unidades — completo</>
+                        : <><AlertTriangle size={13} className="text-warning" /> {resumen.sumDetalles}/{formData.total_pacas || '?'} — en progreso</>
                     }
                   </div>
                 </div>
+
+                {/* Avance proveedor por proveedor: se puede guardar a medias y
+                    retomar después; aquí se ve exactamente a quién le falta. */}
+                {!modoEstimacion && resumen.avanceProveedores.length > 0 && (
+                  <div className="rounded-2xl border border-border bg-surface p-4">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Avance del registro</p>
+                      <span className="text-[11px] font-semibold text-muted tabular-nums">
+                        {resumen.provsCompletos}/{resumen.avanceProveedores.length} proveedores
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {resumen.avanceProveedores.map((a, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                          <span className={`truncate flex items-center gap-1.5 ${a.completo ? 'text-success font-medium' : a.sinEmpezar ? 'text-muted' : 'text-primary'}`}>
+                            {a.completo
+                              ? <CheckCircle size={12} className="flex-shrink-0" />
+                              : <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.sinEmpezar ? 'bg-border' : 'bg-warning'}`} />}
+                            {a.nombre}
+                          </span>
+                          <span className="font-mono tabular-nums flex-shrink-0 text-muted">
+                            {a.registrada}{a.estimada > 0 && <span className="text-muted/60">/{a.estimada}</span>}
+                            {a.falta > 0 && <span className="text-warning font-semibold ml-1">−{a.falta}</span>}
+                            {a.sobra > 0 && <span className="text-error font-semibold ml-1">+{a.sobra}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="mt-3 pt-2.5 border-t border-border/50 text-[11px] text-muted leading-relaxed">
+                      {resumen.cantidadValida
+                        ? 'Todo cuadra. El contenedor está listo para revisión.'
+                        : <>Puedes <b className="text-primary">guardar así e ir completando</b> un proveedor por vez. Solo se exige que cuadre al <b className="text-primary">finalizar</b>.</>}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <button type="submit" disabled={submitting || (!modoEstimacion && !resumen.cantidadValida)}
+                  <button type="submit" disabled={submitting}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
                     {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                     {submitting ? 'Guardando...' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
@@ -2456,6 +2580,112 @@ export default function Contenedores() {
               <RefLink to="/cuentas-pagar" param="contenedor" id={selectedContenedor.id} title="Ver cuentas por pagar de este contenedor"
                 className="text-xs bg-warning/10 px-2 py-0.5 rounded-full font-semibold">Cuentas por pagar</RefLink>
             </div>
+
+            {/* ── Estimado vs. Real ──────────────────────────────
+                Solo aparece si el contenedor nació como estimación (hay datos
+                estimados guardados). Compara lo que se creyó que venía contra lo
+                que efectivamente se registró al convertirlo a contenedor normal. */}
+            {(() => {
+              const provs = selectedContenedor.proveedores_mercancia || [];
+              const conEstimacion = provs.filter(p =>
+                (parseInt(p.cantidad_estimada) || 0) > 0 || (parseFloat(p.factura_estimada) || 0) > 0
+              );
+              if (conEstimacion.length === 0) return null;
+
+              const filas = conEstimacion.map(p => {
+                const cantEst = parseInt(p.cantidad_estimada) || 0;
+                const cantReal = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                const factEst = parseFloat(p.factura_estimada) || (cantEst * (parseFloat(p.valor_unidad_estimado) || 0));
+                const costoReal = (p.detalles || []).reduce(
+                  (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
+                );
+                return {
+                  nombre: p.proveedor_nombre, moneda: p.moneda || 'USD',
+                  cantEst, cantReal, diffCant: cantReal - cantEst,
+                  factEst, costoReal, diffCosto: costoReal - factEst,
+                  registrado: cantReal > 0,
+                };
+              });
+
+              const totEst = filas.reduce((s, f) => s + f.cantEst, 0);
+              const totReal = filas.reduce((s, f) => s + f.cantReal, 0);
+              const sinRegistrar = filas.filter(f => !f.registrado).length;
+
+              const num = (v) => v.toLocaleString('es-CO');
+              const signo = (v) => (v > 0 ? '+' : '');
+              const colorDiff = (v) => (v === 0 ? 'text-muted' : v > 0 ? 'text-success' : 'text-error');
+
+              return (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles size={13} /> Estimado vs. lo que llegó
+                    </p>
+                    <span className="text-xs font-semibold tabular-nums">
+                      <span className="text-muted">{num(totEst)} estimadas</span>
+                      <span className="text-muted/50 mx-1.5">→</span>
+                      <span className="text-primary">{num(totReal)} registradas</span>
+                      {totEst > 0 && (
+                        <span className={`ml-2 ${colorDiff(totReal - totEst)}`}>
+                          ({signo(totReal - totEst)}{num(totReal - totEst)})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-surface/60 border-b border-amber-500/20">
+                          <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Proveedor</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. estimadas</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. reales</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Factura estimada</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Costo real</th>
+                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-500/10">
+                        {filas.map((f, i) => (
+                          <tr key={i} className="hover:bg-surface/50">
+                            <td className="px-3 py-2 font-medium text-primary">
+                              {f.nombre}
+                              {!f.registrado && (
+                                <span className="ml-2 text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
+                                  sin registrar
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">{f.cantEst ? num(f.cantEst) : '—'}</td>
+                            <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">{f.registrado ? num(f.cantReal) : '—'}</td>
+                            <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.registrado && f.cantEst ? colorDiff(f.diffCant) : 'text-muted'}`}>
+                              {f.registrado && f.cantEst ? `${signo(f.diffCant)}${num(f.diffCant)}` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">
+                              {f.factEst ? `${f.moneda} ${num(Math.round(f.factEst))}` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">
+                              {f.costoReal ? `${f.moneda} ${num(Math.round(f.costoReal))}` : '—'}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.costoReal && f.factEst ? colorDiff(-f.diffCosto) : 'text-muted'}`}>
+                              {f.costoReal && f.factEst ? `${signo(f.diffCosto)}${num(Math.round(f.diffCosto))}` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {sinRegistrar > 0 && (
+                    <p className="px-4 py-2.5 text-xs text-amber-700 border-t border-amber-500/20 bg-amber-500/5">
+                      Faltan <b>{sinRegistrar}</b> proveedor{sinRegistrar !== 1 ? 'es' : ''} por registrar lo que realmente llegó.
+                      Puedes hacerlo de a uno desde <b>Editar</b>.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Desglose de costos por proveedor y servicio */}
             <div className="rounded-2xl border border-border/60 overflow-hidden">
@@ -2790,6 +3020,44 @@ export default function Contenedores() {
                 </div>
               );
             })()}
+            {/* Aviso explícito: como ahora se puede guardar el contenedor a medias,
+                este es el punto donde hay que ver si quedó algo sin registrar. */}
+            {(() => {
+              const a = avanceFinalizacion(selectedContenedor);
+              if (!a || a.cuadra) return null;
+              return (
+                <div className="rounded-xl border-2 border-warning/40 bg-warning/10 px-4 py-3.5">
+                  <p className="text-sm font-bold text-warning flex items-center gap-2 mb-2">
+                    <AlertTriangle size={16} className="flex-shrink-0" />
+                    El contenedor está incompleto
+                  </p>
+                  <p className="text-sm text-primary">
+                    Tienes <b>{a.sumLineas.toLocaleString('es-CO')}</b> unidades distribuidas,
+                    pero el contenedor declara <b>{a.totalDeclarado.toLocaleString('es-CO')}</b>
+                    {a.faltan > 0
+                      ? <> — <b className="text-warning">faltan {a.faltan.toLocaleString('es-CO')}</b>.</>
+                      : <> — hay <b className="text-error">{Math.abs(a.faltan).toLocaleString('es-CO')} de más</b>.</>}
+                  </p>
+                  {a.pendientes.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {a.pendientes.map((p, i) => (
+                        <li key={i} className="text-xs text-muted flex items-center justify-between gap-2">
+                          <span className="truncate">{p.nombre}</span>
+                          <span className="font-mono tabular-nums flex-shrink-0">
+                            {p.registrada}{p.estimada > 0 && `/${p.estimada}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-xs text-muted mt-2.5 pt-2 border-t border-warning/25">
+                    Si finalizas así, el costo por unidad se repartirá entre <b className="text-primary">{a.totalDeclarado.toLocaleString('es-CO')}</b> unidades
+                    y solo entrarán al inventario las que estén distribuidas. Puedes cerrar esta ventana y completar lo que falta desde <b className="text-primary">Editar</b>.
+                  </p>
+                </div>
+              );
+            })()}
+
             <div className="flex items-start gap-3 bg-primary/5 rounded-xl px-4 py-3 text-sm text-muted">
               <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
               <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas_recibidas ?? selectedContenedor.total_pacas} unidades</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>

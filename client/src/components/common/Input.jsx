@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { parseMonto, formatNumero } from '../../lib/money';
 
 export function CurrencyInput({ label, value, onChange, error, className = '', placeholder = '0', prefix = '$' }) {
   const [displayValue, setDisplayValue] = useState('');
@@ -6,40 +7,31 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
 
   useEffect(() => {
     if (value !== undefined && value !== null && value !== '') {
-      const num = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-      if (!isNaN(num)) {
-        setDisplayValue(num.toLocaleString('es-MX'));
-      } else {
-        setDisplayValue('');
-      }
+      setDisplayValue(formatNumero(parseMonto(value)));
     } else {
       setDisplayValue('');
     }
   }, [value]);
 
   const handleChange = (e) => {
-    const input = e.target.value;
-    const clean = input.replace(/[^0-9]/g, '');
-    const num = parseInt(clean) || 0;
-    
-    setDisplayValue(num.toLocaleString('es-MX'));
-    
+    // Pesos sin centavos: solo dígitos. Se reformatea en cada tecla porque al no
+    // haber separador decimal no hay nada que se pueda romper a medio escribir.
+    const clean = e.target.value.replace(/[^0-9]/g, '');
+    const num = parseInt(clean, 10) || 0;
+
+    setDisplayValue(formatNumero(num));
+
     if (onChange) {
       onChange({ target: { value: num.toString() } });
     }
   };
 
   const handleBlur = () => {
-    if (displayValue) {
-      const num = parseFloat(displayValue.replace(/[^0-9.-]/g, ''));
-      if (!isNaN(num)) {
-        setDisplayValue(num.toLocaleString('es-MX'));
-      }
-    }
+    if (displayValue) setDisplayValue(formatNumero(parseMonto(displayValue)));
   };
 
   const handleFocus = () => {
-    const clean = String(value || '').replace(/[^0-9]/g, '');
+    const clean = String(value ?? '').replace(/[^0-9]/g, '');
     setDisplayValue(clean);
   };
 
@@ -81,45 +73,43 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
 
 export function NumberInput({ label, value, onChange, error, className = '', placeholder = '0', suffix = '' }) {
   const [displayValue, setDisplayValue] = useState('');
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
 
+  // Mientras el campo tiene el foco manda el texto que escribe la persona; si
+  // reformateáramos en cada tecla, el separador decimal a medio escribir se
+  // borraría y sería imposible teclear "12,5" (quedaba 125).
   useEffect(() => {
+    if (focused) return;
     if (value !== undefined && value !== null && value !== '') {
-      const num = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-      if (!isNaN(num)) {
-        setDisplayValue(num.toLocaleString('es-MX'));
-      } else {
-        setDisplayValue('');
-      }
+      setDisplayValue(formatNumero(parseMonto(value), { maxDecimales: 2 }));
     } else {
       setDisplayValue('');
     }
-  }, [value]);
+  }, [value, focused]);
 
   const handleChange = (e) => {
-    const input = e.target.value;
-    const clean = input.replace(/[^0-9.]/g, '');
-    const num = parseFloat(clean) || 0;
-    
-    setDisplayValue(num.toLocaleString('es-MX'));
-    
+    const texto = e.target.value.replace(/[^0-9.,-]/g, '');
+    setDisplayValue(texto);
+
     if (onChange) {
-      onChange({ target: { value: num.toString() } });
+      onChange({ target: { value: String(parseMonto(texto)) } });
     }
   };
 
   const handleBlur = () => {
-    if (displayValue) {
-      const num = parseFloat(displayValue.replace(/[^0-9.-]/g, ''));
-      if (!isNaN(num)) {
-        setDisplayValue(num.toLocaleString('es-MX'));
-      }
+    setFocused(false);
+    if (!String(displayValue).trim()) {
+      setDisplayValue('');
+      return;
     }
+    setDisplayValue(formatNumero(parseMonto(displayValue), { maxDecimales: 2 }));
   };
 
   const handleFocus = () => {
-    const clean = String(value || '').replace(/[^0-9.]/g, '');
-    setDisplayValue(clean);
+    setFocused(true);
+    const n = parseMonto(value);
+    setDisplayValue(n ? String(n).replace('.', ',') : '');
   };
 
   return (

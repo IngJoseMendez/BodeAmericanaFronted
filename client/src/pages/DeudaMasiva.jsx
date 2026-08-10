@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
 import { clientesApi, carteraApi } from '../services/api';
 import { ListChecks, Search, Save } from 'lucide-react';
+import { parseMonto } from '../lib/money';
 
 const hoy = () => new Date().toISOString().split('T')[0];
 const fmt = (n) => '$' + (parseFloat(n) || 0).toLocaleString('es-CO');
@@ -50,7 +51,7 @@ export default function DeudaMasiva() {
   const registros = useMemo(() => {
     const out = [];
     for (const c of clientes) {
-      const v = parseFloat(String(montos[c.id] ?? '').replace(/[^0-9.-]/g, ''));
+      const v = parseMonto(montos[c.id]);
       if (v && v > 0) out.push({ cliente_id: c.id, tipo: 'venta', fecha: fechaCorte, monto: v, referencia: 'CARGA_MASIVA' });
     }
     return out;
@@ -60,7 +61,7 @@ export default function DeudaMasiva() {
     if (!registros.length) { addToast('Escribe al menos una deuda', 'error'); return; }
     const ok = await confirm({
       title: '¿Registrar deuda masiva?',
-      message: `Se registrará la deuda de ${registros.length} cliente(s) con fecha de corte ${fechaCorte}.`,
+      message: `Se registrará la deuda de ${registros.length} cliente(s) por un total de ${fmt(registros.reduce((s, r) => s + r.monto, 0))}, con fecha de corte ${fechaCorte}.`,
       confirmText: 'Registrar',
     });
     if (!ok) return;

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
-import { preciosPromocionApi } from '../services/api';
+import { preciosPromocionApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { Plus, Trash2, Edit2, Percent } from 'lucide-react';
+import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
@@ -21,8 +21,13 @@ const isActive = (row) => {
 
 const emptyForm = { referencia: '', calidad: '', precio_promocional: '', fecha_inicio: '', fecha_fin: '', activo: true };
 
+// Comparación tolerante: los nombres vienen de tablas distintas y difieren en
+// mayúsculas y acentos según quién los haya dado de alta.
+const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
 export default function PreciosPromocion() {
   const [promos, setPromos] = useState([]);
+  const [precios, setPrecios] = useState([]);
   const [loading, setLoading] = useState(true);
   const { categorias: referencias, calidades, temporadas } = useCatalog();
   const [modalOpen, setModalOpen]   = useState(false);
@@ -35,15 +40,42 @@ export default function PreciosPromocion() {
   const confirm = useConfirm();
 
   useEffect(() => {
-    preciosPromocionApi.getAll()
-      .then(setPromos)
-      .catch(() => addToast('Error cargando promociones', 'error'))
+    Promise.allSettled([preciosPromocionApi.getAll(), preciosApi.getAll()])
+      .then(([pr, px]) => {
+        if (pr.status === 'fulfilled') setPromos(pr.value || []);
+        else addToast('Error cargando promociones', 'error');
+        // El precio normal es informativo: si falla, la pantalla sigue siendo usable.
+        if (px.status === 'fulfilled') setPrecios(px.value || []);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const reload = async () => {
     const p = await preciosPromocionApi.getAll();
     setPromos(p);
+  };
+
+  // El precio normal vive en la tabla de Precios, indexado por CATEGORÍA + calidad,
+  // mientras que la promoción va por REFERENCIA + calidad. El puente entre ambos es
+  // la temporada de la referencia — la misma regla que aplica Cotizaciones al cotizar.
+  const precioNormalDe = (referencia, calidad) => {
+    if (!referencia || !calidad) return null;
+    const ref = referencias.find(r => norm(r.nombre) === norm(referencia));
+    const categoria = ref?.temporada_nombre;
+    if (!categoria) return null;
+    const fila = precios.find(
+      p => norm(p.categoria) === norm(categoria) && norm(p.calidad) === norm(calidad)
+    );
+    const valor = parseFloat(fila?.precio);
+    return Number.isFinite(valor) && valor > 0 ? valor : null;
+  };
+
+  const comparar = (referencia, calidad, promo) => {
+    const normal = precioNormalDe(referencia, calidad);
+    const p = parseFloat(promo);
+    if (normal == null || !Number.isFinite(p) || p <= 0) return { normal, diff: null, pct: null };
+    const diff = p - normal;
+    return { normal, diff, pct: (diff / normal) * 100 };
   };
 
   const openCreate = () => {
@@ -66,6 +98,15 @@ export default function PreciosPromocion() {
     });
     setModalOpen(true);
   };
+
+  // El filtro por categoría no debe esconder referencias: se compara sin acentos ni
+  // mayúsculas, y las que no tienen temporada asignada se siguen mostrando —antes
+  // desaparecían y el campo quedaba sin opciones que elegir.
+  const referenciasVisibles = referencias.filter(
+    r => !filtroCat || !r.temporada_nombre || norm(r.temporada_nombre) === norm(filtroCat)
+  );
+
+  const previa = comparar(form.referencia, form.calidad, form.precio_promocional);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -131,7 +172,9 @@ export default function PreciosPromocion() {
                     <tr className="border-b border-border">
                       <th className="text-left px-5 py-3 text-muted font-medium">Referencia</th>
                       <th className="text-left px-5 py-3 text-muted font-medium">Calidad</th>
+                      <th className="text-right px-5 py-3 text-muted font-medium">Precio normal</th>
                       <th className="text-right px-5 py-3 text-muted font-medium">Precio Promo</th>
+                      <th className="text-right px-5 py-3 text-muted font-medium">Descuento</th>
                       <th className="text-center px-5 py-3 text-muted font-medium">Inicio</th>
                       <th className="text-center px-5 py-3 text-muted font-medium">Fin</th>
                       <th className="text-center px-5 py-3 text-muted font-medium">Estado</th>
@@ -141,11 +184,36 @@ export default function PreciosPromocion() {
                   <tbody>
                     {promos.map((p) => {
                       const activa = isActive(p);
+                      const { normal, diff, pct } = comparar(p.referencia, p.calidad, p.precio_promocional);
                       return (
                         <tr key={p.id} className="border-b border-border/50 hover:bg-primary/3 transition-colors">
                           <td className="px-5 py-3 font-medium font-mono">{p.referencia}</td>
                           <td className="px-5 py-3 capitalize">{p.calidad}</td>
+                          <td className="px-5 py-3 text-right font-mono text-muted">
+                            {normal != null ? (
+                              <span className="line-through">{formatCurrency(normal)}</span>
+                            ) : (
+                              <span className="text-xs" title="No hay precio preestablecido para la categoría y calidad de esta referencia">Sin precio base</span>
+                            )}
+                          </td>
                           <td className="px-5 py-3 text-right font-mono font-semibold text-primary">{formatCurrency(p.precio_promocional)}</td>
+                          <td className="px-5 py-3 text-right font-mono text-xs">
+                            {diff == null ? (
+                              <span className="text-muted">—</span>
+                            ) : diff < 0 ? (
+                              <span className="inline-flex items-center gap-1 text-green-600 font-semibold">
+                                <ArrowDown size={12} />
+                                {formatCurrency(Math.abs(diff))} ({Math.abs(pct).toFixed(1)}%)
+                              </span>
+                            ) : diff > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-amber-600 font-semibold" title="La promoción es MÁS CARA que el precio normal">
+                                <ArrowUp size={12} />
+                                +{formatCurrency(diff)} ({pct.toFixed(1)}%)
+                              </span>
+                            ) : (
+                              <span className="text-muted">Igual</span>
+                            )}
+                          </td>
                           <td className="px-5 py-3 text-center text-muted">{formatDate(p.fecha_inicio)}</td>
                           <td className="px-5 py-3 text-center text-muted">{formatDate(p.fecha_fin)}</td>
                           <td className="px-5 py-3 text-center">
@@ -196,20 +264,35 @@ export default function PreciosPromocion() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-primary mb-1">Referencia *</label>
+                <label className="block text-sm font-medium text-primary mb-1" htmlFor="promo-referencia">Referencia *</label>
                 <select
+                  id="promo-referencia"
                   value={form.referencia}
                   onChange={(e) => setForm({ ...form, referencia: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-60"
                   required
+                  disabled={referencias.length === 0}
                 >
-                  <option value="">Seleccionar...</option>
-                  {referencias
-                    .filter(r => !filtroCat || r.temporada_nombre === filtroCat)
-                    .map((r) => (
-                      <option key={r.id} value={r.nombre}>{r.nombre}</option>
-                    ))}
+                  <option value="">
+                    {referencias.length === 0 ? 'No hay referencias cargadas' : 'Seleccionar...'}
+                  </option>
+                  {referenciasVisibles.map((r) => (
+                    <option key={r.id} value={r.nombre}>{r.nombre}</option>
+                  ))}
                 </select>
+
+                {referencias.length === 0 && (
+                  <p className="mt-1.5 text-xs text-amber-600 flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>No se cargaron las referencias. Créalas en <b>Productos</b> o recarga la página.</span>
+                  </p>
+                )}
+                {referencias.length > 0 && referenciasVisibles.length === 0 && (
+                  <p className="mt-1.5 text-xs text-amber-600 flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>Ninguna referencia pertenece a esa categoría. Cambia el filtro a «Todas las categorías».</span>
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Calidad *</label>
@@ -237,6 +320,40 @@ export default function PreciosPromocion() {
                   placeholder="0"
                   required
                 />
+
+                {/* Comparación en vivo: qué precio tiene hoy y en qué queda con la promoción */}
+                {form.referencia && form.calidad && (
+                  <div className="mt-2 rounded-xl border border-border bg-primary/3 px-3 py-2.5 text-sm">
+                    {previa.normal == null ? (
+                      <p className="text-xs text-muted flex items-start gap-1.5">
+                        <AlertTriangle size={13} className="flex-shrink-0 mt-0.5 text-amber-600" />
+                        <span>Esta referencia no tiene precio normal configurado en <b>Precios</b>, así que no se puede mostrar el descuento.</span>
+                      </p>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <span className="text-muted text-xs">
+                          Precio normal hoy:{' '}
+                          <b className="font-mono text-primary">{formatCurrency(previa.normal)}</b>
+                        </span>
+                        {previa.diff == null ? (
+                          <span className="text-xs text-muted">Escribe el precio promocional</span>
+                        ) : previa.diff < 0 ? (
+                          <span className="inline-flex items-center gap-1 text-green-600 font-semibold text-xs">
+                            <ArrowDown size={13} />
+                            Baja {formatCurrency(Math.abs(previa.diff))} ({Math.abs(previa.pct).toFixed(1)}%)
+                          </span>
+                        ) : previa.diff > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-amber-600 font-semibold text-xs">
+                            <ArrowUp size={13} />
+                            Sube {formatCurrency(previa.diff)} ({previa.pct.toFixed(1)}%) — ¿es correcto?
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted">Igual al precio normal</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

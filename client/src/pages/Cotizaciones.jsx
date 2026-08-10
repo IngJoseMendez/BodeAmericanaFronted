@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
 import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
+import { parseMonto } from '../lib/money';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
@@ -24,12 +25,14 @@ function PriceInput({ value, onChange, placeholder = 'Precio', className = '' })
 
   const handleBlur = () => {
     setFocused(false);
-    const parsed = parseFloat(raw.replace(/,/g, '')) || 0;
-    onChange(parsed);
+    // El campo muestra el valor con Intl es-CO ("45.000"), donde el punto es
+    // separador de MILES. El parseo anterior sólo quitaba comas, así que leía ese
+    // punto como decimal y guardaba 45 en vez de 45.000.
+    onChange(parseMonto(raw));
   };
 
   const handleChange = (e) => {
-    const v = e.target.value.replace(/[^0-9.]/g, '');
+    const v = e.target.value.replace(/[^0-9.,]/g, '');
     setRaw(v);
   };
 

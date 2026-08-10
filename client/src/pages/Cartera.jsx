@@ -7,6 +7,7 @@ import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { parseMonto } from '../lib/money';
 
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
@@ -719,7 +720,7 @@ export default function Cartera() {
         const [cli, tipo, fecha, monto, cuenta, ref] = cells;
         const cliente_id = matchCliente(cli);
         const tipoNorm = String(tipo || '').trim().toLowerCase().startsWith('v') ? 'venta' : 'abono';
-        const montoNum = parseFloat(String(monto || '').replace(/[^0-9.-]/g, ''));
+        const montoNum = parseMonto(monto);
         if (!cliente_id) { errores.push(`Fila ${i + 2}: cliente "${cli}" no encontrado`); return; }
         if (!montoNum || montoNum <= 0) { errores.push(`Fila ${i + 2}: monto inválido`); return; }
         parsed.push({

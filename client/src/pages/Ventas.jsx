@@ -63,7 +63,7 @@ export default function Ventas() {
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
 
 useEffect(() => {
-    loadVentas();
+    loadVentas(pagina);
     loadClientes();
     loadReservas();
   }, [filtroVista, pagina]);
@@ -113,7 +113,9 @@ useEffect(() => {
       const data = response.data || response;
       setVentas(Array.isArray(data) ? data : []);
       if (response.total_paginas) setTotalPaginas(response.total_paginas);
-      setPagina(response.pagina || page);
+      // No se reescribe `pagina` desde la respuesta: el estado ya es la fuente de
+      // verdad y reasignarlo aquí devolvía siempre a la página 1, dejando el
+      // histórico anterior a las últimas 20 ventas fuera de alcance.
     } catch (err) {
       addToast(err.message, 'error');
     } finally {

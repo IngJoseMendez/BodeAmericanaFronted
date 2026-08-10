@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 const adminRoutes = [
   { path: '/',                       icon: LayoutDashboard, label: 'Dashboard',        desc: 'Vista general del negocio' },
   { path: '/pacas',                  icon: Package,         label: 'Inventario',       desc: 'Gestión de pacas y stock' },
-  { path: '/lotes',                  icon: Layers,          label: 'Lotes',            desc: 'Administración de lotes' },
+  { path: '/contenedores',           icon: Layers,          label: 'Contenedores',     desc: 'Importaciones y costo por paca' },
   { path: '/clientes',               icon: Users,           label: 'Clientes',         desc: 'Directorio de clientes' },
   { path: '/ventas',                 icon: ShoppingCart,    label: 'Ventas',           desc: 'Registro de ventas' },
   { path: '/gestionar-pedidos',      icon: Receipt,         label: 'Pedidos',          desc: 'Gestionar pedidos pendientes' },

@@ -17,13 +17,31 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
     instanceIdRef.current = Symbol('modal');
   }
 
-  // Guardar el elemento que abrió el modal para restaurar el foco al cerrar
+  // Guardar el elemento que abrió el modal para restaurar el foco al cerrar.
+  // La rama `else` es indispensable: cuando la página cierra el modal por código
+  // (setModalOpen(false) tras guardar) `isOpen` pasa a false pero nadie bajaría
+  // `visible`, así que el modal se quedaba en pantalla y el usuario volvía a
+  // pulsar Guardar, duplicando abonos y ventas.
   useEffect(() => {
     if (isOpen) {
       previousFocusRef.current = document.activeElement;
       setVisible(true);
       setAnimatingOut(false);
+      return;
     }
+
+    setAnimatingOut(true);
+    const teniaFoco = modalRef.current?.contains(document.activeElement);
+    const t = setTimeout(() => {
+      setVisible(false);
+      setAnimatingOut(false);
+      // Solo devolvemos el foco si seguía dentro del modal; si la página ya lo
+      // movió a otro sitio, respetamos esa decisión.
+      if (teniaFoco && typeof previousFocusRef.current?.focus === 'function') {
+        previousFocusRef.current.focus();
+      }
+    }, 200); // tiempo de la animación de salida
+    return () => clearTimeout(t);
   }, [isOpen]);
 
   // Focus trap — mover el foco al modal cuando abre

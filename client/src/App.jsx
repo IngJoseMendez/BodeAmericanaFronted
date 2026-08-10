@@ -1,69 +1,68 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CatalogProvider } from './context/CatalogContext';
 import { ToastProvider, ConfirmProvider, PreviewProvider } from './components/common';
-import Dashboard from './pages/Dashboard';
-import Pacas from './pages/Pacas';
-import Clientes from './pages/Clientes';
-import Ventas from './pages/Ventas';
-import Cartera from './pages/Cartera';
-import Reportes from './pages/Reportes';
-import Login from './pages/Login';
-import Registro from './pages/Registro';
-import Catalogo from './pages/Catalogo';
-import MisPedidos from './pages/MisPedidos';
-import CarteraCliente from './pages/CarteraCliente';
-import GestionarPedidos from './pages/GestionarPedidos';
-import ClienteDashboard from './pages/ClienteDashboard';
-import InteligenciaDeNegocio from './pages/InteligenciaDeNegocio';
-import Cotizaciones from './pages/Cotizaciones';
-import TiposPaca from './pages/TiposPaca';
-import GestionUsuarios from './pages/GestionUsuarios';
-import Contenedores from './pages/Contenedores';
-import CuentasPagar from './pages/CuentasPagar';
-import Despachos from './pages/Despachos';
-import Precios from './pages/Precios';
-import PreciosPromocion from './pages/PreciosPromocion';
-import ListaPrecios from './pages/ListaPrecios';
-import Cuentas from './pages/Cuentas';
-import Auditoria from './pages/Auditoria';
-import DeudaMasiva from './pages/DeudaMasiva';
-import Historico from './pages/Historico';
-import Gastos from './pages/Gastos';
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Pacas = lazy(() => import('./pages/Pacas'));
+const Clientes = lazy(() => import('./pages/Clientes'));
+const Ventas = lazy(() => import('./pages/Ventas'));
+const Cartera = lazy(() => import('./pages/Cartera'));
+const Reportes = lazy(() => import('./pages/Reportes'));
+const Login = lazy(() => import('./pages/Login'));
+const Registro = lazy(() => import('./pages/Registro'));
+const Catalogo = lazy(() => import('./pages/Catalogo'));
+const MisPedidos = lazy(() => import('./pages/MisPedidos'));
+const CarteraCliente = lazy(() => import('./pages/CarteraCliente'));
+const GestionarPedidos = lazy(() => import('./pages/GestionarPedidos'));
+const ClienteDashboard = lazy(() => import('./pages/ClienteDashboard'));
+const InteligenciaDeNegocio = lazy(() => import('./pages/InteligenciaDeNegocio'));
+const Cotizaciones = lazy(() => import('./pages/Cotizaciones'));
+const TiposPaca = lazy(() => import('./pages/TiposPaca'));
+const GestionUsuarios = lazy(() => import('./pages/GestionUsuarios'));
+const Contenedores = lazy(() => import('./pages/Contenedores'));
+const CuentasPagar = lazy(() => import('./pages/CuentasPagar'));
+const Despachos = lazy(() => import('./pages/Despachos'));
+const Precios = lazy(() => import('./pages/Precios'));
+const PreciosPromocion = lazy(() => import('./pages/PreciosPromocion'));
+const ListaPrecios = lazy(() => import('./pages/ListaPrecios'));
+const Cuentas = lazy(() => import('./pages/Cuentas'));
+const Auditoria = lazy(() => import('./pages/Auditoria'));
+const DeudaMasiva = lazy(() => import('./pages/DeudaMasiva'));
+const Historico = lazy(() => import('./pages/Historico'));
+const Gastos = lazy(() => import('./pages/Gastos'));
 
-function AdminLayout() {
+// Pantalla de espera mientras se descarga el código de la página solicitada.
+function CargandoPagina() {
   return (
-    <>
-      <Route path="/" element={<Dashboard />} />
-      <Route path="/pacas" element={<Pacas />} />
-      <Route path="/clientes" element={<Clientes />} />
-      <Route path="/ventas" element={<Ventas />} />
-      <Route path="/cartera" element={<Cartera />} />
-      <Route path="/reportes" element={<Reportes />} />
-      <Route path="/gestionar-pedidos" element={<GestionarPedidos />} />
-    </>
+    <div className="min-h-screen flex items-center justify-center bg-cream">
+      <div
+        className="animate-spin rounded-full h-10 w-10 border-4 border-secondary border-t-transparent"
+        role="status"
+        aria-label="Cargando página"
+      />
+    </div>
   );
 }
 
-function ClienteLayout() {
-  return (
-    <>
-      <Route path="/" element={<Catalogo />} />
-      <Route path="/catalogo" element={<Catalogo />} />
-      <Route path="/mis-pedidos" element={<MisPedidos />} />
-      <Route path="/mi-cartera" element={<CarteraCliente />} />
-    </>
-  );
+// El menú lateral ya oculta las pantallas de solo-admin, pero ocultarlas no es
+// protegerlas: un vendedor podía abrirlas escribiendo la URL a mano y llegar, por
+// ejemplo, a Usuarios para crearse una cuenta de administrador. Esto es defensa en
+// profundidad del lado del cliente; la comprobación de rol del backend sigue siendo
+// la que manda.
+function SoloAdmin({ children }) {
+  const { tieneRol } = useAuth();
+  return tieneRol('admin') ? children : <Navigate to="/" replace />;
 }
 
 function RutasAdmin() {
   const { tieneRol } = useAuth();
-  
+
   if (!tieneRol('admin') && !tieneRol('vendedor')) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return (
     <CatalogProvider>
       <Routes>
@@ -83,12 +82,12 @@ function RutasAdmin() {
         <Route path="/precios" element={<Precios />} />
         <Route path="/precios-promocion" element={<PreciosPromocion />} />
         <Route path="/lista-precios" element={<ListaPrecios />} />
-        <Route path="/cuentas" element={<Cuentas />} />
-        <Route path="/gestion-usuarios" element={<GestionUsuarios />} />
-        <Route path="/auditoria" element={<Auditoria />} />
-        <Route path="/deuda-masiva" element={<DeudaMasiva />} />
-        <Route path="/historico" element={<Historico />} />
-        <Route path="/gastos" element={<Gastos />} />
+        <Route path="/cuentas" element={<SoloAdmin><Cuentas /></SoloAdmin>} />
+        <Route path="/gestion-usuarios" element={<SoloAdmin><GestionUsuarios /></SoloAdmin>} />
+        <Route path="/auditoria" element={<SoloAdmin><Auditoria /></SoloAdmin>} />
+        <Route path="/deuda-masiva" element={<SoloAdmin><DeudaMasiva /></SoloAdmin>} />
+        <Route path="/historico" element={<SoloAdmin><Historico /></SoloAdmin>} />
+        <Route path="/gastos" element={<SoloAdmin><Gastos /></SoloAdmin>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </CatalogProvider>
@@ -139,11 +138,13 @@ export default function App() {
           <BrowserRouter>
             <AuthProvider>
               <PreviewProvider>
-                <Routes>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/registro" element={<Registro />} />
-                  <Route path="/*" element={<RutasDinamicas />} />
-                </Routes>
+                <Suspense fallback={<CargandoPagina />}>
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/registro" element={<Registro />} />
+                    <Route path="/*" element={<RutasDinamicas />} />
+                  </Routes>
+                </Suspense>
               </PreviewProvider>
             </AuthProvider>
           </BrowserRouter>

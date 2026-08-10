@@ -34,7 +34,13 @@ export function Button({
   };
 
   const handleClick = (e) => {
-    if (loading || disabled || clickedRef.current) return;
+    // preventDefault es lo que realmente frena el doble envío: sin él, un botón
+    // type="submit" seguía disparando el submit nativo del formulario aunque
+    // este guard bloqueara el onClick.
+    if (loading || disabled || clickedRef.current) {
+      e.preventDefault();
+      return;
+    }
     clickedRef.current = true;
     if (onClick) onClick(e);
     setTimeout(() => { clickedRef.current = false; }, 1000);

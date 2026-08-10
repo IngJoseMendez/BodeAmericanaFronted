@@ -1,4 +1,17 @@
 /** @type {import('tailwindcss').Config} */
+
+// Los colores del tema viven como variables CSS en src/index.css para poder
+// cambiar de modo claro a oscuro sin recompilar. El detalle importante es el
+// envoltorio color-mix + <alpha-value>: declarados como `var(--color-x)` a secas,
+// Tailwind no sabe inyectar transparencia y descarta en silencio TODA utilidad con
+// opacidad (bg-primary/5, border-border/50, bg-success/15…). Eran ~800 clases en
+// este proyecto que no llegaban al CSS final, así que los hover, los estados
+// activos del menú y los badges suaves no pintaban nada.
+//
+// Con este envoltorio, `bg-primary` resuelve a alpha 1 y `bg-primary/5` al 5%.
+const token = (nombre) =>
+  `color-mix(in srgb, var(--color-${nombre}) calc(<alpha-value> * 100%), transparent)`;
+
 export default {
   content: [
     "./index.html",
@@ -7,17 +20,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: 'var(--color-primary)',
-        secondary: 'var(--color-secondary)',
-        accent: 'var(--color-accent)',
-        success: 'var(--color-success)',
-        warning: 'var(--color-warning)',
-        error: 'var(--color-error)',
-        cream: 'var(--color-cream)',
-        surface: 'var(--color-surface)',
-        muted: 'var(--color-muted)',
-        border: 'var(--color-border)',
-        'on-primary': 'var(--color-on-primary)',
+        primary: token('primary'),
+        secondary: token('secondary'),
+        accent: token('accent'),
+        success: token('success'),
+        warning: token('warning'),
+        error: token('error'),
+        info: token('info'),
+        cream: token('cream'),
+        surface: token('surface'),
+        muted: token('muted'),
+        border: token('border'),
+        'on-primary': token('on-primary'),
+        'on-surface': token('on-surface'),
+        // Alias del fondo de página, usado por los componentes de components/ui.
+        background: token('cream'),
       },
       fontFamily: {
         display: ['"Bricolage Grotesque"', 'system-ui', 'sans-serif'],
