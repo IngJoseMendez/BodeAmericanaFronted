@@ -10,6 +10,10 @@ import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
 import { parseMonto } from '../lib/money';
 
+// Los nombres de referencia, categoría y calidad vienen de tablas distintas y
+// difieren en mayúsculas y acentos: se comparan normalizados.
+const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
 };
@@ -222,6 +226,9 @@ export default function Cotizaciones() {
   const [convertForm, setConvertForm] = useState({ abono: '', metodo_pago: 'efectivo', cuenta_id: '' });
   const [convertSubmitting, setConvertSubmitting] = useState(false);
   const [cuentasBanco, setCuentasBanco] = useState([]);
+  // Tabla de precios preestablecidos, para resolver el precio del ítem sin
+  // depender de una petición por cada cambio de referencia o calidad.
+  const [precios, setPrecios] = useState([]);
 
   useEffect(() => {
     loadCotizaciones();
@@ -230,6 +237,7 @@ export default function Cotizaciones() {
 
   useEffect(() => {
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
+    preciosApi.getAll().then(p => setPrecios(p || [])).catch(() => {});
   }, []);
 
   // Deep-link: ?focus=<id> abre el detalle de esa cotización (trazabilidad)
@@ -295,7 +303,10 @@ export default function Cotizaciones() {
   // Prioridad: 1° promoción activa (referencia+calidad), 2° precio preestablecido (categoria+calidad)
   const recheckPrices = async (index, item) => {
     const { referencia, calidad } = item;
-    const referenciaObj = optsReferencia.find(r => r.nombre === referencia);
+    // Comparación tolerante: la referencia escrita y la del catálogo vienen de
+    // tablas distintas y difieren en mayúsculas y acentos. Con === exacto no
+    // encontraba la temporada y el precio preestablecido nunca se buscaba.
+    const referenciaObj = optsReferencia.find(r => normTxt(r.nombre) === normTxt(referencia));
     const categoria = referenciaObj?.temporada_nombre || null;
 
     // 1. Buscar promoción activa
@@ -325,24 +336,56 @@ export default function Cotizaciones() {
       return next;
     });
 
-    // 2. Buscar precio preestablecido
-    if (categoria && calidad) {
-      try {
-        const preset = await preciosApi.buscar({ categoria, calidad });
-        if (preset && preset.precio > 0) {
-          setItems(prev => {
-            const next = [...prev];
-            if (next[index].precio_promocion != null) return prev; // por si llegó promo en paralelo
-            next[index] = {
-              ...next[index],
-              precio_unitario: parseFloat(preset.precio),
-              subtotal: (next[index].cantidad || 0) * parseFloat(preset.precio),
-            };
-            return next;
-          });
-        }
-      } catch (_) {}
+    // 2. Precio preestablecido. Se resuelve contra la tabla de Precios ya cargada
+    //    (comparación sin acentos ni mayúsculas) y, si el servidor la tiene, se
+    //    consulta como respaldo. Antes bastaba con que la referencia no tuviera
+    //    temporada asignada para que no se buscara ningún precio y el campo
+    //    quedara en 0 sin decir nada.
+    if (!calidad) return;
+
+    let precio = null;
+    if (categoria) {
+      const fila = precios.find(
+        p => normTxt(p.categoria) === normTxt(categoria) && normTxt(p.calidad) === normTxt(calidad)
+      );
+      const v = parseFloat(fila?.precio);
+      if (Number.isFinite(v) && v > 0) precio = v;
+
+      if (precio == null) {
+        try {
+          const preset = await preciosApi.buscar({ categoria, calidad });
+          const pv = parseFloat(preset?.precio);
+          if (Number.isFinite(pv) && pv > 0) precio = pv;
+        } catch (_) { /* sin precio configurado */ }
+      }
     }
+
+    if (precio != null) {
+      setItems(prev => {
+        const next = [...prev];
+        if (next[index].precio_promocion != null) return prev; // por si llegó promo en paralelo
+        next[index] = {
+          ...next[index],
+          precio_unitario: precio,
+          subtotal: (next[index].cantidad || 0) * precio,
+        };
+        return next;
+      });
+      return;
+    }
+
+    // No se pudo resolver: se avisa en vez de dejar el campo en 0 en silencio.
+    setItems(prev => {
+      const next = [...prev];
+      if (parseFloat(next[index].precio_unitario) > 0) return prev; // ya tiene precio escrito a mano
+      next[index] = {
+        ...next[index],
+        _avisoPrecio: !categoria
+          ? `"${referencia}" no tiene categoría asignada en Productos, por eso no hay precio automático.`
+          : `No hay precio configurado para ${categoria} / ${calidad}. Escríbelo a mano o créalo en Precios.`,
+      };
+      return next;
+    });
   };
 
   const fetchDisponibilidad = async (index, item) => {
@@ -884,6 +927,14 @@ export default function Cotizaciones() {
                         <XIcon size={14} />
                       </button>
                     </div>
+
+                    {/* Por qué no se autocompletó el precio */}
+                    {item._avisoPrecio && !(item.precio_unitario > 0) && (
+                      <p className="mt-1.5 text-xs text-amber-700 flex items-start gap-1.5">
+                        <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                        <span>{item._avisoPrecio}</span>
+                      </p>
+                    )}
 
                     {/* Fila de metadatos: stock · promo · precio con descuento */}
                     {(item.disponibles !== null || item.precio_promocion != null || (hayDescuento && item.precio_promocion == null && item.precio_unitario > 0)) && (
