@@ -25,6 +25,18 @@ const emptyInline = (monedaFactura = 'USD') => ({
   moneda: monedaFactura, monedaOtra: '', tasa_cambio: '',
 });
 
+// La factura del proveedor viene en su moneda (normalmente USD) pero el saldo se
+// lleva en COP, que es contra lo que se registran los abonos. Se muestran las dos.
+const facturaOriginal = (c) => {
+  const mo = (c.moneda_original || '').toUpperCase();
+  const to = parseFloat(c.total_factura_original);
+  if (!mo || !Number.isFinite(to) || mo === (c.moneda || 'COP').toUpperCase()) return null;
+  return { moneda: mo, total: to };
+};
+
+// Moneda que se propone al registrar un abono: la de la factura del proveedor.
+const monedaSugerida = (c) => (c?.moneda_original || c?.moneda || 'USD').toUpperCase();
+
 const codigoMoneda = (f) =>
   (f.moneda === 'OTRA' ? (f.monedaOtra || '').trim().toUpperCase() : f.moneda) || 'USD';
 
@@ -82,6 +94,9 @@ export default function CuentasPagar() {
   const [selectedCuenta, setSelectedCuenta] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
 
+  // Acordeón por contenedor. null = comportamiento automático (ver estaAbierto).
+  const [gruposAbiertos, setGruposAbiertos] = useState(null);
+
   // Fila expandible para abono directo
   const [expandedId, setExpandedId] = useState(null);
   const [inlineForm, setInlineForm] = useState(emptyInline());
@@ -111,6 +126,10 @@ export default function CuentasPagar() {
 
   useEffect(() => { loadCuentas(); }, [filtroEstado, filtroContenedor]);
 
+  // Al cambiar de filtro se vuelve al automático: si queda un solo contenedor,
+  // se abre solo; si quedan varios, todos cerrados.
+  useEffect(() => { setGruposAbiertos(null); setExpandedId(null); }, [filtroEstado, filtroContenedor, search]);
+
   const loadCuentas = async () => {
     try {
       setLoading(true);
@@ -132,7 +151,7 @@ export default function CuentasPagar() {
     } else {
       setExpandedId(cuenta.id);
       // La moneda arranca en la de la factura: es el caso normal.
-      setInlineForm(emptyInline(cuenta.moneda));
+      setInlineForm(emptyInline(monedaSugerida(cuenta)));
     }
   };
 
@@ -173,7 +192,7 @@ export default function CuentasPagar() {
       });
       addToast(`Abono registrado — ${cuenta.proveedor_nombre}`, 'success');
       setExpandedId(null);
-      setInlineForm(emptyInline(cuenta.moneda));
+      setInlineForm(emptyInline(monedaSugerida(cuenta)));
       loadCuentas();
       // Refrescar vista de detalle si estaba abierta
       if (selectedCuenta?.id === cuenta.id) {
@@ -282,14 +301,32 @@ export default function CuentasPagar() {
   filtered.forEach(c => {
     const key = c.contenedor_id ? String(c.contenedor_id) : 'sin';
     const label = c.contenedor_numero || 'Sin Contenedor';
-    if (!grupos[key]) grupos[key] = { label, cuentas: [], pendienteCOP: 0, pendienteUSD: 0 };
+    if (!grupos[key]) grupos[key] = { label, cuentas: [], pendienteCOP: 0, pendienteUSD: 0, pagadas: 0 };
     grupos[key].cuentas.push(c);
-    if (c.estado !== 'pagada') {
+    if (c.estado === 'pagada') grupos[key].pagadas++;
+    else {
       const pen = parseFloat(c.total_factura) - parseFloat(c.total_abonado);
       if (c.moneda === 'USD') grupos[key].pendienteUSD += pen;
       else grupos[key].pendienteCOP += pen;
     }
   });
+  const gruposKeys = Object.keys(grupos);
+
+  // Acordeón: cada contenedor se despliega por separado. Mientras nadie toque
+  // nada (gruposAbiertos === null) manda el automático, que abre el grupo solo
+  // cuando hay uno —justo el caso de llegar desde el enlace de un contenedor—.
+  const estaAbierto = (key) => (gruposAbiertos ? gruposAbiertos.has(key) : gruposKeys.length === 1);
+  const toggleGrupo = (key) => {
+    setGruposAbiertos(prev => {
+      const base = prev ?? new Set(gruposKeys.length === 1 ? gruposKeys : []);
+      const next = new Set(base);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const contenedorEnfocado = filtroContenedor
+    ? (contenedores.find(c => String(c.id) === String(filtroContenedor))?.numero || `#${filtroContenedor}`)
+    : null;
 
   const totalPendienteCOP = cuentas.filter(c => c.estado !== 'pagada' && c.moneda === 'COP')
     .reduce((s, c) => s + (parseFloat(c.total_factura) - parseFloat(c.total_abonado)), 0);
@@ -345,6 +382,41 @@ export default function CuentasPagar() {
           </Button>
         </div>
 
+        {/* Aviso de contenedor enfocado (llegada desde el enlace de Contenedores) */}
+        {contenedorEnfocado && (
+          <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-secondary/30 bg-secondary/8 px-4 py-2.5">
+            <p className="text-sm text-primary flex items-center gap-2">
+              <Package2 size={15} className="text-secondary flex-shrink-0" />
+              Viendo solo las cuentas del <b>contenedor {contenedorEnfocado}</b>
+            </p>
+            <button
+              onClick={() => setFiltroContenedor('')}
+              className="text-xs font-semibold text-secondary hover:underline underline-offset-2"
+            >
+              Ver todos los contenedores
+            </button>
+          </div>
+        )}
+
+        {/* Controles del acordeón */}
+        {gruposKeys.length > 1 && (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-muted">{gruposKeys.length} contenedores</span>
+            <button
+              onClick={() => setGruposAbiertos(new Set(gruposKeys))}
+              className="font-semibold text-secondary hover:underline underline-offset-2"
+            >
+              Desplegar todos
+            </button>
+            <button
+              onClick={() => setGruposAbiertos(new Set())}
+              className="font-semibold text-muted hover:text-primary"
+            >
+              Contraer todos
+            </button>
+          </div>
+        )}
+
         {/* Tabla agrupada por contenedor */}
         <Card padding={false}>
           <div className="overflow-x-auto">
@@ -364,37 +436,51 @@ export default function CuentasPagar() {
                   <tr><td colSpan={9}><EmptyState title="Sin cuentas por pagar" description="Las facturas de los contenedores aparecerán aquí" /></td></tr>
                 ) : Object.entries(grupos).map(([key, grupo]) => (
                   <Fragment key={key}>
-                    {/* Encabezado de grupo */}
-                    <tr className="bg-secondary/8 border-y border-secondary/20">
+                    {/* Encabezado de grupo — clic para desplegar solo este contenedor */}
+                    <tr
+                      className={`border-y border-secondary/20 cursor-pointer transition-colors ${estaAbierto(key) ? 'bg-secondary/12' : 'bg-secondary/8 hover:bg-secondary/12'}`}
+                      onClick={() => toggleGrupo(key)}
+                    >
                       <td colSpan={9} className="px-4 py-2.5">
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
-                            <Package2 size={14} className="text-secondary" />
+                            <ChevronRight
+                              size={15}
+                              className={`text-secondary flex-shrink-0 transition-transform duration-200 ${estaAbierto(key) ? 'rotate-90' : ''}`}
+                              aria-hidden="true"
+                            />
+                            <Package2 size={14} className="text-secondary flex-shrink-0" />
                             {key === 'sin' ? (
                               <span className="text-sm font-bold text-secondary">Sin Contenedor</span>
                             ) : (
                               <RefLink to="/contenedores" id={key} title="Ver contenedor"
                                 className="text-sm font-bold">Contenedor {grupo.label}</RefLink>
                             )}
-                            <span className="text-xs text-muted">({grupo.cuentas.length} cuenta{grupo.cuentas.length !== 1 ? 's' : ''})</span>
+                            <span className="text-xs text-muted">
+                              {grupo.cuentas.length} cuenta{grupo.cuentas.length !== 1 ? 's' : ''}
+                              {grupo.pagadas > 0 && ` · ${grupo.pagadas} pagada${grupo.pagadas !== 1 ? 's' : ''}`}
+                            </span>
                           </div>
                           <div className="flex items-center gap-4 text-xs font-semibold">
+                            {grupo.pendienteUSD > 0 && (
+                              <span className="text-warning">{formatCurrency(grupo.pendienteUSD, 'USD')} pendiente</span>
+                            )}
                             {grupo.pendienteCOP > 0 && (
                               <span className="text-warning">{formatCurrency(grupo.pendienteCOP, 'COP')} pendiente</span>
-                            )}
-                            {grupo.pendienteUSD > 0 && (
-                              <span className="text-warning">${grupo.pendienteUSD.toLocaleString('es-CO', { maximumFractionDigits: 0 })} USD pendiente</span>
                             )}
                             {grupo.pendienteCOP === 0 && grupo.pendienteUSD === 0 && (
                               <span className="text-success flex items-center gap-1"><CheckCircle size={12} /> Liquidado</span>
                             )}
+                            <span className="text-muted font-normal hidden sm:inline">
+                              {estaAbierto(key) ? 'Ocultar' : 'Ver cuentas'}
+                            </span>
                           </div>
                         </div>
                       </td>
                     </tr>
 
-                    {/* Filas de cuentas */}
-                    {grupo.cuentas.map(c => {
+                    {/* Filas de cuentas — solo las del contenedor desplegado */}
+                    {estaAbierto(key) && grupo.cuentas.map(c => {
                       const pendiente = parseFloat(c.total_factura) - parseFloat(c.total_abonado);
                       const isExpanded = expandedId === c.id;
                       const canAbono = c.estado !== 'pagada';
@@ -416,7 +502,20 @@ export default function CuentasPagar() {
                             </td>
                             <td className="px-4 py-3 font-mono text-xs text-muted">{c.numero}</td>
                             <td className="px-4 py-3 font-semibold text-primary text-sm">{c.proveedor_nombre}</td>
-                            <td className="px-4 py-3 font-mono text-sm font-semibold">{formatCurrency(c.total_factura, c.moneda)}</td>
+                            <td className="px-4 py-3 font-mono text-sm font-semibold">
+                              {(() => {
+                                const orig = facturaOriginal(c);
+                                if (!orig) return formatCurrency(c.total_factura, c.moneda);
+                                return (
+                                  <>
+                                    <span className="text-primary">{formatMoneda(orig.total, orig.moneda)}</span>
+                                    <span className="block text-[11px] font-normal text-muted">
+                                      ≈ {formatCurrency(c.total_factura, c.moneda)}
+                                    </span>
+                                  </>
+                                );
+                              })()}
+                            </td>
                             <td className="px-4 py-3">
                               <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${c.moneda === 'USD' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>{c.moneda}</span>
                             </td>
