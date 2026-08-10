@@ -19,7 +19,7 @@ const isActive = (row) => {
   return row.activo && inicio <= now && fin >= now;
 };
 
-const emptyForm = { referencia: '', calidad: '', precio_promocional: '', fecha_inicio: '', fecha_fin: '', activo: true };
+const emptyForm = { referencia: '', calidad: '', clasificacion: '', precio_promocional: '', fecha_inicio: '', fecha_fin: '', activo: true };
 
 // Comparación tolerante: los nombres vienen de tablas distintas y difieren en
 // mayúsculas y acentos según quién los haya dado de alta.
@@ -29,7 +29,7 @@ export default function PreciosPromocion() {
   const [promos, setPromos] = useState([]);
   const [precios, setPrecios] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { categorias: referencias, calidades, temporadas } = useCatalog();
+  const { categorias: referencias, calidades, temporadas, tipos: clasificaciones } = useCatalog();
   const [modalOpen, setModalOpen]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form, setForm]             = useState(emptyForm);
@@ -91,6 +91,7 @@ export default function PreciosPromocion() {
     setForm({
       referencia: p.referencia,
       calidad: p.calidad,
+      clasificacion: p.clasificacion || '',
       precio_promocional: p.precio_promocional,
       fecha_inicio: p.fecha_inicio?.slice(0, 10) || '',
       fecha_fin: p.fecha_fin?.slice(0, 10) || '',
@@ -172,6 +173,7 @@ export default function PreciosPromocion() {
                     <tr className="border-b border-border">
                       <th className="text-left px-5 py-3 text-muted font-medium">Referencia</th>
                       <th className="text-left px-5 py-3 text-muted font-medium">Calidad</th>
+                      <th className="text-left px-5 py-3 text-muted font-medium">Clasificación</th>
                       <th className="text-right px-5 py-3 text-muted font-medium">Precio normal</th>
                       <th className="text-right px-5 py-3 text-muted font-medium">Precio Promo</th>
                       <th className="text-right px-5 py-3 text-muted font-medium">Descuento</th>
@@ -189,6 +191,7 @@ export default function PreciosPromocion() {
                         <tr key={p.id} className="border-b border-border/50 hover:bg-primary/3 transition-colors">
                           <td className="px-5 py-3 font-medium font-mono">{p.referencia}</td>
                           <td className="px-5 py-3 capitalize">{p.calidad}</td>
+                          <td className="px-5 py-3 capitalize text-sm">{p.clasificacion || <span className="text-muted text-xs">Todas</span>}</td>
                           <td className="px-5 py-3 text-right font-mono text-muted">
                             {normal != null ? (
                               <span className="line-through">{formatCurrency(normal)}</span>
@@ -308,6 +311,27 @@ export default function PreciosPromocion() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-primary mb-1" htmlFor="promo-clasificacion">
+                  Clasificación
+                </label>
+                <select
+                  id="promo-clasificacion"
+                  value={form.clasificacion}
+                  onChange={(e) => setForm({ ...form, clasificacion: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                >
+                  <option value="">Todas las clasificaciones</option>
+                  {clasificaciones.map((t) => (
+                    <option key={t.id} value={t.nombre}>{t.nombre}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted mt-1">
+                  Déjalo en «Todas» para que aplique a hombre, mujer y niño por igual.
+                  Si eliges una, la promoción solo aplica a esa y manda sobre la general.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Precio Promocional *</label>
                 <input

@@ -606,6 +606,165 @@ export default function Pacas() {
     setTiposExpandidos(prev => ({ ...prev, [tipo]: !prev[tipo] }));
   };
 
+  // ── Excel de separadas, con una hoja por cliente ──────────────────
+  // Cada cliente ve solo lo suyo, agrupado por referencia y calidad, que es como
+  // la bodega lo alista. La primera hoja resume cuánto tiene apartado cada uno.
+  const exportarSeparadasPorCliente = async () => {
+    const PRIMARY = '0f172a', WARNING = 'd97706', WHITE = 'ffffff', LIGHT = 'f1f5f9';
+    try {
+      addToast('Generando Excel de separadas…', 'info');
+      const rows = await pacasApi.getComprometidas({});
+      const separadas = (Array.isArray(rows) ? rows : []).filter(r => r.estado !== 'despachada');
+
+      if (!separadas.length) {
+        addToast('No hay unidades separadas en este momento', 'warning');
+        return;
+      }
+
+      // cliente → referencia|calidad → cantidad
+      const porCliente = new Map();
+      for (const r of separadas) {
+        const cliente = (r.cliente_nombre || 'Sin cliente asignado').trim();
+        if (!porCliente.has(cliente)) porCliente.set(cliente, { total: 0, cotizaciones: new Set(), items: new Map() });
+        const c = porCliente.get(cliente);
+        c.total++;
+        if (r.cotizacion_numero) c.cotizaciones.add(r.cotizacion_numero);
+        const k = `${r.referencia || '—'}||${r.calidad || '—'}`;
+        if (!c.items.has(k)) c.items.set(k, { referencia: r.referencia || '—', calidad: r.calidad || '—', cantidad: 0 });
+        c.items.get(k).cantidad++;
+      }
+
+      const clientes = [...porCliente.entries()].sort((a, b) => b[1].total - a[1].total);
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Comercio Global Logístico';
+      wb.created = new Date();
+
+      // Hoja resumen
+      const wr = wb.addWorksheet('Resumen');
+      wr.properties.tabColor = { argb: WARNING };
+      wr.columns = [{ width: 38 }, { width: 14 }, { width: 30 }];
+      wr.mergeCells('A1:C1');
+      const t = wr.getCell('A1');
+      t.value = `UNIDADES SEPARADAS POR CLIENTE — ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+      t.font = { size: 13, bold: true, color: { argb: WHITE } };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+      t.alignment = { horizontal: 'center', vertical: 'middle' };
+      wr.getRow(1).height = 28;
+
+      ['Cliente', 'Separadas', 'Cotizaciones'].forEach((h, i) => {
+        const c = wr.getCell(3, i + 1);
+        c.value = h;
+        c.font = { bold: true, size: 10, color: { argb: WHITE } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+        c.alignment = { horizontal: i === 1 ? 'center' : 'left', vertical: 'middle', indent: i === 1 ? 0 : 1 };
+      });
+      wr.getRow(3).height = 22;
+
+      clientes.forEach(([nombre, data], i) => {
+        const r = wr.getRow(4 + i);
+        r.height = 20;
+        const bg = i % 2 === 0 ? LIGHT : WHITE;
+        [nombre, data.total, [...data.cotizaciones].join(', ') || '—'].forEach((v, ci) => {
+          const c = r.getCell(ci + 1);
+          c.value = v;
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          c.font = ci === 1 ? { bold: true, size: 11, color: { argb: WARNING } } : { size: 10, color: { argb: PRIMARY } };
+          c.alignment = { horizontal: ci === 1 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 ? 0 : 1 };
+        });
+      });
+
+      const totRow = wr.getRow(4 + clientes.length);
+      totRow.height = 24;
+      totRow.getCell(1).value = `TOTAL — ${clientes.length} cliente(s)`;
+      totRow.getCell(2).value = separadas.length;
+      [1, 2, 3].forEach(ci => {
+        const c = totRow.getCell(ci);
+        c.font = { bold: true, size: 11, color: { argb: WHITE } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+        c.alignment = { horizontal: ci === 2 ? 'center' : 'left', vertical: 'middle', indent: ci === 2 ? 0 : 1 };
+      });
+
+      // Una hoja por cliente
+      const usados = new Set();
+      clientes.forEach(([nombre, data]) => {
+        // Excel limita el nombre de hoja a 31 caracteres y prohíbe : \ / ? * [ ]
+        let base = nombre.replace(/[*?:/\\[\]]/g, ' ').slice(0, 28).trim() || 'Cliente';
+        let hoja = base, n = 2;
+        while (usados.has(hoja)) hoja = `${base.slice(0, 26)} ${n++}`;
+        usados.add(hoja);
+
+        const ws = wb.addWorksheet(hoja);
+        ws.columns = [{ width: 6 }, { width: 32 }, { width: 20 }, { width: 14 }];
+
+        ws.mergeCells('A1:D1');
+        const th = ws.getCell('A1');
+        th.value = nombre;
+        th.font = { size: 13, bold: true, color: { argb: WHITE } };
+        th.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+        th.alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.getRow(1).height = 28;
+
+        ws.mergeCells('A2:D2');
+        ws.getCell('A2').value = data.cotizaciones.size
+          ? `Cotización(es): ${[...data.cotizaciones].join(', ')}`
+          : 'Sin cotización asociada';
+        ws.getCell('A2').font = { size: 10, italic: true, color: { argb: '64748b' } };
+        ws.getCell('A2').alignment = { horizontal: 'center' };
+
+        ['#', 'Referencia', 'Calidad', 'Cantidad'].forEach((h, i) => {
+          const c = ws.getCell(4, i + 1);
+          c.value = h;
+          c.font = { bold: true, size: 10, color: { argb: WHITE } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+          c.alignment = { horizontal: i === 0 || i === 3 ? 'center' : 'left', vertical: 'middle', indent: i === 1 || i === 2 ? 1 : 0 };
+        });
+        ws.getRow(4).height = 22;
+
+        const items = [...data.items.values()].sort(
+          (a, b) => a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es')
+        );
+        items.forEach((it, i) => {
+          const r = ws.getRow(5 + i);
+          r.height = 22;
+          const bg = i % 2 === 0 ? LIGHT : WHITE;
+          [i + 1, it.referencia, it.calidad, it.cantidad].forEach((v, ci) => {
+            const c = r.getCell(ci + 1);
+            c.value = v;
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+            c.font = ci === 3 ? { bold: true, size: 12, color: { argb: PRIMARY } } : { size: 10, color: { argb: PRIMARY } };
+            c.alignment = { horizontal: ci === 0 || ci === 3 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 || ci === 2 ? 1 : 0 };
+          });
+        });
+
+        const tr = ws.getRow(5 + items.length);
+        tr.height = 26;
+        ws.mergeCells(`A${5 + items.length}:C${5 + items.length}`);
+        tr.getCell(1).value = 'TOTAL SEPARADAS';
+        tr.getCell(4).value = data.total;
+        [1, 4].forEach(ci => {
+          const c = tr.getCell(ci);
+          c.font = { bold: true, size: 12, color: { argb: WHITE } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WARNING } };
+          c.alignment = { horizontal: ci === 4 ? 'center' : 'right', vertical: 'middle', indent: ci === 4 ? 0 : 1 };
+        });
+        tr.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WARNING } };
+        tr.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WARNING } };
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Separadas_por_cliente_${new Date().toISOString().split('T')[0]}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');
+    } catch (err) {
+      addToast('No se pudo generar el Excel: ' + err.message, 'error');
+    }
+  };
+
   // Las tarjetas de arriba resumen por CATEGORÍA. Se calculan sobre el inventario
   // agrupado —que es lo mismo que muestra la tabla— y no sobre /pacas/resumen,
   // que viene paginado y agrupa por clasificación.
@@ -734,6 +893,10 @@ export default function Pacas() {
             </Button>
             <Button onClick={exportarInventarioPDF} variant="outline" disabled={exporting}>
               <Download size={16} className="mr-1" /> PDF
+            </Button>
+            <Button onClick={exportarSeparadasPorCliente} variant="outline" disabled={exporting}
+              title="Excel con una hoja por cliente: qué tiene apartado cada uno">
+              <Download size={16} className="mr-1" /> Separadas x cliente
             </Button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nueva Unidad

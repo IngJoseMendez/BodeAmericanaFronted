@@ -49,6 +49,151 @@ function KpiCard({ label, value, icon: Icon, color, sub }) {
   );
 }
 
+// Tipos de transporte. La lista base se amplía sola con cualquier valor que ya
+// se haya usado, así que se pueden agregar nuevos desde el propio despacho.
+const TIPOS_TRANSPORTE_BASE = [
+  { value: 'terrestre',      label: 'Terrestre' },
+  { value: 'maritimo',       label: 'Marítimo' },
+  { value: 'aereo',          label: 'Aéreo' },
+  { value: 'recoge_cliente', label: 'Recoge el cliente' },
+  { value: 'paqueteria',     label: 'Paquetería / encomienda' },
+  { value: 'mensajero',      label: 'Mensajero / moto' },
+  { value: 'flota',          label: 'Flota / intermunicipal' },
+  { value: 'contenedor',     label: 'Contenedor' },
+];
+
+const etiquetaTransporte = (v) => {
+  if (!v) return '—';
+  const base = TIPOS_TRANSPORTE_BASE.find(t => t.value === v);
+  if (base) return base.label;
+  // Valor escrito a mano: se muestra tal cual, legible.
+  return String(v).replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+};
+
+// ── Excel para la BODEGA ────────────────────────────────────────────
+// No lleva precios: es la orden de alistamiento. Agrupa por referencia y
+// calidad con la cantidad a sacar, y arriba los datos de entrega.
+async function exportarExcelBodega(despacho) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Comercio Global Logístico';
+  wb.created = new Date();
+
+  const PRIMARY = '0f172a';
+  const SUCCESS = '16a34a';
+  const WHITE   = 'ffffff';
+  const LIGHT   = 'f1f5f9';
+
+  const ws = wb.addWorksheet('Alistamiento bodega');
+  ws.properties.tabColor = { argb: SUCCESS };
+
+  const items = despacho.items || [];
+
+  // Título
+  ws.mergeCells('A1:D1');
+  const t = ws.getCell('A1');
+  t.value = `ORDEN DE ALISTAMIENTO — ${despacho.numero || ''}`;
+  t.font = { size: 14, bold: true, color: { argb: WHITE } };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  t.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 30;
+
+  // Datos de entrega
+  const datos = [
+    ['Cliente',      despacho.destinatario || despacho.cliente_nombre || '—'],
+    ['Ciudad',       despacho.ciudad_entrega || despacho.cliente_ciudad || '—'],
+    ['Dirección',    despacho.direccion_entrega || despacho.cliente_direccion || '—'],
+    ['Celular',      despacho.celular || despacho.cliente_telefono || '—'],
+    ['Transporte',   etiquetaTransporte(despacho.tipo_transporte)],
+    ['Fecha',        new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })],
+  ];
+  let row = 3;
+  datos.forEach(([k, v]) => {
+    ws.getCell(`A${row}`).value = k.toUpperCase();
+    ws.getCell(`A${row}`).font = { bold: true, size: 9, color: { argb: '64748b' } };
+    ws.mergeCells(`B${row}:D${row}`);
+    ws.getCell(`B${row}`).value = v;
+    ws.getCell(`B${row}`).font = { bold: true, size: 11, color: { argb: PRIMARY } };
+    ws.getRow(row).height = 20;
+    row++;
+  });
+
+  // Agrupado por referencia + calidad: a la bodega le importa cuántas sacar.
+  row += 1;
+  const grupos = new Map();
+  for (const it of items) {
+    const ref = it.referencia || '—';
+    const cal = it.calidad || '—';
+    const k = `${ref}||${cal}`;
+    if (!grupos.has(k)) grupos.set(k, { referencia: ref, calidad: cal, cantidad: 0 });
+    grupos.get(k).cantidad++;
+  }
+  const filas = [...grupos.values()].sort(
+    (a, b) => a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es')
+  );
+
+  const headers = ['#', 'Referencia', 'Calidad', 'Cantidad'];
+  const hr = ws.getRow(row);
+  hr.height = 26;
+  headers.forEach((h, ci) => {
+    const c = hr.getCell(ci + 1);
+    c.value = h;
+    c.font = { bold: true, size: 11, color: { argb: WHITE } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+    c.alignment = { horizontal: ci === 3 ? 'center' : ci === 0 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 || ci === 2 ? 1 : 0 };
+  });
+  row++;
+
+  filas.forEach((f, i) => {
+    const r = ws.getRow(row);
+    r.height = 24;
+    const bg = i % 2 === 0 ? LIGHT : WHITE;
+    [i + 1, f.referencia, f.calidad, f.cantidad].forEach((val, ci) => {
+      const c = r.getCell(ci + 1);
+      c.value = val;
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      c.alignment = { horizontal: ci === 3 || ci === 0 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 || ci === 2 ? 1 : 0 };
+      c.font = ci === 3
+        ? { bold: true, size: 13, color: { argb: PRIMARY } }
+        : { size: 11, color: { argb: PRIMARY } };
+    });
+    row++;
+  });
+
+  // Totalizado
+  const tr = ws.getRow(row);
+  tr.height = 28;
+  ws.mergeCells(`A${row}:C${row}`);
+  const lbl = tr.getCell(1);
+  lbl.value = 'TOTAL UNIDADES A DESPACHAR';
+  lbl.font = { bold: true, size: 12, color: { argb: WHITE } };
+  lbl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUCCESS } };
+  lbl.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+  const val = tr.getCell(4);
+  val.value = items.length;
+  val.font = { bold: true, size: 15, color: { argb: WHITE } };
+  val.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUCCESS } };
+  val.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  // Espacio para firmas de quien alista y quien recibe
+  row += 2;
+  ws.getCell(`A${row}`).value = 'Alistado por: ____________________';
+  ws.getCell(`C${row}`).value = 'Recibido por: ____________________';
+  [`A${row}`, `C${row}`].forEach(ref => { ws.getCell(ref).font = { size: 10, color: { argb: '64748b' } }; });
+
+  ws.getColumn(1).width = 6;
+  ws.getColumn(2).width = 32;
+  ws.getColumn(3).width = 22;
+  ws.getColumn(4).width = 14;
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Bodega_${despacho.numero || 'despacho'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 async function exportarExcel(despacho) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Comercio Global Logístico';
@@ -225,7 +370,9 @@ async function exportarExcel(despacho) {
   wi.properties.tabColor = { argb: SECONDARY };
 
   // Cabecera de tabla
-  const headers = ['#', 'UUID', 'Clasificación', 'Referencia', 'Calidad', 'Precio', 'Estado'];
+  // Este Excel se le manda al CLIENTE: sin UUID ni clasificación, que son datos
+  // internos de bodega y solo le agregan ruido a la factura.
+  const headers = ['#', 'Referencia', 'Calidad', 'Precio', 'Estado'];
   const hRow = wi.getRow(1);
   hRow.height = 28;
   headers.forEach((h, ci) => {
@@ -233,7 +380,7 @@ async function exportarExcel(despacho) {
     cell.value     = h;
     cell.font      = { bold: true, size: 10, color: { argb: WHITE } };
     cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
-    cell.alignment = { horizontal: ci >= 5 ? 'right' : 'center', vertical: 'middle' };
+    cell.alignment = { horizontal: ci >= 3 ? 'right' : 'center', vertical: 'middle' };
     cell.border    = { bottom: { style: 'thin', color: { argb: SECONDARY } } };
   });
 
@@ -245,8 +392,6 @@ async function exportarExcel(despacho) {
 
     const vals = [
       idx + 1,
-      item.paca_uuid?.slice(0, 8) || '—',
-      item.clasificacion || '—',
       item.referencia || '—',
       item.calidad || '—',
       parseFloat(item.precio_unitario || 0),
@@ -256,11 +401,11 @@ async function exportarExcel(despacho) {
       const cell = r.getCell(ci + 1);
       cell.value     = val;
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-      cell.alignment = { vertical: 'middle', horizontal: ci >= 5 ? 'right' : ci === 0 ? 'center' : 'left', indent: ci > 0 && ci < 5 ? 1 : 0 };
-      if (ci === 5) {
+      cell.alignment = { vertical: 'middle', horizontal: ci >= 3 ? 'right' : ci === 0 ? 'center' : 'left', indent: ci > 0 && ci < 3 ? 1 : 0 };
+      if (ci === 3) {
         cell.numFmt = '$#,##0';
         cell.font   = { bold: true, color: { argb: SECONDARY } };
-      } else if (ci === 6) {
+      } else if (ci === 4) {
         cell.font = { bold: true, color: { argb: isDespachada ? SUCCESS : WARNING } };
       } else {
         cell.font = { size: 9, color: { argb: PRIMARY } };
@@ -271,27 +416,25 @@ async function exportarExcel(despacho) {
   // Fila total
   const totRow = wi.getRow(2 + items.length);
   totRow.height = 24;
-  wi.mergeCells(`A${2 + items.length}:E${2 + items.length}`);
+  wi.mergeCells(`A${2 + items.length}:C${2 + items.length}`);
   const totLbl = totRow.getCell(1);
-  totLbl.value     = 'TOTAL';
+  totLbl.value     = `TOTAL (${items.length} unidades)`;
   totLbl.font      = { bold: true, size: 10, color: { argb: WHITE } };
   totLbl.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
   totLbl.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-  const totVal = totRow.getCell(6);
+  const totVal = totRow.getCell(4);
   totVal.value     = total;
   totVal.numFmt    = '$#,##0';
   totVal.font      = { bold: true, color: { argb: WHITE } };
   totVal.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
   totVal.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-  totRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+  totRow.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
 
   wi.getColumn(1).width  = 5;
-  wi.getColumn(2).width  = 12;
-  wi.getColumn(3).width  = 20;
-  wi.getColumn(4).width  = 20;
-  wi.getColumn(5).width  = 16;
-  wi.getColumn(6).width  = 18;
-  wi.getColumn(7).width  = 14;
+  wi.getColumn(2).width  = 24;
+  wi.getColumn(3).width  = 18;
+  wi.getColumn(4).width  = 18;
+  wi.getColumn(5).width  = 14;
 
   // ── Hoja 3: Resumen por Tipo (inventario − despacho = quedan) ───
   const tipos = Object.values(despachoPorTipo);
@@ -553,6 +696,17 @@ export default function Despachos() {
       addToast(err.message, 'error');
     }
   };
+
+  // Catálogo vivo de transportes: la lista base más cualquiera ya usado, para
+  // que lo que se escriba una vez quede disponible después.
+  const tiposTransporteDisponibles = (() => {
+    const vistos = new Map(TIPOS_TRANSPORTE_BASE.map(t => [t.value, t]));
+    for (const d of despachos) {
+      const v = (d.tipo_transporte || '').trim();
+      if (v && !vistos.has(v)) vistos.set(v, { value: v, label: etiquetaTransporte(v) });
+    }
+    return [...vistos.values()];
+  })();
 
   const filtered = despachos.filter(d =>
     !search || d.numero?.includes(search) || d.cliente_nombre?.toLowerCase().includes(search.toLowerCase())
@@ -867,8 +1021,14 @@ export default function Despachos() {
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-border/40 flex-wrap">
               <div className="flex items-center gap-2">
                 <button onClick={() => exportarExcel(selectedDespacho)}
+                  title="Excel con precios para enviar al cliente"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
-                  <Download size={13} /> Excel
+                  <Download size={13} /> Excel cliente
+                </button>
+                <button onClick={() => exportarExcelBodega(selectedDespacho)}
+                  title="Orden de alistamiento para la bodega: referencia, calidad y cantidad, sin precios"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-success/40 text-success hover:bg-success/10 text-xs font-semibold transition-colors">
+                  <Download size={13} /> Excel bodega
                 </button>
                 <button onClick={() => imprimirDespacho(selectedDespacho)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
@@ -968,19 +1128,25 @@ export default function Despachos() {
               <p className="text-xs font-bold text-muted uppercase tracking-wider">Datos de entrega</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-semibold text-muted mb-1">Tipo de transporte</label>
-                  <select
+                  <label className="block text-[11px] font-semibold text-muted mb-1" htmlFor="tipo-transporte">
+                    Tipo de transporte
+                  </label>
+                  {/* Combo abierto: se elige de la lista o se escribe uno nuevo,
+                      que queda disponible para los siguientes despachos. */}
+                  <input
+                    id="tipo-transporte"
+                    list="lista-transportes"
                     value={entrega.tipo_transporte}
                     onChange={e => setEntrega(s => ({ ...s, tipo_transporte: e.target.value }))}
+                    placeholder="Elige o escribe uno nuevo…"
+                    autoComplete="off"
                     className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  >
-                    <option value="">Selecciona…</option>
-                    <option value="terrestre">Terrestre</option>
-                    <option value="maritimo">Marítimo</option>
-                    <option value="aereo">Aéreo</option>
-                    <option value="recoge_cliente">Recoge el cliente</option>
-                    <option value="paqueteria">Paquetería / encomienda</option>
-                  </select>
+                  />
+                  <datalist id="lista-transportes">
+                    {tiposTransporteDisponibles.map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-muted mb-1">Destinatario</label>

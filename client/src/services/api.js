@@ -571,8 +571,11 @@ export const preciosPromocionApi = {
     const query = new URLSearchParams(params).toString();
     return api.get(`/precios-promocion${query ? `?${query}` : ''}`);
   },
-  getActiva({ referencia, calidad }) {
-    return api.get(`/precios-promocion/activa?referencia=${encodeURIComponent(referencia)}&calidad=${encodeURIComponent(calidad)}`);
+  getActiva({ referencia, calidad, clasificacion }) {
+    const q = new URLSearchParams({ referencia, calidad });
+    // Opcional: si se envía, gana la promoción específica de esa clasificación.
+    if (clasificacion) q.set('clasificacion', clasificacion);
+    return api.get(`/precios-promocion/activa?${q.toString()}`);
   },
   create(data) { return api.post('/precios-promocion', data); },
   update(id, data) { return api.put(`/precios-promocion/${id}`, data); },

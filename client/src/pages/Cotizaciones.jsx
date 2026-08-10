@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink } from '../components/common';
-import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi } from '../services/api';
+import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
@@ -229,6 +229,7 @@ export default function Cotizaciones() {
   // Tabla de precios preestablecidos, para resolver el precio del ítem sin
   // depender de una petición por cada cambio de referencia o calidad.
   const [precios, setPrecios] = useState([]);
+  const [listaPrecios, setListaPrecios] = useState([]);
 
   useEffect(() => {
     loadCotizaciones();
@@ -238,6 +239,8 @@ export default function Cotizaciones() {
   useEffect(() => {
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
     preciosApi.getAll().then(p => setPrecios(p || [])).catch(() => {});
+    // Precio real del inventario: es el que se fijó al finalizar el contenedor.
+    listaPreciosApi.getAll().then(l => setListaPrecios(l || [])).catch(() => {});
   }, []);
 
   // Deep-link: ?focus=<id> abre el detalle de esa cotización (trazabilidad)
@@ -312,7 +315,7 @@ export default function Cotizaciones() {
     // 1. Buscar promoción activa
     if (referencia && calidad) {
       try {
-        const promo = await preciosPromocionApi.getActiva({ referencia, calidad });
+        const promo = await preciosPromocionApi.getActiva({ referencia, calidad, clasificacion: item.clasificacion || '' });
         if (promo) {
           setItems(prev => {
             const next = [...prev];
@@ -344,7 +347,18 @@ export default function Cotizaciones() {
     if (!calidad) return;
 
     let precio = null;
-    if (categoria) {
+
+    // 2a. Precio del INVENTARIO: el que se fijó al finalizar el contenedor, por
+    //     referencia + calidad. Es el que la gente ve en el contenedor y el que
+    //     espera encontrar aquí, así que manda sobre el preestablecido genérico.
+    const enInventario = listaPrecios.find(
+      l => normTxt(l.referencia) === normTxt(referencia) && normTxt(l.calidad) === normTxt(calidad)
+    );
+    const pInv = parseFloat(enInventario?.precio);
+    if (Number.isFinite(pInv) && pInv > 0) precio = pInv;
+
+    // 2b. Precio preestablecido por categoría + calidad (tabla de Precios).
+    if (precio == null && categoria) {
       const fila = precios.find(
         p => normTxt(p.categoria) === normTxt(categoria) && normTxt(p.calidad) === normTxt(calidad)
       );
@@ -380,9 +394,7 @@ export default function Cotizaciones() {
       if (parseFloat(next[index].precio_unitario) > 0) return prev; // ya tiene precio escrito a mano
       next[index] = {
         ...next[index],
-        _avisoPrecio: !categoria
-          ? `"${referencia}" no tiene categoría asignada en Productos, por eso no hay precio automático.`
-          : `No hay precio configurado para ${categoria} / ${calidad}. Escríbelo a mano o créalo en Precios.`,
+        _avisoPrecio: `No hay unidades disponibles de ${referencia} / ${calidad} con precio, ni precio preestablecido${categoria ? ` para ${categoria} / ${calidad}` : ''}. Escríbelo a mano o revísalo en Lista de Precios.`,
       };
       return next;
     });
