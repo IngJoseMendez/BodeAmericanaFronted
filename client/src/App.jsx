@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CatalogProvider } from './context/CatalogContext';
 import { ToastProvider, ConfirmProvider, PreviewProvider } from './components/common';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Pacas = lazy(() => import('./pages/Pacas'));
 const Clientes = lazy(() => import('./pages/Clientes'));
@@ -134,6 +135,7 @@ function RutasDinamicas() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <ThemeProvider>
       <ToastProvider>
         <ConfirmProvider>
@@ -153,5 +155,6 @@ export default function App() {
         </ConfirmProvider>
       </ToastProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }

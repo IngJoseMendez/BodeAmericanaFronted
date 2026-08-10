@@ -28,7 +28,8 @@ import {
   History,
   ListChecks,
   BarChart3,
-  Coins
+  Coins,
+  TrendingUp
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
