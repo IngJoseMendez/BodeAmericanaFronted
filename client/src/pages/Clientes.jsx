@@ -199,14 +199,6 @@ export default function Clientes() {
           </div>
           <div className="flex gap-2 flex-wrap">
             <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todos los tipos</option>
-              {CLIENTE_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-            </select>
-            <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
               className="px-4 py-3 rounded-xl border border-border bg-surface"
@@ -262,7 +254,6 @@ export default function Clientes() {
                       <div>
                         <h3 className="font-display text-lg text-primary">{cliente.nombre}</h3>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <Badge variant={cliente.tipo_cliente} size="sm">{cliente.tipo_cliente}</Badge>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${cliente.clasificacion_pago === 'credito' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                             {cliente.clasificacion_pago === 'credito' ? 'Crédito' : 'Contado'}
                           </span>
@@ -346,12 +337,6 @@ export default function Clientes() {
           />
           
           <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Tipo de Cliente"
-              value={formData.tipo_cliente}
-              onChange={(e) => setFormData({ ...formData, tipo_cliente: e.target.value })}
-              options={CLIENTE_TIPOS.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
-            />
             <Select
               label="Forma de pago"
               value={formData.clasificacion_pago}

@@ -55,6 +55,7 @@ const adminNavItems = [
   { path: '/cuentas',              icon: Wallet,          label: 'Cuentas',          key: null, rol: 'admin' },
   { path: '/gastos',               icon: Coins,           label: 'Gastos',           key: null, rol: 'admin' },
   { path: '/historico',            icon: BarChart3,       label: 'Histórico',        key: null, rol: 'admin' },
+  { path: '/utilidad',             icon: TrendingUp,      label: 'Utilidad',         key: null, rol: 'admin' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },

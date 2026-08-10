@@ -351,7 +351,7 @@ export default function Cartera() {
       const ws = wb.addWorksheet('Estado de Cuenta');
       ws.properties.tabColor = secondaryColor;
       
-      ws.mergeCells('A1:G1');
+      ws.mergeCells('A1:I1');
       const titleCell = ws.getCell('A1');
       titleCell.value = '🌐 Comercio Global Logístico - Estado de Cuenta';
       titleCell.font = { size: 18, bold: true, color: { argb: 'FFFFFF' } };
@@ -359,12 +359,12 @@ export default function Cartera() {
       titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
       ws.getRow(1).height = 30;
       
-      ws.mergeCells('A2:G2');
+      ws.mergeCells('A2:I2');
       ws.getCell('A2').value = data.cliente.nombre;
       ws.getCell('A2').font = { size: 14, bold: true, color: { argb: primaryColor } };
       ws.getCell('A2').alignment = { horizontal: 'center' };
       
-      ws.mergeCells('A3:G3');
+      ws.mergeCells('A3:I3');
       ws.getCell('A3').value = `Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}`;
       ws.getCell('A3').font = { size: 10, italic: true, color: { argb: '666666' } };
       ws.getCell('A3').alignment = { horizontal: 'center' };
@@ -376,13 +376,15 @@ export default function Cartera() {
       ws.getColumn(5).width = 14;
       ws.getColumn(6).width = 16;
       ws.getColumn(7).width = 14;
+      ws.getColumn(8).width = 16;
+      ws.getColumn(9).width = 16;
       
       let row = 5;
       
       ws.getCell(`A${row}`).value = 'Información del Cliente';
       ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
-      ws.mergeCells(`A${row}:G${row}`);
+      ws.mergeCells(`A${row}:I${row}`);
       ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
       row++;
       
@@ -399,7 +401,7 @@ export default function Cartera() {
         ws.getCell(`C${row}`).font = { bold: true };
         ws.getCell(`D${row}`).value = val2;
         ws.mergeCells(`B${row}:B${row}`);
-        ws.mergeCells(`D${row}:G${row}`);
+        ws.mergeCells(`D${row}:I${row}`);
         row++;
       }
       
@@ -408,7 +410,7 @@ export default function Cartera() {
       ws.getCell(`A${row}`).value = 'Resumen de Cuenta';
       ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondaryColor } };
-      ws.mergeCells(`A${row}:G${row}`);
+      ws.mergeCells(`A${row}:I${row}`);
       ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
       row++;
       
@@ -427,7 +429,7 @@ export default function Cartera() {
         ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: kpi.color } };
         ws.getCell(`B${row}`).numFmt = '$#,##0.00';
         ws.getCell(`B${row}`).alignment = { horizontal: 'right' };
-        ws.mergeCells(`B${row}:G${row}`);
+        ws.mergeCells(`B${row}:I${row}`);
         row++;
       }
       
@@ -436,11 +438,13 @@ export default function Cartera() {
       ws.getCell(`A${row}`).value = 'Movimientos';
       ws.getCell(`A${row}`).font = { size: 12, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
-      ws.mergeCells(`A${row}:G${row}`);
+      ws.mergeCells(`A${row}:I${row}`);
       ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
       row++;
       
-      const headers = ['Fecha', 'Tipo', 'Descripción', 'Monto', 'Método', 'Referencia', 'Saldo'];
+      // Cada venta se abre en sus líneas de producto, para que el cliente vea
+      // exactamente QUÉ compró y no solo cuánto debe.
+      const headers = ['Fecha', 'Tipo', 'Descripción', 'Referencia', 'Calidad', 'Cantidad', 'Precio unit.', 'Monto', 'Saldo'];
       headers.forEach((h, i) => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${row}`);
         cell.value = h;
@@ -449,37 +453,77 @@ export default function Cartera() {
         cell.alignment = { horizontal: 'center' };
       });
       row++;
-      
+
       for (const m of data.movimientos) {
         const esVenta = m.tipo === 'VENTA';
         ws.getCell(`A${row}`).value = new Date(m.fecha);
         ws.getCell(`A${row}`).numFmt = 'dd/mm/yyyy';
-        
+
         ws.getCell(`B${row}`).value = m.tipo;
         ws.getCell(`B${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
-        
-        ws.getCell(`C${row}`).value = m.descripcion;
-        
-        ws.getCell(`D${row}`).value = parseFloat(m.monto);
-        ws.getCell(`D${row}`).numFmt = '$#,##0.00';
-        ws.getCell(`D${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
-        ws.getCell(`D${row}`).alignment = { horizontal: 'right' };
-        
-        ws.getCell(`E${row}`).value = m.metodo_pago || '-';
-        ws.getCell(`F${row}`).value = m.referencia || '-';
-        
-        ws.getCell(`G${row}`).value = parseFloat(m.saldo);
-        ws.getCell(`G${row}`).numFmt = '$#,##0.00';
-        ws.getCell(`G${row}`).font = { bold: true };
-        ws.getCell(`G${row}`).alignment = { horizontal: 'right' };
-        
+
+        ws.getCell(`C${row}`).value = esVenta
+          ? m.descripcion.split(' - ')[0]                       // solo "Venta #1a2b3c4d"
+          : `${m.descripcion}${m.metodo_pago ? ` · ${m.metodo_pago}` : ''}${m.referencia ? ` · ${m.referencia}` : ''}`;
+
+        ws.getCell(`H${row}`).value = parseFloat(m.monto);
+        ws.getCell(`H${row}`).numFmt = '$#,##0';
+        ws.getCell(`H${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
+        ws.getCell(`H${row}`).alignment = { horizontal: 'right' };
+
+        ws.getCell(`I${row}`).value = parseFloat(m.saldo);
+        ws.getCell(`I${row}`).numFmt = '$#,##0';
+        ws.getCell(`I${row}`).font = { bold: true };
+        ws.getCell(`I${row}`).alignment = { horizontal: 'right' };
+
+        // Fondo suave en la fila de la venta para separarla de su detalle
+        if (esVenta) {
+          for (let c = 0; c < 9; c++) {
+            const cell = ws.getCell(`${String.fromCharCode(65 + c)}${row}`);
+            if (!cell.fill || cell.fill.type !== 'pattern') {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'eef0fe' } };
+            }
+          }
+        }
         row++;
+
+        // Detalle: una línea por referencia + calidad con su cantidad
+        for (const d of (m.detalles || [])) {
+          ws.getCell(`C${row}`).value = '↳';
+          ws.getCell(`C${row}`).alignment = { horizontal: 'right' };
+          ws.getCell(`C${row}`).font = { color: { argb: '94a3b8' } };
+
+          ws.getCell(`D${row}`).value = d.referencia || '—';
+          ws.getCell(`E${row}`).value = d.calidad || '—';
+
+          ws.getCell(`F${row}`).value = d.cantidad;
+          ws.getCell(`F${row}`).alignment = { horizontal: 'center' };
+          ws.getCell(`F${row}`).font = { bold: true };
+
+          ws.getCell(`G${row}`).value = d.precio_unitario;
+          ws.getCell(`G${row}`).numFmt = '$#,##0';
+          ws.getCell(`G${row}`).alignment = { horizontal: 'right' };
+
+          ws.getCell(`H${row}`).value = d.subtotal;
+          ws.getCell(`H${row}`).numFmt = '$#,##0';
+          ws.getCell(`H${row}`).alignment = { horizontal: 'right' };
+          ws.getCell(`H${row}`).font = { color: { argb: '64748b' } };
+
+          for (let c = 0; c < 9; c++) {
+            ws.getCell(`${String.fromCharCode(65 + c)}${row}`).font = {
+              size: 10,
+              color: { argb: '475569' },
+              bold: c === 5,
+            };
+          }
+          row++;
+        }
       }
       
       row++;
       ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-MX')}`;
       ws.getCell(`A${row}`).font = { size: 9, italic: true, color: { argb: '999999' } };
-      ws.mergeCells(`A${row}:G${row}`);
+      ws.mergeCells(`A${row}:I${row}`);
       
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -609,7 +653,7 @@ export default function Cartera() {
         filename:     `Cartera_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
         image:        { type: 'jpeg', quality: 0.98 },
         html2canvas:  { scale: 2 },
-        jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' }
+        jsPDF:        { unit: 'mm', format: 'letter', orientation: 'landscape' }
       };
       
       const element = document.createElement('div');
