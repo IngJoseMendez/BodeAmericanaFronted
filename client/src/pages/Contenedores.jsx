@@ -13,6 +13,7 @@ import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../componen
 import { contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
+import { parseMonto } from '../lib/money';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
@@ -700,8 +701,11 @@ export default function Contenedores() {
     // Hoja índice / resumen
     const wsR = wb.addWorksheet('Resumen');
     wsR.properties.tabColor = { argb: blue };
-    wsR.columns = [{ width: 32 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }];
-    wsR.mergeCells('A1:E1');
+    wsR.columns = [
+      { width: 32 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
+      { width: 8 }, { width: 16 }, { width: 16 }, { width: 18 },
+    ];
+    wsR.mergeCells('A1:I1');
     const tCell = wsR.getCell('A1');
     tCell.value = `RECLAMACIÓN — Contenedor ${full.numero}`;
     tCell.font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
@@ -709,13 +713,13 @@ export default function Contenedores() {
     tCell.alignment = { horizontal: 'center', vertical: 'middle' };
     wsR.getRow(1).height = 28;
 
-    wsR.mergeCells('A2:E2');
+    wsR.mergeCells('A2:I2');
     wsR.getCell('A2').value = `Generado: ${new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}`;
     wsR.getCell('A2').font = { size: 10, italic: true, color: { argb: '888888' } };
     wsR.getCell('A2').alignment = { horizontal: 'center' };
 
     // Cabecera de tabla resumen por proveedor
-    const headers = ['Proveedor', 'Enviado', 'Recibido', 'Final', 'Diferencia'];
+    const headers = ['Proveedor', 'Enviado', 'Recibido', 'Final', 'Dif. unid.', 'Moneda', 'Valor pedido', 'Valor recibido', 'Diferencia $'];
     headers.forEach((h, i) => {
       const c = wsR.getCell(`${String.fromCharCode(65 + i)}4`);
       c.value = h;
@@ -740,7 +744,19 @@ export default function Contenedores() {
       wsR.getCell(`D${rRow}`).font = { color: { argb: success }, bold: true };
       wsR.getCell(`E${rRow}`).value = diff;
       wsR.getCell(`E${rRow}`).font = { bold: true, color: { argb: diff < 0 ? error : diff > 0 ? warning : '888888' } };
-      ['B','C','D','E'].forEach(col => wsR.getCell(`${col}${rRow}`).alignment = { horizontal: 'center' });
+
+      const valPed = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+      const valRec = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+      const difVal = valRec - valPed;
+      wsR.getCell(`F${rRow}`).value = p.moneda || 'USD';
+      wsR.getCell(`G${rRow}`).value = valPed;
+      wsR.getCell(`H${rRow}`).value = valRec;
+      wsR.getCell(`I${rRow}`).value = difVal;
+      wsR.getCell(`I${rRow}`).font = { bold: true, color: { argb: difVal < 0 ? error : difVal > 0 ? warning : '888888' } };
+      ['G','H','I'].forEach(col => { wsR.getCell(`${col}${rRow}`).numFmt = '#,##0.00'; });
+
+      ['B','C','D','E','F'].forEach(col => wsR.getCell(`${col}${rRow}`).alignment = { horizontal: 'center' });
+      ['G','H','I'].forEach(col => wsR.getCell(`${col}${rRow}`).alignment = { horizontal: 'right' });
       wsR.getRow(rRow).height = 18;
       rRow++;
     });
@@ -753,28 +769,78 @@ export default function Contenedores() {
     const totalEnv = full.proveedores_mercancia.reduce((s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0), 0);
     const totalRec = full.proveedores_mercancia.reduce((s, p) => s + p.detalles.reduce((s2, d) => s2 + (parseInt(d.cantidad_recibida) || 0), 0), 0);
     const totalFin = parseInt(full.total_pacas_recibidas) || 0;
+    // Los valores se totalizan por moneda: sumar USD con COP no significaría nada.
+    const totalPorMoneda = {};
+    full.proveedores_mercancia.forEach(p => {
+      const m = p.moneda || 'USD';
+      const vp = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+      const vr = p.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+      totalPorMoneda[m] = totalPorMoneda[m] || { ped: 0, rec: 0 };
+      totalPorMoneda[m].ped += vp;
+      totalPorMoneda[m].rec += vr;
+    });
+    const monedas = Object.keys(totalPorMoneda);
+
     [[`B${rRow}`, totalEnv], [`C${rRow}`, totalRec], [`D${rRow}`, totalFin], [`E${rRow}`, totalRec - totalEnv]].forEach(([cell, val]) => {
       wsR.getCell(cell).value = val;
       wsR.getCell(cell).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
       wsR.getCell(cell).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
       wsR.getCell(cell).alignment = { horizontal: 'center' };
     });
+    ['F','G','H','I'].forEach(c => {
+      wsR.getCell(`${c}${rRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    });
+    if (monedas.length === 1) {
+      const m = monedas[0];
+      const t = totalPorMoneda[m];
+      wsR.getCell(`F${rRow}`).value = m;
+      wsR.getCell(`G${rRow}`).value = t.ped;
+      wsR.getCell(`H${rRow}`).value = t.rec;
+      wsR.getCell(`I${rRow}`).value = t.rec - t.ped;
+      ['F','G','H','I'].forEach(c => {
+        wsR.getCell(`${c}${rRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+        wsR.getCell(`${c}${rRow}`).alignment = { horizontal: c === 'F' ? 'center' : 'right' };
+      });
+      ['G','H','I'].forEach(c => { wsR.getCell(`${c}${rRow}`).numFmt = '#,##0.00'; });
+    }
     wsR.getRow(rRow).height = 22;
+
+    // Total a reclamar, desglosado por moneda.
+    rRow += 2;
+    wsR.getCell(`A${rRow}`).value = 'TOTAL A RECLAMAR';
+    wsR.getCell(`A${rRow}`).font = { bold: true, size: 12 };
+    rRow++;
+    monedas.forEach(m => {
+      const t = totalPorMoneda[m];
+      const rec = t.rec - t.ped;
+      wsR.getCell(`A${rRow}`).value = rec < 0
+        ? `Faltante por cobrar al proveedor (${m})`
+        : rec > 0 ? `Excedente recibido (${m})` : `Sin diferencia (${m})`;
+      wsR.getCell(`A${rRow}`).font = { bold: true, size: 11 };
+      wsR.getCell(`I${rRow}`).value = Math.abs(rec);
+      wsR.getCell(`I${rRow}`).numFmt = `#,##0.00 "${m}"`;
+      wsR.getCell(`I${rRow}`).font = { bold: true, size: 12, color: { argb: rec < 0 ? error : rec > 0 ? warning : success } };
+      wsR.getCell(`I${rRow}`).alignment = { horizontal: 'right' };
+      wsR.getRow(rRow).height = 20;
+      rRow++;
+    });
 
     // Una hoja por proveedor con el detalle
     full.proveedores_mercancia.forEach((prov, pi) => {
       const sheetName = (prov.proveedor_nombre || `Proveedor ${pi+1}`).substring(0, 30).replace(/[*?:/\\\[\]]/g, ' ');
       const ws = wb.addWorksheet(sheetName);
       ws.properties.tabColor = { argb: blue };
+      const moneda = prov.moneda || 'USD';
       ws.columns = [
         { width: 14 }, { width: 18 }, { width: 18 }, { width: 14 }, // facturado
         { width: 8 },  // pedido
         { width: 18 }, { width: 18 }, { width: 14 }, // recibido
         { width: 10 }, { width: 10 }, { width: 10 }, // recib/final/dif
+        { width: 13 }, { width: 15 }, { width: 15 }, { width: 16 }, // dinero
         { width: 30 }, // notas
       ];
 
-      ws.mergeCells('A1:L1');
+      ws.mergeCells('A1:P1');
       const t = ws.getCell('A1');
       t.value = `Reclamación — ${prov.proveedor_nombre}`;
       t.font = { size: 13, bold: true, color: { argb: 'FFFFFF' } };
@@ -804,13 +870,21 @@ export default function Contenedores() {
       g3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: success }};
       g3.alignment = { horizontal: 'center' };
 
-      ws.getCell('L3').value = 'OBSERVACIONES';
-      ws.getCell('L3').font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
-      ws.getCell('L3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: warning } };
-      ws.getCell('L3').alignment = { horizontal: 'center' };
+      // Bloque de dinero: es lo que realmente se reclama al proveedor.
+      ws.mergeCells('L3:O3');
+      const g4 = ws.getCell('L3');
+      g4.value = `VALOR RECLAMADO (${moneda})`;
+      g4.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      g4.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: error } };
+      g4.alignment = { horizontal: 'center' };
+
+      ws.getCell('P3').value = 'OBSERVACIONES';
+      ws.getCell('P3').font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+      ws.getCell('P3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: warning } };
+      ws.getCell('P3').alignment = { horizontal: 'center' };
       ws.getRow(3).height = 18;
 
-      const cols = ['Categoría','Clasificación','Referencia','Calidad','Cant.','Clasificación','Referencia','Calidad','Recibida','Final','Dif.','Notas'];
+      const cols = ['Categoría','Clasificación','Referencia','Calidad','Cant.','Clasificación','Referencia','Calidad','Recibida','Final','Dif.','Costo unit.','Valor pedido','Valor recibido','Diferencia $','Notas'];
       cols.forEach((h, i) => {
         const c = ws.getCell(`${String.fromCharCode(65 + i)}4`);
         c.value = h;
@@ -851,19 +925,39 @@ export default function Contenedores() {
         if (diff !== 0) {
           ws.getCell(`K${row}`).font = { bold: true, color: { argb: diff < 0 ? error : warning } };
         }
-        ws.getCell(`L${row}`).value = det.notas_revision || '';
+
+        // Dinero: lo que se reclama. Negativo = llegó de menos y el proveedor debe.
+        const costoUnit     = parseFloat(det.costo_unitario) || 0;
+        const valorPedido   = enviado * costoUnit;
+        const valorRecibido = recibido * costoUnit;
+        const difDinero     = valorRecibido - valorPedido;
+
+        ws.getCell(`L${row}`).value = costoUnit;
+        ws.getCell(`M${row}`).value = valorPedido;
+        ws.getCell(`N${row}`).value = valorRecibido;
+        ws.getCell(`N${row}`).font = { color: { argb: blue } };
+        ws.getCell(`O${row}`).value = difDinero;
+        if (difDinero !== 0) {
+          ws.getCell(`O${row}`).font = { bold: true, color: { argb: difDinero < 0 ? error : warning } };
+        }
+        ['L','M','N','O'].forEach(c => { ws.getCell(`${c}${row}`).numFmt = '#,##0.00'; });
+
+        ws.getCell(`P${row}`).value = det.notas_revision || '';
 
         // Highlight row if discrepancy
         if (diff !== 0 || cambioTipo) {
-          for (let c = 0; c < 12; c++) {
+          for (let c = 0; c < 16; c++) {
             const cell = ws.getCell(`${String.fromCharCode(65 + c)}${row}`);
             if (!cell.fill || cell.fill.fgColor?.argb !== warning) {
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } };
             }
           }
         }
-        ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c => {
-          ws.getCell(`${c}${row}`).alignment = { horizontal: ['E','I','J','K'].includes(c) ? 'center' : 'left', vertical: 'middle', wrapText: true };
+        ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P'].forEach(c => {
+          ws.getCell(`${c}${row}`).alignment = {
+            horizontal: ['E','I','J','K'].includes(c) ? 'center' : ['L','M','N','O'].includes(c) ? 'right' : 'left',
+            vertical: 'middle', wrapText: true,
+          };
         });
         ws.getRow(row).height = 22;
         row++;
@@ -879,16 +973,41 @@ export default function Contenedores() {
       const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
       const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
       const provFin = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_final) || 0), 0);
+      const provValPed = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+      const provValRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
       ws.getCell(`E${row}`).value = provEnv;
       ws.getCell(`I${row}`).value = provRec;
       ws.getCell(`J${row}`).value = provFin;
       ws.getCell(`K${row}`).value = provRec - provEnv;
-      ['E','I','J','K'].forEach(c => {
+      ws.getCell(`M${row}`).value = provValPed;
+      ws.getCell(`N${row}`).value = provValRec;
+      ws.getCell(`O${row}`).value = provValRec - provValPed;
+      ['E','I','J','K','M','N','O'].forEach(c => {
         ws.getCell(`${c}${row}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
         ws.getCell(`${c}${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
-        ws.getCell(`${c}${row}`).alignment = { horizontal: 'center' };
+        ws.getCell(`${c}${row}`).alignment = { horizontal: ['M','N','O'].includes(c) ? 'right' : 'center' };
       });
+      ['M','N','O'].forEach(c => { ws.getCell(`${c}${row}`).numFmt = '#,##0.00'; });
       ws.getRow(row).height = 22;
+
+      // Cierre: cuánto se le reclama a este proveedor, en su moneda.
+      const reclamo = provValRec - provValPed;
+      row += 2;
+      ws.mergeCells(`A${row}:N${row}`);
+      ws.getCell(`A${row}`).value = reclamo < 0
+        ? `VALOR A RECLAMAR A ${(prov.proveedor_nombre || '').toUpperCase()} (llegó de menos)`
+        : reclamo > 0
+          ? `EXCEDENTE RECIBIDO DE ${(prov.proveedor_nombre || '').toUpperCase()} (llegó de más)`
+          : 'SIN DIFERENCIAS EN VALOR';
+      ws.getCell(`A${row}`).font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+      ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: reclamo < 0 ? error : reclamo > 0 ? warning : success } };
+      ws.getCell(`A${row}`).alignment = { horizontal: 'right', vertical: 'middle' };
+      ws.getCell(`O${row}`).value = Math.abs(reclamo);
+      ws.getCell(`O${row}`).numFmt = `#,##0.00 "${moneda}"`;
+      ws.getCell(`O${row}`).font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+      ws.getCell(`O${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: reclamo < 0 ? error : reclamo > 0 ? warning : success } };
+      ws.getCell(`O${row}`).alignment = { horizontal: 'right' };
+      ws.getRow(row).height = 26;
     });
 
     const buffer = await wb.xlsx.writeBuffer();
@@ -1260,13 +1379,30 @@ export default function Contenedores() {
       };
     });
 
+    // Los servicios (flete, aduana, bodegaje…) también se pueden ir cargando
+    // sueltos: cada uno genera su propia cuenta por pagar.
+    const avanceServicios = servicios
+      .filter(sv => sv.tipo_servicio?.trim() || sv.proveedor_nombre?.trim() || sv.factura_estimada)
+      .map(sv => {
+        const real = parseFloat(sv.costo) || 0;
+        const estimado = (parseInt(sv.cantidad_estimada) || 0) * (parseFloat(sv.valor_unidad_estimado) || 0)
+          || (parseFloat(sv.factura_estimada) || 0);
+        return {
+          nombre: sv.tipo_servicio?.trim() || sv.proveedor_nombre?.trim() || 'Servicio',
+          proveedor: sv.proveedor_nombre?.trim() || '',
+          real, estimado,
+          completo: real > 0,
+        };
+      });
+
     const faltanUnidades = totalPacas > 0 ? totalPacas - sumDetalles : 0;
     const provsCompletos = avanceProveedores.filter(a => a.completo).length;
+    const svCompletos = avanceServicios.filter(s => s.completo).length;
 
     return {
       proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal,
       costoUnitario, sumDetalles, cantidadValida, esEstimado, totalPacas,
-      avanceProveedores, faltanUnidades, provsCompletos,
+      avanceProveedores, avanceServicios, faltanUnidades, provsCompletos, svCompletos,
     };
   };
 
@@ -1599,6 +1735,34 @@ export default function Contenedores() {
     } catch (err) { addToast(err.message, 'error'); }
   };
 
+  // Producto que llegó en el contenedor pero no estaba en la factura original.
+  // Se registra dentro del proveedor que lo mandó, con su propio costo unitario.
+  const addRevisionItem = (proveedorNombre) => {
+    setRevisionRows(prev => ([
+      ...prev,
+      {
+        detalle_id: null,
+        _key: `nuevo-${prev.length}-${proveedorNombre}`,
+        es_nuevo: true,
+        proveedor_nombre: proveedorNombre,
+        categoria: '',
+        clasificacion: '',
+        referencia: '',
+        calidad: '',
+        cantidad_enviada: 0,          // no venía facturado
+        costo_unitario: '',
+        cantidad_recibida: '',
+        cantidad_final: '',
+        clasificacion_recibida: '',
+        referencia_recibida: '',
+        calidad_recibida: '',
+        notas_revision: '',
+      },
+    ]));
+  };
+
+  const removeRevisionItem = (idx) => setRevisionRows(prev => prev.filter((_, i) => i !== idx));
+
   const updateRevisionRow = (idx, field, val) => {
     setRevisionRows(prev => {
       const next = [...prev];
@@ -1614,6 +1778,17 @@ export default function Contenedores() {
     for (const r of revisionRows) {
       if (parseInt(r.cantidad_final) < 0) {
         addToast('La cantidad final no puede ser negativa', 'error');
+        return;
+      }
+    }
+    // Los items agregados a mano necesitan identificar el producto y cuánto llegó.
+    for (const r of revisionRows.filter(x => x.es_nuevo)) {
+      if (!r.clasificacion?.trim() || !r.referencia?.trim()) {
+        addToast('En los productos agregados debes indicar clasificación y referencia', 'error');
+        return;
+      }
+      if (!(parseInt(r.cantidad_recibida) > 0)) {
+        addToast(`Indica cuántas unidades llegaron de "${r.referencia}"`, 'error');
         return;
       }
     }
@@ -1634,6 +1809,18 @@ export default function Contenedores() {
         referencia_recibida: r.referencia_recibida.trim() || null,
         calidad_recibida: r.calidad_recibida.trim() || null,
         notas_revision: r.notas_revision.trim() || null,
+        // Sin detalle_id, el backend debe CREAR la línea: llegó algo que no
+        // estaba facturado, así que se manda el producto y su costo.
+        ...(r.es_nuevo ? {
+          nuevo: true,
+          proveedor_nombre: r.proveedor_nombre,
+          categoria: r.categoria?.trim() || null,
+          clasificacion: r.clasificacion.trim(),
+          referencia: r.referencia.trim(),
+          calidad: r.calidad?.trim() || null,
+          cantidad: 0,
+          costo_unitario: parseMonto(r.costo_unitario),
+        } : {}),
       }));
       const contenedorActualizado = await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
       addToast('Revisión guardada — el contenedor está listo para finalizar', 'success');
@@ -1673,11 +1860,19 @@ export default function Contenedores() {
       }))
       .filter(p => (p.estimada > 0 ? p.registrada !== p.estimada : p.registrada === 0));
 
+    // Servicios sin costo real: no bloquean, pero abaratan el costo por unidad
+    // de forma engañosa si se finaliza sin cargarlos.
+    const serviciosPendientes = (cont.servicios || [])
+      .filter(sv => !(parseFloat(sv.costo) > 0))
+      .map(sv => sv.tipo_servicio || sv.proveedor_nombre || 'Servicio sin nombre');
+
     return {
       totalDeclarado, sumLineas,
       faltan: totalDeclarado - sumLineas,
       cuadra: totalDeclarado === 0 || sumLineas === totalDeclarado,
       pendientes,
+      serviciosPendientes,
+      todoListo: (totalDeclarado === 0 || sumLineas === totalDeclarado) && serviciosPendientes.length === 0,
     };
   };
 
@@ -1691,10 +1886,17 @@ export default function Contenedores() {
 
     // No se bloquea, pero no puede pasar inadvertido: es irreversible.
     const av = avanceFinalizacion(selectedContenedor);
-    if (av && !av.cuadra) {
+    if (av && !av.todoListo) {
+      const partes = [];
+      if (!av.cuadra) {
+        partes.push(`Hay ${av.sumLineas} unidades distribuidas de las ${av.totalDeclarado} declaradas (${av.faltan > 0 ? `faltan ${av.faltan}` : `sobran ${Math.abs(av.faltan)}`}). El costo por unidad se repartirá entre ${av.totalDeclarado} unidades y solo entrarán al inventario las distribuidas.`);
+      }
+      if (av.serviciosPendientes.length) {
+        partes.push(`Sin costo real: ${av.serviciosPendientes.join(', ')}. El costo por unidad quedará más bajo de lo real.`);
+      }
       const ok = await confirm({
-        title: 'El contenedor está incompleto',
-        message: `Hay ${av.sumLineas} unidades distribuidas de las ${av.totalDeclarado} declaradas (${av.faltan > 0 ? `faltan ${av.faltan}` : `sobran ${Math.abs(av.faltan)}`}).\n\nSi continúas, el costo por unidad se repartirá entre ${av.totalDeclarado} unidades y solo entrarán al inventario las distribuidas. Esta acción es irreversible.\n\n¿Finalizar de todas formas?`,
+        title: 'Falta información por completar',
+        message: `${partes.join('\n\n')}\n\nEsta acción es irreversible. ¿Finalizar de todas formas?`,
         confirmText: 'Finalizar así',
         cancelText: 'Volver y completar',
         variant: 'danger',
@@ -2532,10 +2734,40 @@ export default function Contenedores() {
                       ))}
                     </div>
 
+                    {resumen.avanceServicios.length > 0 && (
+                      <>
+                        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border/50 mb-1.5">
+                          <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Servicios</p>
+                          <span className="text-[11px] font-semibold text-muted tabular-nums">
+                            {resumen.svCompletos}/{resumen.avanceServicios.length}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {resumen.avanceServicios.map((s, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                              <span className={`truncate flex items-center gap-1.5 ${s.completo ? 'text-success font-medium' : 'text-muted'}`}>
+                                {s.completo
+                                  ? <CheckCircle size={12} className="flex-shrink-0" />
+                                  : <span className="w-2 h-2 rounded-full bg-border flex-shrink-0" />}
+                                {s.nombre}{s.proveedor && <span className="text-muted/60"> · {s.proveedor}</span>}
+                              </span>
+                              <span className="font-mono tabular-nums flex-shrink-0 text-muted">
+                                {s.completo
+                                  ? formatCurrency(s.real)
+                                  : s.estimado > 0
+                                    ? <span className="text-warning">est. {formatCurrency(s.estimado)}</span>
+                                    : <span className="text-warning">pendiente</span>}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
                     <p className="mt-3 pt-2.5 border-t border-border/50 text-[11px] text-muted leading-relaxed">
-                      {resumen.cantidadValida
+                      {resumen.cantidadValida && resumen.svCompletos === resumen.avanceServicios.length
                         ? 'Todo cuadra. El contenedor está listo para revisión.'
-                        : <>Puedes <b className="text-primary">guardar así e ir completando</b> un proveedor por vez. Solo se exige que cuadre al <b className="text-primary">finalizar</b>.</>}
+                        : <>Puedes <b className="text-primary">guardar así e ir completando</b> un proveedor o servicio por vez. Cada vez que guardas se <b className="text-primary">actualizan las Cuentas por Pagar</b>. Solo se exige que cuadre al <b className="text-primary">finalizar</b>.</>}
                     </p>
                   </div>
                 )}
@@ -3004,18 +3236,24 @@ export default function Contenedores() {
                 <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
                   <div className="flex items-center justify-center gap-2 mb-1">
                     <DollarSign size={16} className="text-muted" />
-                    <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo unitario por unidad</p>
+                    <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo total del contenedor</p>
                   </div>
-                  <p className="text-4xl font-display font-bold text-primary">{formatCurrency(costoFinal)}</p>
-                  {recalculado && (
-                    <p className="text-[11px] text-blue-600 mt-1 font-medium">
-                      Recalculado para {totalFinal} unidades (originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas})
-                    </p>
-                  )}
-                  <p className="text-xs text-muted mt-1.5">Este valor se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
-                  <div className="mt-3 pt-3 border-t border-primary/10 flex items-center justify-center gap-2">
-                    <span className="text-xs text-muted uppercase tracking-wider">Costo total del contenedor</span>
-                    <span className="text-lg font-display font-bold text-secondary tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</span>
+                  <p className="text-4xl font-display font-bold text-primary tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</p>
+                  <p className="text-xs text-muted mt-1">
+                    {totalFinal?.toLocaleString('es-CO')} unidades · mercancía + servicios
+                  </p>
+
+                  <div className="mt-3 pt-3 border-t border-primary/10">
+                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                      <span className="text-xs text-muted uppercase tracking-wider">Costo por unidad</span>
+                      <span className="text-lg font-display font-bold text-secondary tabular-nums">{formatCurrency(costoFinal)}</span>
+                    </div>
+                    {recalculado && (
+                      <p className="text-[11px] text-blue-600 mt-1 font-medium">
+                        Recalculado para {totalFinal} unidades (originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas})
+                      </p>
+                    )}
+                    <p className="text-[11px] text-muted mt-1">Se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
                   </div>
                 </div>
               );
@@ -3024,20 +3262,29 @@ export default function Contenedores() {
                 este es el punto donde hay que ver si quedó algo sin registrar. */}
             {(() => {
               const a = avanceFinalizacion(selectedContenedor);
-              if (!a || a.cuadra) return null;
+              if (!a || a.todoListo) return null;
               return (
                 <div className="rounded-xl border-2 border-warning/40 bg-warning/10 px-4 py-3.5">
                   <p className="text-sm font-bold text-warning flex items-center gap-2 mb-2">
                     <AlertTriangle size={16} className="flex-shrink-0" />
-                    El contenedor está incompleto
+                    Falta información por completar
                   </p>
-                  <p className="text-sm text-primary">
-                    Tienes <b>{a.sumLineas.toLocaleString('es-CO')}</b> unidades distribuidas,
-                    pero el contenedor declara <b>{a.totalDeclarado.toLocaleString('es-CO')}</b>
-                    {a.faltan > 0
-                      ? <> — <b className="text-warning">faltan {a.faltan.toLocaleString('es-CO')}</b>.</>
-                      : <> — hay <b className="text-error">{Math.abs(a.faltan).toLocaleString('es-CO')} de más</b>.</>}
-                  </p>
+                  {!a.cuadra && (
+                    <p className="text-sm text-primary">
+                      Tienes <b>{a.sumLineas.toLocaleString('es-CO')}</b> unidades distribuidas,
+                      pero el contenedor declara <b>{a.totalDeclarado.toLocaleString('es-CO')}</b>
+                      {a.faltan > 0
+                        ? <> — <b className="text-warning">faltan {a.faltan.toLocaleString('es-CO')}</b>.</>
+                        : <> — hay <b className="text-error">{Math.abs(a.faltan).toLocaleString('es-CO')} de más</b>.</>}
+                    </p>
+                  )}
+                  {a.serviciosPendientes.length > 0 && (
+                    <p className="text-sm text-primary mt-1.5">
+                      Hay <b>{a.serviciosPendientes.length} servicio{a.serviciosPendientes.length !== 1 ? 's' : ''} sin costo real</b>:{' '}
+                      <span className="text-muted">{a.serviciosPendientes.join(', ')}</span>.
+                      Si finalizas así, el costo por unidad saldrá <b className="text-warning">más bajo de lo real</b>.
+                    </p>
+                  )}
                   {a.pendientes.length > 0 && (
                     <ul className="mt-2 space-y-0.5">
                       {a.pendientes.map((p, i) => (
@@ -3216,21 +3463,54 @@ export default function Contenedores() {
                       const hayDiff = parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada);
                       const hayCambioTipo = row.clasificacion_recibida || row.referencia_recibida || row.calidad_recibida;
                       return (
-                      <div key={row.detalle_id} className={`border-l-4 ${hayDiff || hayCambioTipo ? 'border-l-warning' : 'border-l-secondary/40'} hover:border-l-secondary hover:bg-surface transition-all duration-150`}>
+                      <div key={row.detalle_id ?? row._key} className={`border-l-4 ${row.es_nuevo ? 'border-l-blue-500 bg-blue-50/30' : hayDiff || hayCambioTipo ? 'border-l-warning' : 'border-l-secondary/40'} hover:border-l-secondary hover:bg-surface transition-all duration-150`}>
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
-                          {/* Col 1: Enviado (read-only) */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="w-5 h-5 rounded-md bg-secondary/15 text-secondary text-[10px] font-bold flex items-center justify-center flex-shrink-0">{lineaIdx + 1}</span>
-                            {row.categoria && (
-                              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium capitalize">{row.categoria}</span>
-                            )}
-                            <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-semibold capitalize">{row.clasificacion}</span>
-                            <span className="text-xs text-muted capitalize">{row.referencia}</span>
-                            {row.calidad && <span className="text-xs text-muted/80 capitalize">/ {row.calidad}</span>}
-                            <span className="ml-auto text-xs font-bold font-mono text-primary bg-primary/5 px-2 py-0.5 rounded">×{row.cantidad_enviada}</span>
-                          </div>
+                          {/* Col 1: Enviado — solo lectura, salvo en los items agregados a mano */}
+                          {row.es_nuevo ? (
+                            <div className="flex items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
+                              <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
+                              <input list="rev-nuevo-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                                placeholder="Clasificación *" title="Clasificación del producto que llegó"
+                                value={row.clasificacion}
+                                onChange={e => updateRevisionRow(idx, 'clasificacion', e.target.value)} />
+                              <input list="rev-nuevo-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                                placeholder="Referencia *" title="Referencia del producto que llegó"
+                                value={row.referencia}
+                                onChange={e => updateRevisionRow(idx, 'referencia', e.target.value)} />
+                              <input list="rev-nuevo-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                                placeholder="Calidad" title="Calidad"
+                                value={row.calidad}
+                                onChange={e => updateRevisionRow(idx, 'calidad', e.target.value)} />
+                              <input type="text" inputMode="decimal" className={`${inpBase} text-xs w-24 flex-shrink-0 py-1.5 text-right`}
+                                placeholder="Costo u." title="Costo unitario de este producto"
+                                value={row.costo_unitario}
+                                onChange={e => updateRevisionRow(idx, 'costo_unitario', e.target.value)} />
+                              <button type="button" onClick={() => removeRevisionItem(idx)}
+                                title="Quitar este producto"
+                                className="p-1 text-muted hover:text-error flex-shrink-0">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="w-5 h-5 rounded-md bg-secondary/15 text-secondary text-[10px] font-bold flex items-center justify-center flex-shrink-0">{lineaIdx + 1}</span>
+                              {row.categoria && (
+                                <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium capitalize">{row.categoria}</span>
+                              )}
+                              <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-semibold capitalize">{row.clasificacion}</span>
+                              <span className="text-xs text-muted capitalize">{row.referencia}</span>
+                              {row.calidad && <span className="text-xs text-muted/80 capitalize">/ {row.calidad}</span>}
+                              <span className="ml-auto text-xs font-bold font-mono text-primary bg-primary/5 px-2 py-0.5 rounded">×{row.cantidad_enviada}</span>
+                            </div>
+                          )}
 
-                          {/* Col 2: Tipo recibido (inline, compacto) */}
+                          {/* Col 2: Tipo recibido — en los items extra no aplica:
+                              lo que se escribe a la izquierda ya es lo que llegó. */}
+                          {row.es_nuevo ? (
+                            <p className="text-[11px] text-blue-700 italic px-2">
+                              Producto que llegó sin estar facturado.
+                            </p>
+                          ) : (
                           <div className="flex items-center gap-1 bg-blue-50/40 border border-blue-100 rounded-lg p-1">
                             <p className="text-[9px] font-bold text-blue-700 uppercase lg:hidden mr-1">🔄 Tipo recibido:</p>
                             <input list={`rev-tipos-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
@@ -3258,6 +3538,7 @@ export default function Contenedores() {
                               {calidadesOpts.map(c => <option key={c} value={c} />)}
                             </datalist>
                           </div>
+                          )}
 
                           {/* Col 3: Cantidad recibida (input grande, compacto verticalmente) */}
                           <div className="flex items-center gap-2">
@@ -3282,11 +3563,24 @@ export default function Contenedores() {
                       </div>
                       );
                     })}
+
+                    {/* Producto que llegó de más y no estaba en la factura */}
+                    <div className="p-2 bg-surface/60">
+                      <button type="button" onClick={() => addRevisionItem(prov)}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-blue-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400 text-xs font-semibold transition-colors">
+                        <Plus size={13} /> Agregar producto que llegó y no estaba en la factura
+                      </button>
+                    </div>
                   </div>
                 </div>
                 );
               });
             })()}
+
+            {/* Sugerencias compartidas para los productos agregados a mano */}
+            <datalist id="rev-nuevo-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
+            <datalist id="rev-nuevo-refs">{categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
+            <datalist id="rev-nuevo-cals">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
             </div>
 
             {/* Resumen totales (compacto, sticky) */}
