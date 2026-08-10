@@ -10,7 +10,7 @@ import {
 import ExcelJS from 'exceljs';
 import { parseMonto, formatMoneda, MONEDAS } from '../lib/money';
 
-const formatCurrency = (value, moneda = 'COP') => formatMoneda(value, moneda, { decimales: 0 });
+const formatCurrency = (value, moneda = 'USD') => formatMoneda(value, moneda, { decimales: 0 });
 
 const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -20,19 +20,19 @@ const TODAY = new Date().toISOString().split('T')[0];
 // pagada por transferencia en pesos, por ejemplo). Se guarda lo que realmente salió
 // del banco —moneda y tasa— y además el equivalente en la moneda de la factura, que
 // es el valor que descuenta el saldo.
-const emptyInline = (monedaFactura = 'COP') => ({
+const emptyInline = (monedaFactura = 'USD') => ({
   monto: '', fecha: TODAY, metodo_pago: 'efectivo', cuenta_banco_id: '', notas: '',
   moneda: monedaFactura, monedaOtra: '', tasa_cambio: '',
 });
 
 const codigoMoneda = (f) =>
-  (f.moneda === 'OTRA' ? (f.monedaOtra || '').trim().toUpperCase() : f.moneda) || 'COP';
+  (f.moneda === 'OTRA' ? (f.monedaOtra || '').trim().toUpperCase() : f.moneda) || 'USD';
 
 // Cuánto descuenta el abono del saldo, expresado en la moneda de la factura.
 const equivalenteFactura = (f, monedaFactura) => {
   const monto = parseMonto(f.monto);
   if (!monto) return 0;
-  if (codigoMoneda(f) === String(monedaFactura || 'COP').toUpperCase()) return monto;
+  if (codigoMoneda(f) === String(monedaFactura || 'USD').toUpperCase()) return monto;
   const tasa = parseMonto(f.tasa_cambio);
   return tasa > 0 ? monto * tasa : 0;
 };
@@ -137,7 +137,7 @@ export default function CuentasPagar() {
   };
 
   const handleInlineAbono = async (cuenta) => {
-    const monedaFactura = String(cuenta.moneda || 'COP').toUpperCase();
+    const monedaFactura = String(cuenta.moneda || 'USD').toUpperCase();
     const monedaAbono = codigoMoneda(inlineForm);
     const montoAbono = parseMonto(inlineForm.monto);
 
@@ -481,7 +481,7 @@ export default function CuentasPagar() {
                                         onChange={(e) => setInlineForm({
                                           ...inlineForm,
                                           moneda: e.target.value,
-                                          tasa_cambio: e.target.value === (c.moneda || 'COP') ? '' : inlineForm.tasa_cambio,
+                                          tasa_cambio: e.target.value === (c.moneda || 'USD') ? '' : inlineForm.tasa_cambio,
                                         })}>
                                         {MONEDAS.map(m => <option key={m.value} value={m.value}>{m.value === 'OTRA' ? m.label : m.value}</option>)}
                                       </select>
@@ -494,7 +494,7 @@ export default function CuentasPagar() {
                                       )}
                                     </div>
 
-                                    {codigoMoneda(inlineForm) !== String(c.moneda || 'COP').toUpperCase() && (
+                                    {codigoMoneda(inlineForm) !== String(c.moneda || 'USD').toUpperCase() && (
                                       <div>
                                         <label className="block text-xs font-medium text-muted mb-1">
                                           Tasa <span className="text-muted/70 font-normal">1 {codigoMoneda(inlineForm)} = ? {c.moneda}</span>
@@ -549,7 +549,7 @@ export default function CuentasPagar() {
                                   {/* Qué se va a descontar del saldo, en la moneda de la factura */}
                                   {(() => {
                                     const eq = equivalenteFactura(inlineForm, c.moneda);
-                                    const distinta = codigoMoneda(inlineForm) !== String(c.moneda || 'COP').toUpperCase();
+                                    const distinta = codigoMoneda(inlineForm) !== String(c.moneda || 'USD').toUpperCase();
                                     if (!parseMonto(inlineForm.monto)) return null;
                                     return (
                                       <div className="mt-3 rounded-lg bg-primary/5 border border-border px-3 py-2 text-xs flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -652,7 +652,7 @@ export default function CuentasPagar() {
                       <div>
                         <p className="text-sm font-semibold text-primary">{formatCurrency(ab.monto, selectedCuenta.moneda)}</p>
                         {/* Si se pagó en otra moneda, se deja constancia de lo que salió del banco */}
-                        {ab.moneda_pago && String(ab.moneda_pago).toUpperCase() !== String(selectedCuenta.moneda || 'COP').toUpperCase() && (
+                        {ab.moneda_pago && String(ab.moneda_pago).toUpperCase() !== String(selectedCuenta.moneda || 'USD').toUpperCase() && (
                           <p className="text-xs text-secondary font-medium">
                             Pagado {formatMoneda(ab.monto_pagado, ab.moneda_pago)}
                             {ab.tasa_cambio ? ` · tasa ${Number(ab.tasa_cambio).toLocaleString('es-CO', { maximumFractionDigits: 6 })}` : ''}

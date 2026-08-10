@@ -20,7 +20,6 @@ function useDebounce(value, delay) {
 
 export default function Pacas() {
   const [pacas, setPacas] = useState([]);
-  const [resumen, setResumen] = useState([]);
   const [lotes, setLotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagina, setPagina] = useState(1);
@@ -29,6 +28,7 @@ export default function Pacas() {
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
@@ -130,14 +130,12 @@ export default function Pacas() {
       if (filtroTipo) params.tipo = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
 
-      const [data, resumenData] = await Promise.all([
-        pacasApi.getAll(params),
-        pacasApi.getResumen()
-      ]);
+      // Las tarjetas de resumen se calculan sobre el inventario agrupado, así que
+      // ya no hace falta pedir /pacas/resumen en cada carga.
+      const data = await pacasApi.getAll(params);
 
       setPacas(data.data || data);
       if (data.total_paginas) setTotalPaginas(data.total_paginas);
-      setResumen(resumenData || []);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
@@ -392,12 +390,13 @@ export default function Pacas() {
       wsAg.columns = [
         { header: 'Contenedor',     key: 'contenedor',     width: 18 },
         { header: 'Proveedor',      key: 'proveedor',      width: 18 },
+        { header: 'Categoría',      key: 'categoria',      width: 14 },
         { header: 'Clasificación',  key: 'clasificacion',  width: 18 },
         { header: 'Referencia',     key: 'referencia',     width: 14 },
         { header: 'Calidad',        key: 'calidad',        width: 12 },
         { header: 'Físico',         key: 'fisico',         width: 10 },
-        { header: 'Separadas',      key: 'separadas',      width: 11 },
         { header: 'Despachadas',    key: 'despachadas',    width: 12 },
+        { header: 'Separadas',      key: 'separadas',      width: 11 },
         { header: 'Disponibles',    key: 'disponibles',    width: 12 },
         { header: 'Costo Unit.',    key: 'costo_unit',     width: 14 },
         { header: 'Precio Unit.',   key: 'precio_unit',    width: 14 },
@@ -418,12 +417,13 @@ export default function Pacas() {
         const r = wsAg.addRow({
           contenedor:    row.contenedor,
           proveedor:     row.proveedor_nombre || '',
+          categoria:     row.categoria || '',
           clasificacion: row.clasificacion,
           referencia:    row.referencia,
           calidad:       row.calidad || '',
           fisico:        parseInt(row.fisico) || 0,
-          separadas:     parseInt(row.separadas) || 0,
           despachadas:   parseInt(row.despachadas) || 0,
+          separadas:     parseInt(row.separadas) || 0,
           disponibles:   parseInt(row.disponibles) || 0,
           costo_unit:    parseFloat(row.costo_unitario) || 0,
           precio_unit:   parseFloat(row.precio_unitario) || 0,
@@ -606,40 +606,82 @@ export default function Pacas() {
     setTiposExpandidos(prev => ({ ...prev, [tipo]: !prev[tipo] }));
   };
 
+  // Las tarjetas de arriba resumen por CATEGORÍA. Se calculan sobre el inventario
+  // agrupado —que es lo mismo que muestra la tabla— y no sobre /pacas/resumen,
+  // que viene paginado y agrupa por clasificación.
+  const resumenCategorias = useMemo(() => {
+    const acc = {};
+    for (const row of inventarioAgrupado) {
+      const key = (row.categoria || '').trim() || 'Sin categoría';
+      if (!acc[key]) acc[key] = { categoria: key, fisico: 0, disponibles: 0, separadas: 0, despachadas: 0 };
+      acc[key].fisico      += parseInt(row.fisico) || 0;
+      acc[key].disponibles += parseInt(row.disponibles) || 0;
+      acc[key].separadas   += parseInt(row.separadas) || 0;
+      acc[key].despachadas += parseInt(row.despachadas) || 0;
+    }
+    return Object.values(acc).sort((a, b) => b.fisico - a.fisico);
+  }, [inventarioAgrupado]);
+
+  // Filtro por categoría al pulsar una tarjeta (se resuelve en el cliente porque
+  // el endpoint de inventario no recibe categoría).
+  const filasInventario = filtroCategoria
+    ? inventarioAgrupado.filter(r => ((r.categoria || '').trim() || 'Sin categoría') === filtroCategoria)
+    : inventarioAgrupado;
+
   return (
     <Layout title="Inventario" subtitle={`${pacas.length} unidades`}>
       <div className="space-y-6">
-        {/* Resumen stats */}
+        {/* Resumen por categoría */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {resumen.slice(0, 4).map((r, i) => (
-            <Card key={i} hover className="cursor-pointer" onClick={() => setFiltroTipo(r.clasificacion)}>
-              <CardBody className="p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Package className="w-4 h-4 text-secondary" />
-                  <span className="font-medium text-sm">{r.clasificacion}</span>
-                </div>
-                <div className="grid grid-cols-4 gap-1 text-xs">
-                  <div>
-                    <p className="text-muted">Disp</p>
-                    <p className="font-bold text-success">{parseInt(r.disponibles) || 0}</p>
+          {resumenCategorias.map((r) => {
+            const activa = filtroCategoria === r.categoria;
+            return (
+              <Card
+                key={r.categoria}
+                hover
+                className={`cursor-pointer transition-all ${activa ? 'ring-2 ring-secondary' : ''}`}
+                onClick={() => setFiltroCategoria(activa ? '' : r.categoria)}
+              >
+                <CardBody className="p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Package className="w-4 h-4 text-secondary flex-shrink-0" />
+                    <span className="font-medium text-sm capitalize truncate" title={r.categoria}>{r.categoria}</span>
                   </div>
-                  <div>
-                    <p className="text-muted">Sep</p>
-                    <p className="font-bold text-warning">{parseInt(r.separadas) || 0}</p>
+                  <div className="grid grid-cols-4 gap-1 text-xs">
+                    <div>
+                      <p className="text-muted">Disp</p>
+                      <p className="font-bold text-emerald-600 tabular-nums">{r.disponibles}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted">Desp</p>
+                      <p className="font-bold text-accent tabular-nums">{r.despachadas}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted">Sep</p>
+                      <p className="font-bold text-warning tabular-nums">{r.separadas}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted">Total</p>
+                      <p className="font-bold text-primary tabular-nums">{r.fisico}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted">Vend</p>
-                    <p className="font-bold text-accent">{parseInt(r.vendidas) || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted">Total</p>
-                    <p className="font-bold text-primary">{parseInt(r.cantidad) || 0}</p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          ))}
+                </CardBody>
+              </Card>
+            );
+          })}
         </div>
+
+        {filtroCategoria && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted">Filtrado por categoría:</span>
+            <button
+              onClick={() => setFiltroCategoria('')}
+              className="inline-flex items-center gap-1.5 bg-secondary/10 text-secondary font-semibold px-2.5 py-1 rounded-full hover:bg-secondary/20 transition-colors capitalize"
+            >
+              {filtroCategoria} <X size={13} />
+            </button>
+          </div>
+        )}
 
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row gap-4">
@@ -712,12 +754,13 @@ export default function Pacas() {
                   <tr>
                     <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Proveedor</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Físico</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Despachadas</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Disponibles</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
@@ -725,11 +768,14 @@ export default function Pacas() {
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   {loadingAgrupado ? (
-                    <TableSkeleton cols={11} rows={6} />
-                  ) : inventarioAgrupado.length === 0 ? (
-                    <tr><td colSpan={11}><EmptyState title="Sin unidades en inventario" description="Las unidades del inventario aparecerán aquí" /></td></tr>
+                    <TableSkeleton cols={12} rows={6} />
+                  ) : filasInventario.length === 0 ? (
+                    <tr><td colSpan={12}><EmptyState
+                      title={filtroCategoria ? `Sin unidades en "${filtroCategoria}"` : 'Sin unidades en inventario'}
+                      description={filtroCategoria ? 'Quita el filtro de categoría para ver todo el inventario' : 'Las unidades del inventario aparecerán aquí'}
+                    /></td></tr>
                   ) : (
-                    inventarioAgrupado.map((row, idx) => (
+                    filasInventario.map((row, idx) => (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
                         <td className="px-3 py-2.5">
                           {row.contenedor_id ? (
@@ -740,6 +786,11 @@ export default function Pacas() {
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-sm text-muted">{row.proveedor_nombre || <span className="text-muted/40">—</span>}</td>
+                        <td className="px-3 py-2.5 text-sm capitalize">
+                          {row.categoria
+                            ? <span className="text-xs bg-primary/8 text-primary px-2 py-0.5 rounded-full font-medium">{row.categoria}</span>
+                            : <span className="text-muted/40">—</span>}
+                        </td>
                         <td className="px-3 py-2.5 text-sm font-semibold text-primary capitalize">
                           {row.clasificacion}
                           {row.tiene_promocion && <span className="ml-1 text-xs text-amber-600">●promo</span>}
@@ -747,6 +798,7 @@ export default function Pacas() {
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-primary">{row.fisico}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">
                           {row.separadas > 0 ? (
                             <button onClick={() => verComprometidas(row)}
@@ -756,7 +808,6 @@ export default function Pacas() {
                             </button>
                           ) : row.separadas}
                         </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-600">{row.disponibles}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-secondary/70">{formatCurrency(row.precio_total)}</td>
