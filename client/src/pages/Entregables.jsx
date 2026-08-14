@@ -29,6 +29,7 @@ export default function Entregables() {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [generando, setGenerando] = useState(null);
+  const [clienteSel, setClienteSel] = useState('');
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -139,22 +140,18 @@ export default function Entregables() {
     hojaInventarioBodega(wb, datos.inventario || []);
   };
 
+  // Lo que se manda a TODOS los clientes por igual. La cartera y las
+  // cotizaciones son de cada cliente y no pueden ir en un archivo común: se
+  // descargan por cliente más abajo.
   const genClientes = async (wb) => {
     hojaListaPreciosClientes(wb, datos.lista || []);
-    const usados = new Set(wb.worksheets.map(w => w.name));
+  };
 
-    // Una hoja de cartera por cliente con saldo pendiente
-    const conSaldo = (datos.cartera || []).filter(c => parseFloat(c.saldo_pendiente) > 0);
-    for (const c of conSaldo.slice(0, 40)) {
-      try {
-        const data = await carteraApi.exportOne(c.id);
-        hojaCarteraCliente(wb, data, nombreHoja(`CART ${c.nombre}`, usados));
-      } catch { /* cliente sin datos exportables */ }
-    }
-
-    // Cotizaciones pendientes
+  // Paquete de UN cliente: solo lo suyo, listo para enviárselo.
+  const genCliente = async (wb, cliente) => {
+    const usados = new Set();
     try {
-      const cots = await cotizacionesApi.getAll({ estado: 'pendiente' });
+      const cots = await cotizacionesApi.getAll({ cliente_id: cliente.id });
       for (const c of (cots || []).slice(0, 20)) {
         try {
           const full = await cotizacionesApi.getOne(c.id);
@@ -162,6 +159,13 @@ export default function Entregables() {
         } catch { /* omitir */ }
       }
     } catch { /* omitir */ }
+
+    try {
+      const data = await carteraApi.exportOne(cliente.id);
+      hojaCarteraCliente(wb, data, nombreHoja('ESTADO DE CUENTA', usados));
+    } catch { /* sin movimientos */ }
+
+    hojaListaPreciosClientes(wb, datos.lista || []);
   };
 
   const genInternos = async (wb) => {
@@ -189,11 +193,12 @@ export default function Entregables() {
       gen: genBodega, archivo: 'Entregables_Bodega',
     },
     {
-      id: 'clientes', titulo: 'Para clientes', icon: Users,
+      id: 'clientes', titulo: 'Para todos los clientes', icon: Users,
       color: 'text-secondary bg-secondary/10',
-      desc: 'Lista de precios, cotizaciones pendientes y el estado de cuenta de cada cliente con saldo.',
-      hojas: ['LISTADEPRECIOS(CLIENTES)', 'COTIZACION(CLIENTES)', 'CARTERA(CLIENTES)'],
-      gen: genClientes, archivo: 'Entregables_Clientes',
+      desc: 'La lista de precios, que es la misma para todos y se puede difundir sin problema.',
+      hojas: ['LISTADEPRECIOS(CLIENTES)'],
+      gen: genClientes, archivo: 'Lista_de_Precios',
+      nota: 'La cartera y las cotizaciones son de cada cliente: se descargan abajo, uno por uno.',
     },
     {
       id: 'internos', titulo: 'Internos', icon: Lock,
@@ -209,6 +214,15 @@ export default function Entregables() {
     await g.gen(wb);
     await descargar(wb, g.archivo);
     addToast(`${g.titulo}: ${wb.worksheets.length} hoja(s) descargadas`, 'success');
+  });
+
+  const descargarCliente = conCarga('cliente', async () => {
+    const cliente = (datos.clientes || []).find(c => String(c.id) === String(clienteSel));
+    if (!cliente) return;
+    const wb = nuevoLibro();
+    await genCliente(wb, cliente);
+    await descargar(wb, `Documentos_${cliente.nombre.replace(/\s+/g, '_')}`);
+    addToast(`Documentos de ${cliente.nombre} descargados`, 'success');
   });
 
   const descargarTodo = conCarga('todo', async () => {
@@ -249,7 +263,7 @@ export default function Entregables() {
                 </div>
                 <p className="text-xs text-muted mb-3">{g.desc}</p>
 
-                <ul className="space-y-1 mb-4 flex-1">
+                <ul className="space-y-1 mb-3">
                   {g.hojas.map(h => (
                     <li key={h} className="text-xs font-mono text-muted flex items-center gap-1.5">
                       <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
@@ -257,6 +271,14 @@ export default function Entregables() {
                     </li>
                   ))}
                 </ul>
+
+                <div className="flex-1">
+                  {g.nota && (
+                    <p className="text-xs text-warning bg-warning/10 rounded-lg px-2.5 py-2 mb-3">
+                      {g.nota}
+                    </p>
+                  )}
+                </div>
 
                 <Button variant="outline" onClick={descargarGrupo(g)} disabled={cargando || generando}
                         className="w-full">
@@ -269,6 +291,47 @@ export default function Entregables() {
           ))}
         </div>
 
+        {/* Documentos de UN cliente: nunca mezclados con los de otros */}
+        <Card>
+          <CardBody className="space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-primary">Documentos de un cliente</p>
+              <p className="text-xs text-muted mt-0.5">
+                Sus cotizaciones, su estado de cuenta y la lista de precios, en un archivo que solo
+                contiene lo suyo. Es lo que se le puede enviar.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[15rem]">
+                <label className="block text-xs font-semibold text-muted mb-1" htmlFor="ent-cliente">
+                  Cliente
+                </label>
+                <select
+                  id="ent-cliente"
+                  value={clienteSel}
+                  onChange={(e) => setClienteSel(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                >
+                  <option value="">Elige un cliente…</option>
+                  {(datos?.clientes || []).map(c => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <Button variant="outline" disabled={!clienteSel || generando} onClick={descargarCliente}>
+                {generando === 'cliente'
+                  ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
+                  : <><Download size={15} className="mr-1" /> Descargar sus documentos</>}
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted">
+              El estado de cuenta también se descarga desde <b>Cartera</b>, en la fila del cliente.
+            </p>
+          </CardBody>
+        </Card>
+
         {cargando && (
           <p className="text-center text-sm text-muted py-4">Cargando datos…</p>
         )}
@@ -280,7 +343,8 @@ export default function Entregables() {
               <li><b className="text-primary">DESPACHO(BODEGA)</b> — despachos en proceso, agrupados por referencia y calidad, con destino, dirección, celular y transporte. Arriba los contadores de vienen / salen / quedan.</li>
               <li><b className="text-primary">SEPARADAS(BODEGA)</b> — lo apartado por cada cliente, con las mismas columnas.</li>
               <li><b className="text-primary">INVENTARIO(BODEGA)</b> — físico y disponible, sin costos ni precios.</li>
-              <li><b className="text-primary">CARTERA(CLIENTES)</b> — una hoja por cliente con saldo: qué compró, a qué precio, cuánto abonó y su saldo.</li>
+              <li><b className="text-primary">LISTADEPRECIOS(CLIENTES)</b> — referencia, calidad, precio y promoción. Es igual para todos, así que se puede difundir.</li>
+              <li><b className="text-primary">Documentos de un cliente</b> — sus cotizaciones y su estado de cuenta, en un archivo que solo lleva lo suyo. Nunca se juntan varios clientes en el mismo libro.</li>
               <li><b className="text-primary">PRECIOSINTERNOS</b> — cómo se arma el precio: costo del contenedor + gastos unitarios + utilidad unitaria.</li>
               <li><b className="text-primary">UTILIDADCONT</b> — utilidad por paca × pacas del contenedor. Se toma del último contenedor finalizado.</li>
             </ul>
