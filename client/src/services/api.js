@@ -536,6 +536,26 @@ export const cuentasApi = {
   delete(id) { return api.delete(`/cuentas/${id}`); },
 };
 
+export const bancosApi = {
+  getAll(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return api.get(`/bancos${q ? '?' + q : ''}`);
+  },
+  create(data) { return api.post('/bancos', data); },
+  update(id, data) { return api.put(`/bancos/${id}`, data); },
+  delete(id) { return api.delete(`/bancos/${id}`); },
+};
+
+export const transportesApi = {
+  getAll(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    return api.get(`/transportes${q ? '?' + q : ''}`);
+  },
+  create(data) { return api.post('/transportes', data); },
+  update(id, data) { return api.put(`/transportes/${id}`, data); },
+  delete(id) { return api.delete(`/transportes/${id}`); },
+};
+
 export const gastosApi = {
   getAll(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos${q ? '?' + q : ''}`); },
   getReporte(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos/reporte${q ? '?' + q : ''}`); },

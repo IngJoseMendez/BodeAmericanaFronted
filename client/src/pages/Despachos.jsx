@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
-import { despachosApi, pacasApi } from '../services/api';
+import { despachosApi, pacasApi, transportesApi } from '../services/api';
 import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
 
 const formatCurrency = (value) =>
@@ -545,6 +545,9 @@ function imprimirDespacho(despacho) {
 
 export default function Despachos() {
   const [despachos, setDespachos]               = useState([]);
+  const [transportes, setTransportes]           = useState([]);
+  const [transpOpen, setTranspOpen]             = useState(false);
+  const [nuevoTransp, setNuevoTransp]           = useState('');
   const [loading, setLoading]                   = useState(true);
   const [search, setSearch]                     = useState('');
   const [selectedDespacho, setSelectedDespacho] = useState(null);
@@ -562,7 +565,11 @@ export default function Despachos() {
   const { addToast } = useToast();
   const confirm = useConfirm();
 
-  useEffect(() => { loadDespachos(); }, []);
+  useEffect(() => { loadDespachos(); loadTransportes(); }, []);
+
+  const loadTransportes = async () => {
+    try { setTransportes(await transportesApi.getAll() || []); } catch { setTransportes([]); }
+  };
 
   useEffect(() => {
     if (vistaActiva === 'despachados' && despachados.length === 0) {
@@ -697,10 +704,11 @@ export default function Despachos() {
     }
   };
 
-  // Catálogo vivo de transportes: la lista base más cualquiera ya usado, para
-  // que lo que se escriba una vez quede disponible después.
+  // El catálogo viene del servidor y se administra desde el botón "Transportes".
+  // Se completa con los valores ya usados en despachos viejos para que ninguno
+  // quede sin etiqueta.
   const tiposTransporteDisponibles = (() => {
-    const vistos = new Map(TIPOS_TRANSPORTE_BASE.map(t => [t.value, t]));
+    const vistos = new Map(transportes.map(t => [t.nombre, { value: t.nombre, label: t.nombre }]));
     for (const d of despachos) {
       const v = (d.tipo_transporte || '').trim();
       if (v && !vistos.has(v)) vistos.set(v, { value: v, label: etiquetaTransporte(v) });
@@ -1147,6 +1155,10 @@ export default function Despachos() {
                       <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </datalist>
+                  <button type="button" onClick={() => setTranspOpen(true)}
+                    className="mt-1 text-[11px] font-semibold text-secondary hover:underline underline-offset-2">
+                    Administrar la lista de transportes
+                  </button>
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-muted mb-1">Destinatario</label>
@@ -1212,6 +1224,73 @@ export default function Despachos() {
           </div>
         </Modal>
       )}
+
+      {/* ── Catálogo de tipos de transporte ─────────────────────── */}
+      <Modal isOpen={transpOpen} onClose={() => setTranspOpen(false)} title="Tipos de transporte">
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Esta es la lista que aparece al confirmar una salida. Agregar aquí evita que la misma
+            transportadora quede escrita de varias formas.
+          </p>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const nombre = nuevoTransp.trim();
+              if (!nombre) return;
+              try {
+                await transportesApi.create({ nombre });
+                addToast(`"${nombre}" agregado`, 'success');
+                setNuevoTransp('');
+                loadTransportes();
+              } catch (err) { addToast(err.message, 'error'); }
+            }}
+            className="flex gap-2"
+          >
+            <input type="text" value={nuevoTransp} onChange={(e) => setNuevoTransp(e.target.value)}
+              placeholder="Ej: Envía, Coordinadora, Servientrega…"
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+            <button type="submit" disabled={!nuevoTransp.trim()}
+              className="px-4 py-2 rounded-xl bg-secondary text-white text-sm font-semibold disabled:opacity-40">
+              Agregar
+            </button>
+          </form>
+
+          <div className="max-h-72 overflow-y-auto rounded-xl border border-border divide-y divide-border/60">
+            {transportes.length === 0 ? (
+              <p className="text-sm text-muted text-center py-6">Sin transportes en la lista</p>
+            ) : transportes.map(t => (
+              <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-sm text-primary truncate">{t.nombre}</span>
+                <button type="button" title="Quitar de la lista"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: '¿Quitar transporte?',
+                      message: `"${t.nombre}" dejará de aparecer en la lista. Los despachos ya emitidos lo conservan.`,
+                      confirmText: 'Quitar', variant: 'danger',
+                    });
+                    if (!ok) return;
+                    try {
+                      await transportesApi.delete(t.id);
+                      addToast('Transporte quitado', 'success');
+                      loadTransportes();
+                    } catch (err) { addToast(err.message, 'error'); }
+                  }}
+                  className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5 flex-shrink-0">
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setTranspOpen(false)}
+              className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary hover:bg-primary/5">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Layout>
   );
 }

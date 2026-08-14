@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, useToast, useConfirm } from '../components/common';
-import { cuentasApi } from '../services/api';
-import { Wallet, Plus, Trash2, Pencil, Landmark, Building2 } from 'lucide-react';
+import { cuentasApi, bancosApi } from '../services/api';
+import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X } from 'lucide-react';
 
 // Tipos base. La lista se amplía sola con cualquier tipo que ya se haya usado,
 // así que se pueden crear tipos nuevos desde esta misma pantalla.
@@ -15,41 +15,24 @@ const TIPOS_BASE = [
   { value: 'tarjeta', label: 'Tarjeta' },
 ];
 
-// Semilla de entidades colombianas frecuentes. No es una lista cerrada: lo que se
-// escriba aquí queda disponible para las siguientes cuentas.
-const BANCOS_SUGERIDOS = [
-  'Bancolombia', 'Davivienda', 'Banco de Bogotá', 'BBVA Colombia', 'Banco de Occidente',
-  'Banco Popular', 'Banco Caja Social', 'Banco Agrario', 'Scotiabank Colpatria',
-  'Itaú', 'Banco AV Villas', 'Banco Falabella', 'Bancoomeva',
-  'Nequi', 'Daviplata', 'Nu Colombia', 'Lulo Bank', 'Movii',
-];
-
 const capitalizar = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
 
 export default function Cuentas() {
   const [cuentas, setCuentas] = useState([]);
+  const [bancos, setBancos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editando, setEditando] = useState(null);
-  const [form, setForm] = useState({ nombre: '', tipo: 'banco', banco: '', numero_cuenta: '' });
+  const [form, setForm] = useState({ nombre: '', tipo: 'banco', banco_id: '', numero_cuenta: '' });
+  const [guardando, setGuardando] = useState(false);
+
+  // Gestor del catálogo de bancos
+  const [bancosOpen, setBancosOpen] = useState(false);
+  const [nuevoBanco, setNuevoBanco] = useState('');
+  const [editBanco, setEditBanco] = useState(null); // { id, nombre }
+
   const { addToast } = useToast();
   const confirm = useConfirm();
-
-  // Catálogos vivos: se arman con las semillas más todo lo ya registrado, de modo
-  // que cada banco o tipo nuevo que se escriba queda disponible desde el panel.
-  const bancosDisponibles = Array.from(new Set([
-    ...cuentas.map(c => (c.banco || '').trim()).filter(Boolean),
-    ...BANCOS_SUGERIDOS,
-  ])).sort((a, b) => a.localeCompare(b, 'es'));
-
-  const tiposDisponibles = Array.from(new Set([
-    ...TIPOS_BASE.map(t => t.value),
-    ...cuentas.map(c => (c.tipo || '').trim().toLowerCase()).filter(Boolean),
-  ]));
-
-  const bancosEnUso = Array.from(new Set(
-    cuentas.filter(c => c.activo !== false).map(c => (c.banco || '').trim()).filter(Boolean)
-  )).sort((a, b) => a.localeCompare(b, 'es'));
 
   // Deep-link: ?focus=<id> resalta la cuenta referenciada (trazabilidad)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,10 +49,14 @@ export default function Cuentas() {
   const load = async () => {
     try {
       setLoading(true);
-      const data = await cuentasApi.getAll({ todas: 'true' });
-      setCuentas(data);
-    } catch (err) {
-      addToast(err.message, 'error');
+      // allSettled: si el catálogo de bancos falla, las cuentas se siguen viendo.
+      const [c, b] = await Promise.allSettled([
+        cuentasApi.getAll({ todas: 'true' }),
+        bancosApi.getAll(),
+      ]);
+      setCuentas(c.status === 'fulfilled' && Array.isArray(c.value) ? c.value : []);
+      setBancos(b.status === 'fulfilled' && Array.isArray(b.value) ? b.value : []);
+      if (c.status === 'rejected') addToast(c.reason?.message || 'Error cargando cuentas', 'error');
     } finally {
       setLoading(false);
     }
@@ -77,32 +64,46 @@ export default function Cuentas() {
 
   useEffect(() => { load(); }, []);
 
+  const tiposDisponibles = Array.from(new Set([
+    ...TIPOS_BASE.map(t => t.value),
+    ...cuentas.map(c => (c.tipo || '').trim().toLowerCase()).filter(Boolean),
+  ]));
+
+  // ── Cuentas ──────────────────────────────────────────────────────
+
   const openCreate = () => {
     setEditando(null);
-    setForm({ nombre: '', tipo: 'banco', banco: '', numero_cuenta: '' });
+    setForm({ nombre: '', tipo: 'banco', banco_id: '', numero_cuenta: '' });
     setModalOpen(true);
   };
+
   const openEdit = (c) => {
     setEditando(c);
-    setForm({ nombre: c.nombre, tipo: c.tipo, banco: c.banco || '', numero_cuenta: c.numero_cuenta || '' });
+    setForm({
+      nombre: c.nombre || '',
+      tipo: c.tipo || 'banco',
+      banco_id: c.banco_id != null ? String(c.banco_id) : '',
+      numero_cuenta: c.numero_cuenta || '',
+    });
     setModalOpen(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.nombre.trim()) { addToast('Nombre requerido', 'error'); return; }
-    if (form.tipo === 'banco' && !form.banco.trim()) {
-      addToast('Indica de qué banco es la cuenta', 'error');
+    if (!form.nombre.trim()) { addToast('Escribe el nombre de la cuenta', 'error'); return; }
+    if (form.tipo === 'banco' && !form.banco_id) {
+      addToast('Elige el banco de la lista', 'error');
       return;
     }
     const datos = {
-      ...form,
       nombre: form.nombre.trim(),
-      // Solo las cuentas de banco guardan entidad y número.
-      banco: form.tipo === 'banco' ? form.banco.trim() : '',
+      tipo: form.tipo,
+      // Solo las cuentas de banco llevan entidad y número.
+      banco_id: form.tipo === 'banco' ? Number(form.banco_id) : null,
       numero_cuenta: form.tipo === 'banco' ? form.numero_cuenta.trim() : '',
     };
     try {
+      setGuardando(true);
       if (editando) await cuentasApi.update(editando.id, datos);
       else await cuentasApi.create(datos);
       addToast(editando ? 'Cuenta actualizada' : 'Cuenta creada', 'success');
@@ -110,11 +111,17 @@ export default function Cuentas() {
       load();
     } catch (err) {
       addToast(err.message, 'error');
+    } finally {
+      setGuardando(false);
     }
   };
 
   const handleDelete = async (c) => {
-    const ok = await confirm({ title: '¿Desactivar cuenta?', message: `Se desactivará "${c.nombre}".`, confirmText: 'Desactivar', variant: 'danger' });
+    const ok = await confirm({
+      title: '¿Desactivar cuenta?',
+      message: `Se desactivará "${c.nombre}". Los abonos ya registrados se conservan.`,
+      confirmText: 'Desactivar', variant: 'danger',
+    });
     if (!ok) return;
     try {
       await cuentasApi.delete(c.id);
@@ -125,70 +132,117 @@ export default function Cuentas() {
     }
   };
 
+  // ── Catálogo de bancos ───────────────────────────────────────────
+
+  const crearBanco = async (e) => {
+    e?.preventDefault();
+    const nombre = nuevoBanco.trim();
+    if (!nombre) return;
+    try {
+      await bancosApi.create({ nombre });
+      addToast(`"${nombre}" agregado`, 'success');
+      setNuevoBanco('');
+      load();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const guardarNombreBanco = async () => {
+    if (!editBanco?.nombre.trim()) return;
+    try {
+      await bancosApi.update(editBanco.id, { nombre: editBanco.nombre.trim() });
+      addToast('Banco actualizado', 'success');
+      setEditBanco(null);
+      load();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const borrarBanco = async (b) => {
+    const enUso = b.cuentas_asociadas > 0;
+    const ok = await confirm({
+      title: enUso ? '¿Desactivar banco?' : '¿Eliminar banco?',
+      message: enUso
+        ? `"${b.nombre}" tiene ${b.cuentas_asociadas} cuenta(s) asociadas, así que se desactivará en vez de borrarse para no romper los abonos ya registrados.`
+        : `Se eliminará "${b.nombre}" de la lista.`,
+      confirmText: enUso ? 'Desactivar' : 'Eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await bancosApi.delete(b.id);
+      addToast(enUso ? 'Banco desactivado' : 'Banco eliminado', 'success');
+      load();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  const selectCls = 'w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30';
+
   return (
-    <Layout>
+    <Layout title="Cuentas" subtitle="Bancos y cajas por donde entra y sale la plata">
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-display text-primary flex items-center gap-2">
-              <Wallet className="w-6 h-6" /> Cuentas
-            </h1>
-            <p className="text-sm text-muted">Bancos y cajas por donde entra y sale la plata. Se usan al registrar abonos y gastos.</p>
+          <p className="text-sm text-muted">
+            Se usan al registrar abonos de clientes, de proveedores y gastos.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBancosOpen(true)}>
+              <Building2 size={16} className="mr-1" /> Bancos ({bancos.length})
+            </Button>
+            <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Nueva cuenta</Button>
           </div>
-          <Button onClick={openCreate}><Plus size={16} /> Nueva cuenta</Button>
         </div>
-
-        {bancosEnUso.length > 0 && (
-          <Card>
-            <CardBody className="py-3">
-              <p className="text-[11px] font-bold text-muted uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                <Building2 size={13} /> Bancos registrados ({bancosEnUso.length})
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {bancosEnUso.map(b => {
-                  const n = cuentas.filter(c => c.activo !== false && (c.banco || '').trim() === b).length;
-                  return (
-                    <span key={b} className="inline-flex items-center gap-1.5 text-xs bg-secondary/10 text-secondary font-medium px-2.5 py-1 rounded-full">
-                      {b}
-                      {n > 1 && <span className="text-[10px] bg-secondary/20 px-1.5 rounded-full tabular-nums">{n}</span>}
-                    </span>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted mt-2">
-                Para agregar un banco nuevo, créale una cuenta y escríbelo en el campo <b>Banco</b>: queda disponible desde ese momento.
-              </p>
-            </CardBody>
-          </Card>
-        )}
 
         <Card>
           <CardBody>
             {loading ? (
-              <p className="text-center text-muted py-8">Cargando...</p>
+              <p className="text-center text-muted py-8">Cargando…</p>
             ) : cuentas.length === 0 ? (
-              <p className="text-center text-muted py-8">Sin cuentas registradas</p>
+              <div className="text-center py-10">
+                <Wallet size={36} className="mx-auto text-muted/40 mb-3" />
+                <p className="text-muted">Sin cuentas registradas</p>
+                <Button variant="ghost" size="sm" className="mt-3" onClick={openCreate}>
+                  Crear la primera
+                </Button>
+              </div>
             ) : (
               <div className="space-y-2">
                 {cuentas.map(c => (
-                  <div key={c.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${highlightId === c.id ? 'border-secondary bg-secondary/10 ring-2 ring-secondary/30' : 'border-border'} ${!c.activo ? 'opacity-50' : ''}`}>
+                  <div key={c.id}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                      highlightId === c.id ? 'border-secondary bg-secondary/10 ring-2 ring-secondary/30' : 'border-border'
+                    } ${c.activo === false ? 'opacity-50' : ''}`}>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{c.nombre}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted bg-primary/5 px-1.5 py-0.5 rounded">{c.tipo}</span>
-                        {!c.activo && <span className="text-xs text-red-500">(inactiva)</span>}
+                        <span className="font-medium text-primary">{c.nombre}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted bg-primary/5 px-1.5 py-0.5 rounded">
+                          {c.tipo}
+                        </span>
+                        {c.activo === false && <span className="text-xs text-error">(inactiva)</span>}
                       </div>
-                      {c.banco && (
-                        <p className="text-xs text-muted mt-0.5 flex items-center gap-1">
+                      {c.banco_nombre && (
+                        <p className="text-xs text-muted mt-0.5 flex items-center gap-1 flex-wrap">
                           <Landmark size={12} className="flex-shrink-0" />
-                          <span className="font-medium text-secondary">{c.banco}</span>
+                          <span className="font-medium text-secondary">{c.banco_nombre}</span>
                           {c.numero_cuenta && <span className="font-mono">· N.º {c.numero_cuenta}</span>}
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => openEdit(c)} className="p-2 text-muted hover:text-primary"><Pencil size={16} /></button>
-                      {c.activo && <button onClick={() => handleDelete(c)} className="p-2 text-muted hover:text-red-500"><Trash2 size={16} /></button>}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => openEdit(c)} title="Editar"
+                        className="p-2 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
+                        <Pencil size={16} />
+                      </button>
+                      {c.activo !== false && (
+                        <button onClick={() => handleDelete(c)} title="Desactivar"
+                          className="p-2 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -198,15 +252,16 @@ export default function Cuentas() {
         </Card>
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar cuenta' : 'Nueva cuenta'}>
+      {/* ── Crear / editar cuenta ───────────────────────────────── */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
+             title={editando ? 'Editar cuenta' : 'Nueva cuenta'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-primary mb-1">Tipo de cuenta</label>
-            <select
-              value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-            >
+            <label className="block text-sm font-medium text-primary mb-1" htmlFor="cuenta-tipo">
+              Tipo de cuenta
+            </label>
+            <select id="cuenta-tipo" value={form.tipo} className={selectCls}
+              onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
               {tiposDisponibles.map(t => (
                 <option key={t} value={t}>
                   {TIPOS_BASE.find(b => b.value === t)?.label || capitalizar(t)}
@@ -218,48 +273,105 @@ export default function Cuentas() {
           {form.tipo === 'banco' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-primary mb-1" htmlFor="cuenta-banco">
-                  Banco <span className="text-error">*</span>
-                </label>
-                <input
-                  id="cuenta-banco"
-                  list="lista-bancos"
-                  value={form.banco}
-                  onChange={(e) => setForm({ ...form, banco: e.target.value })}
-                  placeholder="Escribe o elige: Bancolombia, Nequi…"
-                  autoComplete="off"
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                />
-                <datalist id="lista-bancos">
-                  {bancosDisponibles.map(b => <option key={b} value={b} />)}
-                </datalist>
-                <p className="text-xs text-muted mt-1">
-                  Si el banco no está en la lista, escríbelo: queda guardado y aparecerá como opción la próxima vez.
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-primary" htmlFor="cuenta-banco">
+                    Banco <span className="text-error">*</span>
+                  </label>
+                  <button type="button" onClick={() => setBancosOpen(true)}
+                    className="text-xs font-semibold text-secondary hover:underline underline-offset-2">
+                    ¿Falta uno? Agrégalo
+                  </button>
+                </div>
+                <select id="cuenta-banco" value={form.banco_id} className={selectCls} required
+                  onChange={(e) => setForm({ ...form, banco_id: e.target.value })}>
+                  <option value="">Elige el banco…</option>
+                  {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                </select>
               </div>
 
-              <Input
-                label="Número de cuenta (opcional)"
-                value={form.numero_cuenta}
+              <Input label="Número de cuenta (opcional)" value={form.numero_cuenta}
                 onChange={(e) => setForm({ ...form, numero_cuenta: e.target.value })}
-                placeholder="Ej: 123-456789-01"
-              />
+                placeholder="Ej: 123-456789-01" />
             </>
           )}
 
-          <Input
-            label="Nombre con el que la verás"
-            value={form.nombre}
+          <Input label="Nombre con el que la verás" value={form.nombre} required
             onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            placeholder={form.tipo === 'banco' ? 'Ej: Bancolombia ahorros gerencia' : 'Ej: Caja principal'}
-            required
-          />
-          <div className="flex justify-end gap-2">
+            placeholder={form.tipo === 'banco' ? 'Ej: Ahorros gerencia' : 'Ej: Caja principal'} />
+
+          <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit">{editando ? 'Guardar' : 'Crear'}</Button>
+            <Button type="submit" disabled={guardando}>
+              {guardando ? 'Guardando…' : editando ? 'Guardar' : 'Crear'}
+            </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Catálogo de bancos ──────────────────────────────────── */}
+      <Modal isOpen={bancosOpen} onClose={() => { setBancosOpen(false); setEditBanco(null); }}
+             title="Bancos y entidades">
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Esta es la lista que aparece al crear una cuenta. Agregar aquí evita que el mismo
+            banco quede escrito de tres formas distintas.
+          </p>
+
+          <form onSubmit={crearBanco} className="flex gap-2">
+            <input type="text" value={nuevoBanco} onChange={(e) => setNuevoBanco(e.target.value)}
+              placeholder="Nombre del banco o entidad…"
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+            <Button type="submit" disabled={!nuevoBanco.trim()}>
+              <Plus size={15} className="mr-1" /> Agregar
+            </Button>
+          </form>
+
+          <div className="max-h-80 overflow-y-auto rounded-xl border border-border divide-y divide-border/60">
+            {bancos.length === 0 ? (
+              <p className="text-sm text-muted text-center py-6">Sin bancos en la lista</p>
+            ) : bancos.map(b => (
+              <div key={b.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                {editBanco?.id === b.id ? (
+                  <>
+                    <input type="text" value={editBanco.nombre} autoFocus
+                      onChange={(e) => setEditBanco({ ...editBanco, nombre: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarNombreBanco(); } }}
+                      className="flex-1 px-2 py-1 rounded-lg border border-secondary bg-surface text-sm focus:outline-none" />
+                    <button type="button" onClick={guardarNombreBanco} title="Guardar"
+                      className="p-1.5 text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
+                    <button type="button" onClick={() => setEditBanco(null)} title="Cancelar"
+                      className="p-1.5 text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-sm text-primary truncate">
+                      {b.nombre}
+                      {b.cuentas_asociadas > 0 && (
+                        <span className="ml-2 text-[10px] text-muted bg-primary/5 px-1.5 py-0.5 rounded-full">
+                          {b.cuentas_asociadas} cuenta{b.cuentas_asociadas !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </span>
+                    <button type="button" onClick={() => setEditBanco({ id: b.id, nombre: b.nombre })}
+                      title="Renombrar" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
+                      <Pencil size={14} />
+                    </button>
+                    <button type="button" onClick={() => borrarBanco(b)} title="Quitar"
+                      className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={() => { setBancosOpen(false); setEditBanco(null); }}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );
