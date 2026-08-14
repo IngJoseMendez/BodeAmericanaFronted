@@ -61,6 +61,12 @@ function PriceInput({ value, onChange, placeholder = 'Precio', className = '' })
 }
 
 const generarPDF = (cotizacion) => {
+  // La cotización se emite en pesos, pero el cliente negocia en dólares: se
+  // muestran las dos columnas usando la tasa guardada en la cotización.
+  const tasaPDF = parseFloat(cotizacion.tasa) || 0;
+  const usd = (v) => (tasaPDF > 0
+    ? 'US$ ' + (( parseFloat(v) || 0) / tasaPDF).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—');
   const contenido = `
     <!DOCTYPE html>
     <html>
@@ -85,7 +91,7 @@ const generarPDF = (cotizacion) => {
         .totals { margin-top: 20px; }
         .totals-row { display: flex; justify-content: flex-end; margin: 5px 0; }
         .totals-label { width: 150px; text-align: right; color: #64748b; }
-        .totals-value { width: 120px; text-align: right; font-weight: bold; }
+        .totals-value { width: 130px; text-align: right; font-weight: bold; }
         .totals-total { font-size: 18px; color: #0f172a; border-top: 2px solid #6366f1; padding-top: 10px; margin-top: 10px; }
         .notes { background: #eff6ff; padding: 15px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #6366f1; }
         .footer { margin-top: 50px; text-align: center; color: #999; font-size: 11px; }
@@ -130,7 +136,8 @@ const generarPDF = (cotizacion) => {
             <th>Calidad</th>
             <th class="text-right">Cantidad</th>
             <th class="text-right">Precio Unit.</th>
-            <th class="text-right">Subtotal</th>
+            <th class="text-right">Subtotal COP</th>
+            <th class="text-right">Subtotal USD</th>
           </tr>
         </thead>
         <tbody>
@@ -141,25 +148,41 @@ const generarPDF = (cotizacion) => {
               <td class="text-right">${item.cantidad}</td>
               <td class="text-right">${formatCurrency(item.precio_unitario)}</td>
               <td class="text-right">${formatCurrency(item.subtotal)}</td>
+              <td class="text-right" style="color:#64748b">${usd(item.subtotal)}</td>
             </tr>
           `).join('')}
         </tbody>
       </table>
       
+      ${tasaPDF > 0 ? `
+        <p style="text-align:right;color:#64748b;font-size:12px;margin-top:-10px">
+          Tasa aplicada: 1 US$ = ${tasaPDF.toLocaleString('es-CO')} COP
+        </p>` : ''}
+
       <div class="totals">
         <div class="totals-row">
           <span class="totals-label">Subtotal:</span>
           <span class="totals-value">${formatCurrency(cotizacion.subtotal)}</span>
+          <span class="totals-value" style="color:#64748b">${usd(cotizacion.subtotal)}</span>
         </div>
         ${cotizacion.descuento > 0 ? `
         <div class="totals-row">
           <span class="totals-label">Descuento total:</span>
           <span class="totals-value" style="color:#ef4444">-${formatCurrency(cotizacion.descuento)}</span>
+          <span class="totals-value" style="color:#94a3b8">-${usd(cotizacion.descuento)}</span>
+        </div>
+        ` : ''}
+        ${parseFloat(cotizacion.transporte_total) > 0 ? `
+        <div class="totals-row">
+          <span class="totals-label">Transporte:</span>
+          <span class="totals-value">${formatCurrency(cotizacion.transporte_total)}</span>
+          <span class="totals-value" style="color:#64748b">${usd(cotizacion.transporte_total)}</span>
         </div>
         ` : ''}
         <div class="totals-row totals-total">
           <span class="totals-label">TOTAL:</span>
           <span class="totals-value">${formatCurrency(cotizacion.total)}</span>
+          <span class="totals-value" style="color:#6366f1">${usd(cotizacion.total)}</span>
         </div>
       </div>
       

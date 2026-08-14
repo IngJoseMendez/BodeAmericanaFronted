@@ -96,7 +96,7 @@ export default function Cartera() {
   const [detalleCliente, setDetalleCliente] = useState(null);
   const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia, cotizacion_id }
   const [formData, setFormData] = useState({
-    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: ''
+    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
   const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'abonos'
@@ -212,7 +212,7 @@ export default function Cartera() {
       setClientes(data);
       setFormData({
         cliente_id: cliente.id, monto: '', fecha: new Date().toISOString().split('T')[0],
-        metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: ''
+        metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
       });
       setClienteSearch(cliente.nombre || '');
       setError('');
@@ -263,11 +263,13 @@ export default function Cartera() {
         metodo_pago: formData.metodo_pago,
         cuenta_id: formData.cuenta_id ? parseInt(formData.cuenta_id) : null,
         cotizacion_id: formData.cotizacion_id ? parseInt(formData.cotizacion_id) : null,
-        referencia: formData.referencia
+        referencia: formData.referencia,
+        clase: formData.clase,
+        descripcion: formData.descripcion,
       });
 
       addToast(
-        `Abono de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
+        `${formData.clase === 'descuento' ? 'Descuento' : 'Abono'} de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
         'success'
       );
 
@@ -1334,27 +1336,59 @@ export default function Cartera() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Método de Pago"
-              value={formData.metodo_pago}
-              onChange={(e) => setFormData({ ...formData, metodo_pago: e.target.value })}
-              options={METODOS_PAGO.map(m => ({ value: m, label: m.charAt(0).toUpperCase() + m.slice(1) }))}
-            />
-            <Input
-              label="Referencia"
-              value={formData.referencia}
-              onChange={(e) => setFormData({ ...formData, referencia: e.target.value })}
-              placeholder="No. transacción"
-            />
-          </div>
-
+          {/* Un descuento baja el saldo igual que un abono, pero no entró plata:
+              por eso no lleva método de pago ni cuenta. */}
           <Select
-            label="Cuenta (banco / caja)"
-            value={formData.cuenta_id}
-            onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
-            options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
+            label="Tipo de movimiento"
+            value={formData.clase}
+            onChange={(e) => setFormData({ ...formData, clase: e.target.value })}
+            options={[
+              { value: 'pago', label: 'Abono — entró plata' },
+              { value: 'descuento', label: 'Descuento — se le rebaja la deuda' },
+            ]}
           />
+
+          {formData.clase === 'descuento' && (
+            <p className="text-xs text-warning bg-warning/10 rounded-lg px-3 py-2">
+              El descuento baja el saldo del cliente igual que un abono, pero queda marcado
+              aparte porque no ingresó dinero. No afecta ninguna cuenta ni banco.
+            </p>
+          )}
+
+          <Input
+            label={formData.clase === 'descuento' ? 'Motivo del descuento' : 'Descripción (opcional)'}
+            value={formData.descripcion}
+            onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+            placeholder={formData.clase === 'descuento'
+              ? 'Ej: rebaja por mercancía averiada'
+              : 'Ej: consignación del lunes'}
+          />
+
+          {formData.clase !== 'descuento' && (
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                label="Método de Pago"
+                value={formData.metodo_pago}
+                onChange={(e) => setFormData({ ...formData, metodo_pago: e.target.value })}
+                options={METODOS_PAGO.map(m => ({ value: m, label: m.charAt(0).toUpperCase() + m.slice(1) }))}
+              />
+              <Input
+                label="Referencia"
+                value={formData.referencia}
+                onChange={(e) => setFormData({ ...formData, referencia: e.target.value })}
+                placeholder="No. transacción"
+              />
+            </div>
+          )}
+
+          {formData.clase !== 'descuento' && (
+            <Select
+              label="Cuenta (banco / caja)"
+              value={formData.cuenta_id}
+              onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
+              options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
+            />
+          )}
 
           {formData.cliente_id && (
             <div>

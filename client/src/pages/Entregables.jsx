@@ -6,6 +6,7 @@ import {
   listaPreciosApi, cotizacionesApi, contenedoresApi,
 } from '../services/api';
 import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { parseMonto } from '../lib/money';
 import {
   nuevoLibro, descargar, int,
   hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega,
@@ -30,6 +31,12 @@ export default function Entregables() {
   const [cargando, setCargando] = useState(true);
   const [generando, setGenerando] = useState(null);
   const [clienteSel, setClienteSel] = useState('');
+  // Tasa opcional para publicar la lista de precios también en dólares.
+  const [tasaLista, setTasaLista] = useState('');
+  // Período de los Excel internos: todo / este mes / rango de fechas.
+  const [periodo, setPeriodo] = useState('todo');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -144,7 +151,7 @@ export default function Entregables() {
   // cotizaciones son de cada cliente y no pueden ir en un archivo común: se
   // descargan por cliente más abajo.
   const genClientes = async (wb) => {
-    hojaListaPreciosClientes(wb, datos.lista || []);
+    hojaListaPreciosClientes(wb, datos.lista || [], parseMonto(tasaLista));
   };
 
   // Paquete de UN cliente: solo lo suyo, listo para enviárselo.
@@ -165,7 +172,23 @@ export default function Entregables() {
       hojaCarteraCliente(wb, data, nombreHoja('ESTADO DE CUENTA', usados));
     } catch { /* sin movimientos */ }
 
-    hojaListaPreciosClientes(wb, datos.lista || []);
+    hojaListaPreciosClientes(wb, datos.lista || [], parseMonto(tasaLista));
+  };
+
+  // Rango elegido para los internos. Cartera e inventario son una foto de HOY y
+  // no dependen del rango; el rango filtra los contenedores que se incluyen.
+  const rangoInternos = () => {
+    if (periodo === 'todo') return null;
+    if (periodo === 'mes') {
+      const n = new Date();
+      return { desde: new Date(n.getFullYear(), n.getMonth(), 1), hasta: n, etiqueta: 'este mes' };
+    }
+    if (!desde || !hasta) return null;
+    return {
+      desde: new Date(desde + 'T00:00:00'),
+      hasta: new Date(hasta + 'T23:59:59'),
+      etiqueta: `${desde} a ${hasta}`,
+    };
   };
 
   const genInternos = async (wb) => {
@@ -173,14 +196,38 @@ export default function Entregables() {
     hojaListaDisponiblesInterna(wb, datos.inventario || []);
     hojaInventarioInterno(wb, datos.inventario || []);
 
-    // Último contenedor finalizado: precios internos y utilidad
-    const finalizados = (datos.contenedores || []).filter(c => c.estado === 'finalizado');
-    if (finalizados.length) {
+    const rango = rangoInternos();
+    let finalizados = (datos.contenedores || []).filter(c => c.estado === 'finalizado');
+
+    if (rango) {
+      finalizados = finalizados.filter(c => {
+        const f = new Date(c.fecha_llegada || c.updated_at || c.created_at);
+        return !isNaN(f) && f >= rango.desde && f <= rango.hasta;
+      });
+    } else {
+      // Sin rango se conserva el comportamiento anterior: el último finalizado.
+      finalizados = finalizados.slice(0, 1);
+    }
+
+    if (finalizados.length === 0) {
+      addToast(rango
+        ? `Sin contenedores finalizados en ${rango.etiqueta}`
+        : 'Sin contenedores finalizados', 'warning');
+      return;
+    }
+
+    const usados = new Set(wb.worksheets.map(w => w.name));
+    // Tope para no generar libros inmanejables; se avisa si se recorta.
+    const incluidos = finalizados.slice(0, 12);
+    for (const c of incluidos) {
       try {
-        const full = await contenedoresApi.getOne(finalizados[0].id);
-        hojaPreciosInternos(wb, full);
-        hojaUtilidadContenedor(wb, full);
+        const full = await contenedoresApi.getOne(c.id);
+        hojaPreciosInternos(wb, full, nombreHoja(`PRECIOS ${full.numero || c.id}`, usados));
+        hojaUtilidadContenedor(wb, full, nombreHoja(`UTILIDAD ${full.numero || c.id}`, usados));
       } catch { /* omitir */ }
+    }
+    if (finalizados.length > incluidos.length) {
+      addToast(`Se incluyeron los ${incluidos.length} contenedores más recientes de ${finalizados.length}`, 'warning');
     }
   };
 
@@ -279,6 +326,62 @@ export default function Entregables() {
                     </p>
                   )}
                 </div>
+
+                {/* Período: filtra qué contenedores entran en los internos */}
+                {g.id === 'internos' && (
+                  <div className="mb-3 space-y-2">
+                    <label className="block text-xs font-semibold text-muted" htmlFor="periodo-int">
+                      Período
+                    </label>
+                    <select
+                      id="periodo-int"
+                      value={periodo}
+                      onChange={(e) => setPeriodo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    >
+                      <option value="todo">Último contenedor (como está hoy)</option>
+                      <option value="mes">Este mes</option>
+                      <option value="rango">Rango de fechas…</option>
+                    </select>
+
+                    {periodo === 'rango' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
+                          className="px-2 py-1.5 rounded-lg border border-border bg-surface text-xs focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                        <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)}
+                          className="px-2 py-1.5 rounded-lg border border-border bg-surface text-xs focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-muted">
+                      Filtra los contenedores por fecha de llegada. Cartera e inventario son
+                      una foto de hoy y no cambian con el período.
+                    </p>
+                  </div>
+                )}
+
+                {/* Tasa opcional: si se llena, la lista sale también en dólares */}
+                {g.id === 'clientes' && (
+                  <div className="mb-3">
+                    <label className="block text-xs font-semibold text-muted mb-1" htmlFor="tasa-lista">
+                      Tasa USD (opcional)
+                    </label>
+                    <input
+                      id="tasa-lista"
+                      type="text"
+                      inputMode="decimal"
+                      value={tasaLista}
+                      onChange={(e) => setTasaLista(e.target.value)}
+                      placeholder="Ej: 4.100"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    />
+                    <p className="text-[11px] text-muted mt-1">
+                      {parseMonto(tasaLista) > 0
+                        ? <>Se agregan las columnas <b>Precio US$</b> y <b>Promo US$</b>.</>
+                        : 'Déjalo vacío para la lista solo en pesos.'}
+                    </p>
+                  </div>
+                )}
 
                 <Button variant="outline" onClick={descargarGrupo(g)} disabled={cargando || generando}
                         className="w-full">

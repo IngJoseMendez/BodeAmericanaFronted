@@ -82,6 +82,9 @@ export function hojaDespachoBodega(wb, despachos, { totales } = {}) {
   ws.getCell('A2').value = 'DESPACHAR';
   ws.getCell('A2').font = { bold: true, size: 12, color: { argb: ACCENT } };
 
+  // Los cinco contadores ocupan las filas 1 a 5, así que la tabla empieza en la
+  // 7. Antes arrancaba en la 4 y SEPARADAS y DISPONIBLES quedaban pisados por
+  // la cabecera de columnas.
   if (totales) {
     contadores(ws, 1, [
       ['VIENEN', totales.vienen], ['SALEN', totales.salen], ['QUEDAN', totales.quedan],
@@ -89,7 +92,7 @@ export function hojaDespachoBodega(wb, despachos, { totales } = {}) {
     ]);
   }
 
-  let fila = cabecera(ws, 4, COLS_BODEGA);
+  let fila = cabecera(ws, totales ? 7 : 4, COLS_BODEGA);
   let totalUnidades = 0;
 
   for (const d of despachos) {
@@ -155,6 +158,21 @@ export function hojaSeparadasBodega(wb, clientes) {
       zebra(ws, fila, COLS_BODEGA.length);
       fila++;
     }
+
+    // Subtotal del cliente: es lo que la bodega tiene que apartarle en total.
+    const subtotal = c.grupos.reduce((s, g) => s + int(g.cantidad), 0);
+    const sr = ws.getRow(fila);
+    sr.height = 20;
+    ws.mergeCells(fila, 1, fila, 4);
+    sr.getCell(1).value = `Total ${c.nombre}`;
+    sr.getCell(1).alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    sr.getCell(5).value = subtotal;
+    sr.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+    for (let i = 1; i <= COLS_BODEGA.length; i++) {
+      sr.getCell(i).font = { bold: true, size: 10, color: { argb: ACCENT } };
+      sr.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'eef0fe' } };
+    }
+    fila++;
   }
 
   const t = ws.getRow(fila);
@@ -172,22 +190,24 @@ export function hojaSeparadasBodega(wb, clientes) {
 /** INVENTARIO(BODEGA) — sin costos ni precios. */
 export function hojaInventarioBodega(wb, filas) {
   const ws = wb.addWorksheet('INVENTARIO(BODEGA)');
-  [18, 16, 24, 14, 10, 10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [18, 16, 24, 14, 10, 10, 10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 6);
-  fila = cabecera(ws, fila, ['CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'FISICO', 'DISP']);
+  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 7);
+  // SEPARADA va entre FÍSICO y DISP: es la resta que explica la diferencia.
+  fila = cabecera(ws, fila, ['CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP']);
 
-  let fisico = 0, disp = 0;
+  let fisico = 0, sep = 0, disp = 0;
   for (const f of filas) {
     const r = ws.getRow(fila);
-    [f.clasificacion, f.categoria, f.referencia, f.calidad, int(f.fisico), int(f.disponibles)].forEach((v, i) => {
+    [f.clasificacion, f.categoria, f.referencia, f.calidad,
+     int(f.fisico), int(f.separadas), int(f.disponibles)].forEach((v, i) => {
       const c = r.getCell(i + 1);
       c.value = v ?? '';
-      c.font = { size: 10, bold: i >= 4 };
+      c.font = { size: 10, bold: i >= 4, color: { argb: i === 5 && int(f.separadas) > 0 ? 'd97706' : INK } };
       c.alignment = { horizontal: i >= 4 ? 'center' : 'left' };
     });
-    zebra(ws, fila, 6);
-    fisico += int(f.fisico); disp += int(f.disponibles);
+    zebra(ws, fila, 7);
+    fisico += int(f.fisico); sep += int(f.separadas); disp += int(f.disponibles);
     fila++;
   }
 
@@ -195,8 +215,9 @@ export function hojaInventarioBodega(wb, filas) {
   ws.mergeCells(fila, 1, fila, 4);
   t.getCell(1).value = 'TOTAL';
   t.getCell(5).value = fisico;
-  t.getCell(6).value = disp;
-  [1, 2, 3, 4, 5, 6].forEach(i => {
+  t.getCell(6).value = sep;
+  t.getCell(7).value = disp;
+  [1, 2, 3, 4, 5, 6, 7].forEach(i => {
     t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
     t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
     t.getCell(i).alignment = { horizontal: i >= 5 ? 'center' : 'right' };
@@ -207,26 +228,56 @@ export function hojaInventarioBodega(wb, filas) {
 // ── CLIENTES ──────────────────────────────────────────────────────
 
 /** LISTADEPRECIOS(CLIENTES) — lo que se manda por WhatsApp. */
-export function hojaListaPreciosClientes(wb, filas) {
+export function hojaListaPreciosClientes(wb, filas, tasa = 0) {
   const ws = wb.addWorksheet('LISTADEPRECIOS(CLIENTES)');
-  [26, 16, 16, 16].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  // Con tasa se agregan las dos columnas en dólares, que es como negocian
+  // algunos clientes; sin tasa la hoja queda igual que antes.
+  const enUSD = num(tasa) > 0;
+  const nCols = enUSD ? 6 : 4;
+  const anchos = enUSD ? [26, 16, 16, 16, 16, 16] : [26, 16, 16, 16];
+  anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  let fila = titulo(ws, `LISTA DE PRECIOS — ${hoyStr()}`, 4);
-  fila = cabecera(ws, fila, ['REFERENCIA', 'CALIDAD', 'PRECIO', 'PROMO']);
+  let fila = titulo(ws, `LISTA DE PRECIOS — ${hoyStr()}`, nCols);
+
+  if (enUSD) {
+    ws.mergeCells(fila, 1, fila, nCols);
+    ws.getCell(fila, 1).value = `Tasa aplicada: 1 US$ = ${num(tasa).toLocaleString('es-CO')} COP`;
+    ws.getCell(fila, 1).font = { size: 10, italic: true, color: { argb: '64748b' } };
+    ws.getCell(fila, 1).alignment = { horizontal: 'center' };
+    fila++;
+  }
+
+  fila = cabecera(ws, fila, enUSD
+    ? ['REFERENCIA', 'CALIDAD', 'PRECIO COP', 'PROMO COP', 'PRECIO US$', 'PROMO US$']
+    : ['REFERENCIA', 'CALIDAD', 'PRECIO', 'PROMO']);
 
   for (const f of filas) {
     const r = ws.getRow(fila);
+    const precio = num(f.precio);
+    const promo = f.precio_promocion != null ? num(f.precio_promocion) : null;
+
     r.getCell(1).value = f.referencia || '';
     r.getCell(2).value = f.calidad || '';
-    r.getCell(3).value = num(f.precio);
+    r.getCell(3).value = precio;
     r.getCell(3).numFmt = '$#,##0';
-    r.getCell(4).value = f.precio_promocion != null ? num(f.precio_promocion) : '';
-    if (f.precio_promocion != null) {
+    r.getCell(4).value = promo != null ? promo : '';
+    if (promo != null) {
       r.getCell(4).numFmt = '$#,##0';
       r.getCell(4).font = { bold: true, color: { argb: 'd97706' } };
     }
-    [3, 4].forEach(i => { r.getCell(i).alignment = { horizontal: 'right' }; });
-    zebra(ws, fila, 4);
+
+    if (enUSD) {
+      r.getCell(5).value = precio / num(tasa);
+      r.getCell(5).numFmt = '#,##0.00';
+      r.getCell(6).value = promo != null ? promo / num(tasa) : '';
+      if (promo != null) {
+        r.getCell(6).numFmt = '#,##0.00';
+        r.getCell(6).font = { bold: true, color: { argb: 'd97706' } };
+      }
+    }
+
+    for (let i = 3; i <= nCols; i++) r.getCell(i).alignment = { horizontal: 'right' };
+    zebra(ws, fila, nCols);
     fila++;
   }
   return ws;
@@ -538,8 +589,8 @@ export function hojaInventarioInterno(wb, filas) {
  * PRECIOSINTERNOS — cómo se arma el precio de venta a partir del costo del
  * contenedor más los gastos y la utilidad que se le fijaron por unidad.
  */
-export function hojaPreciosInternos(wb, cont) {
-  const ws = wb.addWorksheet('PRECIOSINTERNOS');
+export function hojaPreciosInternos(wb, cont, nombreHoja) {
+  const ws = wb.addWorksheet(nombreHoja || 'PRECIOSINTERNOS');
   [22, 14, 22, 14, 12, 16, 16, 16, 16, 18, 16, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   const tasa = num(cont.tasa_conversion) || 1;
@@ -591,8 +642,8 @@ export function hojaPreciosInternos(wb, cont) {
 }
 
 /** UTILIDADCONT — la utilidad del contenedor y su reparto. */
-export function hojaUtilidadContenedor(wb, cont) {
-  const ws = wb.addWorksheet('UTILIDADCONT');
+export function hojaUtilidadContenedor(wb, cont, nombreHoja) {
+  const ws = wb.addWorksheet(nombreHoja || 'UTILIDADCONT');
   [30, 20, 18, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   const pacas = int(cont.total_pacas_recibidas) || int(cont.total_pacas);
