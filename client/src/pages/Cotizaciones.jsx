@@ -215,6 +215,11 @@ export default function Cotizaciones() {
     tipo_descuento: 'valor_fijo',
     transporte_unitario: '',
     tasa: '',
+    tipo_transporte: '',
+    destinatario: '',
+    direccion_entrega: '',
+    ciudad_entrega: '',
+    celular: '',
   });
 
   const [items, setItems] = useState([
@@ -278,7 +283,8 @@ export default function Cotizaciones() {
   };
 
   const openCreateModal = () => {
-    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo', transporte_unitario: '', tasa: '' });
+    setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo', transporte_unitario: '', tasa: '',
+      tipo_transporte: '', destinatario: '', direccion_entrega: '', ciudad_entrega: '', celular: '' });
     setItems([{ referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }]);
     setModalOpen(true);
   };
@@ -301,6 +307,19 @@ export default function Cotizaciones() {
     if (items.length > 1) {
       setItems(items.filter((_, i) => i !== index));
     }
+  };
+
+  // Rellena el destino con los datos del cliente elegido, que es el caso normal.
+  const copiarDatosCliente = () => {
+    const cli = clientes.find(c => String(c.id) === String(formData.cliente_id));
+    if (!cli) return;
+    setFormData(f => ({
+      ...f,
+      destinatario: cli.nombre || '',
+      ciudad_entrega: cli.ciudad || '',
+      direccion_entrega: cli.direccion || '',
+      celular: cli.telefono || '',
+    }));
   };
 
   // Prioridad: 1° promoción activa (referencia+calidad), 2° precio preestablecido (categoria+calidad)
@@ -516,6 +535,11 @@ export default function Cotizaciones() {
         descuento,
         tipo_descuento: formData.tipo_descuento,
         transporte_unitario: parseFloat(formData.transporte_unitario) || 0,
+        tipo_transporte:   formData.tipo_transporte?.trim()   || null,
+        destinatario:      formData.destinatario?.trim()      || null,
+        direccion_entrega: formData.direccion_entrega?.trim() || null,
+        ciudad_entrega:    formData.ciudad_entrega?.trim()    || null,
+        celular:           formData.celular?.trim()           || null,
         tasa: parseFloat(formData.tasa) || 1,
         detalles,
       });
@@ -849,6 +873,63 @@ export default function Cotizaciones() {
                 max="90"
               />
             </div>
+          </div>
+
+          {/* Datos de destino — se acuerdan al cotizar y el despacho los hereda.
+              El destinatario no siempre es el cliente: se factura a uno y se
+              envía a otra persona o local. */}
+          <div className="rounded-xl border border-border bg-primary/[0.02] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-bold text-muted uppercase tracking-widest">Datos de destino</p>
+              {formData.cliente_id && (
+                <button type="button" onClick={copiarDatosCliente}
+                  className="text-xs font-semibold text-secondary hover:underline underline-offset-2">
+                  Usar los datos del cliente
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted mb-1">Nombre de destino</label>
+                <input type="text" value={formData.destinatario}
+                  onChange={(e) => setFormData(f => ({ ...f, destinatario: e.target.value }))}
+                  placeholder="Si es distinto al cliente…"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted mb-1">Tipo de transporte</label>
+                <input type="text" list="cot-transportes" value={formData.tipo_transporte}
+                  onChange={(e) => setFormData(f => ({ ...f, tipo_transporte: e.target.value }))}
+                  placeholder="Elige o escribe uno nuevo…" autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+                <datalist id="cot-transportes">
+                  {['terrestre', 'maritimo', 'aereo', 'recoge_cliente', 'paqueteria', 'mensajero', 'flota', 'contenedor']
+                    .map(t => <option key={t} value={t} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted mb-1">Ciudad</label>
+                <input type="text" value={formData.ciudad_entrega}
+                  onChange={(e) => setFormData(f => ({ ...f, ciudad_entrega: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted mb-1">Celular</label>
+                <input type="text" value={formData.celular}
+                  onChange={(e) => setFormData(f => ({ ...f, celular: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-muted mb-1">Dirección de entrega</label>
+                <input type="text" value={formData.direccion_entrega}
+                  onChange={(e) => setFormData(f => ({ ...f, direccion_entrega: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              </div>
+            </div>
+            <p className="text-xs text-muted">
+              Opcional. Lo que escribas aquí lo hereda el despacho cuando la cotización se convierta en venta.
+            </p>
           </div>
 
           {/* Aviso inventario */}

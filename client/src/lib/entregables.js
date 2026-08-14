@@ -10,6 +10,7 @@ const LIGHT = 'f1f5f9';
 const ACCENT = '6366f1';
 
 export const num = (v) => parseFloat(v) || 0;
+const norm = (v) => String(v ?? '').trim();
 export const int = (v) => parseInt(v) || 0;
 const hoyStr = () => new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -249,7 +250,20 @@ export function hojaCotizacionCliente(wb, cot, nombreHoja) {
   ws.getCell('E1').font = { bold: true, size: 10 };
   ws.getCell('F1').value = tasa || '';
 
-  let fila = cabecera(ws, 3, ['REFERENCIA', 'CALIDAD', 'PRECIO', 'CANTIDAD', 'TOTAL', 'US$']);
+  // Destino acordado en la cotización (puede no ser el mismo cliente).
+  const destino = [cot.destinatario, cot.ciudad_entrega, cot.direccion_entrega, cot.celular]
+    .map(norm).filter(Boolean);
+  let filaInicio = 3;
+  if (destino.length || norm(cot.tipo_transporte)) {
+    ws.mergeCells('A2:F2');
+    ws.getCell('A2').value =
+      'ENVIAR A: ' + (destino.join(' · ') || '—') +
+      (norm(cot.tipo_transporte) ? `  ·  Transporte: ${cot.tipo_transporte}` : '');
+    ws.getCell('A2').font = { size: 10, bold: true, color: { argb: ACCENT } };
+    filaInicio = 4;
+  }
+
+  let fila = cabecera(ws, filaInicio, ['REFERENCIA', 'CALIDAD', 'PRECIO', 'CANTIDAD', 'TOTAL', 'US$']);
 
   let subtotal = 0;
   for (const d of (cot.detalles || [])) {
