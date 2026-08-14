@@ -2314,6 +2314,14 @@ export default function Contenedores() {
                     <input type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
                       value={formData.utilidad_unitaria}
                       onChange={(e) => setFormData({ ...formData, utilidad_unitaria: e.target.value })} />
+                    {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
+                    {parseMonto(formData.utilidad_unitaria) > 0 && (
+                      <p className="text-[10px] mt-0.5">
+                        <span className="text-muted">Total: </span>
+                        <b className="font-mono text-emerald-600">{formatCurrency(resumen.utilidadTotal)}</b>
+                        <span className="text-muted/70"> ({resumen.totalPacas} unidades suyas)</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className={lbl}>Gastos por unidad (COP)</label>
