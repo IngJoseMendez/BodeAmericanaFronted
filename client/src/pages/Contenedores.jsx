@@ -396,7 +396,7 @@ export default function Contenedores() {
   const temporadasOpts = temporadasRaw.map(t => t.nombre);
 
   // ── Form ───────────────────────────────────────────────────────
-  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '' });
+  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
 
@@ -1339,6 +1339,12 @@ export default function Contenedores() {
                costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
     });
 
+    // Los servicios se facturan por el contenedor COMPLETO, que puede ir
+    // compartido. Se dividen entre la cantidad total (manual) y solo la parte
+    // proporcional a las unidades propias entra al costo.
+    const cantidadTotal = parseInt(formData.cantidad_total) || 0;
+    const baseProrrateo = cantidadTotal > 0 ? cantidadTotal : totalPacas;
+
     const serviciosDetalle = servicios.map(sv => {
       const costoReal = parseFloat(sv.costo) || 0;
       const costoOriginal = costoReal > 0
@@ -1346,8 +1352,18 @@ export default function Contenedores() {
         : ((parseInt(sv.cantidad_estimada) || 0) * (parseFloat(sv.valor_unidad_estimado) || 0)) || (parseFloat(sv.valor_unidad_estimado) || 0);
       const moneda = sv.moneda || 'COP';
       const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
-      return { tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda, costoOriginal, costo: costoEnCOP,
-               costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
+      // Costo unitario del servicio: se reparte entre TODO el contenedor.
+      const costoUnitarioServicio = baseProrrateo > 0 ? costoEnCOP / baseProrrateo : 0;
+      // Lo que efectivamente cuesta ese servicio para las unidades propias.
+      const costoAsignado = costoUnitarioServicio * totalPacas;
+      return {
+        tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda,
+        costoOriginal,
+        costoFacturado: costoEnCOP,        // lo que cobra el proveedor por el contenedor
+        costoUnitario: costoUnitarioServicio,
+        costo: costoAsignado,              // la parte que asumen ustedes
+        costoPorPaca: costoUnitarioServicio,
+      };
     });
 
     const costoMercancia = proveedoresDetalle.reduce((s, p) => s + p.costoEnCOP, 0);
@@ -1399,10 +1415,18 @@ export default function Contenedores() {
     const provsCompletos = avanceProveedores.filter(a => a.completo).length;
     const svCompletos = avanceServicios.filter(s => s.completo).length;
 
+    // Cifras que la operación necesita ver sin sacar calculadora.
+    const utilidadUnitaria = parseMonto(formData.utilidad_unitaria);
+    const utilidadTotal = utilidadUnitaria * totalPacas;
+    const inversionTotal = costoTotal + utilidadTotal;
+    const costoServiciosPorUnidad = totalPacas > 0 ? costoServicios / totalPacas : 0;
+
     return {
       proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal,
       costoUnitario, sumDetalles, cantidadValida, esEstimado, totalPacas,
       avanceProveedores, avanceServicios, faltanUnidades, provsCompletos, svCompletos,
+      cantidadTotal, baseProrrateo,
+      utilidadTotal, inversionTotal, costoServiciosPorUnidad,
     };
   };
 
@@ -1456,7 +1480,7 @@ export default function Contenedores() {
 
   // ── Reset ──────────────────────────────────────────────────────
   const resetForm = () => {
-    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '' });
+    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
     setProveedores([emptyProveedor()]);
     setServicios([emptyServicio()]);
   };
@@ -1519,6 +1543,7 @@ export default function Contenedores() {
         tasa_conversion: String(full.tasa_conversion || '1'),
         total_pacas: String(full.total_pacas),
         notas: full.notas || '',
+        cantidad_total: full.cantidad_total != null ? String(full.cantidad_total) : '',
         utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
         gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
       });
@@ -1580,6 +1605,7 @@ export default function Contenedores() {
         tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
         total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
+        cantidad_total: formData.cantidad_total === '' ? null : (parseInt(formData.cantidad_total) || null),
         utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
         gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
@@ -2249,6 +2275,22 @@ export default function Contenedores() {
                     <input type="date" className={inp}
                       value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
                   </div>
+
+                  {/* Unidades del contenedor FÍSICO completo. Los servicios se
+                      cobran por el contenedor entero, así que se prorratean
+                      sobre esta cantidad cuando va compartido con otros. */}
+                  <div>
+                    <label className={lbl}>Cantidad total del contenedor</label>
+                    <input type="number" min="0" className={inp} placeholder="ej. 312"
+                      value={formData.cantidad_total}
+                      onChange={(e) => setFormData({ ...formData, cantidad_total: e.target.value })}
+                      title="Unidades de TODO el contenedor, incluidas las de otros si va compartido. Sobre esta cantidad se reparten los servicios." />
+                    <p className="text-[10px] text-muted mt-0.5">
+                      {parseInt(formData.cantidad_total) > 0 && parseInt(formData.cantidad_total) !== (parseInt(formData.total_pacas) || 0)
+                        ? <>Compartido: de {formData.cantidad_total} unidades, {formData.total_pacas || 0} son suyas.</>
+                        : 'Vacío = igual al total de unidades propias.'}
+                    </p>
+                  </div>
                   <div>
                     <label className={lbl}>
                       Total de Unidades
@@ -2280,24 +2322,45 @@ export default function Contenedores() {
                       onChange={(e) => setFormData({ ...formData, gastos_unitarios: e.target.value })} />
                   </div>
 
-                  {(parseMonto(formData.utilidad_unitaria) > 0 || parseMonto(formData.gastos_unitarios) > 0) && (
-                    <div className="col-span-2 md:col-span-3 rounded-xl bg-primary/5 border border-border px-3 py-2.5 text-xs flex flex-wrap items-center gap-x-5 gap-y-1">
-                      <span className="text-muted">
-                        Utilidad del contenedor:{' '}
-                        <b className="font-mono text-emerald-600">
-                          {formatCurrency(parseMonto(formData.utilidad_unitaria) * (parseInt(formData.total_pacas) || 0))}
-                        </b>
-                        <span className="text-muted/70"> ({formData.total_pacas || 0} unidades)</span>
-                      </span>
-                      <span className="text-muted">
-                        Precio de venta sugerido:{' '}
-                        <b className="font-mono text-secondary">
-                          {formatCurrency(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria))}
-                        </b>
-                        <span className="text-muted/70"> = costo + gastos + utilidad</span>
-                      </span>
+                  {/* Cifras derivadas: no se escriben, se calculan solas */}
+                  <div className="col-span-2 md:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {[
+                      { l: 'Total costo', v: resumen.costoTotal, ayuda: 'Todas las facturas de proveedores + los servicios que les corresponden' },
+                      { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
+                      { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
+                      { l: 'Total servicios', v: resumen.costoServicios, ayuda: 'Solo servicios, sin proveedores de mercancía' },
+                    ].map((c, i) => (
+                      <div key={i} className="rounded-xl bg-primary/5 border border-border px-3 py-2" title={c.ayuda}>
+                        <p className="text-[9px] font-bold text-muted uppercase tracking-wide flex items-center gap-1">
+                          {c.l}
+                          <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
+                        </p>
+                        <p className={`text-sm font-mono font-bold tabular-nums ${c.color || 'text-primary'}`}>
+                          {formatCurrency(c.v)}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="rounded-xl bg-primary/5 border border-border px-3 py-2 col-span-2"
+                         title="Total de servicios dividido entre las unidades propias">
+                      <p className="text-[9px] font-bold text-muted uppercase tracking-wide flex items-center gap-1">
+                        Servicios por unidad
+                        <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
+                      </p>
+                      <p className="text-sm font-mono font-bold text-primary tabular-nums">
+                        {formatCurrency(resumen.costoServiciosPorUnidad)}
+                        <span className="text-[10px] font-normal text-muted ml-1">/unidad</span>
+                      </p>
                     </div>
-                  )}
+                    {parseMonto(formData.utilidad_unitaria) > 0 && (
+                      <div className="rounded-xl bg-secondary/8 border border-secondary/20 px-3 py-2 col-span-2"
+                           title="Costo unitario + gastos por unidad + utilidad por unidad">
+                        <p className="text-[9px] font-bold text-secondary uppercase tracking-wide">Precio de venta sugerido</p>
+                        <p className="text-sm font-mono font-bold text-secondary tabular-nums">
+                          {formatCurrency(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria))}
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="col-span-2 md:col-span-3">
                     <label className={lbl}>Notas</label>
@@ -2520,7 +2583,8 @@ export default function Contenedores() {
                             <option value="USD">USD</option>
                             <option value="COP">COP</option>
                           </select>
-                          <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo $"
+                          <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo servicio"
+                            title="Lo que cobra el proveedor por TODO el contenedor"
                             value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
                           {servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
@@ -2529,6 +2593,28 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
+                        {/* Cómo se reparte este servicio: se divide entre TODO el
+                            contenedor y se imputa la parte de las unidades propias. */}
+                        {resumen.serviciosDetalle[si]?.costoFacturado > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-primary/[0.03] border border-border/60 px-2.5 py-1.5 text-[11px]">
+                            <span className="text-muted">
+                              Costo unitario{' '}
+                              <b className="font-mono text-primary">{formatCurrency(resumen.serviciosDetalle[si].costoUnitario)}</b>
+                              <span className="text-muted/70"> (÷ {resumen.baseProrrateo || 0} und.)</span>
+                            </span>
+                            <span className="text-muted">
+                              Costo total{' '}
+                              <b className="font-mono text-secondary">{formatCurrency(resumen.serviciosDetalle[si].costo)}</b>
+                              <span className="text-muted/70"> (× {resumen.totalPacas} suyas)</span>
+                            </span>
+                            {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && (
+                              <span className="text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
+                                compartido
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         {(srv.moneda || 'COP') === 'USD' && parseFloat(srv.costo) > 0 && (
                           <div className="flex items-center gap-2 pl-1">
                             <span className="text-[10px] text-muted">≈</span>
