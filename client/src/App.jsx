@@ -34,6 +34,7 @@ const DeudaMasiva = lazy(() => import('./pages/DeudaMasiva'));
 const Historico = lazy(() => import('./pages/Historico'));
 const Gastos = lazy(() => import('./pages/Gastos'));
 const Utilidad = lazy(() => import('./pages/Utilidad'));
+const Entregables = lazy(() => import('./pages/Entregables'));
 
 // Pantalla de espera mientras se descarga el código de la página solicitada.
 function CargandoPagina() {
@@ -91,6 +92,7 @@ function RutasAdmin() {
         <Route path="/historico" element={<SoloAdmin><Historico /></SoloAdmin>} />
         <Route path="/gastos" element={<SoloAdmin><Gastos /></SoloAdmin>} />
         <Route path="/utilidad" element={<SoloAdmin><Utilidad /></SoloAdmin>} />
+        <Route path="/entregables" element={<Entregables />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </CatalogProvider>

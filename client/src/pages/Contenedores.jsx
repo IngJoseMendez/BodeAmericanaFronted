@@ -396,7 +396,7 @@ export default function Contenedores() {
   const temporadasOpts = temporadasRaw.map(t => t.nombre);
 
   // ── Form ───────────────────────────────────────────────────────
-  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });
+  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '' });
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
 
@@ -1456,7 +1456,7 @@ export default function Contenedores() {
 
   // ── Reset ──────────────────────────────────────────────────────
   const resetForm = () => {
-    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '' });
+    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '' });
     setProveedores([emptyProveedor()]);
     setServicios([emptyServicio()]);
   };
@@ -1519,6 +1519,8 @@ export default function Contenedores() {
         tasa_conversion: String(full.tasa_conversion || '1'),
         total_pacas: String(full.total_pacas),
         notas: full.notas || '',
+        utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
+        gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
       });
       setProveedores(full.proveedores_mercancia.length > 0
         ? full.proveedores_mercancia.map((p) => ({
@@ -1578,6 +1580,8 @@ export default function Contenedores() {
         tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
         total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
+        utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
+        gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
@@ -2261,6 +2265,40 @@ export default function Contenedores() {
                     <input type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
                       value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
                   </div>
+                  {/* La utilidad NO se deduce de los precios: se fija aquí por
+                      unidad y de ella sale el precio de venta y la ganancia. */}
+                  <div>
+                    <label className={lbl}>Utilidad por unidad (COP)</label>
+                    <input type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
+                      value={formData.utilidad_unitaria}
+                      onChange={(e) => setFormData({ ...formData, utilidad_unitaria: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Gastos por unidad (COP)</label>
+                    <input type="text" inputMode="decimal" className={inp} placeholder="ej. 15.000"
+                      value={formData.gastos_unitarios}
+                      onChange={(e) => setFormData({ ...formData, gastos_unitarios: e.target.value })} />
+                  </div>
+
+                  {(parseMonto(formData.utilidad_unitaria) > 0 || parseMonto(formData.gastos_unitarios) > 0) && (
+                    <div className="col-span-2 md:col-span-3 rounded-xl bg-primary/5 border border-border px-3 py-2.5 text-xs flex flex-wrap items-center gap-x-5 gap-y-1">
+                      <span className="text-muted">
+                        Utilidad del contenedor:{' '}
+                        <b className="font-mono text-emerald-600">
+                          {formatCurrency(parseMonto(formData.utilidad_unitaria) * (parseInt(formData.total_pacas) || 0))}
+                        </b>
+                        <span className="text-muted/70"> ({formData.total_pacas || 0} unidades)</span>
+                      </span>
+                      <span className="text-muted">
+                        Precio de venta sugerido:{' '}
+                        <b className="font-mono text-secondary">
+                          {formatCurrency(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria))}
+                        </b>
+                        <span className="text-muted/70"> = costo + gastos + utilidad</span>
+                      </span>
+                    </div>
+                  )}
+
                   <div className="col-span-2 md:col-span-3">
                     <label className={lbl}>Notas</label>
                     <input type="text" className={inp} placeholder="Observaciones opcionales..."

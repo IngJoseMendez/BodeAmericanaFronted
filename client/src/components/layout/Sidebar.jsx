@@ -29,7 +29,8 @@ import {
   ListChecks,
   BarChart3,
   Coins,
-  TrendingUp
+  TrendingUp,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -59,6 +60,7 @@ const adminNavItems = [
   { path: '/utilidad',             icon: TrendingUp,      label: 'Utilidad',         key: null, rol: 'admin' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
   { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
+  { path: '/entregables',          icon: FileSpreadsheet, label: 'Entregables',     key: null },
   { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },
   { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',       key: null },
   { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',        key: null, rol: 'admin' },
