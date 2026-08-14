@@ -5,6 +5,7 @@ import { dashboardApi, gastosApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { TrendingUp, TrendingDown, Download, Coins, Package, Receipt } from 'lucide-react';
 import { formatCOP } from '../lib/money';
+import { Inversionistas } from '../components/Inversionistas';
 
 // La utilidad BRUTA es venta − costo de la mercancía. La NETA descuenta además
 // los gastos de operación del período, que es la plata que realmente queda.
@@ -346,6 +347,9 @@ export default function Utilidad() {
             </CardBody>
           </Card>
         </div>
+
+        {/* Reparto de la utilidad del contenedor entre quienes lo financiaron */}
+        <Inversionistas />
 
         {/* Detalle venta por venta */}
         <Card padding={false}>
