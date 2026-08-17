@@ -225,6 +225,110 @@ export function hojaInventarioBodega(wb, filas) {
   return ws;
 }
 
+/**
+ * MATRIZ — el inventario completo y, a partir de la última columna de
+ * inventario, una columna por cliente con lo que tiene separado de esa
+ * referencia. Permite ver de un vistazo quién tiene apartado qué.
+ *
+ * @param filas       inventario agrupado (referencia/calidad con físico, sep, disp)
+ * @param separadas   filas de pacas comprometidas, con cliente_nombre
+ */
+export function hojaMatrizClientes(wb, filas, separadas) {
+  const ws = wb.addWorksheet('MATRIZ');
+
+  // Clave de cruce entre inventario y separadas. Solo usa los tres campos que
+  // ambas fuentes traen siempre: si se incluyeran familia o categoría —que el
+  // endpoint de comprometidas no devuelve— ninguna fila cruzaría y la matriz
+  // saldría vacía.
+  const clave = (r) => [norm(r.clasificacion), norm(r.referencia), norm(r.calidad)]
+    .join('||').toLowerCase();
+
+  const porProducto = new Map();
+  const clientes = new Set();
+  for (const s of separadas) {
+    if (s.estado === 'despachada') continue;
+    const cliente = norm(s.cliente_nombre) || 'Sin cliente';
+    clientes.add(cliente);
+    const k = clave(s);
+    if (!porProducto.has(k)) porProducto.set(k, new Map());
+    const m = porProducto.get(k);
+    m.set(cliente, (m.get(cliente) || 0) + 1);
+  }
+  const cols = [...clientes].sort((a, b) => a.localeCompare(b, 'es'));
+
+  const FIJAS = ['FAMILIA', 'CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP'];
+  const nCols = FIJAS.length + cols.length;
+
+  [16, 18, 16, 24, 14, 10, 11, 10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  cols.forEach((_, i) => { ws.getColumn(FIJAS.length + i + 1).width = 16; });
+
+  let fila = titulo(ws, `INVENTARIO Y SEPARADAS POR CLIENTE — ${hoyStr()}`, nCols);
+  fila = cabecera(ws, fila, [...FIJAS, ...cols]);
+  const filaCab = fila - 1;
+
+  // Las columnas de cliente se distinguen con otro color para que se lea dónde
+  // termina el inventario y empiezan los clientes.
+  cols.forEach((_, i) => {
+    const c = ws.getRow(filaCab).getCell(FIJAS.length + i + 1);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ACCENT } };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, textRotation: 45 };
+  });
+  ws.getRow(filaCab).height = 64;
+
+  const totales = { fisico: 0, sep: 0, disp: 0, porCliente: cols.map(() => 0) };
+
+  for (const f of filas) {
+    const r = ws.getRow(fila);
+    const base = [
+      f.familia || '', f.clasificacion || '', f.categoria || '', f.referencia || '', f.calidad || '',
+      int(f.fisico), int(f.separadas), int(f.disponibles),
+    ];
+    base.forEach((v, i) => {
+      const c = r.getCell(i + 1);
+      c.value = v ?? '';
+      c.font = { size: 10, bold: i >= 5 };
+      c.alignment = { horizontal: i >= 5 ? 'center' : 'left' };
+    });
+
+    const m = porProducto.get(clave(f)) || new Map();
+    cols.forEach((cli, i) => {
+      const cant = m.get(cli) || 0;
+      const c = r.getCell(FIJAS.length + i + 1);
+      c.value = cant || '';
+      c.alignment = { horizontal: 'center' };
+      if (cant) {
+        c.font = { size: 10, bold: true, color: { argb: 'd97706' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fdf3e6' } };
+      }
+      totales.porCliente[i] += cant;
+    });
+
+    totales.fisico += int(f.fisico);
+    totales.sep += int(f.separadas);
+    totales.disp += int(f.disponibles);
+    fila++;
+  }
+
+  const t = ws.getRow(fila);
+  ws.mergeCells(fila, 1, fila, 5);
+  t.getCell(1).value = 'TOTAL';
+  t.getCell(6).value = totales.fisico;
+  t.getCell(7).value = totales.sep;
+  t.getCell(8).value = totales.disp;
+  cols.forEach((_, i) => { t.getCell(FIJAS.length + i + 1).value = totales.porCliente[i] || ''; });
+  for (let i = 1; i <= nCols; i++) {
+    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    t.getCell(i).alignment = { horizontal: i === 1 ? 'right' : 'center' };
+  }
+  t.height = 22;
+
+  // Se congelan las columnas de inventario para poder desplazarse entre clientes
+  // sin perder de vista de qué producto se está hablando.
+  ws.views = [{ state: 'frozen', xSplit: FIJAS.length, ySplit: filaCab }];
+  return ws;
+}
+
 // ── CLIENTES ──────────────────────────────────────────────────────
 
 /** LISTADEPRECIOS(CLIENTES) — lo que se manda por WhatsApp. */

@@ -3,13 +3,17 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
 import { tiposPacaApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes } from 'lucide-react';
 
 export default function TiposPaca() {
   const [tipos, setTipos]           = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [calidades, setCalidades]   = useState([]);
   const [temporadas, setTemporadas] = useState([]);
+  const [familias, setFamilias]     = useState([]);
+  const [loadingFams, setLoadingFams]     = useState(true);
+  const [nuevaFamilia, setNuevaFamilia]   = useState({ nombre: '', descripcion: '' });
+  const [guardandoFam, setGuardandoFam]   = useState(false);
 
   const [loadingTipos, setLoadingTipos]   = useState(true);
   const [loadingCats, setLoadingCats]     = useState(true);
@@ -17,7 +21,7 @@ export default function TiposPaca() {
   const [loadingTemps, setLoadingTemps]   = useState(true);
 
   const [nuevoTipo,      setNuevoTipo]      = useState({ nombre: '', descripcion: '' });
-  const [nuevaCategoria, setNuevaCategoria] = useState({ nombre: '', descripcion: '', temporada_id: '' });
+  const [nuevaCategoria, setNuevaCategoria] = useState({ nombre: '', descripcion: '', temporada_id: '', familia_id: '' });
   const [nuevaCalidad,   setNuevaCalidad]   = useState({ nombre: '', descripcion: '' });
   const [nuevaTemporada, setNuevaTemporada] = useState({ nombre: '', descripcion: '' });
 
@@ -40,7 +44,7 @@ export default function TiposPaca() {
   const { reload: reloadCatalog } = useCatalog();
 
   useEffect(() => {
-    loadTipos(); loadCategorias(); loadCalidades(); loadTemporadas();
+    loadTipos(); loadCategorias(); loadCalidades(); loadTemporadas(); loadFamilias();
   }, []);
 
   const loadTipos = async () => {
@@ -68,6 +72,48 @@ export default function TiposPaca() {
     finally { setLoadingTemps(false); }
   };
 
+  // Familias: agrupan referencias parecidas ("Chaqueta deportiva" y
+  // "Chaqueta mixta" bajo "Chaquetas") sin reemplazar a la referencia.
+  const loadFamilias = async () => {
+    setLoadingFams(true);
+    try { setFamilias(await tiposPacaApi.getFamilias()); }
+    catch (err) { addToast(err.message, 'error'); }
+    finally { setLoadingFams(false); }
+  };
+
+  const handleCrearFamilia = async (e) => {
+    e.preventDefault();
+    if (!nuevaFamilia.nombre.trim()) return;
+    try {
+      setGuardandoFam(true);
+      await tiposPacaApi.createFamilia(nuevaFamilia);
+      addToast('Familia "' + nuevaFamilia.nombre + '" creada', 'success');
+      setNuevaFamilia({ nombre: '', descripcion: '' });
+      loadFamilias();
+      reloadCatalog();
+    } catch (err) { addToast(err.message, 'error'); }
+    finally { setGuardandoFam(false); }
+  };
+
+  const handleEliminarFamilia = async (fam) => {
+    const ok = await confirm({
+      title: '¿Eliminar la familia "' + fam.nombre + '"?',
+      message: fam.referencias > 0
+        ? 'Sus ' + fam.referencias + ' referencia(s) quedarán sin familia, pero no se borran.'
+        : 'No tiene referencias asociadas.',
+      confirmText: 'Eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await tiposPacaApi.deleteFamilia(fam.id);
+      addToast('Familia eliminada', 'success');
+      loadFamilias();
+      loadCategorias();
+      reloadCatalog();
+    } catch (err) { addToast(err.message, 'error'); }
+  };
+
   const handleCrearTipo = async (e) => {
     e.preventDefault(); setErrorTipo('');
     if (!nuevoTipo.nombre.trim()) { setErrorTipo('El nombre es requerido'); return; }
@@ -88,7 +134,7 @@ export default function TiposPaca() {
     try {
       const created = await tiposPacaApi.createCategoria(nuevaCategoria);
       setCategorias(prev => [...prev, created]);
-      setNuevaCategoria({ nombre: '', descripcion: '', temporada_id: '' });
+      setNuevaCategoria({ nombre: '', descripcion: '', temporada_id: '', familia_id: '' });
       addToast(`Referencia "${created.nombre}" creada`, 'success');
       reloadCatalog();
     } catch (err) { setErrorCat(err.message); }
@@ -162,7 +208,7 @@ export default function TiposPaca() {
     } catch (err) { addToast(err.message, 'error'); }
   };
 
-  const startEdit = (table, item) => setEditando({ table, id: item.id, nombre: item.nombre, temporada_id: item.temporada_id || '' });
+  const startEdit = (table, item) => setEditando({ table, id: item.id, nombre: item.nombre, temporada_id: item.temporada_id || '', familia_id: item.familia_id || '' });
   const cancelEdit = () => setEditando(null);
 
   const saveEdit = async () => {
@@ -175,7 +221,7 @@ export default function TiposPaca() {
         updated = await tiposPacaApi.updateTipo(editando.id, data);
         setTipos(prev => prev.map(t => t.id === updated.id ? updated : t));
       } else if (editando.table === 'categorias') {
-        updated = await tiposPacaApi.updateCategoria(editando.id, { ...data, temporada_id: editando.temporada_id || null });
+        updated = await tiposPacaApi.updateCategoria(editando.id, { ...data, temporada_id: editando.temporada_id || null, familia_id: editando.familia_id || null });
         setCategorias(prev => prev.map(c => c.id === updated.id ? updated : c));
       } else if (editando.table === 'calidades') {
         updated = await tiposPacaApi.updateCalidad(editando.id, data);
@@ -222,12 +268,29 @@ export default function TiposPaca() {
                   ))}
                 </select>
               )}
+              {/* La familia agrupa referencias parecidas: "Chaqueta deportiva" y
+                  "Chaqueta mixta" bajo "Chaquetas". */}
+              {table === 'categorias' && (
+                <select
+                  value={editando.familia_id || ''}
+                  onChange={e => setEditando(prev => ({ ...prev, familia_id: e.target.value }))}
+                  className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
+                >
+                  <option value="">Sin familia</option>
+                  {familias.map(fa => (
+                    <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
+                  ))}
+                </select>
+              )}
             </div>
           ) : (
             <div className="min-w-0">
               <p className="font-medium text-sm text-primary">{capitalize(item.nombre)}</p>
               {item.temporada_nombre && (
                 <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-medium">{capitalize(item.temporada_nombre)}</span>
+              )}
+              {item.familia_nombre && (
+                <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{capitalize(item.familia_nombre)}</span>
               )}
               {item.descripcion && <p className="text-xs text-muted truncate mt-0.5">{item.descripcion}</p>}
             </div>
@@ -275,7 +338,7 @@ export default function TiposPaca() {
     );
   };
 
-  const Panel = ({ title, icon: Icon, count, error, form, loading, items, table, onDelete, onCreate, formState, setFormState, submitting, placeholder, extraFormContent }) => (
+  const Panel = ({ title, icon: Icon, count, error, form, loading, items, table, onDelete, onCreate, formState, setFormState, submitting, placeholder, extraFormContent, extraFormContent2 }) => (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <div className="p-2 bg-primary/5 rounded-xl"><Icon className="w-5 h-5 text-primary" /></div>
@@ -292,6 +355,7 @@ export default function TiposPaca() {
             <Input placeholder={placeholder} value={formState.nombre} onChange={e => setFormState({ ...formState, nombre: e.target.value })} />
             <Input placeholder="Descripción (opcional)" value={formState.descripcion} onChange={e => setFormState({ ...formState, descripcion: e.target.value })} />
             {extraFormContent}
+            {extraFormContent2}
             <Button type="submit" variant="secondary" className="w-full" loading={submitting}>Agregar</Button>
           </form>
         </CardBody>
@@ -378,6 +442,18 @@ export default function TiposPaca() {
                 ))}
               </select>
             }
+            extraFormContent2={
+              <select
+                value={nuevaCategoria.familia_id}
+                onChange={e => setNuevaCategoria(f => ({ ...f, familia_id: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              >
+                <option value="">Familia (opcional)</option>
+                {familias.map(fa => (
+                  <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
+                ))}
+              </select>
+            }
           />
 
           <Panel
@@ -394,6 +470,21 @@ export default function TiposPaca() {
             setFormState={setNuevaCalidad}
             submitting={guardandoCal}
             placeholder="ej: premium, supreme..."
+          />
+
+          <Panel
+            title="Familias"
+            icon={Boxes}
+            table="familias"
+            count={familias.length}
+            loading={loadingFams}
+            items={familias}
+            onDelete={handleEliminarFamilia}
+            onCreate={handleCrearFamilia}
+            formState={nuevaFamilia}
+            setFormState={setNuevaFamilia}
+            submitting={guardandoFam}
+            placeholder="ej: chaquetas, pantalones..."
           />
 
         </div>

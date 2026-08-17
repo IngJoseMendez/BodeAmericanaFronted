@@ -8,6 +8,7 @@ export function CatalogProvider({ children }) {
   const [categorias, setCategorias] = useState([]);
   const [calidades,  setCalidades]  = useState([]);
   const [temporadas, setTemporadas] = useState([]);
+  const [familias,   setFamilias]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
 
@@ -18,11 +19,12 @@ export function CatalogProvider({ children }) {
   // en Promociones, Precios, Pacas, Contenedores y Cotizaciones.
   const reload = useCallback(async () => {
     setLoading(true);
-    const [t, c, q, s] = await Promise.allSettled([
+    const [t, c, q, s, fam] = await Promise.allSettled([
       tiposPacaApi.getTipos(),
       tiposPacaApi.getCategorias(),
       tiposPacaApi.getCalidades(),
       tiposPacaApi.getTemporadas(),
+      tiposPacaApi.getFamilias(),
     ]);
 
     const lista = (r) => (r.status === 'fulfilled' && Array.isArray(r.value) ? r.value : []);
@@ -30,6 +32,7 @@ export function CatalogProvider({ children }) {
     setCategorias(lista(c));
     setCalidades(lista(q));
     setTemporadas(lista(s));
+    setFamilias(lista(fam));
 
     const fallidos = [
       [t, 'clasificaciones'], [c, 'referencias'],
@@ -50,7 +53,7 @@ export function CatalogProvider({ children }) {
   useEffect(() => { reload(); }, [reload]);
 
   return (
-    <CatalogContext.Provider value={{ tipos, categorias, calidades, temporadas, loading, error, reload }}>
+    <CatalogContext.Provider value={{ tipos, categorias, calidades, temporadas, familias, loading, error, reload }}>
       {children}
     </CatalogContext.Provider>
   );

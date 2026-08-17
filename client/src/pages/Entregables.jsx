@@ -9,7 +9,7 @@ import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2 } from 'lucid
 import { parseMonto } from '../lib/money';
 import {
   nuevoLibro, descargar, int,
-  hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega,
+  hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega, hojaMatrizClientes,
   hojaListaPreciosClientes, hojaCotizacionCliente, hojaCarteraCliente,
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
   hojaPreciosInternos, hojaUtilidadContenedor,
@@ -145,6 +145,7 @@ export default function Entregables() {
     hojaDespachoBodega(wb, await armarDespachos(), { totales: totalesBodega() });
     hojaSeparadasBodega(wb, armarSeparadas());
     hojaInventarioBodega(wb, datos.inventario || []);
+    hojaMatrizClientes(wb, datos.inventario || [], datos.comprometidas || []);
   };
 
   // Lo que se manda a TODOS los clientes por igual. La cartera y las
@@ -236,7 +237,7 @@ export default function Entregables() {
       id: 'bodega', titulo: 'Para la bodega', icon: Package2,
       color: 'text-emerald-600 bg-emerald-50',
       desc: 'Lo que tienen que alistar y lo que está apartado. Sin precios.',
-      hojas: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)'],
+      hojas: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ'],
       gen: genBodega, archivo: 'Entregables_Bodega',
     },
     {
