@@ -4,20 +4,16 @@ import { Card, CardBody, Button, useToast, useConfirm } from '../components/comm
 import { preciosPromocionApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
+import { hoy, formatFecha, entreFechas } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
-const formatCurrency = (v) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
+const formatCurrency = formatCOP;
 
-const formatDate = (d) =>
-  d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+const formatDate = formatFecha;
 
-const isActive = (row) => {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const inicio = new Date(row.fecha_inicio);
-  const fin    = new Date(row.fecha_fin);
-  return row.activo && inicio <= now && fin >= now;
-};
+// La vigencia se compara por día, no por instante: antes `new Date('2026-08-25')`
+// se leía como medianoche UTC y la promoción se apagaba el 24 por la tarde.
+const isActive = (row) => row.activo && entreFechas(hoy(), row.fecha_inicio, row.fecha_fin);
 
 const emptyForm = { referencia: '', calidad: '', clasificacion: '', precio_promocional: '', fecha_inicio: '', fecha_fin: '', activo: true };
 

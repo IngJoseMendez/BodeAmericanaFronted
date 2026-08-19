@@ -4,10 +4,10 @@ import { Card, CardBody, Button, useToast, Badge, TableSkeleton, RefLink } from 
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw } from 'lucide-react';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-};
+const formatCurrency = formatCOP;
 
 export default function Reportes() {
   const [loading, setLoading] = useState(true);
@@ -353,7 +353,7 @@ export default function Reportes() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `Reporte_Bodega_${mesActual?.mes_nombre?.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `Reporte_Bodega_${mesActual?.mes_nombre?.replace(' ', '_')}_${hoy()}.xlsx`;
       link.click();
       
       addToast('✅ Reporte Excel descargado correctamente', 'success');

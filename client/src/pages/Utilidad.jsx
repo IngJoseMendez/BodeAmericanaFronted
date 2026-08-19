@@ -5,6 +5,7 @@ import { dashboardApi, gastosApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { TrendingUp, TrendingDown, Download, Coins, Package, Receipt } from 'lucide-react';
 import { formatCOP } from '../lib/money';
+import { aInputDate } from '../lib/fecha';
 import { Inversionistas } from '../components/Inversionistas';
 
 // La utilidad BRUTA es venta − costo de la mercancía. La NETA descuenta además
@@ -12,7 +13,9 @@ import { Inversionistas } from '../components/Inversionistas';
 // Los gastos no se pueden repartir por venta, así que se restan del total.
 
 const hoy = () => new Date();
-const iso = (d) => d.toISOString().split('T')[0];
+// Local, no UTC: toISOString restaría 5 horas y en las tardes el rango
+// "este mes" arrancaría el día equivocado.
+const iso = (d) => aInputDate(d);
 const primerDiaMes = (d = hoy()) => new Date(d.getFullYear(), d.getMonth(), 1);
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 

@@ -8,15 +8,14 @@ import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
 import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
-import { parseMonto } from '../lib/money';
+import { parseMonto, formatCOP } from '../lib/money';
+import { hoy } from '../lib/fecha';
 
 // Los nombres de referencia, categoría y calidad vienen de tablas distintas y
 // difieren en mayúsculas y acentos: se comparan normalizados.
 const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-};
+const formatCurrency = formatCOP;
 
 function PriceInput({ value, onChange, placeholder = 'Precio', className = '' }) {
   const [focused, setFocused] = useState(false);
@@ -696,7 +695,7 @@ export default function Cotizaciones() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `cotizaciones-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.download = `cotizaciones-${hoy()}.xlsx`;
     link.click();
     URL.revokeObjectURL(link.href);
   };

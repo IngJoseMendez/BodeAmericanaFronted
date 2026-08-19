@@ -5,6 +5,8 @@ import { clientesApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -142,9 +144,7 @@ export default function Clientes() {
     });
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
   const exportarExcel = async () => {
     const wb = new ExcelJS.Workbook();
@@ -177,7 +177,7 @@ export default function Clientes() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `clientes-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.download = `clientes-${hoy()}.xlsx`;
     link.click();
     URL.revokeObjectURL(link.href);
   };

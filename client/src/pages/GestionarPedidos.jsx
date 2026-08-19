@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Badge, Button, Modal, useToast } from '../components/common';
 import { pedidosApi, clientesApi } from '../services/api';
 import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User } from 'lucide-react';
+import { formatCOP } from '../lib/money';
 
 export default function GestionarPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -119,9 +120,7 @@ export default function GestionarPedidos() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
   const getEstadoBadge = (estado) => {
     const variants = {

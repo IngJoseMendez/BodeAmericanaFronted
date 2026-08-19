@@ -12,6 +12,7 @@ import {
   TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight,
   Receipt, FileSignature, Brain, TrendingDown
 } from 'lucide-react';
+import { formatCOP } from '../lib/money';
 
 const CHART_COLORS = {
   primary: '#6366f1',
@@ -285,12 +286,7 @@ export default function Dashboard() {
     }
   };
 
-  const formatCurrency = (value) =>
-    new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-    }).format(value || 0);
+  const formatCurrency = formatCOP;
 
   if (loading) return <DashboardSkeleton />;
 

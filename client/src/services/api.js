@@ -2,18 +2,60 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 const getToken = () => localStorage.getItem('token');
 
-const handleResponse = async (response) => {
+/**
+ * Serializa parámetros descartando los vacíos.
+ * `new URLSearchParams({buscar: undefined})` produce literalmente
+ * "buscar=undefined", y el servidor filtraba por esa palabra.
+ */
+export const qs = (params = {}) => {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    sp.append(k, v);
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+};
+
+// Una red colgada dejaba la pantalla en "Cargando…" para siempre.
+const TIMEOUT_MS = 30000;
+
+const handleResponse = async (response, endpoint = '') => {
   if (response.status === 401) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-    throw new Error('Sesión expirada');
+    // En el login un 401 significa "contraseña incorrecta", no "sesión
+    // expirada": recargar aquí borraba el mensaje de error antes de leerlo.
+    if (!/\/(login|auth\/login)/.test(endpoint)) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+      throw new Error('Sesión expirada');
+    }
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Error desconocido' }));
     throw new Error(error.error || 'Error en la solicitud');
   }
   return response.json();
+};
+
+/** fetch con límite de tiempo; distingue "se cayó la red" de "el servidor dijo que no". */
+const pedir = async (endpoint, opciones = {}) => {
+  const ctrl = new AbortController();
+  const reloj = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, { ...opciones, signal: ctrl.signal });
+    return await handleResponse(response, endpoint);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('El servidor no respondió a tiempo. Revisa tu conexión e inténtalo de nuevo.');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('No hay conexión con el servidor.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(reloj);
+  }
 };
 
 const getHeaders = () => {
@@ -26,53 +68,30 @@ const getHeaders = () => {
 };
 
 export const api = {
-  async get(endpoint) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      headers: getHeaders(),
-    });
-    return handleResponse(response);
+  get(endpoint) {
+    return pedir(endpoint, { headers: getHeaders() });
   },
 
-  async post(endpoint, data) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(data),
-    });
-    return handleResponse(response);
+  post(endpoint, data) {
+    return pedir(endpoint, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
   },
 
-  async put(endpoint, data) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify(data),
-    });
-    return handleResponse(response);
+  put(endpoint, data) {
+    return pedir(endpoint, { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) });
   },
 
-  async delete(endpoint) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    return handleResponse(response);
+  delete(endpoint) {
+    return pedir(endpoint, { method: 'DELETE', headers: getHeaders() });
   },
 
-  async patch(endpoint, data) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'PATCH',
-      headers: getHeaders(),
-      body: JSON.stringify(data),
-    });
-    return handleResponse(response);
+  patch(endpoint, data) {
+    return pedir(endpoint, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify(data) });
   },
 };
 
 export const pacasApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pacas${query ? `?${query}` : ''}`);
+    return api.get(`/pacas${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/pacas/${id}`);
@@ -80,9 +99,8 @@ export const pacasApi = {
   getResumen() {
     return api.get('/pacas/resumen');
   },
-  getDisponibilidad(params) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pacas/disponibilidad?${query}`);
+  getDisponibilidad(params = {}) {
+    return api.get(`/pacas/disponibilidad${qs(params)}`);
   },
   create(data) {
     return api.post('/pacas', data);
@@ -100,19 +118,16 @@ export const pacasApi = {
     return api.post('/pacas/vender-tipo', data);
   },
   getInventario(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pacas/inventario${query ? `?${query}` : ''}`);
+    return api.get(`/pacas/inventario${qs(params)}`);
   },
   getComprometidas(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pacas/comprometidas${query ? `?${query}` : ''}`);
+    return api.get(`/pacas/comprometidas${qs(params)}`);
   },
 };
 
 export const clientesApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/clientes${query ? `?${query}` : ''}`);
+    return api.get(`/clientes${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/clientes/${id}`);
@@ -130,8 +145,7 @@ export const clientesApi = {
 
 export const ventasApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/ventas${query ? `?${query}` : ''}`);
+    return api.get(`/ventas${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/ventas/${id}`);
@@ -143,15 +157,13 @@ export const ventasApi = {
     return api.delete(`/ventas/${id}`);
   },
   getReporte(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/ventas/reporte${query ? `?${query}` : ''}`);
+    return api.get(`/ventas/reporte${qs(params)}`);
   },
 };
 
 export const pagosApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pagos${query ? `?${query}` : ''}`);
+    return api.get(`/pagos${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/pagos/${id}`);
@@ -205,19 +217,16 @@ export const dashboardApi = {
     return api.get(`/dashboard/metricas/tipos-mas-vendidos?limite=${limite}`);
   },
   getGanancias(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/dashboard/metricas/ganancias${query ? `?${query}` : ''}`);
+    return api.get(`/dashboard/metricas/ganancias${qs(params)}`);
   },
   getAlertas() {
     return api.get('/dashboard/metricas/alertas');
   },
   getPacasVendidas(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/dashboard/ventas/pacas-vendidas${query ? `?${query}` : ''}`);
+    return api.get(`/dashboard/ventas/pacas-vendidas${qs(params)}`);
   },
   getGanancia(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/dashboard/ventas/ganancia${query ? `?${query}` : ''}`);
+    return api.get(`/dashboard/ventas/ganancia${qs(params)}`);
   },
   getResumenGeneral() {
     return api.get('/dashboard/metricas/resumen-general');
@@ -310,8 +319,7 @@ export const reportesApi = {
 
 export const catalogoApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/catalogo${query ? `?${query}` : ''}`);
+    return api.get(`/catalogo${qs(params)}`);
   },
   getResumen() {
     return api.get('/catalogo/resumen');
@@ -320,8 +328,7 @@ export const catalogoApi = {
 
 export const pedidosApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pedidos${query ? `?${query}` : ''}`);
+    return api.get(`/pedidos${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/pedidos/${id}`);
@@ -342,8 +349,7 @@ export const clienteApi = {
     return api.get('/cartera/mi-cartera');
   },
   getMisPedidos(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/pedidos${query ? `?${query}` : ''}`);
+    return api.get(`/pedidos${qs(params)}`);
   },
   getHistorial() {
     return api.get('/ventas/mi-historial');
@@ -355,15 +361,13 @@ export const analyticsApi = {
     return api.get('/analytics/rotacion');
   },
   getClientesScore(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/analytics/clientes-score${query ? `?${query}` : ''}`);
+    return api.get(`/analytics/clientes-score${qs(params)}`);
   },
   getLotes() {
     return api.get('/analytics/lotes');
   },
   getVentas(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/analytics/ventas${query ? `?${query}` : ''}`);
+    return api.get(`/analytics/ventas${qs(params)}`);
   },
   getPredicciones() {
     return api.get('/analytics/predicciones');
@@ -381,8 +385,7 @@ export const analyticsApi = {
     return api.get('/analytics/riesgo-cartera');
   },
   getFlujoCaja(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/analytics/flujo-caja${query ? `?${query}` : ''}`);
+    return api.get(`/analytics/flujo-caja${qs(params)}`);
   },
   getContenedores() {
     return api.get('/analytics/contenedores');
@@ -415,8 +418,7 @@ export const tiposPacaApi = {
 export const cotizacionesApi = {
 
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/cotizaciones${query ? `?${query}` : ''}`);
+    return api.get(`/cotizaciones${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/cotizaciones/${id}`);
@@ -443,8 +445,7 @@ export const cotizacionesApi = {
 
 export const reservasApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/reservas${query ? `?${query}` : ''}`);
+    return api.get(`/reservas${qs(params)}`);
   },
   getByCliente(clienteId) {
     return api.get(`/reservas/cliente/${clienteId}`);
@@ -468,8 +469,7 @@ export const reservasApi = {
 
 export const contenedoresApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/contenedores${query ? `?${query}` : ''}`);
+    return api.get(`/contenedores${qs(params)}`);
   },
   getOne(id) {
     return api.get(`/contenedores/${id}`);
@@ -496,8 +496,7 @@ export const contenedoresApi = {
 
 export const cuentasPagarApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/cuentas-pagar${query ? `?${query}` : ''}`);
+    return api.get(`/cuentas-pagar${qs(params)}`);
   },
   getOne(id) { return api.get(`/cuentas-pagar/${id}`); },
   create(data) { return api.post('/cuentas-pagar', data); },
@@ -508,8 +507,7 @@ export const cuentasPagarApi = {
 
 export const despachosApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/despachos${query ? `?${query}` : ''}`);
+    return api.get(`/despachos${qs(params)}`);
   },
   getOne(id) { return api.get(`/despachos/${id}`); },
   confirmar(id, body = {}) { return api.post(`/despachos/${id}/confirmar`, body); },
@@ -610,8 +608,7 @@ export const auditoriaApi = {
 
 export const preciosPromocionApi = {
   getAll(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/precios-promocion${query ? `?${query}` : ''}`);
+    return api.get(`/precios-promocion${qs(params)}`);
   },
   getActiva({ referencia, calidad, clasificacion }) {
     const q = new URLSearchParams({ referencia, calidad });

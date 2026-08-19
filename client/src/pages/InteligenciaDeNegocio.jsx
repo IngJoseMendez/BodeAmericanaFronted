@@ -6,6 +6,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   LineChart, Line, AreaChart, Area, ResponsiveContainer, Legend
 } from 'recharts';
+import { formatCOP } from '../lib/money';
 import {
   TrendingUp, Users, Package, Package2, Zap, AlertTriangle, CheckCircle, Clock,
   DollarSign, ShoppingCart, ArrowUp, ArrowDown, Brain, Target, Award,
@@ -13,9 +14,7 @@ import {
   Minus, Sparkles, ChevronDown, ChevronUp, HelpCircle
 } from 'lucide-react';
 
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-};
+const formatCurrency = formatCOP;
 
 const COLORS = {
   primary: '#0f172a',

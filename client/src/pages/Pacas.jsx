@@ -8,6 +8,7 @@ import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, Che
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { hoy } from '../lib/fecha';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -462,7 +463,7 @@ export default function Pacas() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `Inventario_Pacas_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `Inventario_Pacas_${hoy()}.xlsx`;
       link.click();
 
       addToast('Excel exportado (Detallado + Agrupado)', 'success');
@@ -576,7 +577,7 @@ export default function Pacas() {
         },
       });
 
-      doc.save(`Inventario_Pacas_${new Date().toISOString().split('T')[0]}.pdf`);
+      doc.save(`Inventario_Pacas_${hoy()}.pdf`);
       addToast('PDF exportado (Agrupado + Detallado)', 'success');
     } catch (err) {
       addToast('Error al exportar PDF: ' + err.message, 'error');
@@ -756,7 +757,7 @@ export default function Pacas() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Separadas_por_cliente_${new Date().toISOString().split('T')[0]}.xlsx`;
+      a.download = `Separadas_por_cliente_${hoy()}.xlsx`;
       a.click();
       URL.revokeObjectURL(a.href);
       addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');

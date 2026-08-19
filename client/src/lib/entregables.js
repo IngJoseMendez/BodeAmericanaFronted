@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { hoy } from './fecha';
 
 // Hojas replicadas del Excel que ya usa la operación ("Comercio Global
 // Logistico.xlsx"). Los encabezados y su orden se respetan tal cual para que
@@ -795,7 +796,7 @@ export async function descargar(wb, nombre) {
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${nombre}_${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.download = `${nombre}_${hoy()}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

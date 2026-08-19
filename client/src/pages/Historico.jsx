@@ -5,10 +5,9 @@ import { historicoApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { History, Upload, Download, FileSpreadsheet, Trash2, CheckCircle2 } from 'lucide-react';
-import { parseMonto } from '../lib/money';
-
-const hoy = () => new Date().toISOString().split('T')[0];
-const fmt = (n) => '$' + (parseFloat(n) || 0).toLocaleString('es-CO');
+import { parseMonto, formatCOP } from '../lib/money';
+import { hoy } from '../lib/fecha';
+const fmt = formatCOP;
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();

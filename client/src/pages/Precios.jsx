@@ -4,6 +4,7 @@ import { Card, CardBody, Button, useToast, useConfirm } from '../components/comm
 import { preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
+import { formatCOP } from '../lib/money';
 
 function PrecioInput({ value, onChange, required }) {
   const [focused, setFocused] = useState(false);
@@ -45,8 +46,7 @@ function PrecioInput({ value, onChange, required }) {
   );
 }
 
-const formatCurrency = (v) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
+const formatCurrency = formatCOP;
 
 const emptyForm = { categoria: '', calidad: '', precio: '' };
 

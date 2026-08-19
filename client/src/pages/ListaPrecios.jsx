@@ -4,9 +4,10 @@ import { Card, CardBody, Input, useToast } from '../components/common';
 import { listaPreciosApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { Tag, Search, Download, AlertCircle } from 'lucide-react';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
-const formatCurrency = (value) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
+const formatCurrency = formatCOP;
 
 export default function ListaPrecios() {
   const [rows, setRows] = useState([]);
@@ -53,7 +54,7 @@ export default function ListaPrecios() {
     const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lista-precios-${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `lista-precios-${hoy()}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };

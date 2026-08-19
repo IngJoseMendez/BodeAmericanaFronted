@@ -5,6 +5,8 @@ import { pedidosApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Package, Clock, CheckCircle, XCircle, ShoppingCart, FileSpreadsheet, Download } from 'lucide-react';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
 export default function MisPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -42,9 +44,7 @@ export default function MisPedidos() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
   const getEstadoBadge = (estado) => {
     const variants = {
@@ -172,7 +172,7 @@ export default function MisPedidos() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `Pedido_${detallePedido.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `Pedido_${detallePedido.id}_${hoy()}.xlsx`;
       link.click();
       
       addToast('Excel descargado', 'success');
@@ -272,7 +272,7 @@ export default function MisPedidos() {
     
     const opt = {
       margin:       10,
-      filename:     `Pedido_${detallePedido.id}_${new Date().toISOString().split('T')[0]}.pdf`,
+      filename:     `Pedido_${detallePedido.id}_${hoy()}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2 },
       jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' }

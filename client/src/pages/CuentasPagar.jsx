@@ -9,12 +9,13 @@ import {
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { parseMonto, formatMoneda, MONEDAS } from '../lib/money';
+import { hoy, formatFecha } from '../lib/fecha';
 
 const formatCurrency = (value, moneda = 'USD') => formatMoneda(value, moneda, { decimales: 0 });
 
-const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const formatDate = formatFecha;
 
-const TODAY = new Date().toISOString().split('T')[0];
+const TODAY = hoy();
 
 // El abono puede pagarse en una moneda distinta a la de la factura (factura en USD
 // pagada por transferencia en pesos, por ejemplo). Se guarda lo que realmente salió
@@ -292,7 +293,7 @@ export default function CuentasPagar() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `cuentas-pagar-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.download = `cuentas-pagar-${hoy()}.xlsx`;
     link.click();
     URL.revokeObjectURL(link.href);
   };

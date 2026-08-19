@@ -7,7 +7,8 @@ import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
-import { parseMonto } from '../lib/money';
+import { parseMonto, formatCOP } from '../lib/money';
+import { hoy, aInputDate, formatFecha } from '../lib/fecha';
 
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
@@ -96,7 +97,7 @@ export default function Cartera() {
   const [detalleCliente, setDetalleCliente] = useState(null);
   const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia, cotizacion_id }
   const [formData, setFormData] = useState({
-    cliente_id: '', monto: '', fecha: new Date().toISOString().split('T')[0], metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
+    cliente_id: '', monto: '', fecha: hoy(), metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
   const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'abonos'
@@ -108,12 +109,13 @@ export default function Cartera() {
   const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
 
   // Carga histórica (legacy)
   const [legacyModalOpen, setLegacyModalOpen] = useState(false);
   const [legacyTab, setLegacyTab] = useState('manual'); // 'manual' | 'csv'
   const [legacyRows, setLegacyRows] = useState([]); // [{ cliente_id, tipo, fecha, monto, cuenta_id, referencia }]
-  const [legacyManual, setLegacyManual] = useState({ cliente_id: '', tipo: 'venta', fecha: new Date().toISOString().split('T')[0], monto: '', cuenta_id: '', referencia: '' });
+  const [legacyManual, setLegacyManual] = useState({ cliente_id: '', tipo: 'venta', fecha: hoy(), monto: '', cuenta_id: '', referencia: '' });
   const [legacySubmitting, setLegacySubmitting] = useState(false);
   const legacyFileRef = useRef(null);
 
@@ -189,7 +191,7 @@ export default function Cartera() {
       setFormData({
         cliente_id: '',
         monto: '',
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: hoy(),
         metodo_pago: 'efectivo',
         cuenta_id: '',
         cotizacion_id: '',
@@ -211,7 +213,7 @@ export default function Cartera() {
       const data = await clientesApi.getAll({ estado: 'activo' });
       setClientes(data);
       setFormData({
-        cliente_id: cliente.id, monto: '', fecha: new Date().toISOString().split('T')[0],
+        cliente_id: cliente.id, monto: '', fecha: hoy(),
         metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
       });
       setClienteSearch(cliente.nombre || '');
@@ -244,6 +246,10 @@ export default function Cartera() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Sin esta bandera, un doble clic registra el abono dos veces: el botón es
+    // type="submit" y el guard del componente Button no alcanza a frenar el
+    // submit nativo del formulario.
+    if (enviando) return;
     setError('');
 
     if (!formData.cliente_id) {
@@ -256,6 +262,7 @@ export default function Cartera() {
     }
 
     try {
+      setEnviando(true);
       await pagosApi.create({
         cliente_id: parseInt(formData.cliente_id),
         monto: parseFloat(formData.monto),
@@ -286,6 +293,8 @@ export default function Cartera() {
     } catch (err) {
       setError(err.message);
       addToast('Error al registrar el abono: ' + err.message, 'error');
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -531,7 +540,7 @@ export default function Cartera() {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `Estado_Cuenta_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `Estado_Cuenta_${data.cliente.nombre.replace(/\s+/g, '_')}_${hoy()}.xlsx`;
       link.click();
       
       addToast('Excel descargado correctamente', 'success');
@@ -652,7 +661,7 @@ export default function Cartera() {
       
       const opt = {
         margin:       10,
-        filename:     `Cartera_${data.cliente.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        filename:     `Cartera_${data.cliente.nombre.replace(/\s+/g, '_')}_${hoy()}.pdf`,
         image:        { type: 'jpeg', quality: 0.98 },
         html2canvas:  { scale: 2 },
         jsPDF:        { unit: 'mm', format: 'letter', orientation: 'landscape' }
@@ -671,9 +680,7 @@ export default function Cartera() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
   // ── Carga histórica (legacy) ──────────────────────────────────
   const openLegacyModal = async () => {
@@ -682,7 +689,7 @@ export default function Cartera() {
       setClientes(data);
       setLegacyTab('manual');
       setLegacyRows([]);
-      setLegacyManual({ cliente_id: '', tipo: 'venta', fecha: new Date().toISOString().split('T')[0], monto: '', cuenta_id: '', referencia: '' });
+      setLegacyManual({ cliente_id: '', tipo: 'venta', fecha: hoy(), monto: '', cuenta_id: '', referencia: '' });
       setError('');
       setLegacyModalOpen(true);
     } catch (err) {
@@ -728,8 +735,10 @@ export default function Cartera() {
         return c ? c.id : null;
       };
       const parseFecha = (val) => {
-        if (!val) return new Date().toISOString().split('T')[0];
-        if (val instanceof Date) return val.toISOString().split('T')[0];
+        if (!val) return hoy();
+        // Las celdas de fecha de Excel llegan como Date: se leen en local para
+        // que un 11/08 no se registre como 10/08.
+        if (val instanceof Date) return aInputDate(val);
         const s = String(val).trim();
         // dd/mm/yyyy → yyyy-mm-dd
         const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
@@ -1415,9 +1424,9 @@ export default function Cartera() {
             <Button
               type="submit"
               variant="secondary"
-              disabled={saldoCliente !== null && parseFloat(formData.monto) > saldoCliente}
+              disabled={enviando || (saldoCliente !== null && parseFloat(formData.monto) > saldoCliente)}
             >
-              Registrar Abono
+              {enviando ? 'Registrando…' : 'Registrar Abono'}
             </Button>
           </div>
         </form>

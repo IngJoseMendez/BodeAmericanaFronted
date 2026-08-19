@@ -3,6 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, useToast } from '../components/common';
 import { clienteApi } from '../services/api';
 import { Wallet, TrendingUp, TrendingDown, Loader } from 'lucide-react';
+import { formatCOP } from '../lib/money';
 
 export default function CarteraCliente() {
   const [cartera, setCartera] = useState(null);
@@ -30,9 +31,7 @@ export default function CarteraCliente() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-  };
+  const formatCurrency = formatCOP;
 
   if (loading) {
     return (

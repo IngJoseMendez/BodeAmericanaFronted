@@ -5,6 +5,7 @@ import { Card, CardBody, Button, useToast } from '../components/common';
 import { clienteApi, catalogoApi, pedidosApi } from '../services/api';
 import { ShoppingBag, Wallet, Clock, TrendingUp, RefreshCw, CreditCard, BarChart3, Zap } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { formatCOP } from '../lib/money';
 
 export default function ClienteDashboard() {
   const [stats, setStats] = useState({ 
@@ -78,9 +79,7 @@ export default function ClienteDashboard() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-  };
+  const formatCurrency = formatCOP;
 
   const getBadge = (estado) => {
     const colors = {

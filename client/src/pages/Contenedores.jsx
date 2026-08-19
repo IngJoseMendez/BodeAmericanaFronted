@@ -13,16 +13,15 @@ import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../componen
 import { contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
-import { parseMonto } from '../lib/money';
+import { parseMonto, formatCOP } from '../lib/money';
+import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
 
-const formatCurrency = (value) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
+const formatCurrency = formatCOP;
 
-const formatDate = (d) =>
-  d ? new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const formatDate = formatFecha;
 
 // ── Factory helpers ───────────────────────────────────────────────
 
@@ -673,7 +672,7 @@ export default function Contenedores() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Contenedores_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `Contenedores_${hoy()}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
     addToast('Excel descargado correctamente', 'success');
@@ -1014,7 +1013,7 @@ export default function Contenedores() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Reclamacion_${full.numero}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `Reclamacion_${full.numero}_${hoy()}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
     addToast('Reclamación exportada', 'success');
@@ -1313,7 +1312,7 @@ export default function Contenedores() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Contenedor_${full.numero}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `Contenedor_${full.numero}_${hoy()}.xlsx`;
     a.click();
     URL.revokeObjectURL(a.href);
     addToast(`Excel de "${full.numero}" descargado`, 'success');

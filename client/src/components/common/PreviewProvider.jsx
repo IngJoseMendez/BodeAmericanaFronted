@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Modal } from './Modal';
 import { cotizacionesApi, contenedoresApi, carteraApi, despachosApi, cuentasApi } from '../../services/api';
+import { formatCOP } from '../../lib/money';
 
 const PreviewContext = createContext(null);
 export function usePreview() { return useContext(PreviewContext); }
@@ -21,7 +22,7 @@ const TITLES = {
   cartera: 'Cartera del cliente', despacho: 'Despacho', cuenta: 'Cuenta',
 };
 
-const fmt = (v) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v || 0);
+const fmt = formatCOP;
 const fdate = (d) => d ? new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 function Row({ label, value }) {

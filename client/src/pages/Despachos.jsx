@@ -5,16 +5,12 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { despachosApi, pacasApi, transportesApi } from '../services/api';
 import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
+import { hoy, formatFecha } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
-const formatCurrency = (value) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
+const formatCurrency = formatCOP;
 
-const formatDate = (d) => {
-  if (!d) return '—';
-  const date = new Date(d);
-  if (isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
-};
+const formatDate = formatFecha;
 
 function EstadoBadge({ estado }) {
   const map = {
@@ -189,7 +185,7 @@ async function exportarExcelBodega(despacho) {
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `Bodega_${despacho.numero || 'despacho'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.download = `Bodega_${despacho.numero || 'despacho'}_${hoy()}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

@@ -6,6 +6,8 @@ import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
+import { hoy, formatFechaCorta } from '../lib/fecha';
+import { parseMonto, formatCOP } from '../lib/money';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -23,10 +25,11 @@ export default function Ventas() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState({
-    cliente_id: '', tipo_pago: 'contado', fecha: new Date().toISOString().split('T')[0]
+    cliente_id: '', tipo_pago: 'contado', fecha: hoy()
   });
   const [pacasSeleccionadas, setPacasSeleccionadas] = useState([]);
   const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
   const [pacasDisponibles, setPacasDisponibles] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
@@ -40,6 +43,7 @@ export default function Ventas() {
   const [pacasReservadas, setPacasReservadas] = useState([]);
   const [pagina, setPagina] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
+  const [totalVentas, setTotalVentas] = useState(0);
   const { addToast } = useToast();
   const confirm = useConfirm();
   
@@ -61,12 +65,22 @@ export default function Ventas() {
   const clienteReservaListRef = useRef(null);
   
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
+  const debouncedBusqueda = useDebounce(busqueda, 350);
 
-useEffect(() => {
-    loadVentas(pagina);
+  useEffect(() => {
     loadClientes();
     loadReservas();
-  }, [filtroVista, pagina]);
+  }, [filtroVista]);
+
+  // Al cambiar cualquier filtro se vuelve a la página 1: quedarse en la 7 de un
+  // resultado que ahora tiene 2 páginas mostraría una tabla vacía.
+  useEffect(() => {
+    setPagina(1);
+  }, [debouncedBusqueda, filtroFechaInicio, filtroFechaFin, filtroMontoMin, filtroMontoMax]);
+
+  useEffect(() => {
+    loadVentas(pagina);
+  }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, filtroMontoMin, filtroMontoMax]);
 
   // Cerrar lista clientes al hacer click fuera
   useEffect(() => {
@@ -82,37 +96,24 @@ useEffect(() => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filtrar ventas
-  const ventasFiltradas = ventas.filter(v => {
-    const cliente = clientes.find(c => c.id === v.cliente_id);
-    const nombreCliente = cliente?.nombre?.toLowerCase() || '';
-    const searchLower = busqueda.toLowerCase();
-    
-    if (busqueda && !nombreCliente.includes(searchLower)) return false;
-    
-    if (filtroFechaInicio) {
-      const fechaVenta = new Date(v.fecha);
-      const fechaIni = new Date(filtroFechaInicio);
-      if (fechaVenta < fechaIni) return false;
-    }
-    if (filtroFechaFin) {
-      const fechaVenta = new Date(v.fecha);
-      const fechaFin = new Date(filtroFechaFin);
-      fechaFin.setHours(23, 59, 59);
-      if (fechaVenta > fechaFin) return false;
-    }
-    if (filtroMontoMin && v.total < parseFloat(filtroMontoMin)) return false;
-    if (filtroMontoMax && v.total > parseFloat(filtroMontoMax)) return false;
-    
-    return true;
-  });
+  // El filtrado ocurre en el servidor: `ventas` ya llega filtrado y paginado.
+  const ventasFiltradas = ventas;
 
   const loadVentas = async (page = 1) => {
     try {
-      const response = await ventasApi.getAll({ pagina: page, limite: 20 });
+      const response = await ventasApi.getAll({
+        pagina: page,
+        limite: 20,
+        buscar: debouncedBusqueda || undefined,
+        fecha_inicio: filtroFechaInicio || undefined,
+        fecha_fin: filtroFechaFin || undefined,
+        monto_min: filtroMontoMin || undefined,
+        monto_max: filtroMontoMax || undefined,
+      });
       const data = response.data || response;
       setVentas(Array.isArray(data) ? data : []);
-      if (response.total_paginas) setTotalPaginas(response.total_paginas);
+      setTotalPaginas(response.total_paginas || 1);
+      setTotalVentas(response.total ?? (Array.isArray(data) ? data.length : 0));
       // No se reescribe `pagina` desde la respuesta: el estado ya es la fuente de
       // verdad y reasignarlo aquí devolvía siempre a la página 1, dejando el
       // histórico anterior a las últimas 20 ventas fuera de alcance.
@@ -155,7 +156,7 @@ useEffect(() => {
       setFormData({
         cliente_id: '',
         tipo_pago: 'contado',
-        fecha: new Date().toISOString().split('T')[0]
+        fecha: hoy()
       });
       setPacasSeleccionadas([]);
       setError('');
@@ -175,15 +176,19 @@ useEffect(() => {
   };
 
   const updatePrecio = (pacaId, precio) => {
-    setPacasSeleccionadas(pacasSeleccionadas.map(p => 
-      p.id === pacaId ? { ...p, precio_venta: parseFloat(precio) } : p
+    // parseFloat('') es NaN y contaminaba el total de la venta: si el usuario
+    // borra el campo se guarda 0, no NaN.
+    const valor = parseMonto(precio);
+    setPacasSeleccionadas(pacasSeleccionadas.map(p =>
+      p.id === pacaId ? { ...p, precio_venta: valor } : p
     ));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (enviando) return;   // doble clic = venta duplicada
     setError('');
-    
+
     if (!formData.cliente_id) {
       setError('Selecciona un cliente');
       return;
@@ -192,8 +197,15 @@ useEffect(() => {
       setError('Selecciona al menos una paca');
       return;
     }
+    // Una paca sin precio saldría vendida en cero sin que nadie se entere.
+    const sinPrecio = pacasSeleccionadas.filter(p => !(parseFloat(p.precio_venta) > 0));
+    if (sinPrecio.length > 0) {
+      setError(`${sinPrecio.length} paca(s) sin precio. Escribe el precio de venta antes de confirmar.`);
+      return;
+    }
 
     try {
+      setEnviando(true);
       const result = await ventasApi.create({
         cliente_id: parseInt(formData.cliente_id),
         tipo_pago: formData.tipo_pago,
@@ -218,12 +230,14 @@ useEffect(() => {
       addToast(`Venta registrada — ${pacasSeleccionadas.length} paca(s) por ${formatCurrency(totalVenta)}`, 'success');
       setModalOpen(false);
       // Reset form after successful sale
-      setFormData({ cliente_id: '', tipo_pago: 'contado', fecha: new Date().toISOString().split('T')[0] });
+      setFormData({ cliente_id: '', tipo_pago: 'contado', fecha: hoy() });
       setPacasSeleccionadas([]);
       loadVentas();
     } catch (err) {
       setError(err.message);
       addToast('Error al registrar venta: ' + err.message, 'error');
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -246,13 +260,9 @@ useEffect(() => {
 
   const totalVenta = pacasSeleccionadas.reduce((sum, p) => sum + parseFloat(p.precio_venta), 0);
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString('es-MX');
-  };
+  const formatDate = formatFechaCorta;
 
   const descargarExcel = async (data) => {
     const wb = new ExcelJS.Workbook();
@@ -314,7 +324,7 @@ useEffect(() => {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Venta_${data.uuid?.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.download = `Venta_${data.uuid?.slice(0, 8)}_${hoy()}.xlsx`;
     link.click();
     
     addToast('Excel descargado', 'success');
@@ -354,7 +364,7 @@ useEffect(() => {
       styles: { fontSize: 9 }
     });
     
-    doc.save(`Venta_${data.uuid?.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(`Venta_${data.uuid?.slice(0, 8)}_${hoy()}.pdf`);
     addToast('PDF descargado', 'success');
   };
 
@@ -414,7 +424,7 @@ useEffect(() => {
       await ventasApi.create({
         cliente_id: reserva.cliente_id,
         tipo_pago: 'contado',
-        fecha: new Date().toISOString().split('T')[0],
+        fecha: hoy(),
         pacas: [{ id: reserva.paca_id, precio_venta: reserva.precio_venta }]
       });
       addToast('Reserva convertida a venta exitosamente', 'success');
@@ -672,6 +682,7 @@ useEffect(() => {
                 </button>
                 <span className="text-sm text-muted">
                   Página {pagina} de {totalPaginas}
+                  {totalVentas > 0 && ` · ${totalVentas.toLocaleString('es-CO')} ventas`}
                 </span>
                 <button
                   onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
@@ -996,7 +1007,9 @@ useEffect(() => {
           
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button type="submit" variant="secondary">Confirmar Venta</Button>
+            <Button type="submit" variant="secondary" disabled={enviando}>
+              {enviando ? 'Registrando…' : 'Confirmar Venta'}
+            </Button>
           </div>
         </form>
       </Modal>

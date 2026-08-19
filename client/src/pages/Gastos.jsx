@@ -4,6 +4,8 @@ import { Card, CardBody, Button, Input, useToast, useConfirm } from '../componen
 import { gastosApi, cuentasApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { Coins, Plus, Trash2, Download } from 'lucide-react';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
 const CATEGORIAS_FIJAS = [
   { value: 'arriendo',   label: 'Arriendo' },
@@ -23,10 +25,7 @@ const MONEDAS = [
   { value: 'MXN', label: 'MXN — Peso mexicano' },
   { value: 'PEN', label: 'PEN — Sol (Perú)' },
   { value: 'OTRA', label: 'Otra…' },
-];
-
-const hoy = () => new Date().toISOString().split('T')[0];
-const fmt = (n) => '$' + (parseFloat(n) || 0).toLocaleString('es-CO');
+];const fmt = formatCOP;
 const labelCategoria = (v) => CATEGORIAS_FIJAS.find(c => c.value === v)?.label || (v || 'Otro');
 const esMonedaCOP = (m) => !m || String(m).toUpperCase() === 'COP';
 // Convierte texto del usuario a número respetando el formato es-CO (punto = miles, coma = decimal).

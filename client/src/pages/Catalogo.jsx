@@ -4,6 +4,7 @@ import { Card, CardBody, Button, Badge, useToast, TableSkeleton, EmptyState } fr
 import { catalogoApi, pedidosApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { ShoppingCart, Package, Filter, Check } from 'lucide-react';
+import { formatCOP } from '../lib/money';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -76,9 +77,7 @@ export default function Catalogo() {
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value);
-  };
+  const formatCurrency = formatCOP;
 
   const totalSeleccionadas = seleccionadas.reduce((sum, s) => sum + s.precio_venta, 0);
 

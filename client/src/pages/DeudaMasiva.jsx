@@ -3,10 +3,9 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
 import { clientesApi, carteraApi } from '../services/api';
 import { ListChecks, Search, Save } from 'lucide-react';
-import { parseMonto } from '../lib/money';
-
-const hoy = () => new Date().toISOString().split('T')[0];
-const fmt = (n) => '$' + (parseFloat(n) || 0).toLocaleString('es-CO');
+import { parseMonto, formatCOP } from '../lib/money';
+import { hoy } from '../lib/fecha';
+const fmt = formatCOP;
 const CHUNK = 100; // el server limita el body a 10kb; enviamos por lotes
 
 export default function DeudaMasiva() {

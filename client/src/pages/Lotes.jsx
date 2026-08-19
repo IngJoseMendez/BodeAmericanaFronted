@@ -5,10 +5,10 @@ import { lotesApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Eye, Link, Unlink, Hash, Layers, Download } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { hoy } from '../lib/fecha';
+import { formatCOP } from '../lib/money';
 
-const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value || 0);
-};
+const formatCurrency = formatCOP;
 
 export default function Lotes() {
   const [lotes, setLotes] = useState([]);
@@ -275,7 +275,7 @@ export default function Lotes() {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `lotes-${new Date().toISOString().split('T')[0]}.xlsx`;
+    link.download = `lotes-${hoy()}.xlsx`;
     link.click();
     URL.revokeObjectURL(link.href);
   };
