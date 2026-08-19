@@ -257,12 +257,13 @@ function TooltipScore({ children, score }) {
           <div className="space-y-1.5">
             {factores.map((factor, i) => (
               <div key={i} className="flex items-center justify-between gap-2">
-                <span className="text-slate-300">{factor.label}</span>
+                {/* El panel es claro (bg-surface): slate-300 sobre blanco no se leía. */}
+                <span className="text-muted">{factor.label}</span>
                 <span className="tabular-nums font-medium">{factor.puntos}/{factor.max}</span>
               </div>
             ))}
           </div>
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45"></div>
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-surface border-b border-r border-border rotate-45"></div>
         </div>
       )}
     </div>
@@ -339,7 +340,14 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
       <div 
         className="p-4 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => e.key === 'Enter' && setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          // Un role="button" tiene que responder a Enter Y a Espacio; sin el
+          // preventDefault, Espacio además hacía saltar el scroll de la página.
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
         tabIndex={0}
         role="button"
         aria-expanded={expanded}
@@ -436,7 +444,10 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
         role="region"
         aria-label="Detalles de predicción"
       >
-        <div className="p-4 bg-surface/50 space-y-4">
+        {/* Panel claro fijo, como el resto de la tarjeta (bg-red-50, bg-green-50…):
+            con bg-surface/50 en modo oscuro quedaba gris medio y los textos
+            slate-700 de dentro casi no se leían. */}
+        <div className="p-4 bg-white/70 space-y-4">
           {/* Breakdown del score */}
           {confianza?.detalles && (
             <div className="space-y-2">
@@ -530,8 +541,10 @@ function EmptyState({ icon: Icon, title, description, action }) {
       <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-4">
         <Icon className="w-10 h-10 text-slate-400" aria-hidden="true" />
       </div>
-      <h4 className="text-lg font-semibold text-slate-700 mb-2">{title}</h4>
-      <p className="text-sm text-slate-500 max-w-sm mb-4">{description}</p>
+      {/* Estos textos van sobre la superficie de una Card, que cambia con el tema:
+          con slate-700/500 fijos desaparecían en modo oscuro. */}
+      <h4 className="text-lg font-semibold text-primary mb-2">{title}</h4>
+      <p className="text-sm text-muted max-w-sm mb-4">{description}</p>
       {action && (
         <Button onClick={action.onClick} variant="outline">
           {action.label}
@@ -578,7 +591,6 @@ function MetricCard({ icon: Icon, label, value, subtext, color = 'primary', tren
 }
 
 function RotacionChart({ data }) {
-  console.log('RotacionChart data:', data);
   const chartData = (data || [])
     .filter(r => r.cantidad > 0)
     .map(r => ({
@@ -749,6 +761,9 @@ export default function InteligenciaDeNegocio() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('resumen');
   const [periodo, setPeriodo] = useState('dia');
+  const [error, setError] = useState(null);
+  const [seccionesCaidas, setSeccionesCaidas] = useState([]);
+  const [errorVentas, setErrorVentas] = useState(null);
 
   const [rotacion, setRotacion] = useState(null);
   const [clientesScore, setClientesScore] = useState(null);
@@ -761,42 +776,121 @@ export default function InteligenciaDeNegocio() {
   const [riesgoCartera, setRiesgoCartera] = useState(null);
   const [flujoCaja, setFlujoCaja] = useState(null);
 
+  // Sólo la consulta de ventas más reciente puede escribir en pantalla: al
+  // cambiar el periodo dos veces seguidas ganaba la que respondiera última, no
+  // la que el usuario había elegido, y la gráfica quedaba con otro periodo.
+  const ventasReqRef = useRef(0);
+
   useEffect(() => {
     loadAllData();
   }, []);
 
   const loadAllData = async () => {
     setLoading(true);
-    try {
-      const [rotacionData, scoreData, contenedoresData, ventasData, prediccionesData, recomendacionesData, dashboardData, queComprarData, riesgoData, flujoData] = await Promise.all([
-        analyticsApi.getRotacion(),
-        analyticsApi.getClientesScore(),
-        analyticsApi.getContenedores(),
-        analyticsApi.getVentas({ periodo, dias: 30 }),
-        analyticsApi.getPredicciones(),
-        analyticsApi.getRecomendaciones(),
-        analyticsApi.getDashboard(),
-        analyticsApi.getQueComprar(),
-        analyticsApi.getRiesgoCartera(),
-        analyticsApi.getFlujoCaja({ semanas: 4 })
-      ]);
+    setError(null);
+    setErrorVentas(null);
+    // El token tiene que valer en los DOS sentidos: además de descartar las
+    // consultas de periodo en vuelo, si el usuario cambia el periodo mientras
+    // esta recarga viaja, la respuesta de aquí (la del periodo anterior) no
+    // puede pisar la que él acaba de pedir.
+    const reqVentas = ++ventasReqRef.current;
 
-      setRotacion(rotacionData);
-      setClientesScore(scoreData);
-      setContenedores(contenedoresData);
-      setVentas(ventasData);
-      setPredicciones(prediccionesData);
-      setRecomendaciones(recomendacionesData);
-      setDashboard(dashboardData);
-      setQueComprar(queComprarData);
-      setRiesgoCartera(riesgoData);
-      setFlujoCaja(flujoData);
+    // allSettled y no all: con Promise.all bastaba que UN endpoint fallara para
+    // dejar los diez estados en null, y la pantalla se pintaba entera de ceros,
+    // como si el negocio no hubiera vendido nada. Ahora se muestra lo que sí
+    // llegó y se dice en pantalla qué faltó.
+    const fuentes = [
+      { etiqueta: 'Rotación',       set: setRotacion,        pedir: () => analyticsApi.getRotacion() },
+      { etiqueta: 'Clientes',       set: setClientesScore,   pedir: () => analyticsApi.getClientesScore() },
+      { etiqueta: 'Contenedores',   set: setContenedores,    pedir: () => analyticsApi.getContenedores() },
+      { etiqueta: 'Ventas',         set: setVentas,          pedir: () => analyticsApi.getVentas({ periodo, dias: 30 }), dependeDelPeriodo: true },
+      { etiqueta: 'Predicciones',   set: setPredicciones,    pedir: () => analyticsApi.getPredicciones() },
+      { etiqueta: 'Insights',       set: setRecomendaciones, pedir: () => analyticsApi.getRecomendaciones() },
+      { etiqueta: 'Resumen',        set: setDashboard,       pedir: () => analyticsApi.getDashboard() },
+      { etiqueta: 'Qué comprar',    set: setQueComprar,      pedir: () => analyticsApi.getQueComprar() },
+      { etiqueta: 'Riesgo cartera', set: setRiesgoCartera,   pedir: () => analyticsApi.getRiesgoCartera() },
+      { etiqueta: 'Flujo de caja',  set: setFlujoCaja,       pedir: () => analyticsApi.getFlujoCaja({ semanas: 4 }) },
+    ];
+
+    try {
+      const resultados = await Promise.allSettled(fuentes.map(f => f.pedir()));
+
+      const caidas = [];
+      let aplicadas = 0;
+      resultados.forEach((r, i) => {
+        // Ventas puede haber sido reemplazada por un cambio de periodo posterior:
+        // escribirla ahora dejaría la gráfica con un periodo que ya no es el
+        // seleccionado.
+        if (fuentes[i].dependeDelPeriodo && reqVentas !== ventasReqRef.current) return;
+        aplicadas++;
+        if (r.status === 'fulfilled') {
+          fuentes[i].set(r.value);
+        } else {
+          fuentes[i].set(null);
+          caidas.push(fuentes[i].etiqueta);
+        }
+      });
+
+      if (aplicadas > 0 && caidas.length === aplicadas) {
+        // No llegó absolutamente nada: no tiene sentido pintar el tablero.
+        const motivo = resultados.find(r => r.status === 'rejected')?.reason;
+        setError(motivo?.message || 'No hay conexión con el servidor.');
+        setSeccionesCaidas([]);
+      } else {
+        setSeccionesCaidas(caidas);
+      }
     } catch (err) {
-      console.error('Error cargando analytics:', err);
+      setError(err?.message || 'No se pudieron cargar los datos del negocio.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Cambio de periodo de la pestaña Ventas: antes se disparaba la petición en el
+  // propio onChange, sin catch (promesa rechazada sin manejar y gráfica con los
+  // datos viejos) y sin control de orden.
+  const cambiarPeriodo = async (nuevo) => {
+    setPeriodo(nuevo);
+    setErrorVentas(null);
+    const req = ++ventasReqRef.current;
+    try {
+      const data = await analyticsApi.getVentas({ periodo: nuevo, dias: 30 });
+      if (req === ventasReqRef.current) {
+        setVentas(data);
+        // Si la sección venía marcada como caída en la carga inicial y ahora sí
+        // respondió, el aviso de arriba dejaría de ser cierto.
+        setSeccionesCaidas(prev => prev.filter(s => s !== 'Ventas'));
+      }
+    } catch (err) {
+      if (req === ventasReqRef.current) {
+        setErrorVentas(err?.message || 'Revisa tu conexión e inténtalo de nuevo.');
+      }
+    }
+  };
+
+  // El costo llega como cadena desde Postgres (NUMERIC): `'980.50' === 980.5` es
+  // false y el distintivo de "mejor costo" no se pintaba nunca. Además Math.min
+  // se recalculaba una vez por fila dentro del map.
+  const contenedoresFinalizados = useMemo(
+    () => (contenedores?.contenedores || []).filter(c => c.estado === 'finalizado'),
+    [contenedores]
+  );
+
+  const mejorCostoUnitario = useMemo(() => {
+    const unitarios = contenedoresFinalizados
+      .map(c => parseFloat(c.costo_unitario))
+      // Un contenedor todavía sin costear llega en 0: marcarlo como "mejor
+      // costo por paca" sería justo al revés de lo que significa.
+      .filter(v => Number.isFinite(v) && v > 0);
+    return unitarios.length > 1 ? Math.min(...unitarios) : null;
+  }, [contenedoresFinalizados]);
+
+  const mejorCostoPorTipo = useMemo(() => {
+    const costos = (contenedores?.eficienciaTipo || [])
+      .map(t => parseFloat(t.costo_por_paca))
+      .filter(v => Number.isFinite(v) && v > 0);
+    return costos.length ? Math.min(...costos) : null;
+  }, [contenedores]);
 
   const tabs = [
     { id: 'resumen', label: 'Resumen', icon: Brain },
@@ -814,9 +908,35 @@ export default function InteligenciaDeNegocio() {
   if (loading) {
     return (
       <Layout title="Inteligencia de Negocio" subtitle="Analytics y Insights">
-        <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center justify-center h-64 gap-3" role="status" aria-live="polite">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-secondary"></div>
+          <p className="text-sm text-muted">Calculando los análisis del negocio…</p>
         </div>
+      </Layout>
+    );
+  }
+
+  // Sin este estado, un fallo de la API dejaba la pantalla llena de ceros y de
+  // "Sin datos": la dueña no podía distinguir un negocio parado de una consulta
+  // que no llegó.
+  if (error) {
+    return (
+      <Layout title="Inteligencia de Negocio" subtitle="Analytics y Insights">
+        <Card className="border-2 border-error/30">
+          <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+            <div className="p-3 rounded-2xl bg-error/10">
+              <AlertTriangle className="w-7 h-7 text-error" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="font-display text-lg text-primary">No se pudieron cargar los análisis</p>
+              <p className="text-sm text-muted mt-1">{error}</p>
+              <p className="text-xs text-muted mt-2">
+                No se muestran cifras para que no se confundan con datos reales del negocio.
+              </p>
+            </div>
+            <Button variant="secondary" icon={RefreshCw} onClick={loadAllData}>Reintentar</Button>
+          </CardBody>
+        </Card>
       </Layout>
     );
   }
@@ -837,6 +957,23 @@ export default function InteligenciaDeNegocio() {
             </p>
           </div>
         </div>
+
+        {/* Aviso cuando sólo algunas consultas fallaron: sus tarjetas quedarían en
+            cero y parecerían datos buenos. */}
+        {seccionesCaidas.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-error/10 border border-error/30 rounded-xl" role="alert">
+            <AlertTriangle className="w-5 h-5 text-error flex-shrink-0" aria-hidden="true" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-primary">
+                No se pudieron cargar estas secciones: {seccionesCaidas.join(', ')}
+              </p>
+              <p className="text-xs text-muted mt-1">
+                Aparecen vacías o en cero por un problema de conexión, no porque no haya datos.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" icon={RefreshCw} onClick={loadAllData}>Reintentar</Button>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -1195,7 +1332,7 @@ export default function InteligenciaDeNegocio() {
 
             {/* Segunda fila KPI */}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              <MetricCard icon={Package} label="Total Pacas Generadas" value={(contenedores?.totales?.totalPacas || 0).toLocaleString('es-MX')} color="primary" />
+              <MetricCard icon={Package} label="Total Pacas Generadas" value={(contenedores?.totales?.totalPacas || 0).toLocaleString('es-CO')} color="primary" />
               <MetricCard icon={Clock} label="En Borrador" value={contenedores?.totales?.borradores || 0} color="warning" />
               <MetricCard icon={BarChart3} label="Tipos de Producto" value={contenedores?.distribucionTipo?.length || 0} color="info" />
             </div>
@@ -1222,7 +1359,7 @@ export default function InteligenciaDeNegocio() {
                         <XAxis dataKey="clasificacion" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip
-                          formatter={(v) => [v.toLocaleString('es-MX'), 'Pacas']}
+                          formatter={(v) => [Number(v || 0).toLocaleString('es-CO'), 'Pacas']}
                           contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }}
                         />
                         <Bar dataKey="cantidad" name="Pacas" radius={[4, 4, 0, 0]}>
@@ -1322,19 +1459,15 @@ export default function InteligenciaDeNegocio() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(contenedores?.contenedores || [])
-                          .filter(c => c.estado === 'finalizado')
+                        {contenedoresFinalizados
                           .slice(0, 7)
                           .map((c, i) => {
-                            const allUnits = (contenedores.contenedores || [])
-                              .filter(x => x.estado === 'finalizado')
-                              .map(x => x.costo_unitario);
-                            const minU = Math.min(...allUnits);
-                            const isBest = c.costo_unitario === minU && allUnits.length > 1;
+                            const isBest = mejorCostoUnitario !== null
+                              && parseFloat(c.costo_unitario) === mejorCostoUnitario;
                             return (
                               <tr key={i} className="border-b border-border/50 hover:bg-primary/3">
                                 <td className="py-2 font-medium">{c.numero}</td>
-                                <td className="py-2 text-right tabular-nums">{c.total_pacas.toLocaleString('es-MX')}</td>
+                                <td className="py-2 text-right tabular-nums">{(Number(c.total_pacas) || 0).toLocaleString('es-CO')}</td>
                                 <td className={`py-2 text-right tabular-nums font-semibold ${isBest ? 'text-success' : ''}`}>
                                   {formatCurrency(c.costo_unitario)}
                                   {isBest && <span className="ml-1 text-[10px]">✓</span>}
@@ -1343,7 +1476,7 @@ export default function InteligenciaDeNegocio() {
                               </tr>
                             );
                           })}
-                        {!(contenedores?.contenedores?.some(c => c.estado === 'finalizado')) && (
+                        {contenedoresFinalizados.length === 0 && (
                           <tr>
                             <td colSpan="4" className="py-6 text-center text-muted text-sm">
                               Sin contenedores finalizados aún
@@ -1396,7 +1529,7 @@ export default function InteligenciaDeNegocio() {
                               <td className={`py-2 text-right tabular-nums font-semibold ${i === 0 ? 'text-success' : ''}`}>
                                 {formatCurrency(p.costo_por_paca)}
                               </td>
-                              <td className="py-2 text-right tabular-nums text-muted">{(p.total_pacas || 0).toLocaleString('es-CO')}</td>
+                              <td className="py-2 text-right tabular-nums text-muted">{(Number(p.total_pacas) || 0).toLocaleString('es-CO')}</td>
                               <td className="py-2 text-right tabular-nums text-muted">{p.num_contenedores}</td>
                             </tr>
                           ))}
@@ -1426,13 +1559,12 @@ export default function InteligenciaDeNegocio() {
                         </thead>
                         <tbody>
                           {contenedores.eficienciaTipo.map((t, i) => {
-                            const costs = contenedores.eficienciaTipo.map(x => x.costo_por_paca).filter(Boolean);
-                            const minCosto = costs.length ? Math.min(...costs) : 0;
-                            const isBest = t.costo_por_paca && t.costo_por_paca === minCosto;
+                            const isBest = mejorCostoPorTipo !== null
+                              && parseFloat(t.costo_por_paca) === mejorCostoPorTipo;
                             return (
                               <tr key={i} className={`border-b border-border/50 hover:bg-primary/3 ${isBest ? 'bg-success/5' : ''}`}>
                                 <td className="py-2 font-medium">{t.clasificacion}</td>
-                                <td className="py-2 text-right tabular-nums text-muted">{(t.total_pacas || 0).toLocaleString('es-CO')}</td>
+                                <td className="py-2 text-right tabular-nums text-muted">{(Number(t.total_pacas) || 0).toLocaleString('es-CO')}</td>
                                 <td className={`py-2 text-right tabular-nums font-semibold ${isBest ? 'text-success' : ''}`}>
                                   {t.costo_por_paca ? formatCurrency(t.costo_por_paca) : '—'}
                                 </td>
@@ -1530,10 +1662,8 @@ export default function InteligenciaDeNegocio() {
             <div className="flex flex-wrap gap-2">
               <select
                 value={periodo}
-                onChange={(e) => {
-                  setPeriodo(e.target.value);
-                  analyticsApi.getVentas({ periodo: e.target.value, dias: 30 }).then(setVentas);
-                }}
+                onChange={(e) => cambiarPeriodo(e.target.value)}
+                aria-label="Agrupar las ventas por periodo"
                 className="px-4 py-2 rounded-xl border border-border text-sm"
               >
                 <option value="dia">Diario</option>
@@ -1541,6 +1671,18 @@ export default function InteligenciaDeNegocio() {
                 <option value="mes">Mensual</option>
               </select>
             </div>
+
+            {errorVentas && (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-error/10 border border-error/30 rounded-xl" role="alert">
+                <AlertTriangle className="w-5 h-5 text-error flex-shrink-0" aria-hidden="true" />
+                <p className="flex-1 text-sm text-primary">
+                  No se pudieron cargar las ventas de ese periodo. {errorVentas}
+                </p>
+                <Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => cambiarPeriodo(periodo)}>
+                  Reintentar
+                </Button>
+              </div>
+            )}
 
             <Card>
               <CardBody>

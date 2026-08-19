@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, CardTitle, CardDescription } from '../components/common';
+import { Card, CardBody, CardTitle, CardDescription, Button, EmptyState } from '../components/common';
 import { dashboardApi, analyticsApi } from '../services/api';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -10,7 +10,8 @@ import {
 import {
   Package, Users, ShoppingCart, Wallet,
   TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight,
-  Receipt, FileSignature, Brain, TrendingDown
+  Receipt, FileSignature, Brain, TrendingDown,
+  AlertTriangle, RefreshCw, Inbox
 } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
@@ -258,29 +259,96 @@ function DashboardSkeleton() {
   );
 }
 
+// Un fallo de la API se quedaba en un console.error y el tablero se pintaba
+// entero con ceros: no había forma de distinguir "no vendiste nada" de "no se
+// pudo consultar". Para un negocio eso es peor que ver un error.
+function ErrorState({ mensaje, onReintentar }) {
+  return (
+    <Card className="border-2 border-error/30">
+      <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+        <div className="p-3 rounded-2xl bg-error/10">
+          <AlertTriangle className="w-7 h-7 text-error" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="font-display text-lg text-primary">No se pudieron cargar los datos</p>
+          <p className="text-sm text-muted mt-1">{mensaje}</p>
+          <p className="text-xs text-muted mt-2">
+            No se muestran cifras para que no se confundan con ventas reales.
+          </p>
+        </div>
+        <Button variant="secondary" icon={RefreshCw} onClick={onReintentar}>Reintentar</Button>
+      </CardBody>
+    </Card>
+  );
+}
+
+// Versión compacta para una sola gráfica: el resto del tablero sigue siendo válido.
+function ChartError({ mensaje, onReintentar, height = 'h-[250px]' }) {
+  return (
+    <div className={`${height} flex flex-col items-center justify-center gap-2 text-center px-4`}>
+      <AlertTriangle className="w-6 h-6 text-error" aria-hidden="true" />
+      <p className="text-sm text-primary font-medium">No se pudo cargar esta gráfica</p>
+      <p className="text-xs text-muted">{mensaje}</p>
+      <button onClick={onReintentar} className="text-xs text-secondary hover:underline font-medium">
+        Reintentar
+      </button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [metricas, setMetricas] = useState(null);
   const [ventasData, setVentasData] = useState([]);
   const [ventasMensuales, setVentasMensuales] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  // Un error por serie: si sólo falla la mensual, la diaria SÍ llegó y sería
+  // mentira taparla con "No se pudo consultar" (y al revés).
+  const [errorDiarias, setErrorDiarias] = useState(null);
+  const [errorMensuales, setErrorMensuales] = useState(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    setErrorDiarias(null);
+    setErrorMensuales(null);
     try {
-      const [metricasRes, ventasDiariasRes, ventasMensRes] = await Promise.all([
+      // allSettled y no all: las gráficas son secundarias, si fallan ellas el
+      // resto del tablero sigue siendo información buena. Lo que no se puede
+      // hacer es tapar el fallo con arrays vacíos, que se pintan como "0".
+      const [metricasRes, ventasDiariasRes, ventasMensRes] = await Promise.allSettled([
         dashboardApi.getMetricas(),
-        dashboardApi.getVentasDiarias(30).catch(() => ({ data: [] })),
-        dashboardApi.getVentasMensuales().catch(() => ({ data: [] }))
+        dashboardApi.getVentasDiarias(30),
+        dashboardApi.getVentasMensuales()
       ]);
 
-      setMetricas(metricasRes);
-      setVentasData(ventasDiariasRes.data || ventasDiariasRes || []);
-      setVentasMensuales(ventasMensRes.data || ventasMensRes || []);
+      if (metricasRes.status === 'rejected') throw metricasRes.reason;
+      setMetricas(metricasRes.value);
+
+      if (ventasDiariasRes.status === 'fulfilled') {
+        const d = ventasDiariasRes.value;
+        setVentasData(d?.data || (Array.isArray(d) ? d : []));
+      } else {
+        setVentasData([]);
+        setErrorDiarias(ventasDiariasRes.reason?.message || 'No se pudieron consultar las ventas de los últimos 30 días.');
+      }
+
+      if (ventasMensRes.status === 'fulfilled') {
+        const m = ventasMensRes.value;
+        setVentasMensuales(m?.data || (Array.isArray(m) ? m : []));
+      } else {
+        setVentasMensuales([]);
+        setErrorMensuales(ventasMensRes.reason?.message || 'No se pudieron consultar las ventas por mes.');
+      }
     } catch (err) {
-      console.error('Error cargando datos del dashboard:', err);
+      setError(err?.message || 'No hay conexión con el servidor.');
+      setMetricas(null);
+      setVentasData([]);
+      setVentasMensuales([]);
     } finally {
       setLoading(false);
     }
@@ -290,6 +358,33 @@ export default function Dashboard() {
 
   if (loading) return <DashboardSkeleton />;
 
+  if (error) {
+    return (
+      <Layout title="Dashboard" subtitle="Resumen de tu negocio">
+        <ErrorState mensaje={error} onReintentar={loadData} />
+      </Layout>
+    );
+  }
+
+  // Cargó bien pero el negocio todavía no tiene nada registrado: es un mensaje
+  // distinto a "falló la consulta" y hay que decirlo con esas palabras.
+  if (!metricas) {
+    return (
+      <Layout title="Dashboard" subtitle="Resumen de tu negocio">
+        <Card>
+          <CardBody>
+            <EmptyState
+              icon={Inbox}
+              title="Todavía no hay datos que mostrar"
+              description="Cuando registres pacas, clientes o ventas, el resumen del negocio aparecerá aquí."
+              action={{ label: 'Actualizar', onClick: loadData }}
+            />
+          </CardBody>
+        </Card>
+      </Layout>
+    );
+  }
+
   const totalPacas = metricas?.pacas?.total || 0;
   const disponibles = metricas?.pacas?.disponibles || 0;
   const separadas = metricas?.pacas?.separadas || 0;
@@ -298,7 +393,14 @@ export default function Dashboard() {
   const valorInventario = metricas?.pacas?.valor_inventario || 0;
   const ganancia = valorInventario - costoTotal;
 
-  const totalVentas = ventasData.reduce((sum, v) => sum + parseFloat(v.monto || 0), 0);
+  // La gráfica de esta misma pantalla lee el importe de la fila como
+  // `monto_total || monto || total`, pero esta suma miraba sólo `monto`: si el
+  // endpoint nombra la columna monto_total, la tarjeta decía $0 con la gráfica
+  // llena de barras, que es justo el "cero que miente" que se quería evitar.
+  const totalVentas = ventasData.reduce((sum, v) => {
+    const n = parseFloat(v?.monto ?? v?.monto_total ?? v?.total ?? 0);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
   const totalGanancias = ventasMensuales.reduce((sum, v) => {
     const monto = parseFloat(v.monto || 0);
     const costo = parseFloat(v.costo || 0) || monto * 0.6;
@@ -313,7 +415,7 @@ export default function Dashboard() {
             <MetricCard
               icon={Package}
               label="Total Pacas"
-              value={totalPacas.toLocaleString('es-MX')}
+              value={totalPacas.toLocaleString('es-CO')}
               subtext={`${disponibles} disponibles`}
               color="secondary"
               delay={0}
@@ -321,7 +423,7 @@ export default function Dashboard() {
             <MetricCard
               icon={Users}
               label="Clientes"
-              value={(metricas?.clientes?.total || 0).toLocaleString('es-MX')}
+              value={(metricas?.clientes?.total || 0).toLocaleString('es-CO')}
               subtext={`${metricas?.clientes?.activos || 0} activos`}
               color="primary"
               delay={75}
@@ -329,10 +431,10 @@ export default function Dashboard() {
             <MetricCard
               icon={ShoppingCart}
               label="Ventas (30d)"
-              value={formatCurrency(totalVentas)}
-              subtext={`${ventasData.length} transacciones`}
+              value={errorDiarias ? '—' : formatCurrency(totalVentas)}
+              subtext={errorDiarias ? 'No se pudo consultar' : `${ventasData.length} transacciones`}
               color="success"
-              trend={totalVentas > 0 ? 'up' : undefined}
+              trend={!errorDiarias && totalVentas > 0 ? 'up' : undefined}
               delay={150}
             />
             <MetricCard
@@ -389,7 +491,9 @@ export default function Dashboard() {
                   <CardDescription>Últimos 30 días</CardDescription>
                 </div>
               </div>
-              <VentasBarChart data={ventasData} />
+              {errorDiarias
+                ? <ChartError mensaje={errorDiarias} onReintentar={loadData} />
+                : <VentasBarChart data={ventasData} />}
             </CardBody>
           </Card>
         </section>
@@ -406,7 +510,9 @@ export default function Dashboard() {
                   <CardDescription>Comparativo por mes</CardDescription>
                 </div>
               </div>
-              <VentasBarChart data={ventasMensuales} />
+              {errorMensuales
+                ? <ChartError mensaje={errorMensuales} onReintentar={loadData} />
+                : <VentasBarChart data={ventasMensuales} />}
             </CardBody>
           </Card>
 

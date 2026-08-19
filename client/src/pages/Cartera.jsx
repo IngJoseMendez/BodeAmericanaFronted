@@ -1,14 +1,14 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink } from '../components/common';
-import { carteraApi, clientesApi, pagosApi, cuentasApi } from '../services/api';
+import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
-import { hoy, aInputDate, formatFecha } from '../lib/fecha';
+import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
 
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
@@ -82,15 +82,70 @@ function matchAbono(m, q) {
   if (!q) return true;
   const ql = q.toLowerCase().trim();
   const qd = _digits(q);
-  const fechaStr = `${String(m.fecha || '')} ${m.fecha ? new Date(m.fecha).toLocaleDateString('es-MX') : ''}`.toLowerCase();
+  // formatFechaCorta ancla la fecha al mediodía; con new Date('2026-08-11') el
+  // navegador restaba un día y buscar "11/08" no encontraba el abono de ese día.
+  const fechaStr = `${String(m.fecha || '')} ${m.fecha ? formatFechaCorta(m.fecha) : ''}`.toLowerCase();
   const campos = [m.metodo_pago, m.cuenta_nombre, m.cotizacion_numero, m.despacho_numero, m.referencia, fechaStr];
   if (campos.some(v => _txt(v).includes(ql))) return true;
   if (qd && _digits(m.monto).includes(qd)) return true;
   return false;
 }
 
+// ── Lectura de CSV ───────────────────────────────────
+// Un CSV exportado de Excel en Colombia usa ';' para separar columnas, porque la
+// coma es el separador decimal ("1.500.000,50"). Partir por coma Y punto y coma
+// rompía esos montos en dos celdas y corría todas las columnas siguientes.
+function detectarDelimitador(primeraLinea = '') {
+  let mejor = ',', maxConteo = 0;
+  for (const d of [';', ',', '\t', '|']) {
+    let conteo = 0, enComillas = false;
+    for (const ch of primeraLinea) {
+      if (ch === '"') enComillas = !enComillas;
+      else if (ch === d && !enComillas) conteo++;
+    }
+    if (conteo > maxConteo) { maxConteo = conteo; mejor = d; }
+  }
+  return mejor;
+}
+
+// Parte una línea respetando las comillas: una razón social como
+// "Textiles Cali, S.A.S." es UNA celda, no dos; sin esto se descuadraba el monto.
+function partirLineaCSV(linea, delim) {
+  const celdas = [];
+  let actual = '', enComillas = false;
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (enComillas) {
+      if (ch === '"') {
+        if (linea[i + 1] === '"') { actual += '"'; i++; }  // comilla escapada ("")
+        else enComillas = false;
+      } else actual += ch;
+    } else if (ch === '"') {
+      enComillas = true;
+    } else if (ch === delim) {
+      celdas.push(actual.trim()); actual = '';
+    } else actual += ch;
+  }
+  celdas.push(actual.trim());
+  return celdas;
+}
+
+// parseMonto (lib/money) resuelve bien "1.500.000,50", pero devuelve 1.25 para
+// "1,250,000": trata la coma como decimal y además solo reemplaza la primera.
+// En un CSV exportado en inglés eso convierte una deuda de un millón en $1,25
+// y la importa sin avisar (1.25 > 0, así que pasa la validación).
+// Con DOS o más comas y ningún punto la coma solo puede ser separador de miles,
+// así que se quitan antes de parsear. El caso ambiguo de una sola coma
+// ("1,250") se deja tal cual para no contradecir a lib/money.
+function parseMontoCSV(valor) {
+  const s = String(valor ?? '').trim();
+  const comas = (s.match(/,/g) || []).length;
+  return comas >= 2 && !s.includes('.')
+    ? parseMonto(s.replace(/,/g, ''))
+    : parseMonto(s);
+}
+
 export default function Cartera() {
-  const [cartera, setCartera] = useState([]);
   const [carteraOriginal, setCarteraOriginal] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -108,6 +163,7 @@ export default function Cartera() {
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fechaCorte, setFechaCorte] = useState(''); // '' = saldo de hoy; 'YYYY-MM-DD' = foto al pasado
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
 
@@ -120,6 +176,10 @@ export default function Cartera() {
   const legacyFileRef = useRef(null);
 
   const clienteListRef = useRef(null);
+  // Última foto pedida. Cambiar la fecha dos veces seguidas lanza dos consultas;
+  // si la primera (más lenta) contestaba de última, la pantalla quedaba con los
+  // saldos de julio mientras el aviso decía otra fecha. Se descarta la tardía.
+  const corteEnCursoRef = useRef('');
   const { addToast } = useToast();
   const confirm = useConfirm();
 
@@ -135,9 +195,14 @@ export default function Cartera() {
   }, []);
 
   useEffect(() => {
-    loadCartera();
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
   }, []);
+
+  // Al cambiar la fecha de corte se recarga la cartera con esa foto.
+  // Con el corte vacío (montaje inicial) trae el saldo de hoy, como siempre.
+  useEffect(() => {
+    loadCartera(fechaCorte);
+  }, [fechaCorte]);
 
   // Deep-link: ?focus=<cliente_id> abre el detalle de cartera de ese cliente (trazabilidad)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -148,28 +213,63 @@ export default function Cartera() {
     setSearchParams({}, { replace: true });
   }, [searchParams]);
 
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setCartera(carteraOriginal);
-    } else {
-      const filtered = carteraOriginal.filter(c => 
-        c.nombre?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.ciudad?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.telefono?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setCartera(filtered);
-    }
+  // La búsqueda era estado derivado (useEffect + setCartera): cada tecla
+  // provocaba DOS renders y obligaba a mantener dos copias de la lista.
+  // Con useMemo se filtra durante el render y el texto se pasa a minúsculas
+  // una sola vez, no tres veces por cliente.
+  const cartera = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return carteraOriginal;
+    return carteraOriginal.filter(c =>
+      c.nombre?.toLowerCase().includes(q) ||
+      c.ciudad?.toLowerCase().includes(q) ||
+      c.telefono?.toLowerCase().includes(q)
+    );
   }, [searchQuery, carteraOriginal]);
 
-  const loadCartera = async () => {
+  // El detalle recalculaba resumenPorCotizacion en CADA render (recorre todos
+  // los movimientos y ordena por fecha). Memoizado, solo se rehace cuando
+  // cambian los movimientos del cliente o el texto de búsqueda.
+  const vistaVentas = useMemo(() => {
+    if (!detalleCliente) return null;
+    const resumen = resumenPorCotizacion(detalleCliente.movimientos, detalleCliente.saldo_inicial);
+    const q = detalleBusqueda.trim();
+    const qd = _digits(q);
+    const ql = q.toLowerCase();
+    const cotizaciones = resumen.cotizaciones.filter(c => matchVenta(c, q));
+    const mostrarMig = resumen.migracion.deuda > 0 && (!q
+      || 'migracion migración deuda inicial'.includes(ql)
+      || (!!qd && (_digits(resumen.migracion.deuda).includes(qd) || _digits(resumen.migracion.saldo).includes(qd))));
+    const mostrarGeneral = (resumen.generalVenta > 0 || resumen.generalAbonadoRemanente > 0) && (!q
+      || 'general sin cotizacion otras remanente'.includes(ql)
+      || (!!qd && (_digits(resumen.generalVenta).includes(qd) || _digits(resumen.generalAbonadoRemanente).includes(qd))));
+    return { resumen, cotizaciones, mostrarMig, mostrarGeneral, q };
+  }, [detalleCliente, detalleBusqueda]);
+
+  // El mismo filtro de abonos se ejecutaba dos veces por render (una para saber
+  // si estaba vacío y otra para pintarlo), y matchAbono formatea una fecha por
+  // movimiento, que es de lo más caro que hay.
+  const abonosFiltrados = useMemo(
+    () => (detalleCliente?.movimientos || []).filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)),
+    [detalleCliente, detalleBusqueda]
+  );
+
+  // corte vacío = saldo de hoy (comportamiento de siempre); con fecha, el
+  // backend reconstruye el saldo con los movimientos hasta ese día.
+  const loadCartera = async (corte = '') => {
+    corteEnCursoRef.current = corte;
     try {
-      const data = await carteraApi.getAll();
-      setCartera(data);
+      setLoading(true);
+      const data = await api.get('/cartera' + qs({ fecha_corte: corte }));
+      // Respuesta de una foto que ya nadie está mirando: pintarla mostraría
+      // saldos de otra fecha bajo el aviso equivocado.
+      if (corteEnCursoRef.current !== corte) return;
       setCarteraOriginal(data);
     } catch (err) {
+      if (corteEnCursoRef.current !== corte) return;
       addToast(err.message, 'error');
     } finally {
-      setLoading(false);
+      if (corteEnCursoRef.current === corte) setLoading(false);
     }
   };
 
@@ -282,7 +382,7 @@ export default function Cartera() {
 
       setModalOpen(false);
       setSaldoCliente(null);
-      loadCartera();
+      loadCartera(fechaCorte);
       // Si el detalle del mismo cliente está abierto detrás, refrescarlo
       if (detalleCliente?.cliente?.id === parseInt(formData.cliente_id)) {
         try {
@@ -314,7 +414,7 @@ export default function Cartera() {
       // Recargar detalle
       const data = await carteraApi.getOne(detalleCliente.cliente.id);
       setDetalleCliente(data);
-      loadCartera();
+      loadCartera(fechaCorte);
     } catch (err) {
       addToast('Error al eliminar: ' + err.message, 'error');
     }
@@ -338,7 +438,7 @@ export default function Cartera() {
       setEditandoAbono(null);
       const data = await carteraApi.getOne(detalleCliente.cliente.id);
       setDetalleCliente(data);
-      loadCartera();
+      loadCartera(fechaCorte);
     } catch (err) {
       addToast('Error al actualizar: ' + err.message, 'error');
     }
@@ -761,12 +861,13 @@ export default function Cartera() {
           rawRows.push([vals[1], vals[2], vals[3], vals[4], vals[5], vals[6]]);
         });
       } else {
-        const text = await file.text();
+        // \uFEFF: Excel antepone una marca invisible que ensuciaba la 1ª columna.
+        const text = (await file.text()).replace(/^\uFEFF/, '');
         const lines = text.split(/\r?\n/).filter(l => l.trim());
-        lines.slice(1).forEach(line => {
-          const cells = line.split(/[,;]/).map(c => c.trim().replace(/^"|"$/g, ''));
-          rawRows.push(cells);
-        });
+        // Excel escribe a veces una línea "sep=;" antes del encabezado.
+        if (/^sep=./i.test(lines[0] || '')) lines.shift();
+        const delim = detectarDelimitador(lines[0] || '');
+        lines.slice(1).forEach(line => rawRows.push(partirLineaCSV(line, delim)));
       }
 
       const parsed = [];
@@ -775,7 +876,7 @@ export default function Cartera() {
         const [cli, tipo, fecha, monto, cuenta, ref] = cells;
         const cliente_id = matchCliente(cli);
         const tipoNorm = String(tipo || '').trim().toLowerCase().startsWith('v') ? 'venta' : 'abono';
-        const montoNum = parseMonto(monto);
+        const montoNum = parseMontoCSV(monto);
         if (!cliente_id) { errores.push(`Fila ${i + 2}: cliente "${cli}" no encontrado`); return; }
         if (!montoNum || montoNum <= 0) { errores.push(`Fila ${i + 2}: monto inválido`); return; }
         parsed.push({
@@ -807,7 +908,7 @@ export default function Cartera() {
       addToast(`${legacyRows.length} movimiento(s) histórico(s) importado(s)`, 'success');
       setLegacyModalOpen(false);
       setLegacyRows([]);
-      loadCartera();
+      loadCartera(fechaCorte);
     } catch (err) {
       addToast('Error al importar: ' + err.message, 'error');
     } finally {
@@ -818,17 +919,52 @@ export default function Cartera() {
   return (
     <Layout title="Cartera" subtitle="Estado de cuentas por cobrar" actions={
       <div className="flex items-center gap-2">
-        <Button onClick={openLegacyModal} variant="ghost">
-          <Upload size={18} className="mr-1" /> Cargar histórico
+        <Button onClick={openLegacyModal} variant="ghost" title="Cargar histórico">
+          <Upload size={18} /> <span className="hidden sm:inline">Cargar histórico</span>
         </Button>
-        <Button onClick={openPagoModal} variant="secondary">
-          <Plus size={18} className="mr-1" /> Registrar Abono
+        <Button onClick={openPagoModal} variant="secondary" title="Registrar abono">
+          <Plus size={18} /> <span className="hidden sm:inline">Registrar Abono</span>
         </Button>
       </div>
     }>
       <div className="space-y-4">
         {error && (
           <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
+        )}
+
+        {/* Cartera a una fecha pasada: hace falta poder ver cuánto debía cada
+            cliente el 31 de julio, no solo hoy. Vacío = saldo de hoy. */}
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-border bg-surface">
+          <label htmlFor="fecha-corte" className="flex items-center gap-2 text-sm font-medium text-primary">
+            <Calendar size={18} className="text-secondary shrink-0" />
+            Ver saldos al día
+          </label>
+          <input
+            id="fecha-corte"
+            type="date"
+            value={fechaCorte}
+            max={hoy()}
+            onChange={(e) => setFechaCorte(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+          />
+          {fechaCorte ? (
+            <Button size="sm" variant="ghost" onClick={() => setFechaCorte('')}>
+              <X size={14} /> Volver a hoy
+            </Button>
+          ) : (
+            <span className="text-xs text-muted">Déjalo vacío para ver el saldo de hoy.</span>
+          )}
+        </div>
+
+        {fechaCorte && (
+          <div className="flex items-start gap-2 p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              Estás viendo una <strong>foto del pasado</strong>: estos son los saldos del{' '}
+              <strong>{formatFecha(fechaCorte)}</strong>, no los de hoy. No incluye las ventas ni los
+              abonos posteriores a esa fecha. Si abres un cliente, su detalle sí muestra la situación actual.
+            </span>
+          </div>
         )}
 
         {/* Barra de búsqueda */}
@@ -857,7 +993,24 @@ export default function Cartera() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : cartera.length === 0 ? (
-            <div className="col-span-3 text-center py-8 text-gray-400">No hay cartera</div>
+            /* Antes decía siempre "No hay cartera": con una búsqueda sin
+               resultados parecía que se hubieran perdido todos los clientes. */
+            <div className="col-span-3 text-center py-10 text-muted">
+              {searchQuery.trim() ? (
+                <>
+                  <p className="text-sm">Ningún cliente coincide con "<strong>{searchQuery.trim()}</strong>".</p>
+                  <button onClick={() => setSearchQuery('')} className="mt-2 text-sm text-secondary hover:underline">
+                    Limpiar la búsqueda
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm">
+                  {fechaCorte
+                    ? `Ningún cliente tenía cartera al ${formatFecha(fechaCorte)}.`
+                    : 'Todavía no hay clientes con cartera.'}
+                </p>
+              )}
+            </div>
           ) : (
             cartera.map((c) => (
               <Card key={c.id} hover className="animate-fade-in" onClick={() => openDetalle(c.id)}>
@@ -951,15 +1104,12 @@ export default function Cartera() {
             </div>
 
             {/* PESTAÑA VENTAS: cada cotización con su saldo, abonable directamente */}
-            {detalleTab === 'ventas' && (() => {
-              const resumen = resumenPorCotizacion(detalleCliente.movimientos, detalleCliente.saldo_inicial);
+            {detalleTab === 'ventas' && vistaVentas && (() => {
+              const { resumen, cotizaciones, mostrarMig, mostrarGeneral, q } = vistaVentas;
               const { generalVenta, generalAbonadoRemanente, migracion } = resumen;
-              const cotizaciones = resumen.cotizaciones.filter(c => matchVenta(c, detalleBusqueda));
               if (resumen.cotizaciones.length === 0 && generalVenta === 0 && migracion.deuda === 0) {
                 return <p className="text-center text-muted py-6 text-sm">Este cliente no tiene ventas registradas.</p>;
               }
-              const q = detalleBusqueda.trim();
-              const mostrarMig = migracion.deuda > 0 && (!q || 'migracion migración deuda inicial'.includes(q.toLowerCase()) || (_digits(q) && (_digits(migracion.deuda).includes(_digits(q)) || _digits(migracion.saldo).includes(_digits(q)))));
               if (q && cotizaciones.length === 0 && !mostrarMig) {
                 return <p className="text-center text-muted py-6 text-sm">Ninguna venta coincide con "{q}".</p>;
               }
@@ -1017,9 +1167,7 @@ export default function Cartera() {
                       </div>
                     </div>
                   ))}
-                  {(generalVenta > 0 || generalAbonadoRemanente > 0) &&
-                    (!q || 'general sin cotizacion otras remanente'.includes(q.toLowerCase()) ||
-                      (_digits(q) && (_digits(generalVenta).includes(_digits(q)) || _digits(generalAbonadoRemanente).includes(_digits(q))))) && (
+                  {mostrarGeneral && (
                     <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <p className="text-sm font-medium text-muted">Sin cotización específica</p>
@@ -1055,12 +1203,12 @@ export default function Cartera() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)).length === 0 && (
+                  {abonosFiltrados.length === 0 && (
                     <tr><td colSpan={5} className="px-3 py-6 text-center text-muted text-sm">
                       {detalleBusqueda.trim() ? `Ningún abono coincide con "${detalleBusqueda.trim()}"` : 'Sin abonos registrados para este cliente'}
                     </td></tr>
                   )}
-                  {detalleCliente.movimientos.filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)).map(m => (
+                  {abonosFiltrados.map(m => (
                     <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
                       {editandoAbono?.id === m.id ? (
                         // Fila en modo edición
@@ -1110,7 +1258,7 @@ export default function Cartera() {
                       ) : (
                         // Fila normal
                         <>
-                          <td className="px-3 py-2">{new Date(m.fecha).toLocaleDateString('es-MX')}</td>
+                          <td className="px-3 py-2">{formatFechaCorta(m.fecha)}</td>
                           <td className="px-3 py-2">
                             <Badge variant={m.tipo === 'venta' ? 'vendida' : 'disponible'}>
                               {m.tipo === 'venta' ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}

@@ -59,16 +59,53 @@ export default function Pacas() {
   const [busquedaClienteReserva, setBusquedaClienteReserva] = useState('');
   const [showListaClientesReserva, setShowListaClientesReserva] = useState(false);
   const clienteReservaListRef = useRef(null);
+  // Contenedor del desplegable de resultados. Hace falta para mover el foco con
+  // las flechas: el input se anuncia como combobox con aria-autocomplete="list",
+  // así que el lector de pantalla le dice al usuario que use las flechas. Sin
+  // este manejo las flechas no hacían nada y Escape cerraba el modal entero
+  // (perdiendo el formulario) en lugar de cerrar solo la lista.
+  const listaClientesReservaRef = useRef(null);
+
+  // Mueve el foco entre las opciones del desplegable de clientes.
+  const moverFocoOpcionCliente = (desde, delta) => {
+    const opciones = Array.from(
+      listaClientesReservaRef.current?.querySelectorAll('[role="option"]') || []
+    );
+    if (opciones.length === 0) return;
+    const actual = desde === null ? -1 : opciones.indexOf(desde);
+    const siguiente = actual + delta;
+    if (siguiente < 0) {
+      document.getElementById('reserva-buscar-cliente')?.focus();
+      return;
+    }
+    opciones[Math.min(siguiente, opciones.length - 1)].focus();
+  };
 
   const debouncedSearch = useDebounce(search, 300);
 
-  useEffect(() => {
-    setPagina(1);
-  }, [filtroEstado, filtroTipo, debouncedSearch, limite]);
+  // Firma de los filtros. Antes había DOS efectos encadenados sobre los mismos
+  // filtros: uno hacía setPagina(1) y otro cargaba los datos con `pagina` entre
+  // sus dependencias. Estando en la página 3, cambiar un filtro disparaba una
+  // carga con la página VIEJA y acto seguido otra con la página 1: quedaban dos
+  // peticiones en vuelo y la tabla se quedaba con la que respondiera de última,
+  // que podía ser la obsoleta. Ahora el reset ocurre dentro del mismo efecto,
+  // antes de pedir nada, y cada carga descarta su respuesta si ya no es la
+  // vigente (bandera de cancelación por número de carga).
+  const filtrosKey = `${filtroEstado}|${filtroTipo}|${debouncedSearch}|${limite}`;
+  const filtrosPrevRef  = useRef(filtrosKey);
+  const cargaPacasRef    = useRef(0);
+  const cargaAgrupadoRef = useRef(0);
 
   useEffect(() => {
+    if (filtrosPrevRef.current !== filtrosKey) {
+      filtrosPrevRef.current = filtrosKey;
+      if (pagina !== 1) {
+        setPagina(1); // este mismo efecto se vuelve a ejecutar ya con la página 1
+        return;       // y así no se pide nada con la página vieja
+      }
+    }
     loadPacas();
-  }, [filtroEstado, filtroTipo, debouncedSearch, pagina, limite]);
+  }, [filtrosKey, pagina]);
 
   useEffect(() => {
     loadInventarioAgrupado();
@@ -80,6 +117,7 @@ export default function Pacas() {
   }, []);
 
   const loadInventarioAgrupado = async () => {
+    const miCarga = ++cargaAgrupadoRef.current;
     try {
       setLoadingAgrupado(true);
       const params = {};
@@ -87,11 +125,14 @@ export default function Pacas() {
       if (filtroTipo)      params.tipo   = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
       const data = await pacasApi.getInventario(params);
+      if (miCarga !== cargaAgrupadoRef.current) return; // respuesta vieja: ya hay otra carga en curso
       setInventarioAgrupado(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoadingAgrupado(false);
+      // El spinner lo apaga solo la carga vigente; si no, una respuesta vieja
+      // apagaría el indicador mientras la buena sigue viajando.
+      if (miCarga === cargaAgrupadoRef.current) setLoadingAgrupado(false);
     }
   };
 
@@ -124,6 +165,7 @@ export default function Pacas() {
   }, []);
 
   const loadPacas = async () => {
+    const miCarga = ++cargaPacasRef.current;
     try {
       setLoading(true);
       const params = { pagina, limite };
@@ -135,12 +177,13 @@ export default function Pacas() {
       // ya no hace falta pedir /pacas/resumen en cada carga.
       const data = await pacasApi.getAll(params);
 
+      if (miCarga !== cargaPacasRef.current) return; // respuesta vieja: la descartamos
       setPacas(data.data || data);
       if (data.total_paginas) setTotalPaginas(data.total_paginas);
     } catch (err) {
-      addToast(err.message, 'error');
+      if (miCarga === cargaPacasRef.current) addToast(err.message, 'error');
     } finally {
-      setLoading(false);
+      if (miCarga === cargaPacasRef.current) setLoading(false);
     }
   };
 
@@ -791,7 +834,13 @@ export default function Pacas() {
   return (
     <Layout title="Inventario" subtitle={`${pacas.length} unidades`}>
       <div className="space-y-6">
-        {/* Resumen por categoría */}
+        {/* Resumen por categoría. Cada tarjeta filtra el inventario al pulsarla:
+            como Card es un <div>, sin role/tabIndex/teclado no había manera de
+            usarla sin ratón. La barra espaciadora necesita preventDefault o el
+            navegador hace scroll de la página en lugar de activar el filtro.
+            El aria-label sustituye al contenido como nombre accesible, así que
+            lleva dentro los cuatro números: con solo "Filtrar por categoría X"
+            el lector de pantalla perdía los datos que sí ve quien mira. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {resumenCategorias.map((r) => {
             const activa = filtroCategoria === r.categoria;
@@ -799,12 +848,22 @@ export default function Pacas() {
               <Card
                 key={r.categoria}
                 hover
-                className={`cursor-pointer transition-all ${activa ? 'ring-2 ring-secondary' : ''}`}
+                className={`cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${activa ? 'ring-2 ring-secondary' : ''}`}
                 onClick={() => setFiltroCategoria(activa ? '' : r.categoria)}
+                role="button"
+                tabIndex={0}
+                aria-pressed={activa}
+                aria-label={`Filtrar por categoría ${r.categoria}: ${r.disponibles} disponibles, ${r.despachadas} despachadas, ${r.separadas} separadas, ${r.fisico} en total`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setFiltroCategoria(activa ? '' : r.categoria);
+                  }
+                }}
               >
                 <CardBody className="p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Package className="w-4 h-4 text-secondary flex-shrink-0" />
+                    <Package className="w-4 h-4 text-secondary flex-shrink-0" aria-hidden="true" />
                     <span className="font-medium text-sm capitalize truncate" title={r.categoria}>{r.categoria}</span>
                   </div>
                   <div className="grid grid-cols-4 gap-1 text-xs">
@@ -846,9 +905,13 @@ export default function Pacas() {
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
+            {/* El placeholder desaparece al escribir: sin aria-label el lector de
+                pantalla anunciaba solo "campo de texto". */}
             <input
+              id="pacas-buscar"
               type="text"
+              aria-label="Buscar unidades por UUID o notas"
               placeholder="Buscar por UUID o notas..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -856,25 +919,34 @@ export default function Pacas() {
             />
           </div>
           <div className="flex gap-2 flex-wrap items-center">
+            {/* En pantallas pequeñas el rótulo se oculta y solo queda el icono:
+                aria-label + aria-pressed dejan claro cuál vista está activa. */}
             <div className="flex rounded-xl border border-border overflow-hidden">
               <button
+                type="button"
                 onClick={() => setVistaAgrupada(true)}
+                aria-pressed={vistaAgrupada}
+                aria-label="Ver inventario agrupado"
                 className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${vistaAgrupada ? 'bg-secondary text-on-surface font-medium' : 'bg-surface text-muted hover:bg-primary/5'}`}
               >
-                <Grid size={16} />
+                <Grid size={16} aria-hidden="true" />
                 <span className="hidden sm:inline">Agrupado</span>
               </button>
               <button
+                type="button"
                 onClick={() => setVistaAgrupada(false)}
+                aria-pressed={!vistaAgrupada}
+                aria-label="Ver inventario en lista"
                 className={`px-3 py-2 flex items-center gap-2 text-sm transition-colors ${!vistaAgrupada ? 'bg-secondary text-on-surface font-medium' : 'bg-surface text-muted hover:bg-primary/5'}`}
               >
-                <List size={16} />
+                <List size={16} aria-hidden="true" />
                 <span className="hidden sm:inline">Lista</span>
               </button>
             </div>
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
+              aria-label="Filtrar por estado"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los estados</option>
@@ -883,6 +955,7 @@ export default function Pacas() {
             <select
               value={filtroTipo}
               onChange={(e) => setFiltroTipo(e.target.value)}
+              aria-label="Filtrar por clasificación"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todas las clasificaciones</option>
@@ -906,7 +979,7 @@ export default function Pacas() {
         </div>
 
         {error && (
-          <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
+          <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
         )}
 
         {/* Vista Agrupada */}
@@ -914,20 +987,21 @@ export default function Pacas() {
           <Card padding={false}>
             <div className="overflow-x-auto">
               <table className="w-full">
+                <caption className="sr-only">Inventario agrupado por contenedor, clasificación y calidad</caption>
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Proveedor</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Físico</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Despachadas</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Disponibles</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Proveedor</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
+                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Físico</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Despachadas</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Disponibles</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
+                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -965,8 +1039,9 @@ export default function Pacas() {
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">
                           {row.separadas > 0 ? (
-                            <button onClick={() => verComprometidas(row)}
+                            <button type="button" onClick={() => verComprometidas(row)}
                               className="text-warning font-semibold hover:underline underline-offset-2 cursor-pointer"
+                              aria-label={`Ver por quién están separadas las ${row.separadas} unidades de ${row.clasificacion} ${row.referencia}`}
                               title="Ver por quién están separadas">
                               {row.separadas}
                             </button>
@@ -987,17 +1062,18 @@ export default function Pacas() {
           <Card padding={false}>
             <div className="overflow-x-auto">
               <table className="w-full">
+                <caption className="sr-only">Unidades del inventario, una fila por paca</caption>
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado / Cotización</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
+                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado / Cotización</th>
+                    <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -1048,24 +1124,27 @@ export default function Pacas() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1">
+                            {/* Botones de solo icono: sin aria-label el lector de
+                                pantalla solo decía "botón" y no se distinguía
+                                editar de eliminar. Se nombra la unidad concreta. */}
                             {paca.estado === 'disponible' && (
                               <>
-                                <button onClick={() => openReservaModal(paca)} className="p-2 rounded-lg text-muted hover:text-success hover:bg-success/10 transition-all" title="Reservar para cliente">
-                                  <Calendar size={16} />
+                                <button type="button" onClick={() => openReservaModal(paca)} className="p-2 rounded-lg text-muted hover:text-success hover:bg-success/10 transition-all" title="Reservar para cliente" aria-label={`Reservar para cliente la unidad ${paca.uuid?.slice(0, 8)}`}>
+                                  <Calendar size={16} aria-hidden="true" />
                                 </button>
-                                <button onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-all" title="Asignar a lote">
-                                  <Link size={16} />
+                                <button type="button" onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-all" title="Asignar a lote" aria-label={`Asignar a lote la unidad ${paca.uuid?.slice(0, 8)}`}>
+                                  <Link size={16} aria-hidden="true" />
                                 </button>
                               </>
                             )}
                             {paca.estado === 'separada' && (
                               <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full">Separada</span>
                             )}
-                            <button onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
-                              <Edit2 size={16} />
+                            <button type="button" onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all" title="Editar unidad" aria-label={`Editar la unidad ${paca.uuid?.slice(0, 8)}`}>
+                              <Edit2 size={16} aria-hidden="true" />
                             </button>
-                            <button onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" disabled={paca.estado === 'vendida'}>
-                              <Trash2 size={16} />
+                            <button type="button" onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" disabled={paca.estado === 'vendida'} title="Eliminar unidad" aria-label={`Eliminar la unidad ${paca.uuid?.slice(0, 8)}`}>
+                              <Trash2 size={16} aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -1082,8 +1161,9 @@ export default function Pacas() {
         {totalPaginas > 0 && (
           <div className="flex flex-col sm:flex-row justify-between items-center bg-surface p-4 rounded-xl border border-border mt-4 gap-4 shadow-sm">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted">Mostrar:</span>
+              <label htmlFor="pacas-por-pagina" className="text-sm text-muted">Mostrar:</label>
               <select
+                id="pacas-por-pagina"
                 value={limite}
                 onChange={(e) => setLimite(Number(e.target.value))}
                 className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
@@ -1123,7 +1203,7 @@ export default function Pacas() {
       {/* Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Unidad' : 'Nueva Unidad'}>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {error && <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
+          {error && <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
 
           <div className="grid grid-cols-2 gap-4">
             <Select
@@ -1153,8 +1233,8 @@ export default function Pacas() {
               placeholder="Seleccionar..."
             />
             <div>
-              <label className="block text-sm font-medium text-primary mb-1">Categoría <span className="text-muted font-normal">(opcional)</span></label>
-              <input list="temporadas-paca-form" className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              <label htmlFor="paca-categoria" className="block text-sm font-medium text-primary mb-1">Categoría <span className="text-muted font-normal">(opcional)</span></label>
+              <input id="paca-categoria" list="temporadas-paca-form" className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 value={formData.categoria}
                 onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
                 placeholder="Verano / Invierno" />
@@ -1196,12 +1276,14 @@ export default function Pacas() {
 
           {!editando && (
             <div className="flex items-center gap-3 p-4 bg-secondary/10 rounded-xl border border-secondary/20">
-              <Hash className="w-5 h-5 text-secondary" />
+              <Hash className="w-5 h-5 text-secondary" aria-hidden="true" />
               <div className="flex-1">
-                <label className="block text-sm font-medium text-primary">Cantidad</label>
-                <p className="text-xs text-muted">Número de unidades del mismo tipo</p>
+                <label htmlFor="paca-cantidad" className="block text-sm font-medium text-primary">Cantidad</label>
+                <p id="paca-cantidad-ayuda" className="text-xs text-muted">Número de unidades del mismo tipo</p>
               </div>
               <input
+                id="paca-cantidad"
+                aria-describedby="paca-cantidad-ayuda"
                 type="number"
                 min="1"
                 max="100"
@@ -1275,14 +1357,20 @@ export default function Pacas() {
 
           {/* Selector de cliente con búsqueda */}
           <div className="relative" ref={clienteReservaListRef}>
-            <label className="block text-sm font-medium text-primary mb-1">
+            {/* Con un cliente ya elegido el input de búsqueda no existe: el
+                htmlFor apuntaría a un id inexistente, así que solo se pone
+                cuando el campo está realmente en pantalla. */}
+            <label
+              htmlFor={reservaForm.cliente_id ? undefined : 'reserva-buscar-cliente'}
+              className="block text-sm font-medium text-primary mb-1"
+            >
               Cliente <span className="text-error">*</span>
             </label>
-            
+
             {reservaForm.cliente_id ? (
               <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
                 <div className="p-2 bg-secondary/20 rounded-lg">
-                  <User className="w-4 h-4 text-secondary" />
+                  <User className="w-4 h-4 text-secondary" aria-hidden="true" />
                 </div>
                 <div className="flex-1">
                   <p className="font-medium text-sm text-secondary">
@@ -1299,17 +1387,31 @@ export default function Pacas() {
                     setBusquedaClienteReserva('');
                   }}
                   className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                  aria-label="Quitar el cliente seleccionado"
+                  title="Quitar el cliente seleccionado"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden="true" />
                 </button>
               </div>
             ) : (
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="h-5 w-5 text-gray-400" />
+                  <Search className="h-5 w-5 text-gray-400" aria-hidden="true" />
                 </div>
                 <input
+                  id="reserva-buscar-cliente"
                   type="text"
+                  role="combobox"
+                  aria-expanded={!!busquedaClienteReserva && showListaClientesReserva}
+                  /* aria-controls solo mientras la lista existe: apuntar a un id
+                     que no está en el DOM es una referencia rota. */
+                  aria-controls={
+                    !!busquedaClienteReserva && showListaClientesReserva
+                      ? 'reserva-lista-clientes'
+                      : undefined
+                  }
+                  aria-autocomplete="list"
+                  autoComplete="off"
                   placeholder="Buscar cliente..."
                   value={busquedaClienteReserva}
                   onChange={(e) => {
@@ -1317,41 +1419,81 @@ export default function Pacas() {
                     setShowListaClientesReserva(true);
                   }}
                   onFocus={() => busquedaClienteReserva && setShowListaClientesReserva(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      if (!busquedaClienteReserva) return;
+                      setShowListaClientesReserva(true);
+                      // La lista puede acabar de montarse: se espera al pintado.
+                      requestAnimationFrame(() => moverFocoOpcionCliente(null, 1));
+                    } else if (e.key === 'Escape' && showListaClientesReserva) {
+                      // Sin stopPropagation el Escape llega al Modal y cierra
+                      // toda la reserva en vez de cerrar solo el desplegable.
+                      e.stopPropagation();
+                      setShowListaClientesReserva(false);
+                    }
+                  }}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                 />
               </div>
             )}
             
-            {!reservaForm.cliente_id && busquedaClienteReserva && (
-              <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+            {/* Cada resultado era un <div onClick> sin role ni tabIndex: con
+                teclado no había forma de elegir cliente y, por tanto, de crear la
+                reserva. Ahora son <button role="option">, que se activan con
+                Enter y Espacio y entran en el orden de tabulación. */}
+            {/* `showListaClientesReserva` no entraba en la condición, así que el
+                cierre al hacer clic fuera (efecto de arriba) no tenía efecto y la
+                lista se quedaba abierta encima del resto del formulario. */}
+            {!reservaForm.cliente_id && busquedaClienteReserva && showListaClientesReserva && (
+              <div
+                id="reserva-lista-clientes"
+                ref={listaClientesReservaRef}
+                role="listbox"
+                aria-label="Clientes que coinciden con la búsqueda"
+                className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+              >
                 {clientes
                   .filter(c => c.estado === 'activo')
-                  .filter(c => 
+                  .filter(c =>
                     c.nombre?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
                     c.ciudad?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
                     c.telefono?.toLowerCase().includes(busquedaClienteReserva.toLowerCase())
                   )
                   .slice(0, 10)
                   .map(c => (
-                    <div
+                    <button
                       key={c.id}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
                       onClick={() => {
                         setReservaForm({ ...reservaForm, cliente_id: c.id.toString() });
                         setBusquedaClienteReserva('');
                         setShowListaClientesReserva(false);
                       }}
-                      className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          moverFocoOpcionCliente(e.currentTarget, e.key === 'ArrowDown' ? 1 : -1);
+                        } else if (e.key === 'Escape') {
+                          e.stopPropagation(); // que no cierre el modal entero
+                          setShowListaClientesReserva(false);
+                          document.getElementById('reserva-buscar-cliente')?.focus();
+                        }
+                      }}
+                      className="w-full text-left px-4 py-3 cursor-pointer hover:bg-primary/5 focus:bg-primary/10 focus:outline-none transition-colors duration-150 border-b border-border/50 last:border-b-0"
                     >
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-primary/8 rounded-lg">
-                          <User className="w-4 h-4 text-muted" />
+                          <User className="w-4 h-4 text-muted" aria-hidden="true" />
                         </div>
                         <div>
                           <p className="font-medium text-sm">{c.nombre}</p>
                           <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))}
               </div>
             )}

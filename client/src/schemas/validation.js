@@ -143,8 +143,6 @@ export const pagoSchema = z.object({
     .trim(),
 });
 
-export type ClienteFormData = z.infer<typeof clienteSchema>;
-export type PacaFormData = z.infer<typeof pacaSchema>;
-export type VentaFormData = z.infer<typeof ventaSchema>;
-export type LoginFormData = z.infer<typeof loginSchema>;
-export type PagoFormData = z.infer<typeof pagoSchema>;
+// Los `export type` de TypeScript que había aquí se retiraron: este archivo es
+// .js y esa sintaxis hacía fallar el build en cuanto alguien lo importara.
+// Los esquemas de validación de arriba sí sirven y quedan disponibles.

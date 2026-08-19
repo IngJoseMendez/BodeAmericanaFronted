@@ -242,6 +242,17 @@ export default function TiposPaca() {
 
   const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  // Editar y Eliminar estaban en opacity-0 hasta el hover: en celular y tablet,
+  // donde no hay puntero, quedaban invisibles y no había forma de llegar a
+  // ellos; y navegando con Tab el foco caía en un botón que no se veía.
+  // Ahora solo se ocultan donde SÍ hay hover real, y reaparecen al enfocarlos.
+  // El color base pasó de text-border (#e2e8f0, casi blanco sobre blanco) a
+  // text-muted, que sí se distingue.
+  const BTN_ACCION =
+    'p-1.5 rounded-lg text-muted transition-all [@media(hover:hover)]:opacity-0 ' +
+    'group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 ' +
+    'focus:outline-none focus:ring-2 focus:ring-secondary/40';
+
   const PanelItem = ({ item, table, onDelete }) => {
     const isEditing = editando && editando.id === item.id && editando.table === table;
     return (
@@ -319,15 +330,17 @@ export default function TiposPaca() {
             <>
               <button
                 onClick={() => startEdit(table, item)}
-                className="p-1.5 rounded-lg text-border hover:text-secondary hover:bg-secondary/10 opacity-0 group-hover:opacity-100 transition-all"
+                className={`${BTN_ACCION} hover:text-secondary hover:bg-secondary/10`}
                 title="Editar"
+                aria-label={`Editar ${item.nombre}`}
               >
                 <Pencil size={14} />
               </button>
               <button
                 onClick={() => onDelete(item)}
-                className="p-1.5 rounded-lg text-border hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all"
+                className={`${BTN_ACCION} hover:text-error hover:bg-error/10`}
                 title="Eliminar"
+                aria-label={`Eliminar ${item.nombre}`}
               >
                 <Trash2 size={14} />
               </button>
@@ -377,7 +390,7 @@ export default function TiposPaca() {
           <div>
             <p className="font-semibold text-primary text-sm">Catálogo personalizable</p>
             <p className="text-xs text-muted mt-0.5">
-              Pasa el cursor sobre un ítem para editar su nombre o eliminarlo. Solo se bloquea eliminar si hay unidades que lo usan activamente.
+              Usa los botones de lápiz y papelera de cada ítem para editar su nombre o eliminarlo. Solo se bloquea eliminar si hay unidades que lo usan activamente.
             </p>
           </div>
         </div>

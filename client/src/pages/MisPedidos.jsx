@@ -4,16 +4,27 @@ import { Card, CardBody, Badge, Modal, Button, useToast } from '../components/co
 import { pedidosApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
-import { Package, Clock, CheckCircle, XCircle, ShoppingCart, FileSpreadsheet, Download } from 'lucide-react';
+import { Package, Clock, CheckCircle, XCircle, ShoppingCart, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+
+// El PDF se arma interpolando texto que escribió alguien (notas del pedido, tipo,
+// categoría) y luego se mete con innerHTML. Sin escapar, unas notas con
+// <img src=x onerror="..."> ejecutaban código al renderizar html2pdf, porque
+// html2canvas sí adjunta el nodo al documento. Todo dato va por esc().
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
 
 export default function MisPedidos() {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
   const [detallePedido, setDetallePedido] = useState(null);
-  const [loadingDetalle, setLoadingDetalle] = useState(false);
+  // El antiguo `loadingDetalle` nunca se usaba en el JSX: entre el toque en la tarjeta
+  // y la apertura del modal la pantalla parecía congelada. Guardamos el id del pedido
+  // que se está abriendo para poder señalarlo y evitar toques repetidos.
+  const [cargandoDetalleId, setCargandoDetalleId] = useState(null);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -32,15 +43,16 @@ export default function MisPedidos() {
   };
 
   const abrirDetalle = async (pedidoId) => {
+    if (cargandoDetalleId) return;
     try {
-      setLoadingDetalle(true);
+      setCargandoDetalleId(pedidoId);
       const data = await pedidosApi.getOne(pedidoId);
       setDetallePedido(data);
       setPedidoSeleccionado(pedidoId);
     } catch (err) {
       addToast(err.message, 'error');
     } finally {
-      setLoadingDetalle(false);
+      setCargandoDetalleId(null);
     }
   };
 
@@ -191,7 +203,7 @@ export default function MisPedidos() {
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Pedido #${detallePedido.id}</title>
+        <title>Pedido #${esc(detallePedido.id)}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #0f172a; }
@@ -220,20 +232,20 @@ export default function MisPedidos() {
         <div class="info">
           <div class="info-row">
             <span class="info-label">Pedido #:</span>
-            <span>${detallePedido.id}</span>
+            <span>${esc(detallePedido.id)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Fecha:</span>
-            <span>${new Date(detallePedido.created_at).toLocaleDateString('es-MX')}</span>
+            <span>${esc(new Date(detallePedido.created_at).toLocaleDateString('es-MX'))}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Estado:</span>
-            <span class="status ${detallePedido.estado}">${estadoLabels[detallePedido.estado] || detallePedido.estado}</span>
+            <span class="status ${esc(detallePedido.estado)}">${esc(estadoLabels[detallePedido.estado] || detallePedido.estado)}</span>
           </div>
           ${detallePedido.notas ? `
           <div class="info-row">
             <span class="info-label">Notas:</span>
-            <span>${detallePedido.notas}</span>
+            <span>${esc(detallePedido.notas)}</span>
           </div>
           ` : ''}
         </div>
@@ -250,21 +262,21 @@ export default function MisPedidos() {
           <tbody>
             ${(detallePedido.detalles || []).map(d => `
               <tr>
-                <td>${d.paca_uuid?.slice(0, 8) || '-'}</td>
-                <td>${d.tipo || '-'}</td>
-                <td>${d.categoria || '-'}</td>
-                <td style="text-align:right">${formatCurrency(d.precio)}</td>
+                <td>${esc(d.paca_uuid?.slice(0, 8) || '-')}</td>
+                <td>${esc(d.tipo || '-')}</td>
+                <td>${esc(d.categoria || '-')}</td>
+                <td style="text-align:right">${esc(formatCurrency(d.precio))}</td>
               </tr>
             `).join('')}
             <tr class="total-row">
               <td colspan="3" style="text-align:right">TOTAL:</td>
-              <td style="text-align:right">${formatCurrency(detallePedido.total_estimado)}</td>
+              <td style="text-align:right">${esc(formatCurrency(detallePedido.total_estimado))}</td>
             </tr>
           </tbody>
         </table>
         
         <div class="footer">
-          Documento generado el ${new Date().toLocaleString('es-MX')}
+          Documento generado el ${esc(new Date().toLocaleString('es-MX'))}
         </div>
       </body>
       </html>
@@ -301,14 +313,23 @@ export default function MisPedidos() {
           </Card>
         ) : (
           pedidos.map((pedido) => (
-            <Card key={pedido.id} hover className="cursor-pointer" onClick={() => abrirDetalle(pedido.id)}>
+            <Card
+              key={pedido.id}
+              hover
+              className={cargandoDetalleId ? 'cursor-wait opacity-70' : 'cursor-pointer'}
+              onClick={() => abrirDetalle(pedido.id)}
+            >
               <CardBody className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  {getEstadoIcon(pedido.estado)}
+                  {cargandoDetalleId === pedido.id
+                    ? <Loader2 className="w-5 h-5 text-secondary animate-spin" />
+                    : getEstadoIcon(pedido.estado)}
                   <div>
                     <p className="font-medium text-primary">Pedido #{pedido.id}</p>
                     <p className="text-sm text-muted">
-                      {new Date(pedido.created_at).toLocaleDateString('es-MX')}
+                      {cargandoDetalleId === pedido.id
+                        ? 'Abriendo el detalle…'
+                        : new Date(pedido.created_at).toLocaleDateString('es-MX')}
                     </p>
                   </div>
                 </div>

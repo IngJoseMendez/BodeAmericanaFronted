@@ -36,9 +36,38 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { formatNumero } from '../../lib/money';
+import { contadoresVigentes, contadoresGuardados, guardarContadores } from '../../lib/contadores';
 
 // Persiste el scroll entre remounts (cada página monta un Sidebar nuevo)
 let _navScrollPos = 0;
+
+// Los badges numéricos del menú salen de GET /dashboard/metricas, una consulta
+// agregada de pacas+clientes+ventas. Como cada página monta su propio <Layout>
+// (y con él un Sidebar nuevo), sin caché se repetía esa consulta en CADA clic del
+// menú y los contadores desaparecían y volvían a aparecer. Guardamos el último
+// resultado a nivel de módulo, con vigencia corta, y compartimos la petición en
+// curso para que dos montajes seguidos no disparen dos consultas.
+// La caché vive en lib/contadores.js, fuera de este archivo, para que
+// AuthContext pueda vaciarla al cerrar sesión sin crear un ciclo de imports.
+let _countsEnVuelo  = null;
+// Referencia única para "sin contadores": así setCounts(SIN_CONTADORES) sobre un
+// estado que ya es SIN_CONTADORES no provoca un render extra.
+const SIN_CONTADORES = {};
+
+// matchMedia falta en WebViews antiguos y en Safari < 14 la MediaQueryList solo
+// tiene addListener/removeListener. Este código corre en CADA página, así que una
+// excepción aquí dejaría la aplicación entera en la pantalla de error: se degrada
+// a "escritorio" (que es como se ve el menú por defecto con lg:translate-x-0).
+const CONSULTA_ESCRITORIO = '(min-width: 1024px)';
+
+function midePantalla() {
+  try {
+    return window.matchMedia(CONSULTA_ESCRITORIO);
+  } catch {
+    return null;
+  }
+}
 
 const adminNavItems = [
   { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
@@ -75,18 +104,24 @@ const clienteNavItems = [
 ];
 
 export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [counts, setCounts]           = useState({});
-  const [hoveredItem, setHoveredItem] = useState(null);
-  const sidebarRef = useRef(null);
-  const navRef     = useRef(null);
   const { usuario, tieneRol } = useAuth();
   const { theme, toggleTheme }  = useTheme();
   const location = useLocation();
 
   const isAdmin = tieneRol('admin');
   const isVendedor = tieneRol('admin') || tieneRol('vendedor');
-  
+
+  const [searchQuery, setSearchQuery] = useState('');
+  // Arrancamos con la caché para que los badges no parpadeen al cambiar de página.
+  // Solo si quien mira es admin: la caché vive a nivel de módulo y logout() navega
+  // a /login sin recargar, así que sembrarla a ciegas le enseñaba al siguiente
+  // usuario (un vendedor, que también ve Inventario/Clientes/Ventas) los totales
+  // de la sesión del admin anterior.
+  const [counts, setCounts]           = useState(() => (isAdmin && contadoresGuardados()) || SIN_CONTADORES);
+  const [hoveredItem, setHoveredItem] = useState(null);
+  const sidebarRef = useRef(null);
+  const navRef     = useRef(null);
+
   // Filter admin items - usuarios only for admin role
   const filteredAdminItems = adminNavItems.filter(item => {
     if (!item.rol) return isVendedor;
@@ -106,34 +141,151 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
     if (navRef.current) navRef.current.scrollTop = _navScrollPos;
   }, []);
 
-  useEffect(() => {
-    if (isOpen && window.innerWidth < 1024) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [isOpen]);
+  // El drawer solo existe por debajo de 1024px. Antes se consultaba
+  // window.innerWidth dentro del efecto, que no se entera de un cambio de tamaño
+  // ni de girar el móvil, así que el bloqueo de scroll se quedaba pegado.
+  const [esEscritorio, setEsEscritorio] = useState(() => midePantalla()?.matches ?? true);
 
   useEffect(() => {
-    if (isAdmin) loadCounts();
+    const mq = midePantalla();
+    if (!mq) return;
+    const alCambiar = e => setEsEscritorio(e.matches);
+    setEsEscritorio(mq.matches);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', alCambiar);
+      return () => mq.removeEventListener('change', alCambiar);
+    }
+    mq.addListener(alCambiar);            // Safari < 14
+    return () => mq.removeListener(alCambiar);
+  }, []);
+
+  // Con el drawer cerrado el aside sigue renderizado (solo desplazado con
+  // -translate-x-full), así que hay que sacarlo del árbol de accesibilidad Y del
+  // orden de tabulación. En escritorio NO: allí el menú se ve siempre por
+  // lg:translate-x-0 aunque isOpen sea false, y marcarlo oculto dejaba los 24
+  // enlaces de la aplicación invisibles para los lectores de pantalla.
+  // Se marca con aria-hidden + inert: aria-hidden por sí solo no saca los enlaces
+  // del orden de tabulación (es justo la violación axe "aria-hidden-focus").
+  const drawerOculto = !esEscritorio && !isOpen;
+
+  // onToggle llega como función nueva en cada render del Layout; guardarla en un
+  // ref evita que el efecto del foco se desmonte y se remonte constantemente
+  // (devolvía el foco al primer enlace en cada repintado de la página).
+  const onToggleRef = useRef(onToggle);
+  useEffect(() => { onToggleRef.current = onToggle; });
+
+  // Bloqueo del scroll del fondo: solo escribimos cuando de verdad abrimos el
+  // drawer y al cerrar devolvemos el valor que había. Antes la rama `else` y el
+  // cleanup ponían '' incondicionalmente en CADA montaje del Sidebar (uno por
+  // navegación), lo que liberaba el scroll de fondo de un Modal abierto —
+  // Modal.jsx lleva su propia pila y solo libera cuando no queda ninguno.
+  useEffect(() => {
+    if (!isOpen || esEscritorio) return;
+    const anterior = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      // Si mientras el drawer estaba abierto se abrió un modal (Modal.jsx pone
+      // su propio overflow:hidden y lleva una pila), restaurar `anterior` aquí
+      // liberaría el scroll del fondo por debajo de ese modal. En ese caso no
+      // tocamos nada: será el modal quien lo restaure cuando su pila se vacíe.
+      if (document.querySelector('[aria-modal="true"]')) return;
+      document.body.style.overflow = anterior;
+    };
+  }, [isOpen, esEscritorio]);
+
+  // Teclado del drawer móvil: al abrirlo el foco entra en el menú, Tab da vueltas
+  // dentro de él, Escape lo cierra y al cerrarse el foco vuelve al botón que lo
+  // abrió. Sin esto el teclado seguía navegando la página tapada por el overlay.
+  useEffect(() => {
+    if (!isOpen || esEscritorio) return;
+
+    // Recalculamos en cada pulsación: el menú se filtra al escribir en su buscador
+    const enfocables = () => Array.from(
+      sidebarRef.current?.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled])'
+      ) || []
+    ).filter(el => el.offsetParent !== null); // descarta lo oculto por CSS
+
+    const previo = document.activeElement;
+    enfocables()[0]?.focus();
+
+    const alPulsarTecla = (e) => {
+      // Si hay un diálogo modal encima (Modal, ConfirmDialog o el buscador
+      // rápido) el teclado es suyo y nos apartamos por completo: ni Escape ni
+      // el ciclo de Tab. Este listener va en `document`, y CommandPalette y
+      // ConfirmDialog escuchan en `window`, así que cortar la propagación con
+      // stopPropagation() les impedía cerrarse con Escape; y el trampa-foco de
+      // Modal.jsx (también en `document`) se peleaba con el de aquí por el Tab.
+      if (document.querySelector('[aria-modal="true"]')) return;
+
+      if (e.key === 'Escape') {
+        onToggleRef.current?.();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      const lista = enfocables();
+      if (!lista.length) return;
+      const primero = lista[0];
+      const ultimo  = lista[lista.length - 1];
+
+      if (!sidebarRef.current?.contains(document.activeElement)) {
+        e.preventDefault();
+        primero.focus();
+      } else if (e.shiftKey && document.activeElement === primero) {
+        e.preventDefault();
+        ultimo.focus();
+      } else if (!e.shiftKey && document.activeElement === ultimo) {
+        e.preventDefault();
+        primero.focus();
+      }
+    };
+
+    document.addEventListener('keydown', alPulsarTecla);
+    return () => {
+      document.removeEventListener('keydown', alPulsarTecla);
+      // Solo devolvemos el foco si el elemento sigue existiendo: al navegar, el
+      // Layout entero se desmonta y su botón hamburguesa ya no está en el DOM.
+      if (previo instanceof HTMLElement && document.contains(previo)) previo.focus();
+    };
+  }, [isOpen, esEscritorio]);
+
+  useEffect(() => {
+    // Al cambiar de sesión (admin → vendedor sin recargar) hay que vaciar los
+    // badges: si no, los del admin anterior se quedan pintados.
+    if (!isAdmin) {
+      setCounts(SIN_CONTADORES);
+      return;
+    }
+
+    // Caché fresca: no volvemos a preguntar, solo rellenamos este Sidebar
+    const vigentes = contadoresVigentes();
+    if (vigentes) {
+      setCounts(vigentes);
+      return;
+    }
+
+    let vivo = true;
+    if (!_countsEnVuelo) {
+      _countsEnVuelo = dashboardApi.getMetricas()
+        .then(data => guardarContadores({
+          pacas:    data.pacas?.total         || 0,
+          clientes: data.clientes?.total      || 0,
+          ventas:   data.ventas?.total_ventas || 0,
+        }))
+        .finally(() => { _countsEnVuelo = null; });
+    }
+
+    _countsEnVuelo
+      .then(datos => { if (vivo) setCounts(datos); })
+      .catch(err => console.error('Error cargando los contadores del menú:', err));
+
+    return () => { vivo = false; };
   }, [isAdmin]);
 
-  const loadCounts = async () => {
-    try {
-      const data = await dashboardApi.getMetricas();
-      setCounts({
-        pacas:    data.pacas?.total    || 0,
-        clientes: data.clientes?.total || 0,
-        ventas:   data.ventas?.total_ventas || 0,
-      });
-    } catch (err) {
-      console.error('Error loading counts:', err);
-    }
-  };
-
+  // Misma fuente de verdad que el CSS (lg:), en vez de window.innerWidth
   const handleNavClick = () => {
-    if (window.innerWidth < 1024) onToggle?.();
+    if (!esEscritorio) onToggle?.();
   };
 
   return (
@@ -157,7 +309,8 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
         id="main-sidebar"
         role="navigation"
         aria-label="Menú principal"
-        aria-hidden={!isOpen && true}
+        aria-hidden={drawerOculto || undefined}
+        inert={drawerOculto ? '' : undefined}
         className={`
           fixed lg:sticky top-0 left-0 h-screen
           bg-surface flex flex-col text-primary
@@ -324,7 +477,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                               ? 'bg-secondary text-on-primary'
                               : 'bg-primary/10 text-muted group-hover/item:bg-primary/20 group-hover/item:text-primary'}
                           `}>
-                            {badge}
+                            {formatNumero(badge)}
                           </span>
                         )}
                         {hoveredItem === index && !isActive && (
@@ -339,20 +492,23 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                   </Link>
 
                   {/* Tooltip in mini-sidebar (desktop only) */}
+                  {/* Con el menú en modo mini el enlace es solo un icono: sin
+                      group-focus-within quien navega con el teclado no llegaba a
+                      ver nunca a dónde lleva la opción enfocada. */}
                   {collapsed && (
                     <div className="
                       absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50
                       px-2.5 py-1.5 rounded-xl bg-surface border border-border
                       text-primary text-xs font-medium whitespace-nowrap
                       opacity-0 pointer-events-none
-                      group-hover/item:opacity-100
+                      group-hover/item:opacity-100 group-focus-within/item:opacity-100
                       transition-opacity duration-150
                       shadow-xl
                     ">
                       {item.label}
                       {badge != null && (
                         <span className="ml-2 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-secondary/20 text-secondary tabular-nums">
-                          {badge}
+                          {formatNumero(badge)}
                         </span>
                       )}
                     </div>

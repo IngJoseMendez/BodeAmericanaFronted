@@ -3,10 +3,11 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast } from '../components/common';
 import {
   despachosApi, pacasApi, clientesApi, carteraApi,
-  listaPreciosApi, cotizacionesApi, contenedoresApi,
+  listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi,
 } from '../services/api';
 import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { parseMonto } from '../lib/money';
+import { useAuth } from '../context/AuthContext';
 import {
   nuevoLibro, descargar, int,
   hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega, hojaMatrizClientes,
@@ -38,6 +39,11 @@ export default function Entregables() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const { addToast } = useToast();
+  // Los entregables internos llevan costos, márgenes y la cartera de TODOS los
+  // clientes. La tarjeta decía "no sale de la oficina" pero no lo impedía: un
+  // vendedor podía descargarlos igual. Ahora sólo los ve un administrador.
+  const { tieneRol } = useAuth();
+  const esAdmin = tieneRol('admin');
 
   useEffect(() => {
     (async () => {
@@ -223,8 +229,17 @@ export default function Entregables() {
     for (const c of incluidos) {
       try {
         const full = await contenedoresApi.getOne(c.id);
+        // Los aportes son opcionales: si el contenedor no tiene inversionistas
+        // registrados la hoja lo dice, pero no deja de generarse.
+        const aportes = await inversionistasApi
+          .getAportes({ contenedor_id: c.id })
+          .catch(() => []);
         hojaPreciosInternos(wb, full, nombreHoja(`PRECIOS ${full.numero || c.id}`, usados));
-        hojaUtilidadContenedor(wb, full, nombreHoja(`UTILIDAD ${full.numero || c.id}`, usados));
+        hojaUtilidadContenedor(
+          wb, full,
+          nombreHoja(`UTILIDAD ${full.numero || c.id}`, usados),
+          Array.isArray(aportes) ? aportes : []
+        );
       } catch { /* omitir */ }
     }
     if (finalizados.length > incluidos.length) {
@@ -254,8 +269,9 @@ export default function Entregables() {
       desc: 'Costos, márgenes y utilidad del contenedor. No sale de la oficina.',
       hojas: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT'],
       gen: genInternos, archivo: 'Entregables_Internos',
+      soloAdmin: true,
     },
-  ];
+  ].filter(g => !g.soloAdmin || esAdmin);
 
   const descargarGrupo = (g) => conCarga(g.id, async () => {
     const wb = nuevoLibro();
@@ -289,6 +305,7 @@ export default function Entregables() {
               <p className="text-sm font-semibold text-primary">Descargar todo en un solo archivo</p>
               <p className="text-xs text-muted mt-0.5">
                 Un libro con las {grupos.reduce((s, g) => s + g.hojas.length, 0)} hojas, igual que el Excel que ya usan.
+                {!esAdmin && ' Las hojas internas (costos y márgenes) solo las descarga un administrador.'}
               </p>
             </div>
             <Button onClick={descargarTodo} disabled={cargando || generando}>

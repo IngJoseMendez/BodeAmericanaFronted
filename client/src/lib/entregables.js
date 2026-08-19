@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { hoy } from './fecha';
+import { hoy } from './fecha.js';
 
 // Hojas replicadas del Excel que ya usa la operación ("Comercio Global
 // Logistico.xlsx"). Los encabezados y su orden se respetan tal cual para que
@@ -237,10 +237,11 @@ export function hojaInventarioBodega(wb, filas) {
 export function hojaMatrizClientes(wb, filas, separadas) {
   const ws = wb.addWorksheet('MATRIZ');
 
-  // Clave de cruce entre inventario y separadas. Solo usa los tres campos que
-  // ambas fuentes traen siempre: si se incluyeran familia o categoría —que el
-  // endpoint de comprometidas no devuelve— ninguna fila cruzaría y la matriz
-  // saldría vacía.
+  // Clave de cruce entre inventario y separadas. Deliberadamente NO incluye
+  // familia ni categoría: aunque las dos fuentes ya las devuelven, quedan vacías
+  // en las pacas creadas antes de asignarle familia a la categoría, y una clave
+  // con un campo nulo no cruza. Con estos tres campos la matriz siempre cuadra;
+  // la familia se muestra en su columna, tomada de la fila de inventario.
   const clave = (r) => [norm(r.clasificacion), norm(r.referencia), norm(r.calidad)]
     .join('||').toLowerCase();
 
@@ -747,7 +748,7 @@ export function hojaPreciosInternos(wb, cont, nombreHoja) {
 }
 
 /** UTILIDADCONT — la utilidad del contenedor y su reparto. */
-export function hojaUtilidadContenedor(wb, cont, nombreHoja) {
+export function hojaUtilidadContenedor(wb, cont, nombreHoja, inversionistas = []) {
   const ws = wb.addWorksheet(nombreHoja || 'UTILIDADCONT');
   [30, 20, 18, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
@@ -780,13 +781,77 @@ export function hojaUtilidadContenedor(wb, cont, nombreHoja) {
     fila++;
   }
 
+  // Reparto entre inversionistas. El porcentaje y la utilidad NO se guardan en
+  // ninguna tabla: se derivan del aporte contra la inversión total, igual que en
+  // el módulo de Utilidad, para que las dos vistas no puedan discrepar.
+  const utilidadTotal = utilU * pacas;
+
   fila++;
   ws.getCell(fila, 1).value = 'Reparto entre inversionistas';
   ws.getCell(fila, 1).font = { bold: true, size: 11, color: { argb: ACCENT } };
   fila++;
   fila = cabecera(ws, fila, ['INVERSIONISTA', 'APORTE CO$', 'PORCENTAJE', 'UTILIDAD CO$', 'UTILIDAD US$']);
-  ws.getCell(fila, 1).value = '(pendiente de registrar en el sistema)';
-  ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: '94a3b8' } };
+
+  if (!inversionistas.length) {
+    ws.getCell(fila, 1).value = 'Sin inversionistas registrados en este contenedor';
+    ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: '94a3b8' } };
+    return ws;
+  }
+
+  const acum = { cop: 0, pct: 0, utilCop: 0, utilUsd: 0 };
+
+  for (const inv of inversionistas) {
+    const cop = num(inv.aporte_cop);
+    const pct = inversion > 0 ? (cop / inversion) * 100 : 0;
+    const utilCop = utilidadTotal * (pct / 100);
+    const utilUsd = tasa > 0 ? utilCop / tasa : 0;
+
+    const r = ws.getRow(fila);
+    r.height = 18;
+    r.getCell(1).value = inv.inversionista_nombre || inv.nombre || '—';
+    r.getCell(2).value = cop;
+    r.getCell(3).value = pct / 100;
+    r.getCell(4).value = utilCop;
+    r.getCell(5).value = utilUsd;
+    r.getCell(2).numFmt = '$#,##0';
+    r.getCell(3).numFmt = '0.00%';
+    r.getCell(4).numFmt = '$#,##0';
+    r.getCell(5).numFmt = 'US$ #,##0.00';
+    for (let i = 1; i <= 5; i++) {
+      r.getCell(i).font = { size: 10 };
+      r.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' };
+    }
+    zebra(ws, fila, 5);
+
+    acum.cop += cop; acum.pct += pct; acum.utilCop += utilCop; acum.utilUsd += utilUsd;
+    fila++;
+  }
+
+  // La fila de totales delata de un vistazo si falta capital por asignar: si el
+  // porcentaje no llega a 100, hay inversión del contenedor sin inversionista.
+  const t = ws.getRow(fila);
+  t.height = 20;
+  t.getCell(1).value = 'TOTAL';
+  t.getCell(2).value = acum.cop;
+  t.getCell(3).value = acum.pct / 100;
+  t.getCell(4).value = acum.utilCop;
+  t.getCell(5).value = acum.utilUsd;
+  t.getCell(2).numFmt = '$#,##0';
+  t.getCell(3).numFmt = '0.00%';
+  t.getCell(4).numFmt = '$#,##0';
+  t.getCell(5).numFmt = 'US$ #,##0.00';
+  for (let i = 1; i <= 5; i++) {
+    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    t.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' };
+  }
+  fila++;
+
+  if (acum.pct < 99.5) {
+    ws.getCell(fila, 1).value = `Falta por asignar el ${(100 - acum.pct).toFixed(2)}% de la inversión`;
+    ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: 'd97706' } };
+  }
+
   return ws;
 }
 

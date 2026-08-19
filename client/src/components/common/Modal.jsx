@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useId } from 'react';
 import { X } from 'lucide-react';
 
 // Pila global de modales abiertos: solo el modal de la cima maneja Escape y
@@ -16,6 +16,11 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   if (instanceIdRef.current === null) {
     instanceIdRef.current = Symbol('modal');
   }
+  // Id único por modal. Con la cadena fija 'modal-title' dos modales apilados
+  // (p. ej. "Nuevo contenedor" + "Plantillas guardadas") dejaban dos elementos
+  // con el mismo id en el DOM y el lector de pantalla anunciaba siempre el
+  // título del modal exterior.
+  const titleId = useId();
 
   // Guardar el elemento que abrió el modal para restaurar el foco al cerrar.
   // La rama `else` es indispensable: cuando la página cierra el modal por código
@@ -149,7 +154,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
       style={{ zIndex }}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={title ? undefined : 'Ventana emergente'}
     >
       {/* Backdrop con animación */}
       <div
@@ -172,7 +178,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
           <h2
-            id="modal-title"
+            id={titleId}
             className="font-display text-xl text-primary"
           >
             {title}

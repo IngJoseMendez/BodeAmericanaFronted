@@ -167,8 +167,21 @@ function TimelineView({ items, onView, isAdmin = false }) {
               <div key={cont.id} className="relative flex items-center gap-3">
                 <div className={`absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface flex-shrink-0 ${cont.estado === 'finalizado' ? 'bg-success' : 'bg-warning'}`} />
                 <div
-                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group"
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-secondary/40"
                   onClick={() => onView(cont)}
+                  // Antes era un div con solo onClick: con teclado no se podía abrir
+                  // ningún contenedor desde la línea de tiempo. Enter y Espacio, que
+                  // es lo que exige role="button".
+                  role="button"
+                  tabIndex={0}
+                  // role="button" vuelve presentacional TODO lo que hay dentro: el
+                  // lector de pantalla solo dice el nombre accesible. Con un aria-label
+                  // que fuera únicamente el número, la fecha, las unidades y el estado
+                  // dejaban de anunciarse, así que van dentro de la etiqueta.
+                  aria-label={`Ver detalle del contenedor ${cont.numero}: llegada ${new Date(cont.fecha_llegada).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}, ${parseInt(cont.total_pacas).toLocaleString()} unidades, estado ${cont.estado}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView(cont); }
+                  }}
                 >
                   <div>
                     <p className="font-semibold text-primary font-heading text-sm">{cont.numero}</p>
@@ -211,8 +224,16 @@ function TimelineView({ items, onView, isAdmin = false }) {
               <div key={cont.id} className="relative flex items-center gap-3">
                 <div className="absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface bg-muted/40" />
                 <div
-                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 transition-all duration-150 cursor-pointer"
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 transition-all duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary/40"
                   onClick={() => onView(cont)}
+                  role="button"
+                  tabIndex={0}
+                  // Igual que arriba: con role="button" el contenido deja de anunciarse
+                  // por separado, así que las unidades y el estado van en la etiqueta.
+                  aria-label={`Ver detalle del contenedor ${cont.numero}: ${parseInt(cont.total_pacas).toLocaleString()} unidades, estado ${cont.estado}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView(cont); }
+                  }}
                 >
                   <p className="font-semibold text-primary text-sm">{cont.numero}</p>
                   <div className="flex items-center gap-2">
@@ -258,11 +279,11 @@ function ComparadorModal({ isOpen, onClose, items }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-primary/3">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider min-w-28">Métrica</th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider min-w-28">Métrica</th>
                   {finalizados.map(c => {
                     const costo = parseFloat(c.costo_unitario) || 0;
                     return (
-                      <th key={c.id} className="px-4 py-3 text-center">
+                      <th key={c.id} scope="col" className="px-4 py-3 text-center">
                         <p className="text-xs font-bold text-primary">{c.numero}</p>
                         {costo === minCosto && costos.length > 0 && (
                           <span className="inline-block mt-1 text-[10px] bg-success/15 text-success px-2 py-0.5 rounded-full font-bold">Mejor costo</span>
@@ -374,6 +395,12 @@ export default function Contenedores() {
 
   // ── Modals ─────────────────────────────────────────────────────
   const [modalOpen, setModalOpen]                   = useState(false);
+  // El formulario de alta/edición se construía en CADA render de la pantalla
+  // aunque estuviera cerrado (JSX evalúa los hijos antes de que Modal decida no
+  // pintarlos), con sus datalists del catálogo completo. Ahora solo se monta
+  // cuando hace falta; este flag lo mantiene vivo los ~200 ms que dura la
+  // animación de salida para no perder el cierre suave.
+  const [modalMontado, setModalMontado]             = useState(false);
   const [viewModalOpen, setViewModalOpen]           = useState(false);
   const [finalizarModalOpen, setFinalizarModalOpen] = useState(false);
   const [revisionModalOpen, setRevisionModalOpen]   = useState(false);
@@ -451,6 +478,36 @@ export default function Contenedores() {
     const sumaStr = suma > 0 ? String(suma) : '';
     setFormData(prev => prev.total_pacas === sumaStr ? prev : { ...prev, total_pacas: sumaStr });
   }, [proveedores, modoEstimacion]);
+
+  useEffect(() => {
+    if (modalOpen) { setModalMontado(true); return; }
+    const t = setTimeout(() => setModalMontado(false), 220);
+    return () => clearTimeout(t);
+  }, [modalOpen]);
+
+  // Sugerencias de referencia filtradas por categoría. Antes cada línea de cada
+  // proveedor recorría el catálogo entero en cada tecleo; ahora el resultado se
+  // memoriza por categoría y se reutiliza entre líneas.
+  const referenciasDe = useMemo(() => {
+    const cache = new Map();
+    return (categoria) => {
+      const k = (categoria || '').toLowerCase();
+      if (!cache.has(k)) {
+        cache.set(k, k
+          ? categoriasOpts.filter(c => !c.temporada_nombre || c.temporada_nombre.toLowerCase() === k)
+          : categoriasOpts);
+      }
+      return cache.get(k);
+    };
+  }, [categoriasOpts]);
+
+  // Un <datalist> de referencias por cada categoría distinta en uso, en lugar de
+  // uno por línea: con 20 líneas se duplicaba 20 veces el catálogo completo.
+  const categoriasEnUso = useMemo(() => {
+    const set = new Set();
+    proveedores.forEach(p => (p.detalles || []).forEach(d => set.add((d.categoria || '').toLowerCase())));
+    return [...set];
+  }, [proveedores]);
 
   // ── Filtered list (client-side search) ────────────────────────
   const contenedoresFiltrados = useMemo(() => {
@@ -1952,7 +2009,14 @@ export default function Contenedores() {
     ? contenedores.filter((c) => c.estado === 'finalizado').reduce((s, c) => s + parseFloat(c.costo_unitario || 0), 0) / finalizados
     : 0;
 
-  const resumen = calcularResumen();
+  // Solo lo consume el formulario de alta/edición: recalcularlo en cada render de
+  // la lista (búsqueda, filtros, recargas) era trabajo tirado a la basura.
+  // Estas cuatro son las únicas entradas de calcularResumen(): si no cambian, el
+  // resultado tampoco.
+  const resumen = useMemo(
+    () => calcularResumen(),
+    [formData, proveedores, servicios, modoEstimacion]
+  );
 
   // ════════════════════════════════════════════════════════════════
   return (
@@ -1966,6 +2030,7 @@ export default function Contenedores() {
               onClick={() => openCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60 rounded-xl text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition-all duration-150"
               title="Crear un contenedor estimado (lo que crees que llegará) para empezar a registrar abonos"
+              aria-label="Nueva estimación de contenedor"
             >
               <Sparkles size={17} />
               <span className="hidden sm:inline">Nueva estimación</span>
@@ -1973,6 +2038,7 @@ export default function Contenedores() {
             <button
               onClick={() => openCreateModal(false)}
               className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-95 transition-all duration-150 shadow-sm"
+              title="Nuevo contenedor" aria-label="Nuevo contenedor"
             >
               <Plus size={17} />
               <span className="hidden sm:inline">Nuevo Contenedor</span>
@@ -1999,10 +2065,12 @@ export default function Contenedores() {
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
             placeholder="Buscar por número..."
+            aria-label="Buscar contenedor por número"
             className="w-full pl-8 pr-8 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 placeholder:text-muted/60 transition-colors"
           />
           {busqueda && (
-            <button onClick={() => setBusqueda('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors">
+            <button onClick={() => setBusqueda('')} title="Limpiar búsqueda" aria-label="Limpiar búsqueda"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors">
               <X size={13} />
             </button>
           )}
@@ -2012,6 +2080,7 @@ export default function Contenedores() {
         <select
           value={filtroEstado}
           onChange={(e) => setFiltroEstado(e.target.value)}
+          aria-label="Filtrar contenedores por estado"
           className="px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 cursor-pointer"
         >
           <option value="">Todos los estados</option>
@@ -2022,10 +2091,13 @@ export default function Contenedores() {
         </select>
 
         {/* View toggle */}
-        <div className="flex items-center rounded-xl border border-border overflow-hidden flex-shrink-0">
+        {/* aria-pressed: sin él el lector de pantalla no dice cuál vista está activa */}
+        <div className="flex items-center rounded-xl border border-border overflow-hidden flex-shrink-0" role="group" aria-label="Cambiar vista">
           <button
             onClick={() => setVista('tabla')}
             title="Vista tabla"
+            aria-label="Ver como tabla"
+            aria-pressed={vista === 'tabla'}
             className={`p-2 transition-colors ${vista === 'tabla' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
           >
             <List size={15} />
@@ -2033,6 +2105,8 @@ export default function Contenedores() {
           <button
             onClick={() => setVista('timeline')}
             title="Vista timeline"
+            aria-label="Ver como línea de tiempo"
+            aria-pressed={vista === 'timeline'}
             className={`p-2 transition-colors ${vista === 'timeline' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
           >
             <Calendar size={15} />
@@ -2043,6 +2117,8 @@ export default function Contenedores() {
         {finalizados >= 2 && (
           <button
             onClick={() => setComparadorOpen(true)}
+            // En móvil el texto se oculta y quedaba un botón sin nombre accesible
+            title="Comparar contenedores" aria-label="Comparar contenedores"
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm font-medium hover:border-secondary/40 hover:text-secondary transition-colors flex-shrink-0"
           >
             <BarChart2 size={14} />
@@ -2053,6 +2129,7 @@ export default function Contenedores() {
         {/* Export Excel */}
         <button
           onClick={handleExportExcel}
+          title="Descargar Excel de contenedores" aria-label="Descargar Excel de contenedores"
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm font-medium hover:border-secondary/40 hover:text-secondary transition-colors flex-shrink-0"
         >
           <Download size={14} />
@@ -2078,7 +2155,10 @@ export default function Contenedores() {
           </div>
           {canEdit && !filtroEstado && (
             <button
-              onClick={openCreateModal}
+              // Sin la función flecha, React pasa el evento como primer argumento
+              // y `estimacion` quedaba truthy: el botón "Crear contenedor" abría
+              // el formulario de ESTIMACIÓN y guardaba estado 'estimacion'.
+              onClick={() => openCreateModal(false)}
               className="flex items-center gap-2 px-4 py-2 bg-secondary/10 text-secondary rounded-xl text-sm font-semibold hover:bg-secondary/20 transition-colors"
             >
               <Plus size={16} /> Crear contenedor
@@ -2100,9 +2180,11 @@ export default function Contenedores() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-primary/3">
-                  {['Número', 'Fecha', 'Unidades', 'Costo Unitario', 'Costo Total', 'Servicios', 'Estado', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
-                      {h}
+                  {['Número', 'Fecha', 'Unidades', 'Costo Unitario', 'Costo Total', 'Servicios', 'Estado', 'Acciones'].map((h) => (
+                    <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
+                      {/* La columna de acciones iba sin título: el lector de pantalla
+                          anunciaba una columna vacía. Ahora tiene nombre, invisible. */}
+                      <span className={h === 'Acciones' ? 'sr-only' : undefined}>{h}</span>
                     </th>
                   ))}
                 </tr>
@@ -2132,7 +2214,10 @@ export default function Contenedores() {
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-primary text-center">
                       {(cont.estado === 'revision' || cont.estado === 'finalizado') && cont.total_pacas_recibidas != null ? (
-                        cont.total_pacas_recibidas !== parseInt(cont.total_pacas) ? (
+                        // Ambos lados con parseInt: la API manda los NUMERIC como
+                        // cadena, y '500' !== 500 marcaba diferencia SIEMPRE, aun
+                        // cuando lo recibido coincidía con lo pedido.
+                        parseInt(cont.total_pacas_recibidas) !== parseInt(cont.total_pacas) ? (
                           <div className="flex items-center justify-center gap-1.5">
                             <span className="text-muted line-through text-xs font-normal">{parseInt(cont.total_pacas).toLocaleString()}</span>
                             <ArrowRight size={11} className="text-muted" />
@@ -2210,6 +2295,11 @@ export default function Contenedores() {
       {/* ════════════════════════════════════════════════════════
           CREATE / EDIT MODAL
       ════════════════════════════════════════════════════════ */}
+      {/* `modalOpen ||` es lo que monta el formulario: si dependiera solo de
+          modalMontado —que se enciende en un useEffect, o sea DESPUÉS de pintar—
+          el clic en "Nuevo Contenedor" pintaría un fotograma sin modal. El flag
+          solo sirve ya para mantenerlo vivo mientras dura la animación de salida. */}
+      {(modalOpen || modalMontado) && (
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); resetForm(); }}
@@ -2219,6 +2309,25 @@ export default function Contenedores() {
         size="full"
       >
         <form onSubmit={handleSubmit}>
+          {/* Catálogos compartidos por todo el formulario. Antes cada línea de
+              distribución emitía sus propios cuatro <datalist> con el catálogo
+              completo, así que un contenedor de 20 líneas repetía 80 listas.
+              Van dentro del mismo `!modoEstimacion` que las líneas: en modo
+              estimación no hay ningún input que los use y se estaban pintando
+              (con el catálogo entero de referencias) en cada tecleo del
+              formulario de estimación, que antes no pintaba ninguno. */}
+          {!modoEstimacion && (
+            <>
+              <datalist id="cont-temporadas">{temporadasOpts.map(t => <option key={t} value={t} />)}</datalist>
+              <datalist id="cont-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
+              <datalist id="cont-calidades">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
+              {categoriasEnUso.map((cat, ci) => (
+                <datalist key={cat} id={`cont-refs-${ci}`}>
+                  {referenciasDe(cat).map(c => <option key={c.nombre} value={c.nombre} />)}
+                </datalist>
+              ))}
+            </>
+          )}
           <div className="flex flex-col lg:flex-row gap-6 items-start">
 
             {/* ── LEFT: form sections ─────────────────────────── */}
@@ -2244,7 +2353,9 @@ export default function Contenedores() {
                 <div className="flex items-center gap-3 px-4 py-3 bg-primary/[0.03] border-b border-border/40">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
                   <div>
-                    <p className="text-sm font-semibold text-primary leading-none">Información Básica</p>
+                    {/* Encabezado real: los tres pasos del formulario ahora son
+                        navegables con lector de pantalla (antes eran <p> sueltos) */}
+                    <h3 className="text-sm font-semibold text-primary leading-none">Información Básica</h3>
                     <p className="text-[11px] text-muted mt-0.5">Identificación y datos generales del contenedor</p>
                   </div>
                 </div>
@@ -2260,18 +2371,18 @@ export default function Contenedores() {
                 </div>
                 <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="col-span-2">
-                    <label className={lbl}>Número *</label>
-                    <input type="text" className={inp} placeholder="CNT-2026-0001"
+                    <label htmlFor="cont-numero" className={lbl}>Número *</label>
+                    <input id="cont-numero" type="text" className={inp} placeholder="CNT-2026-0001"
                       value={formData.numero} onChange={(e) => setFormData({ ...formData, numero: e.target.value })} required />
                   </div>
                   <div>
-                    <label className={lbl}>Fecha Salida</label>
-                    <input type="date" className={inp}
+                    <label htmlFor="cont-fecha-salida" className={lbl}>Fecha Salida</label>
+                    <input id="cont-fecha-salida" type="date" className={inp}
                       value={formData.fecha_salida} onChange={(e) => setFormData({ ...formData, fecha_salida: e.target.value })} />
                   </div>
                   <div>
-                    <label className={lbl}>Fecha Llegada</label>
-                    <input type="date" className={inp}
+                    <label htmlFor="cont-fecha-llegada" className={lbl}>Fecha Llegada</label>
+                    <input id="cont-fecha-llegada" type="date" className={inp}
                       value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
                   </div>
 
@@ -2279,8 +2390,8 @@ export default function Contenedores() {
                       cobran por el contenedor entero, así que se prorratean
                       sobre esta cantidad cuando va compartido con otros. */}
                   <div>
-                    <label className={lbl}>Cantidad total del contenedor</label>
-                    <input type="number" min="0" className={inp} placeholder="ej. 312"
+                    <label htmlFor="cont-cantidad-total" className={lbl}>Cantidad total del contenedor</label>
+                    <input id="cont-cantidad-total" type="number" min="0" className={inp} placeholder="ej. 312"
                       value={formData.cantidad_total}
                       onChange={(e) => setFormData({ ...formData, cantidad_total: e.target.value })}
                       title="Unidades de TODO el contenedor, incluidas las de otros si va compartido. Sobre esta cantidad se reparten los servicios." />
@@ -2291,26 +2402,26 @@ export default function Contenedores() {
                     </p>
                   </div>
                   <div>
-                    <label className={lbl}>
+                    <label htmlFor="cont-total-unidades" className={lbl}>
                       Total de Unidades
                       <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
                     </label>
-                    <input type="number" readOnly tabIndex={-1}
+                    <input id="cont-total-unidades" type="number" readOnly tabIndex={-1}
                       className={`${inp} bg-primary/5 text-primary font-mono font-bold text-center cursor-not-allowed select-none`}
                       placeholder="0"
                       value={formData.total_pacas}
                       title="Se calcula automáticamente desde las cantidades de cada proveedor" />
                   </div>
                   <div>
-                    <label className={lbl}>Tasa USD→COP</label>
-                    <input type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
+                    <label htmlFor="cont-tasa" className={lbl}>Tasa USD→COP</label>
+                    <input id="cont-tasa" type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
                       value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
                   </div>
                   {/* La utilidad NO se deduce de los precios: se fija aquí por
                       unidad y de ella sale el precio de venta y la ganancia. */}
                   <div>
-                    <label className={lbl}>Utilidad por unidad (COP)</label>
-                    <input type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
+                    <label htmlFor="cont-utilidad" className={lbl}>Utilidad por unidad (COP)</label>
+                    <input id="cont-utilidad" type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
                       value={formData.utilidad_unitaria}
                       onChange={(e) => setFormData({ ...formData, utilidad_unitaria: e.target.value })} />
                     {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
@@ -2323,8 +2434,8 @@ export default function Contenedores() {
                     )}
                   </div>
                   <div>
-                    <label className={lbl}>Gastos por unidad (COP)</label>
-                    <input type="text" inputMode="decimal" className={inp} placeholder="ej. 15.000"
+                    <label htmlFor="cont-gastos" className={lbl}>Gastos por unidad (COP)</label>
+                    <input id="cont-gastos" type="text" inputMode="decimal" className={inp} placeholder="ej. 15.000"
                       value={formData.gastos_unitarios}
                       onChange={(e) => setFormData({ ...formData, gastos_unitarios: e.target.value })} />
                   </div>
@@ -2370,8 +2481,8 @@ export default function Contenedores() {
                   </div>
 
                   <div className="col-span-2 md:col-span-3">
-                    <label className={lbl}>Notas</label>
-                    <input type="text" className={inp} placeholder="Observaciones opcionales..."
+                    <label htmlFor="cont-notas" className={lbl}>Notas</label>
+                    <input id="cont-notas" type="text" className={inp} placeholder="Observaciones opcionales..."
                       value={formData.notas} onChange={(e) => setFormData({ ...formData, notas: e.target.value })} />
                   </div>
                 </div>
@@ -2382,7 +2493,7 @@ export default function Contenedores() {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
                   <div>
-                    <p className="text-sm font-semibold text-primary leading-none">Proveedores de Mercancía</p>
+                    <h3 className="text-sm font-semibold text-primary leading-none">Proveedores de Mercancía</h3>
                     <p className="text-[11px] text-muted mt-0.5">Quién suministra qué tipos de paca y en qué cantidad</p>
                   </div>
                 </div>
@@ -2398,9 +2509,11 @@ export default function Contenedores() {
                           <div className="flex-1 min-w-0">
                             <p className="text-[10px] font-bold text-secondary uppercase tracking-widest leading-none mb-0.5">Proveedor {pi + 1}</p>
                             <input type="text" className={`${inp} font-semibold`} placeholder="Nombre del proveedor *"
+                              aria-label={`Nombre del proveedor ${pi + 1}`}
                               value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
                           </div>
                           <select className={`${inpBase} w-20 flex-shrink-0 font-semibold`} value={prov.moneda || 'USD'}
+                            aria-label={`Moneda del proveedor ${pi + 1}`}
                             onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
                             <option value="USD">USD</option>
                             <option value="COP">COP</option>
@@ -2424,16 +2537,20 @@ export default function Contenedores() {
                             ) : null;
                           })()}
                           <input type="text" className={`${inp} text-xs flex-1`} placeholder="Notas del proveedor (opcional)"
+                            aria-label={`Notas del proveedor ${pi + 1}`}
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
                         {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
                         {modoEstimacion && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2.5">
                           <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
+                            aria-label={`Factura estimada del proveedor ${pi + 1}`}
                             value={prov.factura_estimada || ''} onChange={(e) => updateProveedor(pi, 'factura_estimada', e.target.value)} />
                           <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
+                            aria-label={`Cantidad estimada del proveedor ${pi + 1}`}
                             value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
                           <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
+                            aria-label={`Valor por unidad estimado del proveedor ${pi + 1}`}
                             value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
                         </div>
                         )}
@@ -2486,59 +2603,48 @@ export default function Contenedores() {
                                 <div className="px-3 pt-2.5 pb-3 space-y-2">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                   <div>
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
-                                    <input list={`temporadas-${pi}-${di}`} className={inp} placeholder="Verano / Invierno"
+                                    <label htmlFor={`det-categoria-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
+                                    <input id={`det-categoria-${pi}-${di}`} list="cont-temporadas" className={inp} placeholder="Verano / Invierno"
                                       value={det.categoria}
                                       onChange={(e) => updateDetalle(pi, di, 'categoria', e.target.value)} />
-                                    <datalist id={`temporadas-${pi}-${di}`}>
-                                      {temporadasOpts.map(t => <option key={t} value={t} />)}
-                                    </datalist>
                                   </div>
                                   <div>
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Clasificación *</label>
-                                    <input list={`tipos-${pi}-${di}`} className={inp} placeholder="Hombre / Mujer..."
+                                    <label htmlFor={`det-clasificacion-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Clasificación *</label>
+                                    <input id={`det-clasificacion-${pi}-${di}`} list="cont-tipos" className={inp} placeholder="Hombre / Mujer..."
                                       value={det.clasificacion} required
                                       onChange={(e) => updateDetalle(pi, di, 'clasificacion', e.target.value)} />
-                                    <datalist id={`tipos-${pi}-${di}`}>
-                                      {tiposOpts.map(t => <option key={t} value={t} />)}
-                                    </datalist>
                                   </div>
                                   <div>
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Referencia *</label>
-                                    <input list={`cats-${pi}-${di}`} className={inp} placeholder="Chaqueta / Pantalón..."
+                                    <label htmlFor={`det-referencia-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Referencia *</label>
+                                    <input id={`det-referencia-${pi}-${di}`}
+                                      list={`cont-refs-${categoriasEnUso.indexOf((det.categoria || '').toLowerCase())}`}
+                                      className={inp} placeholder="Chaqueta / Pantalón..."
                                       value={det.referencia} required
                                       onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} />
-                                    <datalist id={`cats-${pi}-${di}`}>
-                                      {categoriasOpts
-                                        .filter(c => !det.categoria || !c.temporada_nombre || c.temporada_nombre.toLowerCase() === det.categoria.toLowerCase())
-                                        .map(c => <option key={c.nombre} value={c.nombre} />)}
-                                    </datalist>
                                   </div>
                                   <div>
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Calidad *</label>
-                                    <input list={`cals-${pi}-${di}`} className={inp} placeholder="Premium / Supreme..."
+                                    <label htmlFor={`det-calidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Calidad *</label>
+                                    <input id={`det-calidad-${pi}-${di}`} list="cont-calidades" className={inp} placeholder="Premium / Supreme..."
                                       value={det.calidad} required
                                       onChange={(e) => updateDetalle(pi, di, 'calidad', e.target.value)} />
-                                    <datalist id={`cals-${pi}-${di}`}>
-                                      {calidadesOpts.map(c => <option key={c} value={c} />)}
-                                    </datalist>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1">
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
-                                    <input type="number" min="1" className={`${inp} text-center font-mono`} placeholder="0"
+                                    <label htmlFor={`det-cantidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
+                                    <input id={`det-cantidad-${pi}-${di}`} type="number" min="1" className={`${inp} text-center font-mono`} placeholder="0"
                                       value={det.cantidad} required
                                       onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
                                   </div>
                                   <div className="flex-1">
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Costo Unitario *</label>
-                                    <PriceInput className={inp} placeholder="0"
+                                    <label htmlFor={`det-costo-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Costo Unitario *</label>
+                                    <PriceInput id={`det-costo-${pi}-${di}`} className={inp} placeholder="0"
                                       value={det.costo_unitario}
                                       onChange={(val) => updateDetalle(pi, di, 'costo_unitario', val)} />
                                   </div>
                                   <div className="flex-1">
-                                    <label className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Subtotal</label>
+                                    {/* No es <label>: no hay control debajo, es una cifra calculada */}
+                                    <span className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Subtotal</span>
                                     <div className={`${inp} bg-primary/3 text-secondary font-mono font-semibold text-sm text-right select-none`}>
                                       {subtotal > 0 ? subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0}) : '—'}
                                     </div>
@@ -2569,7 +2675,7 @@ export default function Contenedores() {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                   <div>
-                    <p className="text-sm font-semibold text-primary leading-none">Servicios</p>
+                    <h3 className="text-sm font-semibold text-primary leading-none">Servicios</h3>
                     <p className="text-[11px] text-muted mt-0.5">Transporte, aduana, maniobras y otros costos operativos</p>
                   </div>
                 </div>
@@ -2579,22 +2685,27 @@ export default function Contenedores() {
                       <div key={si} className="px-4 py-3 space-y-2">
                         <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
                           <select className={`${inpBase} lg:w-36`} value={srv.tipo_servicio}
+                            aria-label={`Tipo del servicio ${si + 1}`}
                             onChange={(e) => updateServicio(si, 'tipo_servicio', e.target.value)}>
                             <option value="">Tipo</option>
                             {TIPOS_SERVICIO.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                           </select>
                           <input type="text" className={`${inp} flex-1 min-w-0`} placeholder="Empresa o proveedor"
+                            aria-label={`Empresa o proveedor del servicio ${si + 1}`}
                             value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
                           <select className={`${inpBase} w-20 flex-shrink-0`} value={srv.moneda || 'COP'}
+                            aria-label={`Moneda del servicio ${si + 1}`}
                             onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
                             <option value="USD">USD</option>
                             <option value="COP">COP</option>
                           </select>
                           <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo servicio"
                             title="Lo que cobra el proveedor por TODO el contenedor"
+                            aria-label={`Costo del servicio ${si + 1}`}
                             value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
                           {servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
+                              title="Eliminar servicio" aria-label={`Eliminar servicio ${si + 1}`}
                               className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
                               <X size={15} />
                             </button>
@@ -2632,15 +2743,19 @@ export default function Contenedores() {
                           </div>
                         )}
                         <input type="text" className={inp} placeholder="Notas (opcional)"
+                          aria-label={`Notas del servicio ${si + 1}`}
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
                         {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
                         {modoEstimacion && (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
+                            aria-label={`Factura estimada del servicio ${si + 1}`}
                             value={srv.factura_estimada || ''} onChange={(e) => updateServicio(si, 'factura_estimada', e.target.value)} />
                           <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
+                            aria-label={`Cantidad estimada del servicio ${si + 1}`}
                             value={srv.cantidad_estimada || ''} onChange={(e) => updateServicio(si, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
                           <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
+                            aria-label={`Valor por unidad estimado del servicio ${si + 1}`}
                             value={srv.valor_unidad_estimado || ''} onChange={(val) => updateServicio(si, 'valor_unidad_estimado', val)} />
                         </div>
                         )}
@@ -2918,6 +3033,7 @@ export default function Contenedores() {
           </div>
         </form>
       </Modal>
+      )}
 
       {/* ════════════════════════════════════════════════════════
           VIEW DETAIL MODAL
@@ -3000,13 +3116,13 @@ export default function Contenedores() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-surface/60 border-b border-amber-500/20">
-                          <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Proveedor</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. estimadas</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. reales</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Factura estimada</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Costo real</th>
-                          <th className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                          <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Proveedor</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. estimadas</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. reales</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Factura estimada</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Costo real</th>
+                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-amber-500/10">
@@ -3239,11 +3355,11 @@ export default function Contenedores() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-border/40 bg-primary/2">
-                              <th className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Producto Pedido</th>
-                              <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
-                              <th className="px-3 py-2 text-left font-semibold text-success uppercase tracking-wider">Producto Recibido</th>
-                              <th className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-20">Recibido</th>
-                              <th className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
+                              <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Producto Pedido</th>
+                              <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
+                              <th scope="col" className="px-3 py-2 text-left font-semibold text-success uppercase tracking-wider">Producto Recibido</th>
+                              <th scope="col" className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-20">Recibido</th>
+                              <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-border/30">
@@ -3471,6 +3587,7 @@ export default function Contenedores() {
                       <span className="text-xs text-muted">$</span>
                       <PriceInput
                         className={`${inp} w-32 text-right font-mono ${preciosAutocompletados.has(comb.key) ? 'border-secondary/50 bg-secondary/5' : ''}`} placeholder="0.00"
+                        aria-label={`Precio de venta de ${comb.clasificacion} ${comb.referencia}${comb.calidad ? ' ' + comb.calidad : ''}`}
                         value={preciosVenta[comb.key] || ''}
                         onChange={(val) => {
                           setPreciosVenta({ ...preciosVenta, [comb.key]: val });
@@ -3600,20 +3717,24 @@ export default function Contenedores() {
                           {row.es_nuevo ? (
                             <div className="flex items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
                               <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
-                              <input list="rev-nuevo-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              <input list="rev-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                                 placeholder="Clasificación *" title="Clasificación del producto que llegó"
+                                aria-label="Clasificación del producto que llegó sin factura"
                                 value={row.clasificacion}
                                 onChange={e => updateRevisionRow(idx, 'clasificacion', e.target.value)} />
-                              <input list="rev-nuevo-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              <input list="rev-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                                 placeholder="Referencia *" title="Referencia del producto que llegó"
+                                aria-label="Referencia del producto que llegó sin factura"
                                 value={row.referencia}
                                 onChange={e => updateRevisionRow(idx, 'referencia', e.target.value)} />
-                              <input list="rev-nuevo-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              <input list="rev-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                                 placeholder="Calidad" title="Calidad"
+                                aria-label="Calidad del producto que llegó sin factura"
                                 value={row.calidad}
                                 onChange={e => updateRevisionRow(idx, 'calidad', e.target.value)} />
                               <input type="text" inputMode="decimal" className={`${inpBase} text-xs w-24 flex-shrink-0 py-1.5 text-right`}
                                 placeholder="Costo u." title="Costo unitario de este producto"
+                                aria-label="Costo unitario del producto que llegó sin factura"
                                 value={row.costo_unitario}
                                 onChange={e => updateRevisionRow(idx, 'costo_unitario', e.target.value)} />
                               <button type="button" onClick={() => removeRevisionItem(idx)}
@@ -3642,32 +3763,28 @@ export default function Contenedores() {
                               Producto que llegó sin estar facturado.
                             </p>
                           ) : (
+                          /* Los datalist son los compartidos del final del modal:
+                             antes cada fila repetía los tres catálogos completos. */
                           <div className="flex items-center gap-1 bg-blue-50/40 border border-blue-100 rounded-lg p-1">
                             <p className="text-[9px] font-bold text-blue-700 uppercase lg:hidden mr-1">🔄 Tipo recibido:</p>
-                            <input list={`rev-tipos-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                            <input list="rev-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                               placeholder={row.clasificacion}
                               title="Clasificación recibida"
+                              aria-label={`Clasificación recibida de ${row.referencia}`}
                               value={row.clasificacion_recibida}
                               onChange={e => updateRevisionRow(idx, 'clasificacion_recibida', e.target.value)} />
-                            <datalist id={`rev-tipos-${row.detalle_id}`}>
-                              {tiposOpts.map(t => <option key={t} value={t} />)}
-                            </datalist>
-                            <input list={`rev-refs-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                            <input list="rev-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                               placeholder={row.referencia}
                               title="Referencia recibida"
+                              aria-label={`Referencia recibida en lugar de ${row.referencia}`}
                               value={row.referencia_recibida}
                               onChange={e => updateRevisionRow(idx, 'referencia_recibida', e.target.value)} />
-                            <datalist id={`rev-refs-${row.detalle_id}`}>
-                              {categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}
-                            </datalist>
-                            <input list={`rev-cals-${row.detalle_id}`} className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                            <input list="rev-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                               placeholder={row.calidad || 'Calidad'}
                               title="Calidad recibida"
+                              aria-label={`Calidad recibida de ${row.referencia}`}
                               value={row.calidad_recibida}
                               onChange={e => updateRevisionRow(idx, 'calidad_recibida', e.target.value)} />
-                            <datalist id={`rev-cals-${row.detalle_id}`}>
-                              {calidadesOpts.map(c => <option key={c} value={c} />)}
-                            </datalist>
                           </div>
                           )}
 
@@ -3675,6 +3792,8 @@ export default function Contenedores() {
                           <div className="flex items-center gap-2">
                             <p className="text-[9px] font-bold text-success uppercase lg:hidden">✅</p>
                             <input type="number" min="0" className={`${inpBase} text-center font-mono font-bold border-2 border-success/40 bg-success/5 text-success text-xl py-2 w-20 flex-shrink-0`}
+                              title="Cantidad recibida (entra al inventario)"
+                              aria-label={`Cantidad recibida de ${row.referencia || 'este producto'}`}
                               value={row.cantidad_recibida}
                               onChange={e => updateRevisionRow(idx, 'cantidad_recibida', e.target.value)} />
                             {parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada) && (
@@ -3688,6 +3807,7 @@ export default function Contenedores() {
                           {/* Col 4: Notas (inline) */}
                           <input type="text" className={`${inpBase} text-xs py-1.5`}
                             placeholder="Notas / diferencias (opcional)"
+                            aria-label={`Notas de revisión de ${row.referencia || 'este producto'}`}
                             value={row.notas_revision}
                             onChange={e => updateRevisionRow(idx, 'notas_revision', e.target.value)} />
                         </div>
@@ -3708,10 +3828,10 @@ export default function Contenedores() {
               });
             })()}
 
-            {/* Sugerencias compartidas para los productos agregados a mano */}
-            <datalist id="rev-nuevo-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
-            <datalist id="rev-nuevo-refs">{categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
-            <datalist id="rev-nuevo-cals">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
+            {/* Sugerencias compartidas por TODAS las filas de la revisión */}
+            <datalist id="rev-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
+            <datalist id="rev-refs">{categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
+            <datalist id="rev-cals">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
             </div>
 
             {/* Resumen totales (compacto, sticky) */}
@@ -3783,20 +3903,23 @@ export default function Contenedores() {
             <div className="space-y-2">
               {templatesFiltradas.map(t => (
                 <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-all group">
-                  <div className="flex-1 cursor-pointer min-w-0" onClick={() => {
+                  {/* Era un <div onClick>: con teclado no había forma de cargar una
+                      plantilla. Como <button> entra en el orden de tabulación. */}
+                  <button type="button" className="flex-1 cursor-pointer min-w-0 text-left" onClick={() => {
                     setFormData(f => ({ ...f, tasa_conversion: t.tasa_conversion, total_pacas: t.total_pacas, notas: t.notas }));
                     setProveedores(t.proveedores);
                     setServicios(t.servicios);
                     setTemplateModalOpen(false);
                     addToast(`Plantilla "${t.nombre}" cargada`, 'success');
                   }}>
-                    <p className="text-sm font-semibold text-primary truncate">{t.nombre}</p>
-                    <p className="text-xs text-muted mt-0.5">
+                    <span className="block text-sm font-semibold text-primary truncate">{t.nombre}</span>
+                    <span className="block text-xs text-muted mt-0.5">
                       {t.proveedores.length} prov. · {t.servicios.length} serv. · {new Date(t.creadoEn).toLocaleDateString('es-CO')}
-                    </p>
-                  </div>
+                    </span>
+                  </button>
                   <button type="button" onClick={() => removeTemplate(t.id)}
-                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ml-2">
+                    title="Eliminar plantilla" aria-label={`Eliminar la plantilla ${t.nombre}`}
+                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all flex-shrink-0 ml-2">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -3812,8 +3935,8 @@ export default function Contenedores() {
       <Modal isOpen={saveTemplateModalOpen} onClose={() => { setSaveTemplateModalOpen(false); setTemplateFromView(false); }} title="Guardar plantilla" size="sm">
         <div className="space-y-4">
           <div>
-            <label className={lbl}>Nombre de la plantilla *</label>
-            <input type="text" className={inp} placeholder="ej. Contenedor USA 40ft estándar"
+            <label htmlFor="plantilla-nombre" className={lbl}>Nombre de la plantilla *</label>
+            <input id="plantilla-nombre" type="text" className={inp} placeholder="ej. Contenedor USA 40ft estándar"
               value={nombrePlantilla} onChange={e => setNombrePlantilla(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSaveTemplate()} autoFocus />
             {templates.some(t => t.nombre === nombrePlantilla.trim()) && nombrePlantilla.trim() && (

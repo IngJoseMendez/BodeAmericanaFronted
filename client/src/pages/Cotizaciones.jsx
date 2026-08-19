@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink } from '../components/common';
@@ -16,6 +16,18 @@ import { hoy } from '../lib/fecha';
 const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
 const formatCurrency = formatCOP;
+
+// El PDF se arma interpolando texto en una plantilla HTML. Ese texto lo teclean
+// los usuarios (nombre del cliente, notas, referencias), así que si lleva
+// etiquetas se cuela en el documento que html2pdf adjunta al DOM para
+// renderizarlo, y ahí manejadores como el onerror de un <img> sí se ejecutan.
+// Todo valor variable pasa por aquí antes de entrar a la plantilla.
+const escapeHtml = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 function PriceInput({ value, onChange, placeholder = 'Precio', className = '' }) {
   const [focused, setFocused] = useState(false);
@@ -71,7 +83,7 @@ const generarPDF = (cotizacion) => {
     <html>
     <head>
       <meta charset="UTF-8">
-      <title>Cotización ${cotizacion.numero}</title>
+      <title>Cotización ${escapeHtml(cotizacion.numero)}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #0f172a; font-size: 14px; }
@@ -111,20 +123,20 @@ const generarPDF = (cotizacion) => {
       <div class="info-grid">
         <div class="info-box">
           <h3>Datos de la Cotización</h3>
-          <p><span class="bold">Número:</span> ${cotizacion.numero}</p>
+          <p><span class="bold">Número:</span> ${escapeHtml(cotizacion.numero)}</p>
           <p><span class="bold">Fecha:</span> ${new Date(cotizacion.created_at).toLocaleDateString('es-MX')}</p>
           <p><span class="bold">Válida hasta:</span> ${new Date(cotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
           <p>
-            <span class="bold">Estado:</span> 
-            <span class="status status-${cotizacion.estado}">${cotizacion.estado?.toUpperCase()}</span>
+            <span class="bold">Estado:</span>
+            <span class="status status-${escapeHtml(cotizacion.estado)}">${escapeHtml(String(cotizacion.estado ?? '').toUpperCase())}</span>
           </p>
         </div>
         <div class="info-box">
           <h3>Datos del Cliente</h3>
-          <p><span class="bold">Cliente:</span> ${cotizacion.cliente_nombre || 'N/A'}</p>
-          <p><span class="bold">Teléfono:</span> ${cotizacion.cliente_telefono || 'N/A'}</p>
-          <p><span class="bold">Ciudad:</span> ${cotizacion.cliente_ciudad || 'N/A'}</p>
-          <p><span class="bold">Vendedor:</span> ${cotizacion.vendedor_nombre || 'N/A'}</p>
+          <p><span class="bold">Cliente:</span> ${escapeHtml(cotizacion.cliente_nombre || 'N/A')}</p>
+          <p><span class="bold">Teléfono:</span> ${escapeHtml(cotizacion.cliente_telefono || 'N/A')}</p>
+          <p><span class="bold">Ciudad:</span> ${escapeHtml(cotizacion.cliente_ciudad || 'N/A')}</p>
+          <p><span class="bold">Vendedor:</span> ${escapeHtml(cotizacion.vendedor_nombre || 'N/A')}</p>
         </div>
       </div>
       
@@ -142,14 +154,14 @@ const generarPDF = (cotizacion) => {
         <tbody>
           ${cotizacion.detalles?.map(item => `
             <tr>
-              <td>${item.referencia || item.tipo || '-'}</td>
-              <td>${item.calidad || item.categoria || '-'}</td>
-              <td class="text-right">${item.cantidad}</td>
+              <td>${escapeHtml(item.referencia || item.tipo || '-')}</td>
+              <td>${escapeHtml(item.calidad || item.categoria || '-')}</td>
+              <td class="text-right">${escapeHtml(item.cantidad)}</td>
               <td class="text-right">${formatCurrency(item.precio_unitario)}</td>
               <td class="text-right">${formatCurrency(item.subtotal)}</td>
               <td class="text-right" style="color:#64748b">${usd(item.subtotal)}</td>
             </tr>
-          `).join('')}
+          `).join('') || ''}
         </tbody>
       </table>
       
@@ -188,7 +200,7 @@ const generarPDF = (cotizacion) => {
       ${cotizacion.notas ? `
         <div class="notes">
           <strong>Notas:</strong><br>
-          ${cotizacion.notas}
+          ${escapeHtml(cotizacion.notas).replace(/\n/g, '<br>')}
         </div>
       ` : ''}
       
@@ -257,6 +269,19 @@ export default function Cotizaciones() {
   // depender de una petición por cada cambio de referencia o calidad.
   const [precios, setPrecios] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
+  // Nº de consulta vigente por fila de ítem. Cambiar referencia o calidad lanza
+  // peticiones de precio y de disponibilidad; si el usuario cambiaba dos veces
+  // seguidas quedaban dos en vuelo y ganaba la que respondiera última, dejando
+  // el precio de la referencia anterior. Sólo se aplica la respuesta cuyo
+  // número sigue siendo el último pedido para esa fila.
+  const consultaItemSeq = useRef({});
+  // El número sale de un contador global que nunca se reinicia. Si cada fila
+  // llevara su propio contador, al borrar una fila (que vacía el mapa) la
+  // siguiente consulta volvería a valer 1 y una petición vieja con el 1 en la
+  // mano se daría por vigente y escribiría precio o stock sobre la fila que
+  // ahora ocupa ese índice. Con un contador que sólo sube, ningún número se
+  // recicla y una respuesta invalidada lo queda para siempre.
+  const consultaSeqCounter = useRef(0);
 
   useEffect(() => {
     loadCotizaciones();
@@ -308,6 +333,12 @@ export default function Cotizaciones() {
     setFormData({ cliente_id: '', validez_dias: 15, notas: '', descuento: '', tipo_descuento: 'valor_fijo', transporte_unitario: '', tasa: '',
       tipo_transporte: '', destinatario: '', direccion_entrega: '', ciudad_entrega: '', celular: '' });
     setItems([{ referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }]);
+    // El formulario arranca de cero, así que las consultas de la cotización
+    // anterior ya no son de nadie: si no se invalidan aquí, la que siga en vuelo
+    // sigue teniendo el número vigente de la fila 0 y escribe su precio, su
+    // marca de promoción o su stock sobre la primera fila —vacía— de la
+    // cotización nueva.
+    consultaItemSeq.current = {};
     setModalOpen(true);
   };
 
@@ -328,6 +359,9 @@ export default function Cotizaciones() {
   const removeItem = (index) => {
     if (items.length > 1) {
       setItems(items.filter((_, i) => i !== index));
+      // Al borrar una fila se corren los índices: cualquier respuesta en vuelo
+      // escribiría sobre la fila equivocada, así que se invalidan todas.
+      consultaItemSeq.current = {};
     }
   };
 
@@ -345,8 +379,10 @@ export default function Cotizaciones() {
   };
 
   // Prioridad: 1° promoción activa (referencia+calidad), 2° precio preestablecido (categoria+calidad)
-  const recheckPrices = async (index, item) => {
+  const recheckPrices = async (index, item, seq) => {
     const { referencia, calidad } = item;
+    // La respuesta sólo se aplica si sigue siendo la última consulta de la fila.
+    const vigente = () => consultaItemSeq.current[index] === seq;
     // Comparación tolerante: la referencia escrita y la del catálogo vienen de
     // tablas distintas y difieren en mayúsculas y acentos. Con === exacto no
     // encontraba la temporada y el precio preestablecido nunca se buscaba.
@@ -357,6 +393,7 @@ export default function Cotizaciones() {
     if (referencia && calidad) {
       try {
         const promo = await preciosPromocionApi.getActiva({ referencia, calidad, clasificacion: item.clasificacion || '' });
+        if (!vigente()) return;
         if (promo) {
           setItems(prev => {
             const next = [...prev];
@@ -374,6 +411,7 @@ export default function Cotizaciones() {
     }
 
     // Sin promoción: limpiar marca
+    if (!vigente()) return;
     setItems(prev => {
       const next = [...prev];
       next[index] = { ...next[index], precio_promocion: null };
@@ -415,6 +453,8 @@ export default function Cotizaciones() {
       }
     }
 
+    if (!vigente()) return;
+
     if (precio != null) {
       setItems(prev => {
         const next = [...prev];
@@ -441,13 +481,15 @@ export default function Cotizaciones() {
     });
   };
 
-  const fetchDisponibilidad = async (index, item) => {
+  const fetchDisponibilidad = async (index, item, seq) => {
     const params = {};
     if (item.referencia) params.referencia = item.referencia;
     if (item.calidad)    params.calidad    = item.calidad;
     if (Object.keys(params).length === 0) return;
     try {
       const { disponibles } = await pacasApi.getDisponibilidad(params);
+      // Llegó tarde: la fila ya se cambió otra vez, este stock ya no es el suyo.
+      if (consultaItemSeq.current[index] !== seq) return;
       setItems(prev => {
         const next = [...prev];
         next[index] = { ...next[index], disponibles };
@@ -468,45 +510,65 @@ export default function Cotizaciones() {
     setItems(newItems);
 
     if (['referencia', 'calidad'].includes(field)) {
-      recheckPrices(index, newItems[index]);
-    }
-    if (['referencia', 'calidad'].includes(field)) {
-      fetchDisponibilidad(index, newItems[index]);
+      // Se numera la consulta para que sólo se aplique la respuesta de la última
+      // referencia/calidad elegida, no la que resulte más lenta en volver.
+      const seq = ++consultaSeqCounter.current;
+      consultaItemSeq.current[index] = seq;
+      recheckPrices(index, newItems[index], seq);
+      fetchDisponibilidad(index, newItems[index], seq);
     }
   };
 
-  // Calcula el precio final por unidad de un ítem según el descuento configurado
+  // Un ítem sólo cuenta para los totales si handleSubmit lo va a enviar. Las
+  // filas que crea "Agregar Item" nacen vacías pero con cantidad 1, así que al
+  // contarlas cada fila en blanco sumaba una unidad fantasma al descuento por
+  // unidad y al transporte, y el total del modal no coincidía con lo guardado.
+  const esItemValido = (i) => (parseFloat(i.precio_unitario) || 0) > 0 && Boolean(i.referencia || i.calidad);
+
+  // La fila sí muestra su propio subtotal, así que si queda fuera de los totales
+  // hay que decirlo: si no, el usuario ve $90.000 en la línea y no los encuentra
+  // en el pie ni en la cotización guardada, sin explicación alguna.
+  const filaNoCuenta = (i) => (parseFloat(i.precio_unitario) || 0) > 0 && !esItemValido(i);
+
+  // Precio final por unidad de un ítem según el descuento configurado.
+  // Ésta es la ÚNICA fórmula del descuento: la etiqueta "c/desc:" de la fila y
+  // el total del pie salen de aquí. Antes el pie calculaba
+  // descuento × unidades y sólo topaba el total contra el subtotal, de modo que
+  // un descuento mayor que el precio de un ítem se comía el descuento de los
+  // demás y el total cobraba menos de lo que sumaban las filas.
   const precioConDescuento = (precioUnitario) => {
+    const precio = parseFloat(precioUnitario) || 0;
     const raw = parseFloat(formData.descuento) || 0;
-    if (raw === 0) return precioUnitario;
+    if (raw <= 0) return precio;
     if (formData.tipo_descuento === 'porcentaje') {
-      return Math.round(precioUnitario * (1 - raw / 100));
+      return Math.max(0, Math.round(precio * (1 - raw / 100)));
     }
-    return Math.max(0, Math.round(precioUnitario - raw)); // valor fijo por unidad
+    return Math.max(0, Math.round(precio - raw)); // valor fijo por unidad, topado al precio del ítem
   };
+
+  // Lo que se le descuenta a UNA unidad del ítem. Es la resta del helper
+  // anterior, por eso fila y total siempre cuadran.
+  const descuentoPorUnidad = (precioUnitario) =>
+    (parseFloat(precioUnitario) || 0) - precioConDescuento(precioUnitario);
 
   const calcularTotales = () => {
-    const subtotalConPromo = items
+    const validos = items.filter(esItemValido);
+    const subtotalConPromo = validos
       .filter(i => i.precio_promocion != null)
       .reduce((s, i) => s + (i.subtotal || 0), 0);
-    const subtotalSinPromo = items
+    const subtotalSinPromo = validos
       .filter(i => i.precio_promocion == null)
       .reduce((s, i) => s + (i.subtotal || 0), 0);
     const subtotal = subtotalConPromo + subtotalSinPromo;
 
-    // El descuento se aplica por unidad, así que el total descontado es:
-    // porcentaje: % sobre el subtotal sin promo
-    // valor fijo: descuento_por_unidad × total_unidades_sin_promo
-    const raw = parseFloat(formData.descuento) || 0;
-    const unidadesSinPromo = items
+    // El descuento se topa POR ÍTEM y luego se suma: ningún ítem puede
+    // descontar más de lo que vale, ni prestarle descuento a otro.
+    const descuentoAmount = validos
       .filter(i => i.precio_promocion == null)
-      .reduce((s, i) => s + (parseInt(i.cantidad) || 1), 0);
-    const descuentoAmount = formData.tipo_descuento === 'porcentaje'
-      ? subtotalSinPromo * (raw / 100)
-      : Math.min(raw * unidadesSinPromo, subtotalSinPromo);
+      .reduce((s, i) => s + descuentoPorUnidad(i.precio_unitario) * (parseInt(i.cantidad) || 0), 0);
 
     // Transporte por unidad × total de unidades, sumado al total
-    const totalCantidades = items.reduce((s, i) => s + (parseInt(i.cantidad) || 0), 0);
+    const totalCantidades = validos.reduce((s, i) => s + (parseInt(i.cantidad) || 0), 0);
     const transporteUnit = parseFloat(formData.transporte_unitario) || 0;
     const transporteTotal = transporteUnit * totalCantidades;
 
@@ -528,7 +590,9 @@ export default function Cotizaciones() {
       return;
     }
     
-    const validItems = items.filter(i => i.precio_unitario > 0 && (i.referencia || i.calidad));
+    // Mismo criterio que usan los totales del pie, para que lo que se guarda sea
+    // exactamente lo que la pantalla venía mostrando.
+    const validItems = items.filter(esItemValido);
     if (validItems.length === 0) {
       addToast('Agrega al menos un ítem con precio y referencia o calidad seleccionada', 'error');
       return;
@@ -544,7 +608,9 @@ export default function Cotizaciones() {
         return {
           ...i,
           precio_unitario: precioUnit,
-          subtotal: (i.cantidad || 1) * precioUnit,
+          // Misma cuenta que el pie del modal (parseInt, sin fallback a 1): lo
+          // que se guarda es exactamente el subtotal que la fila mostraba.
+          subtotal: (parseInt(i.cantidad) || 0) * precioUnit,
           tiene_promocion: tienePromo,
         };
       });
@@ -701,7 +767,7 @@ export default function Cotizaciones() {
   };
 
   return (
-    <Layout title="Cotizaciones" subtitle="Gestión de cotizaciones y报价">
+    <Layout title="Cotizaciones" subtitle="Gestión de cotizaciones y propuestas de precio">
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex gap-2 items-center flex-wrap">
@@ -1052,7 +1118,7 @@ export default function Cotizaciones() {
                     )}
 
                     {/* Fila de metadatos: stock · promo · precio con descuento */}
-                    {(item.disponibles !== null || item.precio_promocion != null || (hayDescuento && item.precio_promocion == null && item.precio_unitario > 0)) && (
+                    {(item.disponibles !== null || item.precio_promocion != null || filaNoCuenta(item) || (hayDescuento && item.precio_promocion == null && item.precio_unitario > 0)) && (
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         {item.disponibles !== null && (
                           <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -1071,6 +1137,11 @@ export default function Cotizaciones() {
                         {item.precio_promocion != null && (
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
                             <AlertCircle size={10} /> Precio promoción
+                          </span>
+                        )}
+                        {filaNoCuenta(item) && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                            <AlertCircle size={10} /> Elige referencia o calidad — esta fila no suma al total
                           </span>
                         )}
                         {hayDescuento && item.precio_promocion == null && item.precio_unitario > 0 && (

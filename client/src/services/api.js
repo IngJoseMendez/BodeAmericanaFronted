@@ -1,6 +1,20 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
-const getToken = () => localStorage.getItem('token');
+// Respaldo en memoria: si el navegador bloquea localStorage (modo privado, o
+// almacenamiento lleno), el token sólo vive en el estado de React y las
+// peticiones saldrían sin autenticar. AuthContext lo deja aquí al iniciar
+// sesión, así que la sesión funciona igual mientras dure la pestaña.
+let tokenEnMemoria = null;
+
+export const recordarToken = (valor) => { tokenEnMemoria = valor || null; };
+
+const getToken = () => {
+  try {
+    return localStorage.getItem('token') || tokenEnMemoria;
+  } catch {
+    return tokenEnMemoria;
+  }
+};
 
 /**
  * Serializa parámetros descartando los vacíos.
@@ -20,22 +34,65 @@ export const qs = (params = {}) => {
 // Una red colgada dejaba la pantalla en "Cargando…" para siempre.
 const TIMEOUT_MS = 30000;
 
+/**
+ * Mensajes de respaldo en español, uno por código HTTP.
+ * Las pantallas hacen `addToast(err.message)` sin traducir nada, así que
+ * cuando el servidor caía sin cuerpo JSON (un 502 del proxy, un 500 pelado)
+ * al personal de bodega le llegaba "Error desconocido" o el texto crudo del
+ * navegador en inglés, que no le dice qué hacer.
+ */
+const MENSAJES_HTTP = {
+  400: 'Los datos enviados no son válidos. Revisa el formulario e inténtalo de nuevo.',
+  401: 'Tu sesión ya no es válida. Vuelve a iniciar sesión.',
+  403: 'No tienes permiso para hacer esta operación.',
+  404: 'No se encontró lo que buscabas. Puede que ya lo hayan eliminado.',
+  409: 'La operación choca con un registro que ya existe.',
+  413: 'El envío es demasiado grande.',
+  422: 'Faltan datos o hay valores incorrectos.',
+  429: 'Demasiadas solicitudes seguidas. Espera un momento e inténtalo otra vez.',
+  500: 'El servidor tuvo un problema al procesar la solicitud. Inténtalo de nuevo.',
+  502: 'El servidor no está respondiendo. Inténtalo en unos minutos.',
+  503: 'El servidor no está disponible en este momento. Inténtalo en unos minutos.',
+  504: 'El servidor tardó demasiado en responder. Inténtalo de nuevo.',
+};
+
 const handleResponse = async (response, endpoint = '') => {
-  if (response.status === 401) {
-    // En el login un 401 significa "contraseña incorrecta", no "sesión
-    // expirada": recargar aquí borraba el mensaje de error antes de leerlo.
-    if (!/\/(login|auth\/login)/.test(endpoint)) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-      throw new Error('Sesión expirada');
-    }
+  const esLogin = /\/(login|auth\/login)/.test(endpoint);
+  // En el login un 401 significa "contraseña incorrecta", no "sesión
+  // expirada": recargar aquí borraba el mensaje de error antes de leerlo.
+  if (response.status === 401 && !esLogin) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+    throw new Error('Sesión expirada');
   }
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Error desconocido' }));
-    throw new Error(error.error || 'Error en la solicitud');
+    // Si el cuerpo no es un objeto (el servidor puede responder literalmente
+    // `null`), leer `.error` lanzaba un TypeError que pedir() confundía con una
+    // caída de red: salía "No hay conexión con el servidor." con el servidor vivo.
+    const cuerpo = await response.json().catch(() => null);
+    const delServidor = cuerpo && typeof cuerpo === 'object' ? cuerpo.error : null;
+    // Un 401 en la pantalla de login no es una sesión caducada: quien está
+    // escribiendo su contraseña nunca tuvo sesión y "vuelve a iniciar sesión"
+    // no le dice qué corregir.
+    const respaldo = esLogin && response.status === 401
+      ? 'Usuario o contraseña incorrectos.'
+      : MENSAJES_HTTP[response.status];
+    throw new Error(
+      delServidor || respaldo || `El servidor respondió con un error (${response.status}).`
+    );
   }
-  return response.json();
+  // Una respuesta sin cuerpo (204, o un DELETE que no devuelve nada) reventaba
+  // en response.json() con "Unexpected end of JSON input" y ese texto en inglés
+  // terminaba en un toast rojo delante del usuario.
+  if (response.status === 204) return null;
+  const texto = await response.text();
+  if (!texto) return null;
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new Error('El servidor devolvió una respuesta que no se pudo leer.');
+  }
 };
 
 /** fetch con límite de tiempo; distingue "se cayó la red" de "el servidor dijo que no". */
@@ -293,12 +350,6 @@ export const authApi = {
   },
 };
 
-export const facturasApi = {
-  getFactura(id) {
-    return api.get(`/ventas/${id}/factura/json`);
-  },
-};
-
 export const reportesApi = {
   getMensual() {
     return api.get('/reportes/mensual');
@@ -514,10 +565,6 @@ export const despachosApi = {
   anular(id) { return api.delete(`/despachos/${id}`); },
 };
 
-export const pacasInventarioApi = {
-  getInventario() { return api.get('/pacas/inventario'); },
-};
-
 export const preciosApi = {
   getAll() { return api.get('/precios'); },
   buscar({ categoria, calidad }) {
@@ -528,10 +575,12 @@ export const preciosApi = {
   delete(id) { return api.delete(`/precios/${id}`); },
 };
 
+// Estos listados armaban la query con `new URLSearchParams` directo: un filtro
+// vacío o sin definir viajaba como "estado=undefined" y el servidor filtraba
+// por esa palabra, devolviendo cero filas sin explicar por qué. Ahora usan qs().
 export const cuentasApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/cuentas${q ? '?' + q : ''}`);
+    return api.get(`/cuentas${qs(params)}`);
   },
   create(data) { return api.post('/cuentas', data); },
   update(id, data) { return api.put(`/cuentas/${id}`, data); },
@@ -540,8 +589,7 @@ export const cuentasApi = {
 
 export const bancosApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/bancos${q ? '?' + q : ''}`);
+    return api.get(`/bancos${qs(params)}`);
   },
   create(data) { return api.post('/bancos', data); },
   update(id, data) { return api.put(`/bancos/${id}`, data); },
@@ -550,8 +598,7 @@ export const bancosApi = {
 
 export const transportesApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/transportes${q ? '?' + q : ''}`);
+    return api.get(`/transportes${qs(params)}`);
   },
   create(data) { return api.post('/transportes', data); },
   update(id, data) { return api.put(`/transportes/${id}`, data); },
@@ -560,16 +607,14 @@ export const transportesApi = {
 
 export const inversionistasApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/inversionistas${q ? '?' + q : ''}`);
+    return api.get(`/inversionistas${qs(params)}`);
   },
   create(data) { return api.post('/inversionistas', data); },
   update(id, data) { return api.put(`/inversionistas/${id}`, data); },
   delete(id) { return api.delete(`/inversionistas/${id}`); },
 
   getAportes(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/inversionistas/aportes${q ? '?' + q : ''}`);
+    return api.get(`/inversionistas/aportes${qs(params)}`);
   },
   crearAporte(data) { return api.post('/inversionistas/aportes', data); },
   actualizarAporte(id, data) { return api.put(`/inversionistas/aportes/${id}`, data); },
@@ -577,8 +622,8 @@ export const inversionistasApi = {
 };
 
 export const gastosApi = {
-  getAll(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos${q ? '?' + q : ''}`); },
-  getReporte(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/gastos/reporte${q ? '?' + q : ''}`); },
+  getAll(params = {}) { return api.get(`/gastos${qs(params)}`); },
+  getReporte(params = {}) { return api.get(`/gastos/reporte${qs(params)}`); },
   create(data) { return api.post('/gastos', data); },
   update(id, data) { return api.put(`/gastos/${id}`, data); },
   delete(id) { return api.delete(`/gastos/${id}`); },
@@ -586,23 +631,21 @@ export const gastosApi = {
 
 export const historicoApi = {
   importar(payload) { return api.post('/historico/importar', payload); },
-  getAll(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/historico${q ? '?' + q : ''}`); },
-  getReporte(params = {}) { const q = new URLSearchParams(params).toString(); return api.get(`/historico/reporte${q ? '?' + q : ''}`); },
+  getAll(params = {}) { return api.get(`/historico${qs(params)}`); },
+  getReporte(params = {}) { return api.get(`/historico/reporte${qs(params)}`); },
   getAnios() { return api.get('/historico/anios'); },
   deleteLote(lote) { return api.delete(`/historico/lote/${lote}`); },
 };
 
 export const listaPreciosApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/lista-precios${q ? '?' + q : ''}`);
+    return api.get(`/lista-precios${qs(params)}`);
   },
 };
 
 export const auditoriaApi = {
   getAll(params = {}) {
-    const q = new URLSearchParams(params).toString();
-    return api.get(`/auditoria${q ? '?' + q : ''}`);
+    return api.get(`/auditoria${qs(params)}`);
   },
 };
 

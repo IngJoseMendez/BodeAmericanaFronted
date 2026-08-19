@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Badge, Button, Modal, useToast } from '../components/common';
+import { Card, CardBody, Badge, Button, Modal, useToast, useConfirm } from '../components/common';
 import { pedidosApi, clientesApi } from '../services/api';
-import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User, Download } from 'lucide-react';
 import { formatCOP } from '../lib/money';
+import { hoy } from '../lib/fecha';
 
 export default function GestionarPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -16,8 +18,12 @@ export default function GestionarPedidos() {
   const [showClienteList, setShowClienteList] = useState(false);
   const [detallePedido, setDetallePedido] = useState(null);
   const [modalDetalle, setModalDetalle] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const clienteListRef = useRef(null);
+  const quitarClienteRef = useRef(null);
+  const devolverFocoRef = useRef(false);
   const { addToast } = useToast();
+  const confirm = useConfirm();
 
   // Cerrar lista de clientes al hacer click fuera
   useEffect(() => {
@@ -70,11 +76,22 @@ export default function GestionarPedidos() {
     }
   };
 
-  const seleccionarCliente = (cliente) => {
+  const seleccionarCliente = (cliente, { conTeclado = false } = {}) => {
+    // Al elegir con el teclado la lista y el buscador desaparecen del DOM y el
+    // foco caía en <body>: el usuario volvía al principio de la página. La
+    // bandera hace que, ya montado el tag del cliente, el foco pase al botón
+    // que ocupa ese lugar.
+    devolverFocoRef.current = conTeclado;
     setFiltroCliente(cliente.id);
     setSearchCliente(cliente.nombre);
     setShowClienteList(false);
   };
+
+  useEffect(() => {
+    if (!filtroCliente || !devolverFocoRef.current) return;
+    devolverFocoRef.current = false;
+    quitarClienteRef.current?.focus();
+  }, [filtroCliente]);
 
   const limpiarFiltroCliente = () => {
     setFiltroCliente('');
@@ -82,11 +99,17 @@ export default function GestionarPedidos() {
     setShowClienteList(false);
   };
 
-  const clientesFiltrados = clientes.filter(c => 
-    !searchCliente || 
+  const clientesFiltrados = clientes.filter(c =>
+    !searchCliente ||
     c.nombre?.toLowerCase().includes(searchCliente.toLowerCase()) ||
     c.ciudad?.toLowerCase().includes(searchCliente.toLowerCase())
   );
+
+  // `showClienteList` se escribía en cinco sitios pero no se leía en ninguno: la
+  // lista se pintaba con `!filtroCliente && searchCliente`, así que el efecto de
+  // "cerrar al hacer clic fuera" no cerraba nada y el desplegable tapaba la
+  // pantalla hasta borrar el texto.
+  const listaAbierta = !filtroCliente && !!searchCliente && showClienteList;
 
   const verDetalles = async (pedido) => {
     try {
@@ -99,6 +122,15 @@ export default function GestionarPedidos() {
   };
 
   const aprobarPedido = async (id) => {
+    // Aprobar genera una venta: sin confirmación, un clic accidental dejaba
+    // movimiento contable que después hay que deshacer a mano.
+    const ok = await confirm({
+      title: '¿Aprobar el pedido?',
+      message: `El pedido #${id} se convertirá en una venta y las pacas quedarán marcadas como vendidas.`,
+      confirmText: 'Aprobar y crear venta',
+      variant: 'success',
+    });
+    if (!ok) return;
     try {
       await pedidosApi.actualizar(id, { estado: 'aprobado' });
       addToast('Pedido aprobado y convertido en venta', 'success');
@@ -110,6 +142,14 @@ export default function GestionarPedidos() {
   };
 
   const rechazarPedido = async (id) => {
+    // Desde esta pantalla no hay forma de revertir un rechazo, por eso se pregunta.
+    const ok = await confirm({
+      title: '¿Rechazar el pedido?',
+      message: `El pedido #${id} quedará rechazado. Desde esta pantalla no se puede volver atrás.`,
+      confirmText: 'Rechazar',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await pedidosApi.actualizar(id, { estado: 'rechazado' });
       addToast('Pedido rechazado', 'success');
@@ -121,6 +161,60 @@ export default function GestionarPedidos() {
   };
 
   const formatCurrency = formatCOP;
+
+  // Exportación a Excel con los filtros activos (mismo estilo que Clientes.jsx para
+  // que todos los Excel del sistema se vean igual). La lista de pedidos no trae la
+  // cantidad de ítems, así que se pide el detalle de cada pedido en tandas de 5
+  // para no lanzar cientos de peticiones a la vez.
+  const exportarExcel = async () => {
+    if (!pedidos.length) { addToast('No hay pedidos para exportar', 'info'); return; }
+    try {
+      setExportando(true);
+      const conteos = new Map();
+      for (let i = 0; i < pedidos.length; i += 5) {
+        const tanda = pedidos.slice(i, i + 5);
+        const detalles = await Promise.all(tanda.map(p => pedidosApi.getOne(p.id).catch(() => null)));
+        detalles.forEach((d, j) => conteos.set(tanda[j].id, d ? (d.detalles || []).length : null));
+      }
+
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Pedidos');
+      ws.columns = [
+        { header: 'Pedido #', key: 'numero',  width: 12 },
+        { header: 'Cliente',  key: 'cliente', width: 28 },
+        { header: 'Fecha',    key: 'fecha',   width: 16 },
+        { header: 'Estado',   key: 'estado',  width: 14 },
+        { header: 'Ítems',    key: 'items',   width: 10 },
+        { header: 'Total',    key: 'total',   width: 18 },
+      ];
+      ws.getRow(1).font = { bold: true };
+      const labels = { pendiente: 'Pendiente', aprobado: 'Aprobado', rechazado: 'Rechazado', convertido: 'Completado' };
+      pedidos.forEach(p => {
+        const items = conteos.get(p.id);
+        ws.addRow({
+          numero:  p.id,
+          cliente: p.cliente_nombre || '—',
+          fecha:   p.created_at ? new Date(p.created_at).toLocaleDateString('es-CO') : '—',
+          estado:  labels[p.estado] || p.estado,
+          items:   items == null ? '—' : items,
+          total:   parseFloat(p.total_estimado) || 0,
+        });
+      });
+      ws.getColumn('total').numFmt = '#,##0.00';
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `pedidos-${hoy()}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      addToast('Excel descargado', 'success');
+    } catch (err) {
+      addToast('Error al exportar: ' + err.message, 'error');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   const getEstadoBadge = (estado) => {
     const variants = {
@@ -147,8 +241,10 @@ export default function GestionarPedidos() {
             <div className="flex flex-col lg:flex-row gap-4">
               {/* Filtro Cliente */}
               <div className="flex-1 relative" ref={clienteListRef}>
-                <label className="block text-sm font-medium text-primary mb-1">Cliente</label>
-                
+                {/* El <label> era hermano suelto del input, sin htmlFor: el lector de
+                    pantalla no decía qué se estaba buscando */}
+                <label htmlFor="filtro-cliente" className="block text-sm font-medium text-primary mb-1">Cliente</label>
+
                 {/* Si ya hay cliente seleccionado, mostrar tag */}
                 {filtroCliente ? (
                   <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
@@ -158,8 +254,12 @@ export default function GestionarPedidos() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm text-secondary truncate">{searchCliente}</p>
                     </div>
+                    {/* Botón de solo icono: sin aria-label el lector lo anunciaba como "botón" a secas */}
                     <button
                       type="button"
+                      ref={quitarClienteRef}
+                      aria-label="Quitar el filtro de cliente"
+                      title="Quitar el filtro de cliente"
                       onClick={limpiarFiltroCliente}
                       className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary flex-shrink-0"
                     >
@@ -171,7 +271,12 @@ export default function GestionarPedidos() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
+                      id="filtro-cliente"
                       type="text"
+                      role="combobox"
+                      aria-expanded={listaAbierta}
+                      aria-controls="lista-clientes"
+                      aria-autocomplete="list"
                       placeholder="Buscar cliente..."
                       value={searchCliente}
                       onChange={(e) => {
@@ -185,14 +290,21 @@ export default function GestionarPedidos() {
                 )}
                 
                 {/* Lista desplegable de clientes - solo mostrar si hay texto y no hay filtro */}
-                {!filtroCliente && searchCliente && (
-                  <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                {listaAbierta && (
+                  /* Cada resultado era un <div onClick> sin teclado: con Tab/Enter no había forma de elegir cliente */
+                  <div id="lista-clientes" role="listbox" aria-label="Clientes encontrados" className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-64 overflow-y-auto">
                     {clientesFiltrados.length > 0 ? (
                       clientesFiltrados.slice(0, 10).map(cliente => (
                         <div
                           key={cliente.id}
+                          role="option"
+                          tabIndex={0}
+                          aria-selected={filtroCliente === cliente.id}
                           onClick={() => seleccionarCliente(cliente)}
-                          className="px-4 py-3 cursor-pointer hover:bg-primary/5 border-b border-border last:border-b-0"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); seleccionarCliente(cliente, { conTeclado: true }); }
+                          }}
+                          className="px-4 py-3 cursor-pointer hover:bg-primary/5 focus:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-secondary/40 border-b border-border last:border-b-0"
                         >
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-primary/5 rounded-lg">
@@ -216,8 +328,9 @@ export default function GestionarPedidos() {
 
               {/* Filtro Estado */}
               <div className="w-full lg:w-48">
-                <label className="block text-sm font-medium text-primary mb-1">Estado</label>
+                <label htmlFor="filtro-estado" className="block text-sm font-medium text-primary mb-1">Estado</label>
                 <select
+                  id="filtro-estado"
                   value={filtroEstado}
                   onChange={(e) => setFiltroEstado(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
@@ -237,6 +350,17 @@ export default function GestionarPedidos() {
                   <p className="text-xs text-gray-500">pedidos</p>
                 </div>
               </div>
+
+              {/* Exportar: descarga lo que se ve en pantalla, con los filtros aplicados */}
+              <div className="flex items-end">
+                <button
+                  onClick={exportarExcel}
+                  disabled={exportando}
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download size={15} /> {exportando ? 'Generando…' : 'Exportar'}
+                </button>
+              </div>
             </div>
 
             {/* Tags de filtros activos */}
@@ -245,15 +369,16 @@ export default function GestionarPedidos() {
                 {filtroCliente && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 bg-secondary/10 text-secondary text-sm rounded-full">
                     Cliente: {searchCliente}
-                    <button onClick={limpiarFiltroCliente} className="hover:text-secondary">
+                    <button type="button" aria-label={`Quitar el filtro de cliente ${searchCliente}`} onClick={limpiarFiltroCliente} className="hover:text-secondary">
                       <X size={14} />
                     </button>
                   </span>
                 )}
                 {filtroEstado && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded-full capitalize">
+                  /* text-gray-700 quedaba casi invisible en modo oscuro; los tokens del tema sí se invierten */
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary text-sm rounded-full capitalize">
                     Estado: {filtroEstado}
-                    <button onClick={() => setFiltroEstado('')} className="hover:text-gray-900">
+                    <button type="button" aria-label={`Quitar el filtro de estado ${filtroEstado}`} onClick={() => setFiltroEstado('')} className="hover:opacity-70">
                       <X size={14} />
                     </button>
                   </span>

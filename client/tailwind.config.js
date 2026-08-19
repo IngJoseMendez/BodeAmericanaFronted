@@ -26,6 +26,7 @@ export default {
         success: token('success'),
         warning: token('warning'),
         error: token('error'),
+        'error-fuerte': token('error-fuerte'),
         info: token('info'),
         cream: token('cream'),
         surface: token('surface'),

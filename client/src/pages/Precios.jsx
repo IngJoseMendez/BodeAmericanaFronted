@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm } from '../components/common';
 import { preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
-function PrecioInput({ value, onChange, required }) {
+function PrecioInput({ value, onChange, required, id }) {
   const [focused, setFocused] = useState(false);
   const [raw, setRaw] = useState('');
 
@@ -33,6 +33,7 @@ function PrecioInput({ value, onChange, required }) {
 
   return (
     <input
+      id={id}
       type="text"
       inputMode="numeric"
       value={focused ? (raw ? new Intl.NumberFormat('es-CO').format(raw) : '') : fmt(value)}
@@ -123,13 +124,12 @@ export default function Precios() {
   };
 
   return (
-    <Layout>
+    /* El título lo pinta ya la barra superior del Layout; el <h1> propio dejaba
+       dos encabezados de nivel 1 en la misma pantalla. */
+    <Layout title="Precios Preestablecidos">
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-display font-bold text-primary">Precios Preestablecidos</h1>
-            <p className="text-sm text-muted mt-1">Define precios por combinación de categoría y calidad. Se autocompletarán al finalizar un contenedor.</p>
-          </div>
+        <div className="flex justify-between items-center gap-4">
+          <p className="text-sm text-muted">Define precios por combinación de categoría y calidad. Se autocompletarán al finalizar un contenedor.</p>
           <Button variant="secondary" icon={Plus} onClick={openCreate}>Agregar Precio</Button>
         </div>
 
@@ -139,18 +139,19 @@ export default function Precios() {
               <p className="text-center text-muted py-10">Cargando...</p>
             ) : precios.length === 0 ? (
               <div className="text-center py-14">
-                <Tag size={40} className="mx-auto text-muted/40 mb-3" />
+                <Tag size={40} className="mx-auto text-muted/40 mb-3" aria-hidden="true" />
                 <p className="text-muted">No hay precios configurados</p>
                 <Button variant="ghost" size="sm" className="mt-3" onClick={openCreate}>Agregar el primero</Button>
               </div>
             ) : (
               <table className="w-full text-sm">
+                <caption className="sr-only">Precios preestablecidos por categoría y calidad</caption>
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left px-5 py-3 text-muted font-medium">Categoría</th>
-                    <th className="text-left px-5 py-3 text-muted font-medium">Calidad</th>
-                    <th className="text-right px-5 py-3 text-muted font-medium">Precio</th>
-                    <th className="px-5 py-3" />
+                    <th scope="col" className="text-left px-5 py-3 text-muted font-medium">Categoría</th>
+                    <th scope="col" className="text-left px-5 py-3 text-muted font-medium">Calidad</th>
+                    <th scope="col" className="text-right px-5 py-3 text-muted font-medium">Precio</th>
+                    <th scope="col" className="px-5 py-3"><span className="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -160,12 +161,15 @@ export default function Precios() {
                       <td className="px-5 py-3 capitalize">{p.calidad}</td>
                       <td className="px-5 py-3 text-right font-mono font-semibold text-primary">{formatCurrency(p.precio)}</td>
                       <td className="px-5 py-3">
+                        {/* Botones de solo icono: sin aria-label el lector de
+                            pantalla decía "botón" en los dos, sin decir de qué
+                            precio ni si editaba o borraba. */}
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-secondary/10 text-muted hover:text-secondary transition-colors">
-                            <Edit2 size={15} />
+                          <button type="button" onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-secondary/10 text-muted hover:text-secondary transition-colors" title="Editar precio" aria-label={`Editar el precio de ${p.categoria} / ${p.calidad}`}>
+                            <Edit2 size={15} aria-hidden="true" />
                           </button>
-                          <button onClick={() => handleDelete(p)} className="p-1.5 rounded-lg hover:bg-red-50 text-muted hover:text-red-500 transition-colors">
-                            <Trash2 size={15} />
+                          <button type="button" onClick={() => handleDelete(p)} className="p-1.5 rounded-lg hover:bg-red-50 text-muted hover:text-red-500 transition-colors" title="Eliminar precio" aria-label={`Eliminar el precio de ${p.categoria} / ${p.calidad}`}>
+                            <Trash2 size={15} aria-hidden="true" />
                           </button>
                         </div>
                       </td>
@@ -178,59 +182,68 @@ export default function Precios() {
         </Card>
       </div>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">
-              {editTarget ? 'Editar Precio' : 'Nuevo Precio Preestablecido'}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-primary mb-1">Categoría *</label>
-                <select
-                  value={form.categoria}
-                  onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                >
-                  <option value="">Seleccionar temporada...</option>
-                  {temporadas.map((t) => (
-                    <option key={t.id} value={t.nombre}>{t.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-primary mb-1">Calidad *</label>
-                <select
-                  value={form.calidad}
-                  onChange={(e) => setForm({ ...form, calidad: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                >
-                  <option value="">Seleccionar...</option>
-                  {calidades.map((q) => (
-                    <option key={q.id} value={q.nombre}>{q.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-primary mb-1">Precio *</label>
-                <PrecioInput
-                  value={form.precio}
-                  onChange={(v) => setForm({ ...form, precio: v })}
-                  required
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-                <Button type="submit" variant="secondary" disabled={saving}>
-                  {saving ? 'Guardando...' : editTarget ? 'Actualizar' : 'Guardar'}
-                </Button>
-              </div>
-            </form>
+      {/* Este diálogo estaba hecho a mano con un <div fixed>: no cerraba con
+          Escape ni al hacer clic fuera, no atrapaba el foco y no devolvía el foco
+          al botón que lo abrió. El componente Modal —el que usa el resto de la
+          app— ya resuelve todo eso. */}
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editTarget ? 'Editar Precio' : 'Nuevo Precio Preestablecido'}
+        size="sm"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="precio-categoria" className="block text-sm font-medium text-primary mb-1">Categoría *</label>
+            <select
+              id="precio-categoria"
+              value={form.categoria}
+              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              required
+            >
+              {/* La etiqueta dice "Categoría" y la opción vacía decía
+                  "Seleccionar temporada...": mismo dato con dos nombres dentro
+                  del mismo formulario. En Productos esta lista se llama
+                  "Categorías", así que ese es el nombre que se usa. */}
+              <option value="">Seleccionar categoría...</option>
+              {temporadas.map((t) => (
+                <option key={t.id} value={t.nombre}>{t.nombre}</option>
+              ))}
+            </select>
           </div>
-        </div>
-      )}
+          <div>
+            <label htmlFor="precio-calidad" className="block text-sm font-medium text-primary mb-1">Calidad *</label>
+            <select
+              id="precio-calidad"
+              value={form.calidad}
+              onChange={(e) => setForm({ ...form, calidad: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              required
+            >
+              <option value="">Seleccionar calidad...</option>
+              {calidades.map((q) => (
+                <option key={q.id} value={q.nombre}>{q.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="precio-valor" className="block text-sm font-medium text-primary mb-1">Precio *</label>
+            <PrecioInput
+              id="precio-valor"
+              value={form.precio}
+              onChange={(v) => setForm({ ...form, precio: v })}
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button type="submit" variant="secondary" disabled={saving}>
+              {saving ? 'Guardando...' : editTarget ? 'Actualizar' : 'Guardar'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </Layout>
   );
 }

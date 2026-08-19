@@ -21,6 +21,45 @@ const cellVal = (v) => {
   return v;
 };
 
+// Antes cada línea del CSV se partía con split(/[,;]/): una razón social entre comillas
+// ("Comercializadora Pérez, S.A.S.") generaba una columna de más y desplazaba todo lo
+// que venía después, monto incluido. Y en un CSV exportado desde Excel en configuración
+// colombiana (separador ";", decimal ",") partía los montos por la mitad.
+// Ahora se decide el separador mirando sólo lo que está FUERA de comillas.
+function detectarSeparador(linea) {
+  let comas = 0, puntoYComa = 0, dentro = false;
+  for (const c of linea) {
+    if (c === '"') { dentro = !dentro; continue; }
+    if (dentro) continue;
+    if (c === ',') comas++;
+    else if (c === ';') puntoYComa++;
+  }
+  return puntoYComa > comas ? ';' : ',';
+}
+
+// Parte una línea respetando las comillas dobles ("" es una comilla literal dentro del campo)
+function partirCSV(linea, sep) {
+  const celdas = [];
+  let actual = '', dentro = false;
+  for (let i = 0; i < linea.length; i++) {
+    const c = linea[i];
+    if (dentro) {
+      if (c !== '"') { actual += c; }
+      else if (linea[i + 1] === '"') { actual += '"'; i++; }
+      else { dentro = false; }
+    } else if (c === '"') {
+      dentro = true;
+    } else if (c === sep) {
+      celdas.push(actual.trim());
+      actual = '';
+    } else {
+      actual += c;
+    }
+  }
+  celdas.push(actual.trim());
+  return celdas;
+}
+
 // Detecta los índices de columna por nombre de encabezado (tolerante a acentos/orden)
 function detectarColumnas(headers) {
   const idx = { fecha: -1, contenedor: -1, proveedor: -1, cliente: -1, precio_total: -1, costo_total: -1, precio_unitario: -1, costo_unitario: -1, cantidad: -1 };
@@ -56,6 +95,9 @@ export default function Historico() {
   const [anios, setAnios] = useState([]);
   const [anio, setAnio] = useState('');
   const [reporte, setReporte] = useState(null);
+  const [cargandoReporte, setCargandoReporte] = useState(false);
+  const [errorReporte, setErrorReporte] = useState('');
+  const [reintento, setReintento] = useState(0);
 
   const cargarAnios = async () => {
     try {
@@ -66,10 +108,36 @@ export default function Historico() {
   };
   useEffect(() => { cargarAnios(); }, []);
 
+  // Al cambiar rápido de año quedaban dos peticiones en vuelo y ganaba la que
+  // respondiera última, no la del año elegido: podían verse las cifras de 2024
+  // bajo el rótulo 2025. `vigente` descarta la respuesta que ya no corresponde.
+  // Además se limpia el reporte anterior para no mostrar cifras viejas como si
+  // fueran las del año nuevo mientras llega la respuesta.
   useEffect(() => {
     if (tab !== 'reporte' || !anio) return;
-    historicoApi.getReporte({ anio }).then(setReporte).catch(err => addToast(err.message, 'error'));
-  }, [tab, anio]);
+    let vigente = true;
+    setCargandoReporte(true);
+    setErrorReporte('');
+    setReporte(null);
+    historicoApi.getReporte({ anio })
+      .then(r => {
+        if (!vigente) return;
+        // Una respuesta vacía (204 o cuerpo en blanco) llega aquí como null. Sin
+        // esta rama `reporte` se quedaba en null con la carga ya terminada y la
+        // pantalla mostraba "Cargando el reporte de…" para siempre, sin error ni
+        // botón de reintentar.
+        if (r) setReporte(r);
+        else setErrorReporte('El servidor no devolvió datos del reporte.');
+      })
+      .catch(err => {
+        if (!vigente) return;
+        const msg = err.message || 'No se pudo cargar el reporte.';
+        setErrorReporte(msg);
+        addToast(msg, 'error');
+      })
+      .finally(() => { if (vigente) setCargandoReporte(false); });
+    return () => { vigente = false; };
+  }, [tab, anio, reintento]);
 
   const buildRow = (cells, idx) => {
     const g = (i) => (i >= 0 ? cellVal(cells[i]) : undefined);
@@ -115,8 +183,13 @@ export default function Historico() {
         const text = await file.text();
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         if (!lines.length) { addToast('Archivo vacío', 'error'); return; }
-        headers = lines[0].split(/[,;]/).map(c => c.trim().replace(/^"|"$/g, ''));
-        lines.slice(1).forEach(line => rawRows.push(line.split(/[,;]/).map(c => c.trim().replace(/^"|"$/g, ''))));
+        // El separador se decide con la primera línea que tenga alguno: si el
+        // archivo trae una fila de título suelta ("Ventas 2024") el encabezado
+        // no lleva separadores y asumir la coma partía mal todo un archivo ";".
+        const guia = lines.find(l => /[;,]/.test(l)) || lines[0];
+        const sep = detectarSeparador(guia);
+        headers = partirCSV(lines[0], sep);
+        lines.slice(1).forEach(line => rawRows.push(partirCSV(line, sep)));
       }
 
       const idx = detectarColumnas(headers);
@@ -242,6 +315,15 @@ export default function Historico() {
     mes: MESES[(+m.mes) - 1] || m.mes, Ventas: +m.ventas, Costo: +m.costo,
   })), [reporte]);
 
+  // Patrón ARIA de tablist: las flechas mueven la selección y el foco la acompaña
+  const onTabKeyDown = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const siguiente = tab === 'subir' ? 'reporte' : 'subir';
+    setTab(siguiente);
+    requestAnimationFrame(() => document.getElementById(`tab-${siguiente}`)?.focus());
+  };
+
   const t = reporte?.totales || {};
   const selectCls = 'px-4 py-2.5 rounded-xl border border-border bg-surface text-primary focus:outline-none focus:ring-2 focus:ring-secondary/30';
 
@@ -257,14 +339,20 @@ export default function Historico() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-border">
-          <button onClick={() => setTab('subir')} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === 'subir' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>Subir Excel</button>
-          <button onClick={() => setTab('reporte')} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === 'reporte' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>Reportes</button>
+        {/* Tabs: la pestaña activa solo se distinguía por color, así que un lector de
+            pantalla no anunciaba cuál estaba seleccionada. Con role=tab/aria-selected
+            sí lo dice, y las flechas ← → cambian de pestaña como es de esperar. */}
+        <div role="tablist" aria-label="Secciones de Histórico" className="flex gap-1 border-b border-border">
+          <button role="tab" id="tab-subir" aria-selected={tab === 'subir'} aria-controls="panel-historico" tabIndex={tab === 'subir' ? 0 : -1}
+            onClick={() => setTab('subir')} onKeyDown={onTabKeyDown}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === 'subir' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>Subir Excel</button>
+          <button role="tab" id="tab-reporte" aria-selected={tab === 'reporte'} aria-controls="panel-historico" tabIndex={tab === 'reporte' ? 0 : -1}
+            onClick={() => setTab('reporte')} onKeyDown={onTabKeyDown}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === 'reporte' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>Reportes</button>
         </div>
 
         {tab === 'subir' ? (
-          <div className="space-y-6">
+          <div id="panel-historico" role="tabpanel" aria-labelledby="tab-subir" className="space-y-6">
             <Card>
               <CardBody>
                 <div className="flex flex-wrap items-center gap-3">
@@ -353,7 +441,7 @@ export default function Historico() {
             )}
           </div>
         ) : (
-          <div className="space-y-6">
+          <div id="panel-historico" role="tabpanel" aria-labelledby="tab-reporte" className="space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Año</label>
@@ -367,6 +455,15 @@ export default function Historico() {
 
             {anios.length === 0 ? (
               <Card><CardBody><p className="text-center text-muted py-8">Aún no hay datos históricos. Sube un Excel en la pestaña "Subir Excel".</p></CardBody></Card>
+            ) : errorReporte ? (
+              <Card><CardBody className="text-center py-8 space-y-3">
+                <p className="text-muted">No se pudo cargar el reporte de {anio}.</p>
+                <Button variant="ghost" onClick={() => setReintento(n => n + 1)}>Reintentar</Button>
+              </CardBody></Card>
+            ) : (cargandoReporte || !reporte) ? (
+              /* Antes no había señal de carga: se seguían viendo las cifras del año
+                 anterior, y sin reporte `fmt(undefined)` pintaba "$0" como dato real */
+              <Card><CardBody><p className="text-center text-muted py-8">Cargando el reporte de {anio}…</p></CardBody></Card>
             ) : (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

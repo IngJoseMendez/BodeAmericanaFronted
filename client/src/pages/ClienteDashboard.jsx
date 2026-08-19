@@ -17,6 +17,8 @@ export default function ClienteDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [quickRebuyLoading, setQuickRebuyLoading] = useState(false);
+  // Si falla la consulta de cartera hay que decirlo: "$0" se lee como "no debo nada"
+  const [carteraError, setCarteraError] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -25,15 +27,19 @@ export default function ClienteDashboard() {
 
   const loadStats = async () => {
     try {
+      // El catch de la cartera devolvía null y la tarjeta pintaba "$0", indistinguible
+      // de una deuda saldada. Marcamos el fallo para avisarlo en pantalla.
+      let falloCartera = false;
       const [pedidosData, catalogoData, carteraData, historialData] = await Promise.all([
         pedidosApi.getAll(),
         catalogoApi.getAll({ limite: 1 }),
-        clienteApi.getCartera().catch(() => null),
+        clienteApi.getCartera().catch(() => { falloCartera = true; return null; }),
         clienteApi.getHistorial().catch(() => [])
       ]);
-      
+      setCarteraError(falloCartera);
+
       const pendientes = pedidosData.filter(p => p.estado === 'pendiente').length;
-      
+
       setStats({
         pedidosPendientes: pendientes,
         misPedidos: pedidosData.slice(0, 5),
@@ -43,6 +49,9 @@ export default function ClienteDashboard() {
       });
     } catch (err) {
       console.error(err);
+      // Si falla la carga general tampoco hubo cartera: no podemos afirmar que la deuda es $0
+      setCarteraError(true);
+      addToast('No pudimos cargar tu información. Revisa tu conexión e intenta de nuevo.', 'error');
     } finally {
       setLoading(false);
     }
@@ -104,6 +113,17 @@ export default function ClienteDashboard() {
   return (
     <Layout title="Mi Cuenta" subtitle="Resumen de tu actividad">
       <div className="space-y-6">
+        {carteraError && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl border border-amber-500/40 bg-amber-500/10">
+            <p className="text-sm text-amber-700">
+              No pudimos consultar tu estado de cuenta. <strong>No quiere decir que tu saldo sea $0</strong>: vuelve a intentarlo en un momento.
+            </p>
+            <Button variant="ghost" size="sm" onClick={loadStats} icon={RefreshCw}>
+              Reintentar
+            </Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Link to="/catalogo">
             <Card hover className="cursor-pointer">
@@ -141,7 +161,11 @@ export default function ClienteDashboard() {
                 </div>
                 <div>
                   <p className="text-xs text-muted">Mi Deuda</p>
-                  <p className="text-xl font-bold text-primary">{formatCurrency(stats.cartera?.saldo_adeudo || 0)}</p>
+                  {carteraError ? (
+                    <p className="text-base font-semibold text-amber-600" title="No se pudo consultar tu saldo">Sin datos</p>
+                  ) : (
+                    <p className="text-xl font-bold text-primary">{formatCurrency(stats.cartera?.saldo_adeudo || 0)}</p>
+                  )}
                 </div>
               </CardBody>
             </Card>

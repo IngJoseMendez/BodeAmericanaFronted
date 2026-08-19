@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { LogOut, Menu, ChevronRight, Command } from 'lucide-react';
 import { Button } from '../common';
 import { CommandPalette } from '../common/CommandPalette';
 import { useAuth } from '../../context/AuthContext';
 
-// Mapa de rutas a nombres legibles para breadcrumbs
+// Mapa de rutas a nombres legibles. Sirve para dos cosas: el breadcrumb y el
+// título de la barra superior cuando la pantalla no pasa `title`. Faltaban aquí
+// media docena de rutas reales (Despachos, Gastos, Histórico…), así que en esas
+// pantallas la barra quedaba sin título y sin ruta de navegación.
 const ROUTE_NAMES = {
   '/':                     'Dashboard',
   '/pacas':                'Inventario',
@@ -15,7 +18,11 @@ const ROUTE_NAMES = {
   '/ventas':               'Ventas',
   '/gestionar-pedidos':    'Pedidos',
   '/cotizaciones':         'Cotizaciones',
+  '/despachos':            'Despachos',
+  '/cuentas-pagar':        'Cuentas por Pagar',
   '/cartera':              'Cartera',
+  '/entregables':          'Entregables',
+  '/deuda-masiva':         'Deuda masiva',
   '/reportes':             'Reportes',
   '/inteligencia-negocio': 'Analytics',
   '/catalogo':             'Catálogo',
@@ -23,7 +30,12 @@ const ROUTE_NAMES = {
   '/mi-cartera':           'Mi Cartera',
   '/tipos-paca':           'Productos',
   '/precios':              'Precios Preestablecidos',
+  '/lista-precios':        'Lista de Precios',
   '/precios-promocion':    'Precios de Promoción',
+  '/cuentas':              'Cuentas',
+  '/gastos':               'Gastos',
+  '/historico':            'Histórico',
+  '/utilidad':             'Utilidad',
   '/gestion-usuarios':     'Usuarios',
   '/auditoria':            'Auditoría',
 };
@@ -46,16 +58,36 @@ function Breadcrumbs({ location }) {
 
 export function Layout({ children, title, subtitle, actions }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem('sidebar-collapsed') === 'true'
-  );
+  // Con el almacenamiento del sitio bloqueado, tocar localStorage lanza
+  // SecurityError; al ocurrir dentro del inicializador de useState reventaba el
+  // render de todas las pantallas. Sin preferencia guardada, sidebar expandido.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
-    localStorage.setItem('sidebar-collapsed', sidebarCollapsed);
+    try {
+      localStorage.setItem('sidebar-collapsed', sidebarCollapsed);
+    } catch {
+      // almacenamiento bloqueado: el sidebar funciona, solo no recuerda el estado
+    }
   }, [sidebarCollapsed]);
-  const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useAuth();
+
+  // Varias pantallas no pasan `title` y dibujan su propio h1 dentro del
+  // contenido; la barra superior quedaba con un <h1> vacío. Caemos al nombre de
+  // la ruta para que la cabecera nunca quede anónima.
+  const tituloBarra = title || ROUTE_NAMES[location.pathname] || '';
+  // …pero ese respaldo va solo para el lector de pantalla: Gastos, Histórico,
+  // Deuda masiva, Lista de Precios y Promociones ya pintan su propio <h1> dentro
+  // del contenido, y mostrarlo también arriba dejaba el mismo título dos veces
+  // en pantalla. Con `title` explícito sí se ve, como siempre.
+  const tituloSoloParaLectores = !title && !!tituloBarra;
 
   const handleLogout = () => {
     logout();
@@ -63,6 +95,16 @@ export function Layout({ children, title, subtitle, actions }) {
 
   return (
     <div className="flex min-h-screen bg-cream bg-pattern">
+      {/* El menú lateral pone dos docenas de enlaces por delante del contenido:
+          con teclado había que tabularlos todos en CADA página. El main de abajo
+          ya tenía el id y el tabIndex preparados como destino; faltaba el enlace. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-xl focus:bg-secondary focus:text-on-primary focus:font-semibold focus:shadow-xl"
+      >
+        Saltar al contenido
+      </a>
+
       <Sidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -95,9 +137,17 @@ export function Layout({ children, title, subtitle, actions }) {
 
             {/* Title + breadcrumbs */}
             <div className="flex-1 min-w-0">
-              <h1 className="font-display text-xl sm:text-2xl text-primary truncate leading-tight">
-                {title}
-              </h1>
+              {tituloBarra && (
+                <h1
+                  className={
+                    tituloSoloParaLectores
+                      ? 'sr-only'
+                      : 'font-display text-xl sm:text-2xl text-primary truncate leading-tight'
+                  }
+                >
+                  {tituloBarra}
+                </h1>
+              )}
               {subtitle
                 ? <p className="text-xs text-muted mt-0.5 hidden sm:block">{subtitle}</p>
                 : <Breadcrumbs location={location} />

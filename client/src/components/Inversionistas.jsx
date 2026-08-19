@@ -27,6 +27,9 @@ export function Inversionistas() {
   // Alta / edición de aporte
   const [aporteForm, setAporteForm] = useState({ inversionista_id: '', aporte_cop: '', aporte_usd: '' });
   const [editAporte, setEditAporte] = useState(null);
+  // Un aporte es un registro de dinero: sin esta bandera, un doble clic lo
+  // guarda dos veces y el reparto de utilidades queda inflado.
+  const [guardando, setGuardando] = useState(false);
 
   // Gestión del catálogo
   const [gestorOpen, setGestorOpen] = useState(false);
@@ -100,11 +103,13 @@ export function Inversionistas() {
 
   const guardarAporte = async (e) => {
     e.preventDefault();
+    if (guardando) return;
     if (!aporteForm.inversionista_id) { addToast('Elige el inversionista', 'error'); return; }
     const cop = parseMonto(aporteForm.aporte_cop);
     const dol = parseMonto(aporteForm.aporte_usd);
     if (cop <= 0 && dol <= 0) { addToast('Escribe el aporte en pesos o en dólares', 'error'); return; }
     try {
+      setGuardando(true);
       await inversionistasApi.crearAporte({
         inversionista_id: Number(aporteForm.inversionista_id),
         contenedor_id: Number(contSel),
@@ -117,6 +122,7 @@ export function Inversionistas() {
       cargarContenedor();
       cargarBase();
     } catch (err) { addToast(err.message, 'error'); }
+    finally { setGuardando(false); }
   };
 
   const guardarEdicion = async () => {
@@ -371,8 +377,8 @@ export function Inversionistas() {
                   value={aporteForm.aporte_usd}
                   onChange={(e) => setAporteForm({ ...aporteForm, aporte_usd: e.target.value })} />
               </div>
-              <Button type="submit" disabled={!aporteForm.inversionista_id}>
-                <Plus size={15} className="mr-1" /> Agregar
+              <Button type="submit" disabled={guardando || !aporteForm.inversionista_id}>
+                <Plus size={15} className="mr-1" /> {guardando ? 'Guardando…' : 'Agregar'}
               </Button>
               {disponibles.length === 0 && inversionistas.length > 0 && (
                 <p className="text-xs text-muted w-full">

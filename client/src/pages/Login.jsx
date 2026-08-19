@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardBody, Button } from '../components/common';
-import { Package, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Package, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -44,41 +44,80 @@ export default function Login() {
             <h2 className="font-display text-xl text-center mb-6">Iniciar Sesión</h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* role="alert" para que el lector de pantalla anuncie el fallo en
+                  cuanto aparece, y colores de error (antes era cian decorativo,
+                  el mismo tono que usa la app para adornos).
+
+                  El fondo y el borde van en `style` y NO en clases: en este
+                  proyecto tailwind.config.js declara los colores como
+                  'var(--color-error)', y Tailwind 3 no sabe aplicar alfa a un
+                  var(), así que descarta la utilidad entera — comprobado
+                  generando el CSS: `bg-error/10` y `border-error/30` no producen
+                  ninguna regla. Con clases, el aviso volvía a quedarse sin fondo
+                  y con el borde gris por defecto, que es justo lo que se quería
+                  arreglar. Las variables CSS sí funcionan (es lo que hace
+                  ConfirmDialog). */}
               {error && (
-                <div className="p-3 bg-accent/10 text-accent rounded-xl text-sm">
-                  {error}
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 p-3 border text-error rounded-xl text-sm"
+                  style={{
+                    backgroundColor: 'transparent',
+                    background: 'color-mix(in srgb, var(--color-error) 12%, transparent)',
+                    borderColor: 'var(--color-error)',
+                  }}
+                >
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>{error}</span>
                 </div>
               )}
 
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                <input
-                  type="text"
-                  placeholder="Usuario"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                />
+              <div>
+                <label htmlFor="login-usuario" className="block text-sm font-medium text-primary mb-1">
+                  Usuario
+                </label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" aria-hidden="true" />
+                  <input
+                    id="login-usuario"
+                    name="username"
+                    type="text"
+                    placeholder="Usuario"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-border bg-surface text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Contraseña"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+              <div>
+                <label htmlFor="login-password" className="block text-sm font-medium text-primary mb-1">
+                  Contraseña
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" aria-hidden="true" />
+                  <input
+                    id="login-password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Contraseña"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-12 pr-12 py-3 rounded-xl border border-border bg-surface text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
 
               <Button

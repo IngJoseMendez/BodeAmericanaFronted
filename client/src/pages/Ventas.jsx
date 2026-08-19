@@ -1,11 +1,14 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
-import { Plus, Search, Trash2, ShoppingCart, Package, User, Calendar, CreditCard, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
+import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
+// autoTable se usaba en descargarPDF sin importarlo: el botón "Descargar PDF"
+// reventaba con ReferenceError y para la usuaria simplemente no hacía nada.
+import autoTable from 'jspdf-autotable';
 import { hoy, formatFechaCorta } from '../lib/fecha';
 import { parseMonto, formatCOP } from '../lib/money';
 
@@ -18,6 +21,180 @@ function useDebounce(value, delay) {
   }, [value, delay]);
 
   return debouncedValue;
+}
+
+/**
+ * Buscador de cliente con soporte de teclado.
+ *
+ * Antes cada opción era un <div onClick> sin role ni tabIndex: con el teclado no
+ * había ninguna forma de elegir cliente y, por tanto, de registrar una venta o
+ * una reserva. Ahora es un combobox con listbox real (flechas para moverse,
+ * Enter para elegir, Escape para cerrar) y el lector de pantalla anuncia cuántas
+ * coincidencias hay. Estaba duplicado en los dos modales; una sola copia evita
+ * que vuelvan a divergir.
+ */
+function BuscadorCliente({ id, clientes, clienteId, onSelect, onClear }) {
+  const [busqueda, setBusqueda] = useState('');
+  const [abierta, setAbierta] = useState(false);
+  const [indice, setIndice] = useState(0);
+  const contenedorRef = useRef(null);
+
+  const seleccionado = clientes.find(c => String(c.id) === String(clienteId));
+
+  const coincidencias = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return [];
+    return clientes
+      .filter(c =>
+        c.nombre?.toLowerCase().includes(q) ||
+        c.ciudad?.toLowerCase().includes(q) ||
+        c.telefono?.toLowerCase().includes(q)
+      )
+      .slice(0, 10);
+  }, [clientes, busqueda]);
+
+  useEffect(() => {
+    const clicFuera = (e) => {
+      if (contenedorRef.current && !contenedorRef.current.contains(e.target)) setAbierta(false);
+    };
+    document.addEventListener('mousedown', clicFuera);
+    return () => document.removeEventListener('mousedown', clicFuera);
+  }, []);
+
+  const listaId = `${id}-lista`;
+  const listaVisible = abierta && Boolean(busqueda) && !clienteId;
+
+  const elegir = (c) => {
+    if (!c) return;
+    onSelect(c);
+    setBusqueda('');
+    setAbierta(false);
+    setIndice(0);
+  };
+
+  const alTeclear = (e) => {
+    if (e.key === 'Escape') {
+      // Modal escucha Escape en `document`. Sin stopPropagation, el Escape que
+      // sólo pretendía cerrar la lista de clientes seguía subiendo y cerraba
+      // TODO el modal de la venta: se perdían las pacas ya seleccionadas y el
+      // precio escrito. Si la lista no está abierta se deja pasar, para que
+      // Escape siga cerrando el modal como en el resto de la aplicación.
+      if (listaVisible) {
+        e.stopPropagation();
+        setAbierta(false);
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      // Sin este preventDefault, pulsar Enter en el buscador enviaba el
+      // formulario de la venta con el cliente todavía sin elegir.
+      e.preventDefault();
+      if (listaVisible) elegir(coincidencias[Math.min(indice, coincidencias.length - 1)]);
+      return;
+    }
+    if (coincidencias.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); setAbierta(true);
+      setIndice(i => (i + 1) % coincidencias.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); setAbierta(true);
+      setIndice(i => (i - 1 + coincidencias.length) % coincidencias.length);
+    }
+  };
+
+  return (
+    <div className="relative" ref={contenedorRef}>
+      <label htmlFor={id} className="block text-sm font-medium text-primary mb-1">
+        Cliente <span className="text-error" aria-hidden="true">*</span>
+        <span className="sr-only">(obligatorio)</span>
+      </label>
+
+      {clienteId ? (
+        <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
+          <div className="p-2 bg-secondary/20 rounded-lg">
+            <User className="w-4 h-4 text-secondary" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm text-secondary truncate">{seleccionado?.nombre || 'Cliente'}</p>
+            <p className="text-xs text-muted truncate">{seleccionado?.ciudad || ''}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { onClear(); setBusqueda(''); setAbierta(false); }}
+            title="Elegir otro cliente"
+            aria-label={`Quitar a ${seleccionado?.nombre || 'el cliente'} y buscar otro`}
+            className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-muted" aria-hidden="true" />
+          </div>
+          <input
+            id={id}
+            type="text"
+            role="combobox"
+            autoComplete="off"
+            aria-expanded={listaVisible}
+            aria-controls={listaId}
+            aria-autocomplete="list"
+            aria-activedescendant={listaVisible && coincidencias.length > 0 ? `${listaId}-${indice}` : undefined}
+            placeholder="Escribe el nombre, la ciudad o el teléfono"
+            value={busqueda}
+            onChange={(e) => { setBusqueda(e.target.value); setAbierta(true); setIndice(0); }}
+            onFocus={() => busqueda && setAbierta(true)}
+            onKeyDown={alTeclear}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-surface text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+          />
+        </div>
+      )}
+
+      {listaVisible && (
+        <ul
+          id={listaId}
+          role="listbox"
+          aria-label="Clientes encontrados"
+          className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+        >
+          {coincidencias.length === 0 ? (
+            <li className="px-4 py-3 text-sm text-muted">Ningún cliente coincide con “{busqueda}”.</li>
+          ) : coincidencias.map((c, i) => (
+            <li key={c.id} role="presentation">
+              <button
+                type="button"
+                role="option"
+                id={`${listaId}-${i}`}
+                aria-selected={i === indice}
+                tabIndex={-1}
+                onMouseEnter={() => setIndice(i)}
+                onClick={() => elegir(c)}
+                className={`w-full text-left px-4 py-3 transition-colors duration-150 border-b border-border/50 last:border-b-0 ${
+                  i === indice ? 'bg-primary/10' : 'hover:bg-primary/5'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <User className="w-4 h-4 text-muted" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm text-primary truncate">{c.nombre}</p>
+                    <p className="text-xs text-muted truncate">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
+                  </div>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <span className="sr-only" role="status" aria-live="polite">
+        {listaVisible ? `${coincidencias.length} cliente(s) encontrados` : ''}
+      </span>
+    </div>
+  );
 }
 
 export default function Ventas() {
@@ -34,38 +211,44 @@ export default function Ventas() {
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
   const [despachoModalOpen, setDespachoModalOpen] = useState(false);
-  const [ventaCompletada, setVentaCompletada] = useState(null);
   const [despachoData, setDespachoData] = useState(null);
-  const [filtroVista, setFiltroVista] = useState('disponible'); // disponible, reservada, ventas
+  const [filtroVista, setFiltroVista] = useState('disponible'); // 'disponible' = ventas registradas | 'reservada'
   const [reservasActivas, setReservasActivas] = useState([]);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [reservaForm, setReservaForm] = useState({ cliente_id: '', cantidad: 1, notas: '', dias_expiracion: 7 });
-  const [pacasReservadas, setPacasReservadas] = useState([]);
   const [pagina, setPagina] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [totalVentas, setTotalVentas] = useState(0);
+  const [exportando, setExportando] = useState(false);
+  // Cuántas pacas disponibles hay en total frente a las que se trajeron: el
+  // backend limita la consulta y sin este dato el modal aparentaba tener todo
+  // el inventario cuando en realidad mostraba sólo una parte.
+  const [totalPacasDisponibles, setTotalPacasDisponibles] = useState(0);
   const { addToast } = useToast();
   const confirm = useConfirm();
-  
+
+  // Evita que dos peticiones en vuelo se pisen: si el usuario cambia el filtro
+  // dos veces seguidas, gana la última pedida, no la última en responder.
+  const peticionVentasRef = useRef(0);
+
   // Filtros
   const [busqueda, setBusqueda] = useState('');
   const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
   const [filtroFechaFin, setFiltroFechaFin] = useState('');
   const [filtroMontoMin, setFiltroMontoMin] = useState('');
   const [filtroMontoMax, setFiltroMontoMax] = useState('');
-  
-  // Buscador cliente en modal
-  const [busquedaCliente, setBusquedaCliente] = useState('');
-  const [showListaClientes, setShowListaClientes] = useState(false);
-  const clienteListRef = useRef(null);
-  
-  // Buscador cliente en modal reserva
-  const [busquedaClienteReserva, setBusquedaClienteReserva] = useState('');
-  const [showListaClientesReserva, setShowListaClientesReserva] = useState(false);
-  const clienteReservaListRef = useRef(null);
-  
+
   const debouncedBuscarPacas = useDebounce(buscarPacas, 300);
   const debouncedBusqueda = useDebounce(busqueda, 350);
+
+  // Al vaciar un campo de monto, NumberInput devuelve la cadena "0", no "": sin
+  // esta normalización el botón "Limpiar" no desaparecía nunca y se seguía
+  // mandando al servidor un monto_min=0 que no filtra nada.
+  const montoFiltro = (v) => (parseMonto(v) > 0 ? v : '');
+  const montoMin = montoFiltro(filtroMontoMin);
+  const montoMax = montoFiltro(filtroMontoMax);
+
+  const hayFiltros = Boolean(busqueda || filtroFechaInicio || filtroFechaFin || montoMin || montoMax);
 
   useEffect(() => {
     loadClientes();
@@ -76,40 +259,39 @@ export default function Ventas() {
   // resultado que ahora tiene 2 páginas mostraría una tabla vacía.
   useEffect(() => {
     setPagina(1);
-  }, [debouncedBusqueda, filtroFechaInicio, filtroFechaFin, filtroMontoMin, filtroMontoMax]);
+  }, [debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax]);
 
   useEffect(() => {
     loadVentas(pagina);
-  }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, filtroMontoMin, filtroMontoMax]);
+  }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax]);
 
-  // Cerrar lista clientes al hacer click fuera
+  // Al borrar la única venta de la última página quedaba una tabla vacía con el
+  // paginador marcando una página que ya no existe.
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (clienteListRef.current && !clienteListRef.current.contains(e.target)) {
-        setShowListaClientes(false);
-      }
-      if (clienteReservaListRef.current && !clienteReservaListRef.current.contains(e.target)) {
-        setShowListaClientesReserva(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (!loading && pagina > totalPaginas) setPagina(totalPaginas);
+  }, [loading, pagina, totalPaginas]);
 
   // El filtrado ocurre en el servidor: `ventas` ya llega filtrado y paginado.
   const ventasFiltradas = ventas;
 
-  const loadVentas = async (page = 1) => {
+  /** Filtros activos tal como los espera el backend (los vacíos los descarta `qs`). */
+  const filtrosVentas = () => ({
+    buscar: debouncedBusqueda || undefined,
+    fecha_inicio: filtroFechaInicio || undefined,
+    fecha_fin: filtroFechaFin || undefined,
+    monto_min: montoMin || undefined,
+    monto_max: montoMax || undefined,
+  });
+
+  // El valor por defecto es la página actual, no la 1: al eliminar una venta o
+  // registrar otra se llamaba `loadVentas()` a secas y la tabla saltaba al
+  // principio del histórico aunque el paginador siguiera marcando la página 5.
+  const loadVentas = async (page = pagina) => {
+    const miPeticion = ++peticionVentasRef.current;
+    setLoading(true);
     try {
-      const response = await ventasApi.getAll({
-        pagina: page,
-        limite: 20,
-        buscar: debouncedBusqueda || undefined,
-        fecha_inicio: filtroFechaInicio || undefined,
-        fecha_fin: filtroFechaFin || undefined,
-        monto_min: filtroMontoMin || undefined,
-        monto_max: filtroMontoMax || undefined,
-      });
+      const response = await ventasApi.getAll({ pagina: page, limite: 20, ...filtrosVentas() });
+      if (miPeticion !== peticionVentasRef.current) return;   // llegó tarde: ya hay otra consulta
       const data = response.data || response;
       setVentas(Array.isArray(data) ? data : []);
       setTotalPaginas(response.total_paginas || 1);
@@ -118,15 +300,19 @@ export default function Ventas() {
       // verdad y reasignarlo aquí devolvía siempre a la página 1, dejando el
       // histórico anterior a las últimas 20 ventas fuera de alcance.
     } catch (err) {
+      if (miPeticion !== peticionVentasRef.current) return;
       addToast(err.message, 'error');
     } finally {
-      setLoading(false);
+      if (miPeticion === peticionVentasRef.current) setLoading(false);
     }
 };
 
   const loadReservas = async () => {
     try {
-      const data = await reservasApi.getAll({ estado: 'activa' });
+      const respuesta = await reservasApi.getAll({ estado: 'activa' });
+      // Si el endpoint pasara a paginar, guardar el objeto crudo reventaría el
+      // .map de la tabla con "reservasActivas.map is not a function".
+      const data = Array.isArray(respuesta) ? respuesta : (respuesta?.data || []);
       setReservasActivas(data);
     } catch (err) {
       console.error(err);
@@ -136,7 +322,8 @@ export default function Ventas() {
   const loadClientes = async () => {
     try {
       const clientesRes = await clientesApi.getAll({ estado: 'activo' });
-      setClientes((clientesRes.data || clientesRes) || []);
+      const data = clientesRes.data || clientesRes;
+      setClientes(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     }
@@ -145,13 +332,17 @@ export default function Ventas() {
   const openModal = async () => {
     try {
       const [pacasRes, clientesRes] = await Promise.all([
-        pacasApi.getAll({ estado: 'disponible' }),
+        // Sin `limite` el backend devuelve sólo las 50 primeras pacas: el
+        // buscador del modal filtra en el navegador, así que una paca fuera de
+        // esas 50 no aparecía por más que se escribiera su referencia.
+        pacasApi.getAll({ estado: 'disponible', limite: 2000 }),
         clientesApi.getAll({ estado: 'activo' })
       ]);
       const pacasData = pacasRes.data || pacasRes;
       const clientesData = clientesRes.data || clientesRes;
-      
+
       setPacasDisponibles(Array.isArray(pacasData) ? pacasData : []);
+      setTotalPacasDisponibles(pacasRes.total ?? (Array.isArray(pacasData) ? pacasData.length : 0));
       setClientes(Array.isArray(clientesData) ? clientesData : []);
       setFormData({
         cliente_id: '',
@@ -159,6 +350,7 @@ export default function Ventas() {
         fecha: hoy()
       });
       setPacasSeleccionadas([]);
+      setBuscarPacas('');
       setError('');
       setModalOpen(true);
     } catch (err) {
@@ -171,7 +363,10 @@ export default function Ventas() {
     if (exists) {
       setPacasSeleccionadas(pacasSeleccionadas.filter(p => p.id !== paca.id));
     } else {
-      setPacasSeleccionadas([...pacasSeleccionadas, { ...paca, precio_venta: paca.precio_venta }]);
+      // El precio llega de la API como cadena (y a veces como null): normalizarlo
+      // aquí evita que el <input> pase de no controlado a controlado y que el
+      // total de la venta salga NaN.
+      setPacasSeleccionadas([...pacasSeleccionadas, { ...paca, precio_venta: parseMonto(paca.precio_venta) }]);
     }
   };
 
@@ -198,7 +393,7 @@ export default function Ventas() {
       return;
     }
     // Una paca sin precio saldría vendida en cero sin que nadie se entere.
-    const sinPrecio = pacasSeleccionadas.filter(p => !(parseFloat(p.precio_venta) > 0));
+    const sinPrecio = pacasSeleccionadas.filter(p => !(parseMonto(p.precio_venta) > 0));
     if (sinPrecio.length > 0) {
       setError(`${sinPrecio.length} paca(s) sin precio. Escribe el precio de venta antes de confirmar.`);
       return;
@@ -223,16 +418,17 @@ export default function Ventas() {
         tipo_pago: formData.tipo_pago
       };
       
-      setVentaCompletada(ventaInfo);
       setDespachoData(ventaInfo);
       setDespachoModalOpen(true);
-      
+
       addToast(`Venta registrada — ${pacasSeleccionadas.length} paca(s) por ${formatCurrency(totalVenta)}`, 'success');
       setModalOpen(false);
-      // Reset form after successful sale
+      // Reset del formulario tras la venta
       setFormData({ cliente_id: '', tipo_pago: 'contado', fecha: hoy() });
       setPacasSeleccionadas([]);
-      loadVentas();
+      // La venta recién creada es la más reciente y vive en la página 1: recargar
+      // la página 5 dejaba al usuario sin ver lo que acababa de registrar.
+      if (pagina === 1) loadVentas(1); else setPagina(1);
     } catch (err) {
       setError(err.message);
       addToast('Error al registrar venta: ' + err.message, 'error');
@@ -258,17 +454,35 @@ export default function Ventas() {
     }
   };
 
-  const totalVenta = pacasSeleccionadas.reduce((sum, p) => sum + parseFloat(p.precio_venta), 0);
+  const totalVenta = pacasSeleccionadas.reduce((sum, p) => sum + parseMonto(p.precio_venta), 0);
 
   const formatCurrency = formatCOP;
 
   const formatDate = formatFechaCorta;
 
+  /**
+   * Descarga un libro de ExcelJS.
+   * El enlace se quita del DOM y el blob se libera: cada exportación dejaba una
+   * URL de objeto viva hasta recargar la página.
+   */
+  const descargarLibro = async (wb, nombreArchivo) => {
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nombreArchivo;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const descargarExcel = async (data) => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Comercio Global Logístico';
     wb.created = new Date();
-    
+
     const ws = wb.addWorksheet('Venta');
     ws.properties.tabColor = '0f172a';
     
@@ -283,7 +497,7 @@ export default function Ventas() {
     ws.getCell('A3').value = 'Cliente:';
     ws.getCell('B3').value = data.cliente?.nombre || 'N/A';
     ws.getCell('A4').value = 'Fecha:';
-    ws.getCell('B4').value = data.fecha;
+    ws.getCell('B4').value = formatDate(data.fecha);
     ws.getCell('A5').value = 'Tipo de Pago:';
     ws.getCell('B5').value = data.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
     ws.getCell('A6').value = 'Folio:';
@@ -291,7 +505,7 @@ export default function Ventas() {
     
     // Encabezados
     const headersRow = 8;
-    ['Tipo', 'Categoría', 'Precio Unitario'].forEach((h, i) => {
+    ['Clasificación', 'Referencia', 'Precio Unitario'].forEach((h, i) => {
       const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
       cell.value = h;
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -303,7 +517,7 @@ export default function Ventas() {
     data.pacas.forEach(paca => {
       ws.getCell(`A${row}`).value = paca.clasificacion;
       ws.getCell(`B${row}`).value = paca.referencia;
-      ws.getCell(`C${row}`).value = parseFloat(paca.precio_venta);
+      ws.getCell(`C${row}`).value = parseMonto(paca.precio_venta);
       ws.getCell(`C${row}`).numFmt = '$#,##0.00';
       row++;
     });
@@ -319,14 +533,9 @@ export default function Ventas() {
     ws.getColumn(1).width = 25;
     ws.getColumn(2).width = 15;
     ws.getColumn(3).width = 18;
-    
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `Venta_${data.uuid?.slice(0, 8)}_${hoy()}.xlsx`;
-    link.click();
-    
+
+    await descargarLibro(wb, `Venta_${data.uuid?.slice(0, 8) || 'sin-folio'}_${hoy()}.xlsx`);
+
     addToast('Excel descargado', 'success');
   };
 
@@ -353,10 +562,10 @@ export default function Ventas() {
     // Tabla de productos
     const tableData = data.pacas.map(p => [p.clasificacion, p.referencia, formatCurrency(p.precio_venta)]);
     tableData.push(['TOTAL', '', formatCurrency(data.total)]);
-    
+
     autoTable(doc, {
       startY: 75,
-      head: [['Tipo', 'Categoría', 'Precio']],
+      head: [['Clasificación', 'Referencia', 'Precio']],
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [26, 26, 46] },
@@ -364,15 +573,146 @@ export default function Ventas() {
       styles: { fontSize: 9 }
     });
     
-    doc.save(`Venta_${data.uuid?.slice(0, 8)}_${hoy()}.pdf`);
+    doc.save(`Venta_${data.uuid?.slice(0, 8) || 'sin-folio'}_${hoy()}.pdf`);
     addToast('PDF descargado', 'success');
   };
 
-  const filteredPacas = buscarPacas 
-    ? pacasDisponibles.filter(p => 
-        p.clasificacion?.includes(buscarPacas) || p.uuid.includes(buscarPacas)
-      )
-    : pacasDisponibles;
+  // Filtra sobre el término ya reposado (300 ms): antes se recorría el inventario
+  // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
+  // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
+  const FILAS_PACAS_VISIBLES = 150;
+  const pacasCoincidentes = useMemo(() => {
+    const q = debouncedBuscarPacas.trim().toLowerCase();
+    if (!q) return pacasDisponibles;
+    return pacasDisponibles.filter(p =>
+      p.clasificacion?.toLowerCase().includes(q) ||
+      p.referencia?.toLowerCase().includes(q) ||
+      p.uuid?.toLowerCase().includes(q)
+    );
+  }, [pacasDisponibles, debouncedBuscarPacas]);
+
+  const filteredPacas = useMemo(
+    () => pacasCoincidentes.slice(0, FILAS_PACAS_VISIBLES),
+    [pacasCoincidentes]
+  );
+
+  // Buscar la paca seleccionada con find() dentro del map era O(pacas × elegidas)
+  // en cada tecleo; el mapa resuelve cada fila en un solo acceso.
+  const seleccionPorId = useMemo(
+    () => new Map(pacasSeleccionadas.map(p => [p.id, p])),
+    [pacasSeleccionadas]
+  );
+
+  /**
+   * Exporta a Excel TODAS las ventas que cumplen los filtros, no sólo la página
+   * en pantalla.
+   *
+   * Ojo con el `limite`: omitir `pagina` NO desactiva la paginación del backend,
+   * que aplica su límite por defecto (~50 filas) igual que en /pacas. Sin un
+   * `limite` explícito el "export completo" salía recortado a las primeras 50
+   * ventas y el archivo decía "Todas las ventas registradas": un reporte
+   * contable mal sin ningún aviso. Es el mismo patrón que usa Pacas.jsx
+   * (`fetchInventarioActual`) para bajar el inventario entero.
+   */
+  const LIMITE_EXPORT = 10000;
+  const exportarVentasExcel = async () => {
+    if (exportando) return;
+    try {
+      setExportando(true);
+      // `buscar` se toma del texto tal cual está escrito, no del debounce: pulsar
+      // exportar justo después de teclear exportaba con el filtro anterior.
+      const respuesta = await ventasApi.getAll({
+        ...filtrosVentas(),
+        buscar: busqueda || undefined,
+        limite: LIMITE_EXPORT,
+      });
+      const filas = Array.isArray(respuesta) ? respuesta : (respuesta.data || []);
+      // Cuántas ventas dice el servidor que cumplen los filtros: si son más de
+      // las que llegaron, el archivo está incompleto y hay que decirlo.
+      const totalServidor = Array.isArray(respuesta)
+        ? filas.length
+        : (respuesta.total ?? filas.length);
+      const incompleto = totalServidor > filas.length;
+      if (filas.length === 0) {
+        addToast('No hay ventas que coincidan con los filtros', 'error');
+        return;
+      }
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Comercio Global Logístico';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Ventas');
+      ws.properties.tabColor = '0f172a';
+
+      ws.mergeCells('A1:F1');
+      ws.getCell('A1').value = '🌐 Comercio Global Logístico — Ventas';
+      ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
+      ws.getCell('A1').alignment = { horizontal: 'center' };
+
+      // Deja por escrito con qué filtros se sacó el archivo: sin esto, dos
+      // exportaciones del mismo día parecían el mismo reporte y no lo eran.
+      const detalleFiltros = [
+        busqueda ? `cliente contiene "${busqueda}"` : null,
+        filtroFechaInicio ? `desde ${formatDate(filtroFechaInicio)}` : null,
+        filtroFechaFin ? `hasta ${formatDate(filtroFechaFin)}` : null,
+        montoMin ? `mínimo ${formatCurrency(parseMonto(montoMin))}` : null,
+        montoMax ? `máximo ${formatCurrency(parseMonto(montoMax))}` : null,
+      ].filter(Boolean);
+      ws.mergeCells('A2:F2');
+      const textoFiltros = detalleFiltros.length
+        ? `Filtros: ${detalleFiltros.join(' · ')}`
+        : 'Todas las ventas registradas';
+      ws.getCell('A2').value = incompleto
+        ? `${textoFiltros} — ARCHIVO INCOMPLETO: ${filas.length} de ${totalServidor} ventas`
+        : textoFiltros;
+      ws.getCell('A2').font = { italic: true, size: 10, bold: incompleto };
+
+      const headersRow = 4;
+      ['Folio', 'Fecha', 'Cliente', 'Tipo de pago', 'Estado', 'Total'].forEach((h, i) => {
+        const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
+      });
+
+      let row = headersRow + 1;
+      let total = 0;
+      filas.forEach(v => {
+        ws.getCell(`A${row}`).value = v.uuid?.slice(0, 8).toUpperCase() || `#${v.id}`;
+        ws.getCell(`B${row}`).value = formatDate(v.fecha);
+        ws.getCell(`C${row}`).value = v.cliente_nombre || getClienteNombre(v.cliente_id);
+        ws.getCell(`D${row}`).value = v.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
+        ws.getCell(`E${row}`).value = v.estado || '';
+        ws.getCell(`F${row}`).value = parseMonto(v.total);
+        ws.getCell(`F${row}`).numFmt = '$#,##0';
+        total += parseMonto(v.total);
+        row++;
+      });
+
+      ws.getCell(`E${row}`).value = 'TOTAL';
+      ws.getCell(`E${row}`).font = { bold: true };
+      ws.getCell(`F${row}`).value = total;
+      ws.getCell(`F${row}`).numFmt = '$#,##0';
+      ws.getCell(`F${row}`).font = { bold: true };
+
+      [14, 14, 32, 14, 14, 18].forEach((ancho, i) => { ws.getColumn(i + 1).width = ancho; });
+
+      await descargarLibro(wb, `Ventas_${hoy()}.xlsx`);
+      if (incompleto) {
+        addToast(
+          `El servidor sólo devolvió ${filas.length} de ${totalServidor} ventas: el Excel está incompleto. Acota el rango de fechas y vuelve a exportar.`,
+          'error'
+        );
+      } else {
+        addToast(`Excel descargado — ${filas.length} venta(s)`, 'success');
+      }
+    } catch (err) {
+      addToast('Error al exportar: ' + err.message, 'error');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   const openReservaModal = () => {
     if (clientes.length === 0) {
@@ -405,6 +745,8 @@ export default function Ventas() {
       setReservaModalOpen(false);
       setPacasSeleccionadas([]);
       loadPacasDisponibles();
+      // El contador de la pestaña "Reservas" se quedaba viejo hasta recargar.
+      loadReservas();
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -412,8 +754,10 @@ export default function Ventas() {
 
   const loadPacasDisponibles = async () => {
     try {
-      const pacasRes = await pacasApi.getAll({ estado: 'disponible' });
-      setPacasDisponibles((pacasRes.data || pacasRes) || []);
+      const pacasRes = await pacasApi.getAll({ estado: 'disponible', limite: 2000 });
+      const pacasData = pacasRes.data || pacasRes;
+      setPacasDisponibles(Array.isArray(pacasData) ? pacasData : []);
+      setTotalPacasDisponibles(pacasRes.total ?? (Array.isArray(pacasData) ? pacasData.length : 0));
     } catch (err) {
       console.error(err);
     }
@@ -458,12 +802,14 @@ export default function Ventas() {
       ws.getCell('A4').value = 'Cliente:';
       ws.getCell('B4').value = ventaDetalle.cliente_nombre || cliente.nombre || 'N/A';
       ws.getCell('A5').value = 'Fecha:';
-      ws.getCell('B5').value = new Date(venta.fecha).toLocaleDateString('es-MX');
+      // new Date('2026-08-14') se interpreta en UTC y en Colombia mostraba el día
+      // anterior; formatFechaCorta ancla la fecha al mediodía local.
+      ws.getCell('B5').value = formatDate(venta.fecha);
       ws.getCell('A6').value = 'Tipo de Pago:';
       ws.getCell('B6').value = venta.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
-      
+
       const headersRow = 8;
-      ['Cantidad', 'Tipo', 'Categoría', 'Peso (kg)', 'Precio Unitario'].forEach((h, i) => {
+      ['Cantidad', 'Clasificación', 'Referencia', 'Peso (kg)', 'Precio Unitario'].forEach((h, i) => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -477,9 +823,9 @@ export default function Ventas() {
         ws.getCell(`B${row}`).value = paca.clasificacion || '';
         ws.getCell(`C${row}`).value = paca.referencia || '';
         ws.getCell(`D${row}`).value = paca.peso || '';
-        ws.getCell(`E${row}`).value = parseFloat(paca.precio_unitario || 0);
+        ws.getCell(`E${row}`).value = parseMonto(paca.precio_unitario);
         ws.getCell(`E${row}`).numFmt = '$#,##0.00';
-        total += parseFloat(paca.precio_unitario || 0);
+        total += parseMonto(paca.precio_unitario);
         row++;
       });
       
@@ -494,171 +840,259 @@ export default function Ventas() {
       ws.getColumn(3).width = 12;
       ws.getColumn(4).width = 12;
       ws.getColumn(5).width = 18;
-      
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Venta_${venta.uuid?.slice(0, 8)}_${venta.fecha}.xlsx`;
-      link.click();
-      
+
+      await descargarLibro(wb, `Venta_${venta.uuid?.slice(0, 8) || venta.id}_${venta.fecha}.xlsx`);
+
       addToast('Excel descargado', 'success');
     } catch (err) {
       addToast('Error al descargar: ' + err.message, 'error');
     }
   };
 
+  // `clientes` sólo trae los activos: para una venta de un cliente ya desactivado
+  // se pintaba "Cliente #12". El backend manda el nombre en la propia fila.
   const getClienteNombre = (clienteId) => {
     const cliente = clientes.find(c => c.id === clienteId);
     return cliente?.nombre || `Cliente #${clienteId}`;
   };
 
+  const nombreDeVenta = (venta) => venta.cliente_nombre || getClienteNombre(venta.cliente_id);
+
+  // La variante estaba fija en "disponible": una venta anulada se pintaba con el
+  // mismo verde que una vigente.
+  const badgeEstadoVenta = (estado) => {
+    const e = String(estado || '').toLowerCase();
+    if (e === 'anulada' || e === 'cancelada') return 'inactivo';
+    if (e === 'pendiente') return 'separada';
+    return 'disponible';
+  };
+
+  // Flechas izquierda/derecha entre pestañas, como espera un lector de pantalla.
+  const VISTAS = ['disponible', 'reservada'];
+  const navegarPestanas = (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const paso = e.key === 'ArrowRight' ? 1 : -1;
+    const siguiente = VISTAS[(VISTAS.indexOf(filtroVista) + paso + VISTAS.length) % VISTAS.length];
+    setFiltroVista(siguiente);
+    document.getElementById(`tab-${siguiente}`)?.focus();
+  };
+
+  const limpiarFiltros = () => {
+    setBusqueda('');
+    setFiltroFechaInicio('');
+    setFiltroFechaFin('');
+    setFiltroMontoMin('');
+    setFiltroMontoMax('');
+  };
+
   return (
-    <Layout title="Ventas" subtitle={`${ventas.length} ventas registradas`}>
+    // El subtítulo decía "20 ventas registradas" porque contaba las filas de la
+    // página en pantalla; el total real lo devuelve el servidor.
+    <Layout
+      title="Ventas"
+      subtitle={
+        loading && totalVentas === 0
+          ? 'Cargando…'
+          : totalVentas === 1
+            ? '1 venta registrada'
+            : `${totalVentas.toLocaleString('es-CO')} ventas registradas`
+      }
+    >
       <div className="space-y-4">
-        {/* Filtros / Tabs */}
-        <div className="flex gap-2 border-b border-border pb-2">
+        {/* Pestañas: eran <button> sueltos diferenciados sólo por color, sin
+            role ni aria-selected, así que el estado activo no se anunciaba. */}
+        <div className="flex flex-wrap gap-2 border-b border-border pb-2" role="tablist" aria-label="Vistas de ventas">
           <button
+            role="tab"
+            id="tab-disponible"
+            aria-selected={filtroVista === 'disponible'}
+            aria-controls="panel-disponible"
+            tabIndex={filtroVista === 'disponible' ? 0 : -1}
             onClick={() => setFiltroVista('disponible')}
+            onKeyDown={navegarPestanas}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-              filtroVista === 'disponible' 
-                ? 'bg-primary text-white' 
+              filtroVista === 'disponible'
+                ? 'bg-primary text-white'
                 : 'text-primary hover:bg-primary/10'
             }`}
           >
-            Nueva Venta
+            Ventas registradas
           </button>
           <button
+            role="tab"
+            id="tab-reservada"
+            aria-selected={filtroVista === 'reservada'}
+            aria-controls="panel-reservada"
+            tabIndex={filtroVista === 'reservada' ? 0 : -1}
             onClick={() => setFiltroVista('reservada')}
+            onKeyDown={navegarPestanas}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-              filtroVista === 'reservada' 
-                ? 'bg-success text-white' 
-                : 'text-green-700 hover:bg-green-50'
+              filtroVista === 'reservada'
+                ? 'bg-success text-white'
+                : 'text-primary hover:bg-success/10'
             }`}
           >
             Reservas ({reservasActivas.length})
           </button>
         </div>
 
-        {/* Vista de Nueva Venta */}
+        {/* Vista de Ventas registradas */}
         {filtroVista === 'disponible' && (
-          <>
-            <div className="flex justify-end gap-2">
+          <div id="panel-disponible" role="tabpanel" aria-labelledby="tab-disponible" className="space-y-4">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                onClick={exportarVentasExcel}
+                variant="outline"
+                disabled={exportando}
+                title={hayFiltros ? 'Descarga en Excel todas las ventas que cumplen los filtros' : 'Descarga en Excel todas las ventas'}
+              >
+                <Download size={18} className="mr-1" aria-hidden="true" />
+                {exportando ? 'Preparando…' : (hayFiltros ? 'Exportar filtradas' : 'Exportar a Excel')}
+              </Button>
               <Button onClick={openReservaModal} variant="info" disabled={pacasSeleccionadas.length === 0}>
-                <Calendar size={18} className="mr-1" /> Reservar ({pacasSeleccionadas.length})
+                <Calendar size={18} className="mr-1" aria-hidden="true" /> Reservar ({pacasSeleccionadas.length})
               </Button>
               <Button onClick={openModal} variant="secondary">
-                <Plus size={18} className="mr-1" /> Nueva Venta
+                <Plus size={18} className="mr-1" aria-hidden="true" /> Nueva Venta
               </Button>
             </div>
 
             {error && (
-              <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>
+              <div className="p-3 bg-error/10 text-error rounded-lg text-sm" role="alert">{error}</div>
             )}
 
-            {/* Filtros de ventas */}
+            {/* Filtros de ventas. Antes eran cinco campos con sólo placeholder:
+                al escribir dentro, la pista desaparecía y nadie recordaba si la
+                casilla de la derecha era el monto mínimo o el máximo. */}
             <Card>
               <CardBody className="p-0">
-                <div className="p-4 border-b border-border/50 bg-primary/3">
+                {/* bg-primary/3 no existía: la escala de opacidad de Tailwind no
+                    incluye el 3, así que esa clase nunca llegaba al CSS y la
+                    banda de filtros salía sin fondo. El valor arbitrario sí se
+                    genera (es el que ya usa el resto del proyecto). */}
+                <div className="p-4 border-b border-border/50 bg-primary/[0.03]">
                   <div className="flex flex-wrap gap-3 items-end">
-                    <div className="flex-1 min-w-[200px]">
+                    <div className="flex-1 min-w-[180px]">
                       <Input
-                        placeholder="Buscar por cliente..."
+                        id="filtro-cliente"
+                        label="Cliente"
+                        placeholder="Nombre del cliente"
                         value={busqueda}
                         onChange={(e) => setBusqueda(e.target.value)}
                         className="w-full"
                       />
                     </div>
-                    <div className="w-36">
+                    <div className="w-full sm:w-36">
                       <Input
+                        id="filtro-desde"
+                        label="Desde"
                         type="date"
-                        placeholder="Desde"
                         value={filtroFechaInicio}
                         onChange={(e) => setFiltroFechaInicio(e.target.value)}
                       />
                     </div>
-                    <div className="w-36">
+                    <div className="w-full sm:w-36">
                       <Input
+                        id="filtro-hasta"
+                        label="Hasta"
                         type="date"
-                        placeholder="Hasta"
                         value={filtroFechaFin}
                         onChange={(e) => setFiltroFechaFin(e.target.value)}
                       />
                     </div>
-                    <div className="w-28">
+                    <div className="w-[calc(50%-0.375rem)] sm:w-36">
                       <Input
+                        id="filtro-min"
+                        label="Monto mínimo"
                         type="number"
-                        placeholder="Min $"
+                        placeholder="$"
                         value={filtroMontoMin}
                         onChange={(e) => setFiltroMontoMin(e.target.value)}
                       />
                     </div>
-                    <div className="w-28">
+                    <div className="w-[calc(50%-0.375rem)] sm:w-36">
                       <Input
+                        id="filtro-max"
+                        label="Monto máximo"
                         type="number"
-                        placeholder="Max $"
+                        placeholder="$"
                         value={filtroMontoMax}
                         onChange={(e) => setFiltroMontoMax(e.target.value)}
                       />
                     </div>
-                    {(busqueda || filtroFechaInicio || filtroFechaFin || filtroMontoMin || filtroMontoMax) && (
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        setBusqueda('');
-                        setFiltroFechaInicio('');
-                        setFiltroFechaFin('');
-                        setFiltroMontoMin('');
-                        setFiltroMontoMax('');
-                      }}>
+                    {hayFiltros && (
+                      <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
                         Limpiar
                       </Button>
                     )}
                   </div>
-                  {ventasFiltradas.length !== ventas.length && (
-                    <p className="text-xs text-muted mt-2">Mostrando {ventasFiltradas.length} de {ventas.length} ventas</p>
+                  {/* El filtrado lo hace el servidor, así que el conteo debe salir
+                      del total devuelto, no de las 20 filas de la página. */}
+                  {hayFiltros && !loading && (
+                    <p className="text-xs text-muted mt-2" role="status" aria-live="polite">
+                      {totalVentas === 0
+                        ? 'Ninguna venta coincide con los filtros.'
+                        : `${totalVentas.toLocaleString('es-CO')} venta(s) coinciden con los filtros.`}
+                    </p>
                   )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
+                    <caption className="sr-only">
+                      Ventas registradas, página {pagina} de {totalPaginas}
+                    </caption>
                     <thead className="bg-primary/5 border-b border-border/50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">ID</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">ID</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                        <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border/60">
                       {loading ? (
                         <TableSkeleton cols={7} rows={6} />
                       ) : ventasFiltradas.length === 0 ? (
-                        <tr><td colSpan={7}><EmptyState title="Sin ventas" description="No hay ventas que coincidan con los filtros aplicados" /></td></tr>
+                        <tr><td colSpan={7}>
+                          <EmptyState
+                            title={hayFiltros ? 'Sin resultados' : 'Sin ventas'}
+                            description={hayFiltros
+                              ? 'Ninguna venta coincide con los filtros aplicados.'
+                              : 'Todavía no hay ventas registradas. Usa el botón “Nueva Venta”.'}
+                            action={hayFiltros ? { label: 'Limpiar filtros', onClick: limpiarFiltros } : undefined}
+                          />
+                        </td></tr>
                       ) : (
                         ventasFiltradas.map((venta) => (
                           <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
                             <td className="px-4 py-3 text-sm text-muted font-mono">#{venta.id}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
+                            <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(venta.fecha)}</td>
                             <td className="px-4 py-3 text-sm text-primary font-medium">
-                              <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{getClienteNombre(venta.cliente_id)}</RefLink>
+                              <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{nombreDeVenta(venta)}</RefLink>
                             </td>
                             <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
-                            <td className="px-4 py-3 text-sm text-primary font-medium">{formatCurrency(venta.total)}</td>
-                            <td className="px-4 py-3"><Badge variant="disponible">{venta.estado}</Badge></td>
+                            <td className="px-4 py-3 text-sm text-primary font-medium whitespace-nowrap">{formatCurrency(venta.total)}</td>
+                            <td className="px-4 py-3"><Badge variant={badgeEstadoVenta(venta.estado)}>{venta.estado || 'registrada'}</Badge></td>
                             <td className="px-4 py-3 text-right flex gap-1 justify-end">
-                              <button 
-                                onClick={() => descargarExcelVenta(venta)} 
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-success hover:bg-success/10"
+                              <button
+                                onClick={() => descargarExcelVenta(venta)}
+                                className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10"
                                 title="Descargar Excel"
+                                aria-label={`Descargar el Excel de la venta #${venta.id} de ${nombreDeVenta(venta)}`}
                               >
-                                <FileSpreadsheet size={16} />
+                                <FileSpreadsheet size={16} aria-hidden="true" />
                               </button>
-                              <button 
-                                onClick={() => handleDelete(venta.id)} 
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-error hover:bg-error/10"
+                              <button
+                                onClick={() => handleDelete(venta.id)}
+                                className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10"
+                                title="Eliminar venta"
+                                aria-label={`Eliminar la venta #${venta.id} de ${nombreDeVenta(venta)}`}
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={16} aria-hidden="true" />
                               </button>
                             </td>
                           </tr>
@@ -669,65 +1103,86 @@ export default function Ventas() {
                 </div>
               </CardBody>
             </Card>
-            
+
             {/* Paginación */}
             {totalPaginas > 1 && (
-              <div className="flex justify-center items-center gap-2 py-4 border-t border-border">
+              <nav
+                className="flex flex-wrap justify-center items-center gap-2 py-4 border-t border-border"
+                aria-label="Paginación de ventas"
+              >
                 <button
                   onClick={() => setPagina(p => Math.max(1, p - 1))}
                   disabled={pagina === 1}
-                  className="px-3 py-1 rounded-lg border border-border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
+                  aria-label="Página anterior"
+                  className="px-3 py-1 rounded-lg border border-border text-primary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
                 >
                   Anterior
                 </button>
-                <span className="text-sm text-muted">
+                <span className="text-sm text-muted" role="status" aria-live="polite">
                   Página {pagina} de {totalPaginas}
                   {totalVentas > 0 && ` · ${totalVentas.toLocaleString('es-CO')} ventas`}
                 </span>
                 <button
                   onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
                   disabled={pagina === totalPaginas}
-                  className="px-3 py-1 rounded-lg border border-border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
+                  aria-label="Página siguiente"
+                  className="px-3 py-1 rounded-lg border border-border text-primary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/5"
                 >
                   Siguiente
                 </button>
-              </div>
+              </nav>
             )}
-          </>
+          </div>
         )}
 
-        {/* Vista de Reservas */}
+        {/* Vista de Reservas.
+            Los grises fijos (bg-green-50, text-gray-600/700/800) no tienen
+            equivalente en modo oscuro: index.css sólo reasigna hasta gray-600,
+            así que esta tabla quedaba prácticamente negra sobre negro. Con los
+            tokens del tema se lee igual en los dos modos. */}
         {filtroVista === 'reservada' && (
+          <div id="panel-reservada" role="tabpanel" aria-labelledby="tab-reservada">
           <Card>
             <CardBody className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-green-50 border-b border-border/50">
+                  <caption className="sr-only">Reservas activas de pacas</caption>
+                  <thead className="bg-success/10 border-b border-border/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Paca</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Precio</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Expiración</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Notas</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase">Acciones</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Paca</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Expiración</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Notas</th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-border/60">
                     {reservasActivas.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay reservas activas</td></tr>
+                      <tr><td colSpan={6}>
+                        <EmptyState
+                          title="Sin reservas activas"
+                          description="Elige pacas en la pestaña de ventas y pulsa “Reservar” para apartarlas para un cliente."
+                        />
+                      </td></tr>
                     ) : (
                       reservasActivas.map((reserva) => (
-                        <tr key={reserva.id} className="hover:bg-green-50 transition-colors">
-                          <td className="px-4 py-3 text-sm text-gray-800">
+                        <tr key={reserva.id} className="hover:bg-success/5 transition-colors">
+                          <td className="px-4 py-3 text-sm text-primary">
                             <div className="font-medium">{reserva.paca_tipo}</div>
                             <div className="text-xs text-muted">{reserva.paca_categoria}</div>
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-800 font-medium">{reserva.cliente_nombre}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{formatCurrency(reserva.precio_venta)}</td>
-                          <td className="px-4 py-3 text-sm text-muted">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
-                          <td className="px-4 py-3 text-sm text-muted max-w-xs truncate">{reserva.notas || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-primary font-medium">{reserva.cliente_nombre}</td>
+                          <td className="px-4 py-3 text-sm text-primary whitespace-nowrap">{formatCurrency(reserva.precio_venta)}</td>
+                          <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{reserva.fecha_expiracion ? formatDate(reserva.fecha_expiracion) : '-'}</td>
+                          <td className="px-4 py-3 text-sm text-muted max-w-xs truncate" title={reserva.notas || ''}>{reserva.notas || '-'}</td>
                           <td className="px-4 py-3 text-right">
-                            <Button size="sm" onClick={() => convertirReservaAVenta(reserva)} variant="success">
+                            <Button
+                              size="sm"
+                              onClick={() => convertirReservaAVenta(reserva)}
+                              variant="success"
+                              title={`Convertir en venta la reserva de ${reserva.cliente_nombre || 'el cliente'}`}
+                            >
                               Pasar a Venta
                             </Button>
                           </td>
@@ -739,198 +1194,25 @@ export default function Ventas() {
               </div>
             </CardBody>
           </Card>
+          </div>
         )}
 
-        {/* Vista de Ventas Realizadas */}
-        {filtroVista === 'ventas' && (
-          <Card>
-            <CardBody className="p-0">
-              {/* Filtros */}
-              <div className="p-4 border-b border-border/50 bg-primary/3">
-                <div className="flex flex-wrap gap-3 items-end">
-                  <div className="flex-1 min-w-[200px]">
-                    <Input
-                      placeholder="Buscar por cliente..."
-                      value={busqueda}
-                      onChange={(e) => setBusqueda(e.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="w-36">
-                    <Input
-                      type="date"
-                      placeholder="Desde"
-                      value={filtroFechaInicio}
-                      onChange={(e) => setFiltroFechaInicio(e.target.value)}
-                    />
-                  </div>
-                  <div className="w-36">
-                    <Input
-                      type="date"
-                      placeholder="Hasta"
-                      value={filtroFechaFin}
-                      onChange={(e) => setFiltroFechaFin(e.target.value)}
-                    />
-                  </div>
-                  <div className="w-28">
-                    <Input
-                      type="number"
-                      placeholder="Min $"
-                      value={filtroMontoMin}
-                      onChange={(e) => setFiltroMontoMin(e.target.value)}
-                    />
-                  </div>
-                  <div className="w-28">
-                    <Input
-                      type="number"
-                      placeholder="Max $"
-                      value={filtroMontoMax}
-                      onChange={(e) => setFiltroMontoMax(e.target.value)}
-                    />
-                  </div>
-                  {(busqueda || filtroFechaInicio || filtroFechaFin || filtroMontoMin || filtroMontoMax) && (
-                    <Button variant="ghost" size="sm" onClick={() => {
-                      setBusqueda('');
-                      setFiltroFechaInicio('');
-                      setFiltroFechaFin('');
-                      setFiltroMontoMin('');
-                      setFiltroMontoMax('');
-                    }}>
-                      Limpiar
-                    </Button>
-                  )}
-                </div>
-                {ventasFiltradas.length !== ventas.length && (
-                  <p className="text-xs text-muted mt-2">Mostrando {ventasFiltradas.length} de {ventas.length} ventas</p>
-                )}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-success/10 border-b border-border/50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Folio</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {ventasFiltradas.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay ventas realizadas</td></tr>
-                    ) : (
-                      ventasFiltradas.map((venta) => (
-                        <tr key={venta.id} className="hover:bg-success/5 transition-colors">
-                          <td className="px-4 py-3 text-sm text-muted font-mono">{venta.uuid?.slice(0, 8).toUpperCase()}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{formatDate(venta.fecha)}</td>
-                          <td className="px-4 py-3 text-sm text-primary font-medium">{getClienteNombre(venta.cliente_id)}</td>
-                          <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
-                          <td className="px-4 py-3 text-sm text-primary font-bold">{formatCurrency(venta.total)}</td>
-                          <td className="px-4 py-3 text-right">
-                            <Button size="sm" variant="success" onClick={() => descargarExcelVenta(venta)}>
-                              <FileSpreadsheet size={14} className="mr-1" /> Excel
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardBody>
-          </Card>
-        )}
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Nueva Venta" size="xl">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="p-3 bg-error/10 text-error rounded-lg text-sm">{error}</div>}
-          
-          <div className="grid grid-cols-3 gap-4">
-            {/* Selector de cliente con búsqueda */}
-            <div className="relative" ref={clienteListRef}>
-              <label className="block text-sm font-medium text-primary mb-1">
-                Cliente <span className="text-error">*</span>
-              </label>
-              
-              {formData.cliente_id ? (
-                <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
-                  <div className="p-2 bg-secondary/20 rounded-lg">
-                    <User className="w-4 h-4 text-secondary" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm text-secondary">
-                      {clientes.find(c => c.id === parseInt(formData.cliente_id))?.nombre || 'Cliente'}
-                    </p>
-                    <p className="text-xs text-muted">
-                      {clientes.find(c => c.id === parseInt(formData.cliente_id))?.ciudad || ''}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, cliente_id: '' });
-                      setBusquedaCliente('');
-                    }}
-                    className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Buscar cliente..."
-                    value={busquedaCliente}
-                    onChange={(e) => {
-                      setBusquedaCliente(e.target.value);
-                      setShowListaClientes(true);
-                    }}
-                    onFocus={() => busquedaCliente && setShowListaClientes(true)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
-                  />
-                </div>
-              )}
-              
-              {!formData.cliente_id && busquedaCliente && (
-                <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                  {clientes
-                    .filter(c => 
-                      c.nombre?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
-                      c.ciudad?.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
-                      c.telefono?.toLowerCase().includes(busquedaCliente.toLowerCase())
-                    )
-                    .slice(0, 10)
-                    .map(c => (
-                      <div
-                        key={c.id}
-                        onClick={() => {
-                          setFormData({ ...formData, cliente_id: c.id.toString() });
-                          setBusquedaCliente('');
-                          setShowListaClientes(false);
-                        }}
-                        className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-gray-100 rounded-lg">
-                            <User className="w-4 h-4 text-muted" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">{c.nombre}</p>
-                            <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-            
+          {error && <div className="p-3 bg-error/10 text-error rounded-lg text-sm" role="alert">{error}</div>}
+
+          {/* Tres columnas fijas apretaban los campos hasta ser inusables en móvil. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <BuscadorCliente
+              id="venta-cliente"
+              clientes={clientes}
+              clienteId={formData.cliente_id}
+              onSelect={(c) => setFormData({ ...formData, cliente_id: c.id.toString() })}
+              onClear={() => setFormData({ ...formData, cliente_id: '' })}
+            />
+
             <Select
               label="Tipo de Pago"
               value={formData.tipo_pago}
@@ -946,28 +1228,53 @@ export default function Ventas() {
           </div>
 
           <div className="border-t border-border/50 pt-4">
-            <label className="block text-sm font-medium text-primary mb-2">Seleccionar Pacas</label>
+            <label htmlFor="buscar-pacas" className="block text-sm font-medium text-primary mb-2">
+              Seleccionar pacas
+            </label>
             <input
+              id="buscar-pacas"
               type="text"
-              placeholder="Buscar pacas..."
+              placeholder="Filtrar por clasificación, referencia o código"
               value={buscarPacas}
               onChange={(e) => setBuscarPacas(e.target.value)}
-              className="w-full mb-3 px-3 py-2 rounded-lg border border-border"
+              className="w-full mb-2 px-3 py-2 rounded-lg border border-border bg-surface text-primary placeholder-muted"
             />
-            
+            <p className="text-xs text-muted mb-3" role="status" aria-live="polite">
+              {pacasCoincidentes.length === 0
+                ? (buscarPacas
+                    ? 'Ninguna paca disponible coincide con la búsqueda.'
+                    : 'No hay pacas disponibles en el inventario.')
+                : `${pacasCoincidentes.length} paca(s) disponibles${
+                    pacasCoincidentes.length > FILAS_PACAS_VISIBLES
+                      ? ` — se muestran las primeras ${FILAS_PACAS_VISIBLES}; afina la búsqueda para ver el resto.`
+                      : '.'
+                  }`}
+              {totalPacasDisponibles > pacasDisponibles.length &&
+                ` (de ${totalPacasDisponibles} en inventario)`}
+            </p>
+
             <div className="max-h-64 overflow-y-auto border border-border rounded-lg">
               <table className="w-full text-sm">
+                <caption className="sr-only">Pacas disponibles para agregar a la venta</caption>
                 <thead className="bg-primary/5 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left"></th>
-                    <th className="px-3 py-2 text-left">Tipo</th>
-                    <th className="px-3 py-2 text-left">Categoría</th>
-                    <th className="px-3 py-2 text-right">Precio</th>
+                    <th scope="col" className="px-3 py-2 text-left"><span className="sr-only">Incluir</span></th>
+                    <th scope="col" className="px-3 py-2 text-left">Clasificación</th>
+                    <th scope="col" className="px-3 py-2 text-left">Referencia</th>
+                    <th scope="col" className="px-3 py-2 text-right">Precio</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border/60">
+                  {filteredPacas.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-muted">
+                        No hay pacas disponibles que coincidan.
+                      </td>
+                    </tr>
+                  )}
                   {filteredPacas.map(paca => {
-                    const selected = pacasSeleccionadas.find(p => p.id === paca.id);
+                    const selected = seleccionPorId.get(paca.id);
+                    const etiquetaPaca = `${paca.clasificacion || 'Paca'} ${paca.referencia || ''}`.trim();
                     return (
                       <tr key={paca.id} className={selected ? 'bg-secondary/10' : ''}>
                         <td className="px-3 py-2">
@@ -975,18 +1282,22 @@ export default function Ventas() {
                             type="checkbox"
                             checked={!!selected}
                             onChange={() => togglePaca(paca)}
+                            aria-label={`Agregar a la venta la paca ${etiquetaPaca}`}
                             className="rounded border-border"
                           />
                         </td>
-                        <td className="px-3 py-2">{paca.clasificacion}</td>
-                        <td className="px-3 py-2">{paca.referencia}</td>
+                        <td className="px-3 py-2 text-primary">{paca.clasificacion}</td>
+                        <td className="px-3 py-2 text-primary">{paca.referencia}</td>
                         <td className="px-3 py-2 text-right">
                           {selected ? (
                             <input
                               type="number"
-                              value={selected.precio_venta}
+                              min="0"
+                              inputMode="numeric"
+                              value={selected.precio_venta ?? ''}
                               onChange={(e) => updatePrecio(paca.id, e.target.value)}
-                              className="w-24 text-right px-2 py-1 rounded border"
+                              aria-label={`Precio de venta de la paca ${etiquetaPaca}`}
+                              className="w-24 text-right px-2 py-1 rounded border border-border bg-surface text-primary"
                             />
                           ) : (
                             formatCurrency(paca.precio_venta)
@@ -1000,12 +1311,12 @@ export default function Ventas() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg">
+          <div className="flex items-center justify-between gap-3 p-4 bg-primary/5 rounded-lg">
             <span className="text-sm text-muted">Total ({pacasSeleccionadas.length} pacas)</span>
-            <span className="text-xl font-display text-primary">{formatCurrency(totalVenta)}</span>
+            <span className="text-xl font-display text-primary" aria-live="polite">{formatCurrency(totalVenta)}</span>
           </div>
-          
-          <div className="flex justify-end gap-2 pt-4">
+
+          <div className="flex flex-wrap justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
             <Button type="submit" variant="secondary" disabled={enviando}>
               {enviando ? 'Registrando…' : 'Confirmar Venta'}
@@ -1048,40 +1359,58 @@ export default function Ventas() {
             {/* Detalle de pacas */}
             <div>
               <h3 className="font-medium text-sm text-muted mb-2">Detalle de Productos</h3>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
+                <caption className="sr-only">Pacas incluidas en la venta</caption>
                 <thead className="bg-primary/5">
                   <tr>
-                    <th className="px-3 py-2 text-left">Tipo</th>
-                    <th className="px-3 py-2 text-left">Categoría</th>
-                    <th className="px-3 py-2 text-right">Precio</th>
+                    <th scope="col" className="px-3 py-2 text-left">Clasificación</th>
+                    <th scope="col" className="px-3 py-2 text-left">Referencia</th>
+                    <th scope="col" className="px-3 py-2 text-right">Precio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {despachoData.pacas.map((paca, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="px-3 py-2">{paca.clasificacion}</td>
+                    <tr key={paca.id ?? i} className="border-b border-border/50">
+                      <td className="px-3 py-2 text-primary">{paca.clasificacion}</td>
                       <td className="px-3 py-2 text-muted">{paca.referencia}</td>
-                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(paca.precio_venta)}</td>
+                      <td className="px-3 py-2 text-right font-medium text-primary whitespace-nowrap">{formatCurrency(paca.precio_venta)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="font-bold">
                     <td colSpan={2} className="px-3 py-2 text-right">Total:</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(despachoData.total)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(despachoData.total)}</td>
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
 
-            {/* Botones de descarga */}
-            <div className="flex gap-3 pt-4">
-              <Button onClick={() => descargarExcel(despachoData)} variant="secondary" className="flex-1">
-                <FileSpreadsheet size={18} className="mr-2" />
+            {/* Botones de descarga. Si la generación falla (jsPDF/ExcelJS pueden
+                lanzar), sin este catch el botón simplemente no respondía. */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <Button
+                onClick={async () => {
+                  try { await descargarExcel(despachoData); }
+                  catch (err) { addToast('No se pudo generar el Excel: ' + err.message, 'error'); }
+                }}
+                variant="secondary"
+                className="flex-1"
+              >
+                <FileSpreadsheet size={18} className="mr-2" aria-hidden="true" />
                 Descargar Excel
               </Button>
-              <Button onClick={() => descargarPDF(despachoData)} variant="primary" className="flex-1">
-                <FileText size={18} className="mr-2" />
+              <Button
+                onClick={() => {
+                  try { descargarPDF(despachoData); }
+                  catch (err) { addToast('No se pudo generar el PDF: ' + err.message, 'error'); }
+                }}
+                variant="primary"
+                className="flex-1"
+              >
+                <FileText size={18} className="mr-2" aria-hidden="true" />
                 Descargar PDF
               </Button>
             </div>
@@ -1102,88 +1431,13 @@ export default function Ventas() {
           </div>
 
           {/* Selector de cliente con búsqueda para reserva */}
-          <div className="relative" ref={clienteReservaListRef}>
-            <label className="block text-sm font-medium text-primary mb-1">
-              Cliente <span className="text-error">*</span>
-            </label>
-            
-            {reservaForm.cliente_id ? (
-              <div className="flex items-center gap-2 p-3 bg-secondary/10 border border-secondary/30 rounded-xl">
-                <div className="p-2 bg-secondary/20 rounded-lg">
-                  <User className="w-4 h-4 text-secondary" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-sm text-secondary">
-                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.nombre || 'Cliente'}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {clientes.find(c => c.id === parseInt(reservaForm.cliente_id))?.ciudad || ''}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReservaForm({ ...reservaForm, cliente_id: '' });
-                    setBusquedaClienteReserva('');
-                  }}
-                  className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="h-5 w-5 text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Buscar cliente..."
-                  value={busquedaClienteReserva}
-                  onChange={(e) => {
-                    setBusquedaClienteReserva(e.target.value);
-                    setShowListaClientesReserva(true);
-                  }}
-                  onFocus={() => busquedaClienteReserva && setShowListaClientesReserva(true)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
-                />
-              </div>
-            )}
-            
-            {!reservaForm.cliente_id && busquedaClienteReserva && (
-              <div className="absolute z-20 mt-1 w-full bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                {clientes
-                  .filter(c => c.estado === 'activo')
-                  .filter(c => 
-                    c.nombre?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
-                    c.ciudad?.toLowerCase().includes(busquedaClienteReserva.toLowerCase()) ||
-                    c.telefono?.toLowerCase().includes(busquedaClienteReserva.toLowerCase())
-                  )
-                  .slice(0, 10)
-                  .map(c => (
-                    <div
-                      key={c.id}
-                      onClick={() => {
-                        setReservaForm({ ...reservaForm, cliente_id: c.id.toString() });
-                        setBusquedaClienteReserva('');
-                        setShowListaClientesReserva(false);
-                      }}
-                      className="px-4 py-3 cursor-pointer hover:bg-primary/5 transition-colors duration-150 border-b border-border/50 last:border-b-0"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-primary/8 rounded-lg">
-                          <User className="w-4 h-4 text-muted" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm">{c.nombre}</p>
-                          <p className="text-xs text-muted">{c.ciudad || 'Sin ciudad'} • {c.telefono || 'Sin teléfono'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
+          <BuscadorCliente
+            id="reserva-cliente"
+            clientes={clientes}
+            clienteId={reservaForm.cliente_id}
+            onSelect={(c) => setReservaForm({ ...reservaForm, cliente_id: c.id.toString() })}
+            onClear={() => setReservaForm({ ...reservaForm, cliente_id: '' })}
+          />
 
           <Input
             label="Notas (opcional)"
@@ -1204,11 +1458,11 @@ export default function Ventas() {
             ]}
           />
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <Button type="button" variant="ghost" onClick={() => setReservaModalOpen(false)} className="flex-1">
               Cancelar
             </Button>
-            <Button onClick={handleCrearReserva} className="flex-1">
+            <Button onClick={handleCrearReserva} className="flex-1" disabled={!reservaForm.cliente_id}>
               Reservar {pacasSeleccionadas.length} paca(s)
             </Button>
           </div>

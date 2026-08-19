@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
 import { despachosApi, pacasApi, transportesApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users } from 'lucide-react';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 
@@ -32,7 +32,15 @@ function KpiCard({ label, value, icon: Icon, color, sub }) {
       <CardBody className="p-4">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
-            <Icon className="w-5 h-5 text-white" />
+            {/* `text-on-primary` y no `text-white` ni un blanco literal: el círculo
+                usa un token (bg-primary/70, bg-warning/70…) que se INVIERTE en modo
+                oscuro. En claro esos colores son oscuros y el icono debe ir blanco;
+                en oscuro son pasteles claros (--color-primary pasa a #f1f5f9) y un
+                icono blanco queda en 2.0:1, prácticamente invisible. on-primary es
+                justo el color de contenido sobre un fondo de color: #ffffff en claro
+                y #0f172a en oscuro (≥3.8:1 en las cuatro tarjetas). Además no depende
+                del override [data-theme="dark"] .text-white de index.css. */}
+            <Icon className="w-5 h-5 text-on-primary" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-semibold text-muted uppercase tracking-wide truncate">{label}</p>
@@ -486,6 +494,19 @@ async function exportarExcel(despacho) {
   URL.revokeObjectURL(url);
 }
 
+// La ventana de impresión se abre con document.write y es del MISMO origen que
+// la aplicación: cualquier etiqueta pegada dentro del nombre de un cliente
+// (un <img onerror=...>) se ejecutaría ahí con acceso al token de la sesión.
+// Todo lo que escribe un usuario pasa por aquí antes de entrar al HTML.
+const escaparHtml = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+// Devuelve false si el navegador bloqueó la ventana emergente, para que quien
+// llama pueda avisarle al usuario.
 function imprimirDespacho(despacho) {
   const items = despacho.items || [];
   const subtotalPacas = items.reduce((s, i) => s + parseFloat(i.precio_unitario || 0), 0);
@@ -495,15 +516,15 @@ function imprimirDespacho(despacho) {
   const total = despacho.cot_total != null ? parseFloat(despacho.cot_total) : subtotalPacas;
   const filas = items.map(i => `
     <tr>
-      <td>${i.paca_uuid?.slice(0, 8) || ''}</td>
-      <td>${i.clasificacion || ''}</td>
-      <td>${i.referencia || ''}</td>
-      <td>${i.calidad || '—'}</td>
+      <td>${escaparHtml(i.paca_uuid?.slice(0, 8) || '')}</td>
+      <td>${escaparHtml(i.clasificacion || '')}</td>
+      <td>${escaparHtml(i.referencia || '')}</td>
+      <td>${escaparHtml(i.calidad || '—')}</td>
       <td style="text-align:right">${formatCurrency(i.precio_unitario)}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>${despacho.numero}</title>
+    <title>${escaparHtml(despacho.numero)}</title>
     <style>
       body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; }
       h1 { font-size: 18px; margin-bottom: 4px; }
@@ -514,12 +535,12 @@ function imprimirDespacho(despacho) {
       tfoot td { font-weight: bold; background: #f9f9f9; }
       @media print { body { padding: 0; } }
     </style></head><body>
-    <h1>Despacho ${despacho.numero}</h1>
+    <h1>Despacho ${escaparHtml(despacho.numero)}</h1>
     <div class="meta">
-      Cliente: <strong>${despacho.cliente_nombre}</strong> &nbsp;|&nbsp;
-      ${despacho.cotizacion_numero ? `Cotización: ${despacho.cotizacion_numero} &nbsp;|&nbsp;` : ''}
-      Fecha: ${formatDate(despacho.fecha)} &nbsp;|&nbsp;
-      Estado: ${despacho.estado}
+      Cliente: <strong>${escaparHtml(despacho.cliente_nombre)}</strong> &nbsp;|&nbsp;
+      ${despacho.cotizacion_numero ? `Cotización: ${escaparHtml(despacho.cotizacion_numero)} &nbsp;|&nbsp;` : ''}
+      Fecha: ${escaparHtml(formatDate(despacho.fecha))} &nbsp;|&nbsp;
+      Estado: ${escaparHtml(despacho.estado)}
     </div>
     <table>
       <thead><tr><th>UUID</th><th>Clasificación</th><th>Referencia</th><th>Calidad</th><th>Precio</th></tr></thead>
@@ -534,9 +555,14 @@ function imprimirDespacho(despacho) {
     <script>window.onload=()=>{window.print();window.close();}</script>
     </body></html>`;
 
+  // Si el bloqueador de emergentes lo impide, window.open devuelve null: antes
+  // el document.write lanzaba un TypeError que nadie capturaba y el botón
+  // "PDF / Imprimir" simplemente no hacía nada.
   const w = window.open('', '_blank', 'width=800,height=600');
+  if (!w) return false;
   w.document.write(html);
   w.document.close();
+  return true;
 }
 
 export default function Despachos() {
@@ -544,6 +570,10 @@ export default function Despachos() {
   const [transportes, setTransportes]           = useState([]);
   const [transpOpen, setTranspOpen]             = useState(false);
   const [nuevoTransp, setNuevoTransp]           = useState('');
+  // Renombrado en línea dentro del mismo modal: la lista solo dejaba agregar y
+  // quitar, así que corregir una tilde obligaba a borrar y volver a crear.
+  const [editTranspId, setEditTranspId]         = useState(null);
+  const [editTranspNombre, setEditTranspNombre] = useState('');
   const [loading, setLoading]                   = useState(true);
   const [search, setSearch]                     = useState('');
   const [selectedDespacho, setSelectedDespacho] = useState(null);
@@ -698,6 +728,32 @@ export default function Despachos() {
     } catch (err) {
       addToast(err.message, 'error');
     }
+  };
+
+  const handleImprimir = () => {
+    if (!imprimirDespacho(selectedDespacho)) {
+      addToast('El navegador bloqueó la ventana de impresión. Permite las ventanas emergentes de este sitio y vuelve a intentarlo.', 'error');
+    }
+  };
+
+  // Renombrar un transporte del catálogo. Solo cambia la lista: los despachos ya
+  // emitidos guardan el nombre con el que salieron y no se tocan.
+  const renombrarTransporte = async (id) => {
+    const nombre = editTranspNombre.trim();
+    if (!nombre) return;
+    try {
+      await transportesApi.update(id, { nombre });
+      addToast('Nombre actualizado', 'success');
+      setEditTranspId(null);
+      setEditTranspNombre('');
+      loadTransportes();
+    } catch (err) { addToast(err.message, 'error'); }
+  };
+
+  const cerrarTransportes = () => {
+    setTranspOpen(false);
+    setEditTranspId(null);
+    setEditTranspNombre('');
   };
 
   // El catálogo viene del servidor y se administra desde el botón "Transportes".
@@ -1034,7 +1090,7 @@ export default function Despachos() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-success/40 text-success hover:bg-success/10 text-xs font-semibold transition-colors">
                   <Download size={13} /> Excel bodega
                 </button>
-                <button onClick={() => imprimirDespacho(selectedDespacho)}
+                <button onClick={handleImprimir}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
                   <Printer size={13} /> PDF / Imprimir
                 </button>
@@ -1222,11 +1278,12 @@ export default function Despachos() {
       )}
 
       {/* ── Catálogo de tipos de transporte ─────────────────────── */}
-      <Modal isOpen={transpOpen} onClose={() => setTranspOpen(false)} title="Tipos de transporte">
+      <Modal isOpen={transpOpen} onClose={cerrarTransportes} title="Tipos de transporte">
         <div className="space-y-4">
           <p className="text-sm text-muted">
             Esta es la lista que aparece al confirmar una salida. Agregar aquí evita que la misma
-            transportadora quede escrita de varias formas.
+            transportadora quede escrita de varias formas. Puedes cambiarle el nombre a cualquiera
+            con el lápiz; los despachos ya emitidos conservan el nombre con el que salieron.
           </p>
 
           <form
@@ -1257,30 +1314,73 @@ export default function Despachos() {
               <p className="text-sm text-muted text-center py-6">Sin transportes en la lista</p>
             ) : transportes.map(t => (
               <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                <span className="text-sm text-primary truncate">{t.nombre}</span>
-                <button type="button" title="Quitar de la lista"
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: '¿Quitar transporte?',
-                      message: `"${t.nombre}" dejará de aparecer en la lista. Los despachos ya emitidos lo conservan.`,
-                      confirmText: 'Quitar', variant: 'danger',
-                    });
-                    if (!ok) return;
-                    try {
-                      await transportesApi.delete(t.id);
-                      addToast('Transporte quitado', 'success');
-                      loadTransportes();
-                    } catch (err) { addToast(err.message, 'error'); }
-                  }}
-                  className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5 flex-shrink-0">
-                  <X size={15} />
-                </button>
+                {editTranspId === t.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editTranspNombre}
+                      autoFocus
+                      onChange={(e) => setEditTranspNombre(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); renombrarTransporte(t.id); }
+                        if (e.key === 'Escape') {
+                          // stopPropagation es obligatorio: Modal escucha Escape en
+                          // `document`, así que sin esto una sola pulsación cancelaba
+                          // la edición Y cerraba el modal entero de transportes.
+                          e.stopPropagation();
+                          setEditTranspId(null);
+                          setEditTranspNombre('');
+                        }
+                      }}
+                      className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-border bg-surface text-sm text-primary focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    />
+                    <button type="button" title="Guardar el nuevo nombre"
+                      disabled={!editTranspNombre.trim()}
+                      onClick={() => renombrarTransporte(t.id)}
+                      className="p-1.5 text-success rounded-lg hover:bg-success/10 disabled:opacity-40 flex-shrink-0">
+                      <Check size={15} />
+                    </button>
+                    <button type="button" title="Cancelar"
+                      onClick={() => { setEditTranspId(null); setEditTranspNombre(''); }}
+                      className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 flex-shrink-0">
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm text-primary truncate">{t.nombre}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button type="button" title="Cambiar el nombre"
+                        onClick={() => { setEditTranspId(t.id); setEditTranspNombre(t.nombre); }}
+                        className="p-1.5 text-muted hover:text-secondary rounded-lg hover:bg-secondary/5">
+                        <Pencil size={14} />
+                      </button>
+                      <button type="button" title="Quitar de la lista"
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: '¿Quitar transporte?',
+                            message: `"${t.nombre}" dejará de aparecer en la lista. Los despachos ya emitidos lo conservan.`,
+                            confirmText: 'Quitar', variant: 'danger',
+                          });
+                          if (!ok) return;
+                          try {
+                            await transportesApi.delete(t.id);
+                            addToast('Transporte quitado', 'success');
+                            loadTransportes();
+                          } catch (err) { addToast(err.message, 'error'); }
+                        }}
+                        className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
 
           <div className="flex justify-end">
-            <button type="button" onClick={() => setTranspOpen(false)}
+            <button type="button" onClick={cerrarTransportes}
               className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary hover:bg-primary/5">
               Cerrar
             </button>

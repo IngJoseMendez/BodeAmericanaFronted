@@ -2,13 +2,27 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 
 const ThemeContext = createContext(null);
 
-export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => {
-    // Leer preferencia guardada, si no existe usar preferencia del sistema
-    const saved = localStorage.getItem('ba-theme');
-    if (saved) return saved;
+// En un navegador con el almacenamiento del sitio bloqueado (Chrome con "Bloquear
+// todas las cookies", modo privado estricto) el simple hecho de tocar
+// window.localStorage lanza SecurityError. Como ThemeProvider envuelve TODA la
+// aplicación, esa excepción durante el render dejaba la pantalla en blanco.
+// Perder la preferencia de tema es infinitamente menos grave que perder la app.
+function leerTemaGuardado() {
+  try {
+    const guardado = localStorage.getItem('ba-theme');
+    if (guardado === 'dark' || guardado === 'light') return guardado;
+  } catch {
+    // almacenamiento bloqueado: caemos a la preferencia del sistema
+  }
+  try {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
+  } catch {
+    return 'light';
+  }
+}
+
+export function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState(leerTemaGuardado);
 
   // Aplicar el tema al elemento raíz
   useEffect(() => {
@@ -18,7 +32,11 @@ export function ThemeProvider({ children }) {
     } else {
       root.removeAttribute('data-theme');
     }
-    localStorage.setItem('ba-theme', theme);
+    try {
+      localStorage.setItem('ba-theme', theme);
+    } catch {
+      // almacenamiento bloqueado: el tema funciona igual, solo no se recuerda
+    }
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

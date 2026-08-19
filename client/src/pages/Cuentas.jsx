@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, useToast, useConfirm } from '../components/common';
 import { cuentasApi, bancosApi } from '../services/api';
-import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X } from 'lucide-react';
+import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X, RotateCcw } from 'lucide-react';
 
 // Tipos base. La lista se amplía sola con cualquier tipo que ya se haya usado,
 // así que se pueden crear tipos nuevos desde esta misma pantalla.
@@ -52,7 +52,9 @@ export default function Cuentas() {
       // allSettled: si el catálogo de bancos falla, las cuentas se siguen viendo.
       const [c, b] = await Promise.allSettled([
         cuentasApi.getAll({ todas: 'true' }),
-        bancosApi.getAll(),
+        // todos=true trae también los bancos desactivados: antes desaparecían de la
+        // lista y no había forma de volver a activarlos desde la pantalla.
+        bancosApi.getAll({ todos: 'true' }),
       ]);
       setCuentas(c.status === 'fulfilled' && Array.isArray(c.value) ? c.value : []);
       setBancos(b.status === 'fulfilled' && Array.isArray(b.value) ? b.value : []);
@@ -68,6 +70,18 @@ export default function Cuentas() {
     ...TIPOS_BASE.map(t => t.value),
     ...cuentas.map(c => (c.tipo || '').trim().toLowerCase()).filter(Boolean),
   ]));
+
+  const bancosActivos = bancos.filter(b => b.activo !== false);
+  // En el selector solo se ofrecen bancos activos, salvo el que ya tenga puesto la
+  // cuenta que se está editando: si se ocultara, el select quedaría vacío y al
+  // guardar se borraría el banco de una cuenta que sí lo tenía.
+  const bancosSelect = bancos.filter(
+    b => b.activo !== false || String(b.id) === String(form.banco_id)
+  );
+  // Los que quedaron fuera de la lista se muestran al final, para que no estorben.
+  const bancosOrdenados = [...bancos].sort(
+    (a, b) => Number(a.activo === false) - Number(b.activo === false)
+  );
 
   // ── Cuentas ──────────────────────────────────────────────────────
 
@@ -149,11 +163,29 @@ export default function Cuentas() {
   };
 
   const guardarNombreBanco = async () => {
-    if (!editBanco?.nombre.trim()) return;
+    const nombre = editBanco?.nombre.trim();
+    if (!nombre) return;
+    // Al renombrar no se valida el nombre en el servidor, así que dos bancos podían
+    // quedar llamados igual y ya no se sabía cuál elegir al crear la cuenta.
+    const repetido = bancos.some(
+      b => b.id !== editBanco.id && (b.nombre || '').trim().toLowerCase() === nombre.toLowerCase()
+    );
+    if (repetido) { addToast(`Ya hay un banco llamado "${nombre}"`, 'error'); return; }
     try {
-      await bancosApi.update(editBanco.id, { nombre: editBanco.nombre.trim() });
+      await bancosApi.update(editBanco.id, { nombre });
       addToast('Banco actualizado', 'success');
       setEditBanco(null);
+      load();
+    } catch (err) {
+      addToast(err.message, 'error');
+    }
+  };
+
+  // Vuelve a poner en la lista un banco desactivado (por ejemplo si se quitó por error).
+  const reactivarBanco = async (b) => {
+    try {
+      await bancosApi.update(b.id, { activo: true });
+      addToast(`"${b.nombre}" vuelve a estar disponible`, 'success');
       load();
     } catch (err) {
       addToast(err.message, 'error');
@@ -191,7 +223,7 @@ export default function Cuentas() {
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setBancosOpen(true)}>
-              <Building2 size={16} className="mr-1" /> Bancos ({bancos.length})
+              <Building2 size={16} className="mr-1" /> Bancos ({bancosActivos.length})
             </Button>
             <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Nueva cuenta</Button>
           </div>
@@ -285,7 +317,11 @@ export default function Cuentas() {
                 <select id="cuenta-banco" value={form.banco_id} className={selectCls} required
                   onChange={(e) => setForm({ ...form, banco_id: e.target.value })}>
                   <option value="">Elige el banco…</option>
-                  {bancos.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                  {bancosSelect.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.nombre}{b.activo === false ? ' (fuera de la lista)' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -314,7 +350,8 @@ export default function Cuentas() {
         <div className="space-y-4">
           <p className="text-sm text-muted">
             Esta es la lista que aparece al crear una cuenta. Agregar aquí evita que el mismo
-            banco quede escrito de tres formas distintas.
+            banco quede escrito de tres formas distintas. Un banco que ya tenga cuentas no se
+            borra: queda fuera de la lista y puedes volver a activarlo cuando quieras.
           </p>
 
           <form onSubmit={crearBanco} className="flex gap-2">
@@ -329,8 +366,9 @@ export default function Cuentas() {
           <div className="max-h-80 overflow-y-auto rounded-xl border border-border divide-y divide-border/60">
             {bancos.length === 0 ? (
               <p className="text-sm text-muted text-center py-6">Sin bancos en la lista</p>
-            ) : bancos.map(b => (
-              <div key={b.id} className="flex items-center justify-between gap-2 px-3 py-2">
+            ) : bancosOrdenados.map(b => (
+              <div key={b.id}
+                className={`flex items-center justify-between gap-2 px-3 py-2 ${b.activo === false ? 'bg-primary/[0.03]' : ''}`}>
                 {editBanco?.id === b.id ? (
                   <>
                     <input type="text" value={editBanco.nombre} autoFocus
@@ -344,22 +382,32 @@ export default function Cuentas() {
                   </>
                 ) : (
                   <>
-                    <span className="flex-1 text-sm text-primary truncate">
+                    <span className={`flex-1 text-sm truncate ${b.activo === false ? 'text-muted' : 'text-primary'}`}>
                       {b.nombre}
                       {b.cuentas_asociadas > 0 && (
                         <span className="ml-2 text-[10px] text-muted bg-primary/5 px-1.5 py-0.5 rounded-full">
                           {b.cuentas_asociadas} cuenta{b.cuentas_asociadas !== 1 ? 's' : ''}
                         </span>
                       )}
+                      {b.activo === false && (
+                        <span className="ml-2 text-[10px] text-error">(fuera de la lista)</span>
+                      )}
                     </span>
                     <button type="button" onClick={() => setEditBanco({ id: b.id, nombre: b.nombre })}
                       title="Renombrar" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                       <Pencil size={14} />
                     </button>
-                    <button type="button" onClick={() => borrarBanco(b)} title="Quitar"
-                      className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
-                      <Trash2 size={14} />
-                    </button>
+                    {b.activo === false ? (
+                      <button type="button" onClick={() => reactivarBanco(b)} title="Volver a usarlo"
+                        className="p-1.5 text-muted hover:text-success rounded-lg hover:bg-success/10">
+                        <RotateCcw size={14} />
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => borrarBanco(b)} title="Quitar"
+                        className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </>
                 )}
               </div>

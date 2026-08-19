@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, useToast } from '../components/common';
+import { Card, CardBody, Button, useToast } from '../components/common';
 import { clienteApi } from '../services/api';
-import { Wallet, TrendingUp, TrendingDown, Loader } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Loader, AlertTriangle, RefreshCw } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
 export default function CarteraCliente() {
   const [cartera, setCartera] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Sin este estado, un fallo de carga dejaba las cuatro tarjetas en "$0",
+  // indistinguible de "no debes nada".
+  const [errorCarga, setErrorCarga] = useState('');
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -16,6 +19,8 @@ export default function CarteraCliente() {
 
   const loadCartera = async () => {
     try {
+      setLoading(true);
+      setErrorCarga('');
       const data = await clienteApi.getCartera();
       setCartera({
         saldo_inicial: data.saldo_inicial || 0,
@@ -25,6 +30,8 @@ export default function CarteraCliente() {
         movimientos: data.movimientos
       });
     } catch (err) {
+      setCartera(null);
+      setErrorCarga(err.message || 'No se pudo conectar con el servidor.');
       addToast(err.message, 'error');
     } finally {
       setLoading(false);
@@ -36,7 +43,35 @@ export default function CarteraCliente() {
   if (loading) {
     return (
       <Layout title="Mi Cartera">
-        <Card><CardBody className="text-center text-muted">Cargando...</CardBody></Card>
+        <Card><CardBody className="flex items-center justify-center gap-2 text-muted">
+          <Loader className="w-4 h-4 animate-spin" /> Cargando...
+        </CardBody></Card>
+      </Layout>
+    );
+  }
+
+  // Mostrar el error de frente: decir "$0" cuando en realidad no se pudo
+  // consultar el saldo hace creer al cliente que ya no debe nada.
+  if (errorCarga || !cartera) {
+    return (
+      <Layout title="Mi Cartera" subtitle="Resumen de cuenta">
+        <Card>
+          <CardBody className="text-center py-10 space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-full bg-error/10 flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-error" />
+            </div>
+            <p className="font-medium text-primary">No pudimos consultar tu estado de cuenta</p>
+            <p className="text-sm text-muted max-w-md mx-auto">
+              {errorCarga || 'El servidor no devolvió información.'} Esto <strong>no</strong> significa
+              que tu saldo sea cero: no se alcanzaron a leer los datos. Vuelve a intentarlo en un momento.
+            </p>
+            <div className="flex justify-center pt-1">
+              <Button variant="secondary" onClick={loadCartera}>
+                <RefreshCw size={16} /> Reintentar
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
       </Layout>
     );
   }
@@ -109,7 +144,7 @@ export default function CarteraCliente() {
                 </div>
               )}
                 <div className="flex justify-between p-3 bg-primary/5 rounded-xl">
-                  <span className="text-muted">Total comprador</span>
+                  <span className="text-muted">Total comprado</span>
                   <span className="font-medium text-primary">{formatCurrency(cartera?.total_vendido)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-success/10 rounded-xl">

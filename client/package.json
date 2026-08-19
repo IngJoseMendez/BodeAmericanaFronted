@@ -7,10 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "playwright test",
-    "test:ui": "playwright test --ui",
-    "test:headed": "playwright test --headed",
-    "test:debug": "playwright test --debug"
+    "test": "node tests/dinero-y-fechas.test.mjs && node tests/escapado-html.test.mjs && node tests/entregables-excel.test.mjs && node tests/reparto-inversionistas.test.mjs",
+    "test:navegador": "npx --yes playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

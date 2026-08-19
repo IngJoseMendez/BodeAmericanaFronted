@@ -187,9 +187,13 @@ export default function Clientes() {
       <div className="space-y-6">
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
+            {/* El placeholder desaparece al escribir: sin aria-label el lector de
+                pantalla anunciaba solo "campo de texto". */}
             <input
+              id="clientes-buscar"
               type="text"
+              aria-label="Buscar clientes por nombre, teléfono o ciudad"
               placeholder="Buscar clientes..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -201,14 +205,15 @@ export default function Clientes() {
             <select
               value={filtroEstado}
               onChange={(e) => setFiltroEstado(e.target.value)}
+              aria-label="Filtrar clientes por estado"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
             >
               <option value="">Todos los estados</option>
               {CLIENTE_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
-            <button onClick={exportarExcel}
+            <button type="button" onClick={exportarExcel}
               className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
-              <Download size={15} /> Excel
+              <Download size={15} aria-hidden="true" /> Excel
             </button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nuevo Cliente
@@ -217,7 +222,7 @@ export default function Clientes() {
         </div>
 
         {error && (
-          <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
+          <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
         )}
 
         {loading ? (
@@ -234,17 +239,43 @@ export default function Clientes() {
         ) : clientes.length === 0 ? (
           <Card>
             <CardBody className="flex flex-col items-center gap-4 py-12">
-              <Users className="w-12 h-12 text-muted/30" />
-              <p className="text-muted text-center">No hay clientes</p>
-              <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="ghost">
-                Agregar cliente
-              </Button>
+              <Users className="w-12 h-12 text-muted/30" aria-hidden="true" />
+              {/* Antes decía siempre "No hay clientes": buscando algo que no
+                  existe parecía que se habían borrado todos los clientes. */}
+              {debouncedSearch || filtroEstado ? (
+                <>
+                  <p className="text-muted text-center">
+                    Ningún cliente coincide{debouncedSearch ? ` con "${debouncedSearch}"` : ''}
+                    {filtroEstado ? ` en estado "${filtroEstado}"` : ''}
+                  </p>
+                  <Button onClick={() => { setSearch(''); setFiltroEstado(''); }} variant="ghost">
+                    Quitar filtros
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-muted text-center">No hay clientes</p>
+                  <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="ghost">
+                    Agregar cliente
+                  </Button>
+                </>
+              )}
             </CardBody>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* El retardo de entrada se topa a las 12 primeras tarjetas: con
+                `index * 50ms` sin techo, en una lista de 200 clientes las últimas
+                tardaban 10 segundos en aparecer. Y `animationFillMode: 'both'`
+                evita el parpadeo: sin él la tarjeta se pintaba visible durante la
+                espera y al arrancar saltaba de golpe al fotograma inicial. */}
             {clientes.map((cliente, index) => (
-              <Card key={cliente.id} hover className="animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
+              <Card
+                key={cliente.id}
+                hover
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${Math.min(index, 12) * 40}ms`, animationFillMode: 'both' }}
+              >
                 <CardBody>
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
@@ -287,12 +318,14 @@ export default function Clientes() {
                     </div>
                   </div>
 
+                  {/* Botones de solo icono: sin aria-label el lector de pantalla
+                      decía "botón" en los dos y no se distinguía editar de borrar. */}
                   <div className="flex justify-end gap-1 mt-4 pt-3 border-t border-border/50">
-                    <button onClick={() => handleEdit(cliente)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all">
-                      <Edit2 size={16} />
+                    <button type="button" onClick={() => handleEdit(cliente)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all" title="Editar cliente" aria-label={`Editar a ${cliente.nombre}`}>
+                      <Edit2 size={16} aria-hidden="true" />
                     </button>
-                    <button onClick={() => handleDelete(cliente.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all">
-                      <Trash2 size={16} />
+                    <button type="button" onClick={() => handleDelete(cliente.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" title="Eliminar cliente" aria-label={`Eliminar a ${cliente.nombre}`}>
+                      <Trash2 size={16} aria-hidden="true" />
                     </button>
                   </div>
                 </CardBody>
@@ -304,7 +337,7 @@ export default function Clientes() {
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Cliente' : 'Nuevo Cliente'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-5">
-          {error && <div className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
+          {error && <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
           
           <Input
             label="Nombre"

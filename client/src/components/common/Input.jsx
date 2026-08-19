@@ -1,9 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { parseMonto, formatNumero } from '../../lib/money';
 
-export function CurrencyInput({ label, value, onChange, error, className = '', placeholder = '0', prefix = '$' }) {
+// Todos los campos de la app salen de este archivo. Hasta ahora el <label> era un
+// simple hermano del control, sin htmlFor ni id: el lector de pantalla anunciaba
+// "campo de texto" sin decir de qué, y hacer clic en la etiqueta no llevaba el
+// foco al campo. El id se genera con useId cuando la página no pasa uno propio.
+
+export function CurrencyInput({ label, value, onChange, error, className = '', placeholder = '0', prefix = '$', id }) {
   const [displayValue, setDisplayValue] = useState('');
   const inputRef = useRef(null);
+  const autoId = useId();
+  const inputId = id || autoId;
+  const errorId = `${inputId}-error`;
 
   useEffect(() => {
     if (value !== undefined && value !== null && value !== '') {
@@ -38,7 +46,7 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
   return (
     <div className="space-y-2">
       {label && (
-        <label className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={inputId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <div className="relative">
         {prefix && (
@@ -47,6 +55,7 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
           </span>
         )}
         <input
+          id={inputId}
           ref={inputRef}
           type="text"
           inputMode="numeric"
@@ -55,6 +64,8 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
           onBlur={handleBlur}
           onFocus={handleFocus}
           placeholder={placeholder}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           className={`
             w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
             transition-all duration-300 ease-out
@@ -66,15 +77,18 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
           `}
         />
       </div>
-      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );
 }
 
-export function NumberInput({ label, value, onChange, error, className = '', placeholder = '0', suffix = '' }) {
+export function NumberInput({ label, value, onChange, error, className = '', placeholder = '0', suffix = '', id }) {
   const [displayValue, setDisplayValue] = useState('');
   const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
+  const autoId = useId();
+  const inputId = id || autoId;
+  const errorId = `${inputId}-error`;
 
   // Mientras el campo tiene el foco manda el texto que escribe la persona; si
   // reformateáramos en cada tecla, el separador decimal a medio escribir se
@@ -115,10 +129,11 @@ export function NumberInput({ label, value, onChange, error, className = '', pla
   return (
     <div className="space-y-2">
       {label && (
-        <label className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={inputId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <div className="relative">
         <input
+          id={inputId}
           ref={inputRef}
           type="text"
           inputMode="decimal"
@@ -127,6 +142,8 @@ export function NumberInput({ label, value, onChange, error, className = '', pla
           onBlur={handleBlur}
           onFocus={handleFocus}
           placeholder={placeholder}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           className={`
             w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
             transition-all duration-300 ease-out
@@ -143,25 +160,34 @@ export function NumberInput({ label, value, onChange, error, className = '', pla
           </span>
         )}
       </div>
-      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );
 }
 
-export const Input = ({ label, error, className = '', type, ...props }) => {
+export const Input = ({ label, error, className = '', type, id, ...props }) => {
+  // useId se llama siempre, antes de los returns tempranos, para no romper el
+  // orden de los hooks cuando el mismo campo cambia de tipo.
+  const autoId = useId();
+  const inputId = id || autoId;
+  const errorId = `${inputId}-error`;
+
   if (type === 'currency') {
-    return <CurrencyInput label={label} error={error} className={className} {...props} />;
+    return <CurrencyInput id={inputId} label={label} error={error} className={className} {...props} />;
   }
   if (type === 'number') {
-    return <NumberInput label={label} error={error} className={className} {...props} />;
+    return <NumberInput id={inputId} label={label} error={error} className={className} {...props} />;
   }
-  
+
   return (
     <div className="space-y-2">
       {label && (
-        <label className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={inputId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <input
+        id={inputId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         className={`
           w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
           transition-all duration-300 ease-out
@@ -173,19 +199,26 @@ export const Input = ({ label, error, className = '', type, ...props }) => {
         type={type || 'text'}
         {...props}
       />
-      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );
 };
 
-export function Select({ label, error, options = [], className = '', placeholder, ...props }) {
+export function Select({ label, error, options = [], className = '', placeholder, id, ...props }) {
+  const autoId = useId();
+  const selectId = id || autoId;
+  const errorId = `${selectId}-error`;
+
   return (
     <div className="space-y-2">
       {label && (
-        <label className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={selectId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <div className="relative">
         <select
+          id={selectId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           className={`
             w-full px-4 py-3 rounded-xl border bg-surface text-primary appearance-none
             transition-all duration-300 ease-out
@@ -209,18 +242,25 @@ export function Select({ label, error, options = [], className = '', placeholder
           </svg>
         </div>
       </div>
-      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );
 }
 
-export function Textarea({ label, error, className = '', ...props }) {
+export function Textarea({ label, error, className = '', id, ...props }) {
+  const autoId = useId();
+  const areaId = id || autoId;
+  const errorId = `${areaId}-error`;
+
   return (
     <div className="space-y-2">
       {label && (
-        <label className="block text-sm font-medium text-primary">{label}</label>
+        <label htmlFor={areaId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <textarea
+        id={areaId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         className={`
           w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
           transition-all duration-300 ease-out
@@ -231,7 +271,7 @@ export function Textarea({ label, error, className = '', ...props }) {
         `}
         {...props}
       />
-      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );
 }
