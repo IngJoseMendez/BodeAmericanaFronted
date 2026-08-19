@@ -120,7 +120,10 @@ function partirLineaCSV(linea, delim) {
         if (linea[i + 1] === '"') { actual += '"'; i++; }  // comilla escapada ("")
         else enComillas = false;
       } else actual += ch;
-    } else if (ch === '"') {
+    } else if (ch === '"' && actual === '') {
+      // La comilla solo abre campo si es el PRIMER carácter de la celda. Si va
+      // a mitad, es una pulgada: "Comercial 5\" x 3" es texto normal y antes
+      // se tragaba el resto de la línea como si fuera un campo entrecomillado.
       enComillas = true;
     } else if (ch === delim) {
       celdas.push(actual.trim()); actual = '';

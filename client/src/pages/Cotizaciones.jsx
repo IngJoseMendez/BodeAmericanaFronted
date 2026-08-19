@@ -506,6 +506,10 @@ export default function Cotizaciones() {
     }
     if (field === 'precio_unitario') {
       newItems[index].precio_promocion = null;
+      // Un precio escrito a mano manda sobre la búsqueda automática: al subir el
+      // número de consulta, la respuesta del precio preestablecido que venga en
+      // camino ya no se aplica. Antes llegaba después y borraba lo tecleado.
+      consultaItemSeq.current[index] = ++consultaSeqCounter.current;
     }
     setItems(newItems);
 

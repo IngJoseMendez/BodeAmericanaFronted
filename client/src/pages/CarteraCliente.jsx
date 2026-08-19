@@ -22,6 +22,12 @@ export default function CarteraCliente() {
       setLoading(true);
       setErrorCarga('');
       const data = await clienteApi.getCartera();
+      // Una respuesta 200 sin las cifras (un objeto vacío, o un 204 que el
+      // cliente convierte en null) pintaba las cuatro tarjetas en $0, que el
+      // cliente lee como "no debo nada". Es peor que un error: se distingue.
+      if (!data || data.saldo_pendiente === undefined) {
+        throw new Error('El servidor respondió sin los datos de tu cuenta.');
+      }
       setCartera({
         saldo_inicial: data.saldo_inicial || 0,
         total_vendido: data.total_vendido,

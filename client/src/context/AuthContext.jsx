@@ -60,6 +60,12 @@ export function AuthProvider({ children }) {
   const [motivoSinConexion, setMotivoSinConexion] = useState('');
   const [token, setToken] = useState(leerToken);
   const reintentoRef = useRef(null);
+  // Cada intento de verificación lleva número de tanda. Pulsar "Reintentar"
+  // cancela el temporizador pendiente, pero no la petición que ya iba en vuelo:
+  // sin este contador, esa petición vieja al fallar programaba SU propio
+  // reintento y quedaban dos cadenas corriendo a la vez, cada una escribiendo
+  // el estado por su cuenta.
+  const tandaRef = useRef(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -81,14 +87,17 @@ export function AuthProvider({ children }) {
   // seguiría vivo intentando escribir en un componente que ya no existe.
   useEffect(() => () => clearTimeout(reintentoRef.current), []);
 
-  const verificarToken = async (intento) => {
+  const verificarToken = async (intento, tanda = tandaRef.current) => {
+    if (tanda !== tandaRef.current) return;   // cadena abandonada
     try {
       const data = await authApi.verificar();
+      if (tanda !== tandaRef.current) return;
       setUsuario(data.usuario);
       setSinConexion(false);
       setMotivoSinConexion('');
       setLoading(false);
     } catch (err) {
+      if (tanda !== tandaRef.current) return;
       // El servidor respondió que el token caducó: ahí sí toca cerrar sesión.
       if (esSesionInvalida(err)) {
         logout();
@@ -99,7 +108,7 @@ export function AuthProvider({ children }) {
       // reiniciándose). Los cortes típicos duran uno o dos segundos: se
       // reintenta antes de darse por vencido.
       if (intento < REINTENTOS) {
-        reintentoRef.current = setTimeout(() => verificarToken(intento + 1), 1500 * (intento + 1));
+        reintentoRef.current = setTimeout(() => verificarToken(intento + 1, tanda), 1500 * (intento + 1));
         return; // seguimos "cargando": ni se borra el token ni se cierra sesión
       }
       // Se conserva el token a propósito: en cuanto vuelva el servicio, la
@@ -112,6 +121,7 @@ export function AuthProvider({ children }) {
 
   const reintentarConexion = () => {
     clearTimeout(reintentoRef.current);
+    tandaRef.current += 1;   // abandona lo que siga en vuelo
     setSinConexion(false);
     setMotivoSinConexion('');
     setLoading(true);
@@ -165,13 +175,13 @@ export function AuthProvider({ children }) {
   if (token && !usuario && sinConexion) {
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center p-6">
-        <div
-          role="status"
-          className="w-full max-w-sm text-center space-y-4 bg-surface border border-border rounded-2xl p-8 shadow-card"
-        >
+        <div className="w-full max-w-sm text-center space-y-4 bg-surface border border-border rounded-2xl p-8 shadow-card">
           <WifiOff className="w-10 h-10 mx-auto text-muted" aria-hidden="true" />
           <h1 className="font-display text-xl text-primary">No pudimos comprobar tu sesión</h1>
-          <p className="text-sm text-muted">
+          {/* La región viva envuelve SÓLO el mensaje. Antes abarcaba también los
+              botones, y un lector de pantalla volvía a leer la tarjeta entera
+              —«Reintentar», «Cerrar sesión»— cada vez que cambiaba el motivo. */}
+          <p role="status" className="text-sm text-muted">
             {motivoSinConexion || 'No hay conexión con el servidor.'}
           </p>
           <p className="text-sm text-muted">

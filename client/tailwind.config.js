@@ -34,7 +34,8 @@ export default {
         border: token('border'),
         'on-primary': token('on-primary'),
         'on-surface': token('on-surface'),
-        // Alias del fondo de página, usado por los componentes de components/ui.
+        // Alias del fondo de página. Antes lo usaba el árbol shadcn/ui, que se retiró
+        // por no usarse; se conserva porque varias pantallas ya usan bg-background.
         background: token('cream'),
       },
       fontFamily: {

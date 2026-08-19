@@ -122,9 +122,14 @@ export default function Auditoria() {
         { header: 'IP',           key: 'ip',          width: 18 },
       ];
       ws.getRow(1).font = { bold: true };
+      ws.getColumn('fecha').numFmt = 'dd/mm/yyyy hh:mm';
       filas.forEach(log => {
         ws.addRow({
-          fecha:       formatDate(log.created_at),
+          // Fecha como fecha, no como texto: escrita en texto, Excel ordenaba
+          // la columna alfabéticamente y el 2 de mayo quedaba antes del 10 de
+          // enero, que es justo lo contrario de lo que se busca en un registro
+          // de auditoría.
+          fecha:       aFecha(log.created_at) ?? '—',
           usuario:     log.usuario_nombre || '—',
           accion:      log.accion || '—',
           entidad:     `${log.entidad || '—'}${log.entidad_id ? ` #${log.entidad_id}` : ''}`,
