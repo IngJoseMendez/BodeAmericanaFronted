@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast } from '../components/common';
 import {
   despachosApi, pacasApi, clientesApi, carteraApi,
   listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi,
 } from '../services/api';
-import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2, LayoutGrid } from 'lucide-react';
 import { parseMonto } from '../lib/money';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -407,6 +408,26 @@ export default function Entregables() {
                     ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
                     : <><Download size={15} className="mr-1" /> Descargar</>}
                 </Button>
+
+                {/* La MATRIZ es la hoja de este grupo: aquí se baja como está y
+                    desde aquí mismo se va a llenarla, que es lo que la dueña
+                    pidió — no tener que buscar la pantalla en otro sitio. */}
+                {g.id === 'bodega' && (
+                  <>
+                    <Link
+                      to="/separacion-masiva"
+                      className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 min-h-[44px] rounded-xl border border-border text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+                    >
+                      <LayoutGrid size={15} /> Llenar la matriz
+                    </Link>
+                    <p className="text-[11px] text-muted mt-1.5">
+                      <b>Descargar</b> baja estas hojas —la MATRIZ incluida— tal como están hoy.
+                      <b> Llenar la matriz</b> te lleva a la pantalla donde eliges referencia, calidad
+                      y cantidad para cada cliente: al guardar quedan las pacas separadas y una
+                      cotización por cliente.
+                    </p>
+                  </>
+                )}
               </CardBody>
             </Card>
           ))}

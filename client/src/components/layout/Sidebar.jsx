@@ -30,7 +30,8 @@ import {
   BarChart3,
   Coins,
   TrendingUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  LayoutGrid
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -74,6 +75,9 @@ const adminNavItems = [
   { path: '/contenedores',         icon: Package2,        label: 'Contenedores',    key: null },
   { path: '/pacas',                icon: Package,         label: 'Inventario',      key: 'pacas' },
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',    key: null },
+  // Va pegada a Cotizaciones porque cada fila de la matriz termina siendo una
+  // cotización normal: es la misma tarea, hecha para muchos clientes de una vez.
+  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Separación masiva', key: null },
   { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },

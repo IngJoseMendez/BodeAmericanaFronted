@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
@@ -13,7 +13,7 @@ import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../componen
 import { contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
-import { parseMonto, formatCOP } from '../lib/money';
+import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -381,6 +381,7 @@ function useContenedorTemplates() {
 export default function Contenedores() {
   const { addToast } = useToast();
   const confirm = useConfirm();
+  const navigate = useNavigate();
   const { tieneRol } = useAuth();
   const isAdmin  = tieneRol('admin');
   const canEdit  = tieneRol(['admin', 'vendedor']);
@@ -1991,13 +1992,52 @@ export default function Contenedores() {
     }
 
     setSubmitting(true);
+    // Se guarda fuera del try para poder ofrecer la separación DESPUÉS de soltar
+    // el bloqueo de "guardando": el diálogo espera respuesta de la usuaria y no
+    // debe dejar la pantalla congelada mientras tanto.
+    let finalizado = null;
     try {
       const precios = combsFinalizacion.map((c) => ({ categoria: c.categoria || null, clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
       const result = await contenedoresApi.finalizar(selectedContenedor.id, { precios });
+      finalizado = result;
       addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} unidades al inventario`, 'success');
       setFinalizarModalOpen(false); loadContenedores();
     } catch (err) { addToast(err.message, 'error'); }
     finally { setSubmitting(false); }
+
+    if (!finalizado) return;
+
+    // Se puede finalizar sin haber distribuido nada: el aviso de arriba lo
+    // permite ("solo entrarán al inventario las distribuidas"). Si no entró
+    // ninguna unidad no hay nada que apartar y preguntarlo sobra.
+    const unidades = parseInt(finalizado.total_pacas_creadas) || 0;
+    if (unidades <= 0) return;
+
+    // Modal tarda ~200 ms en su animación de salida y al terminar devuelve el
+    // foco al botón que lo abrió; su listener de Escape (en `document`, con
+    // stopPropagation) sigue vivo hasta ese momento. Si preguntamos antes, ese
+    // salto le roba el foco al diálogo y un Enter caería sobre el botón del
+    // fondo. Se espera al HECHO —que el modal desaparezca del DOM— y no a un
+    // reloj: `loadContenedores()` repinta la lista entera justo en esa ventana
+    // y puede retrasar el temporizador del modal más allá de cualquier espera
+    // fija. Cuando el nodo ya no está, el foco y el listener ya se soltaron.
+    for (let i = 0; i < 40; i++) {
+      if (!document.querySelector('[role="dialog"][aria-modal="true"]')) break;
+      await new Promise(r => setTimeout(r, 25));
+    }
+    await new Promise(r => setTimeout(r, 50));
+
+    // Cuando llega mercancía nueva casi siempre hay clientes esperando, así que
+    // se ofrece apartarla de una vez. No es obligatorio: "Después" y la tecla
+    // Escape cierran sin hacer nada, y solo "Separar ahora" va destacado.
+    const irASeparar = await confirm({
+      title: 'Mercancía lista para apartar',
+      message: `Entraron ${formatNumero(unidades)} unidades al inventario con el lote "${finalizado.lote_numero}".\n\n¿Quieres repartirlas ahora entre los clientes? Eliges referencia, calidad y cantidad de cada uno, y al guardar quedan sus pacas separadas con su cotización.`,
+      confirmText: 'Separar ahora',
+      cancelText: 'Después',
+      variant: 'success',
+    });
+    if (irASeparar) navigate('/separacion-masiva');
   };
 
   // ── Derived stats ──────────────────────────────────────────────

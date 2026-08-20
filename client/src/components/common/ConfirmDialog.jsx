@@ -218,7 +218,9 @@ function ConfirmDialogUI({
 
           {/* Message */}
           {message && (
-            <p id={msgId} className="text-sm text-muted leading-relaxed mb-6">
+            // whitespace-pre-line: varios mensajes separan el dato del aviso con
+            // una línea en blanco, y sin esto los dos párrafos se pegaban en uno.
+            <p id={msgId} className="text-sm text-muted leading-relaxed mb-6 whitespace-pre-line">
               {message}
             </p>
           )}

@@ -53,7 +53,19 @@ export function CatalogProvider({ children }) {
   useEffect(() => { reload(); }, [reload]);
 
   return (
-    <CatalogContext.Provider value={{ tipos, categorias, calidades, temporadas, familias, loading, error, reload }}>
+    // Los nombres heredados no dicen lo que contienen y ya provocaron un bug: se
+    // exponen también con el nombre del negocio, que es como los llama la gente.
+    //   tipos      → CLASIFICACIONES (dama, niño, hombre)
+    //   categorias → REFERENCIAS     (cada referencia lleva temporada_nombre,
+    //                                 que es su categoría a efectos de precio)
+    //   temporadas → CATEGORÍAS      (las que se usan en la tabla de Precios)
+    // Los cuatro nombres viejos se conservan porque hay pantallas que ya los usan.
+    <CatalogContext.Provider value={{
+      tipos, categorias, calidades, temporadas, familias, loading, error, reload,
+      clasificaciones: tipos,
+      referencias: categorias,
+      categoriasPrecio: temporadas,
+    }}>
       {children}
     </CatalogContext.Provider>
   );

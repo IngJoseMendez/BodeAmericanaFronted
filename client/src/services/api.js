@@ -78,9 +78,16 @@ const handleResponse = async (response, endpoint = '') => {
     const respaldo = esLogin && response.status === 401
       ? 'Usuario o contraseña incorrectos.'
       : MENSAJES_HTTP[response.status];
-    throw new Error(
+    const error = new Error(
       delServidor || respaldo || `El servidor respondió con un error (${response.status}).`
     );
+    // El cuerpo del error se perdía al quedarnos sólo con el texto. Las pantallas
+    // que envían muchos registros de golpe (separación masiva) necesitan el
+    // detalle —qué cliente falló y por qué— para pintarlo EN su fila y no
+    // limitarse a un toast donde hay que adivinar dónde está el problema.
+    error.status = response.status;
+    error.datos = cuerpo && typeof cuerpo === 'object' ? cuerpo : null;
+    throw error;
   }
   // Una respuesta sin cuerpo (204, o un DELETE que no devuelve nada) reventaba
   // en response.json() con "Unexpected end of JSON input" y ese texto en inglés
@@ -491,6 +498,20 @@ export const cotizacionesApi = {
   },
   crearDespacho(id, paca_ids) {
     return api.post(`/cotizaciones/${id}/despacho`, paca_ids?.length ? { paca_ids } : {});
+  },
+  // Separación masiva: un solo envío crea una cotización por cliente, con sus
+  // pacas ya separadas. Se manda todo junto y no una petición por cliente
+  // porque los clientes compiten por las mismas pacas: en peticiones sueltas
+  // el primero se queda con el stock y los siguientes fallan a medias, dejando
+  // unas cotizaciones creadas y otras no.
+  crearMasiva(data) {
+    return api.post('/cotizaciones/masiva', data);
+  },
+  // Stock disponible agrupado por referencia + calidad, de una sola vez. La
+  // pantalla masiva no puede pedir /pacas/disponibilidad por cada fila: con
+  // veinte clientes serían cientos de peticiones mientras la usuaria escribe.
+  disponibilidadMasiva(params = {}) {
+    return api.get(`/cotizaciones/disponibilidad-masiva${qs(params)}`);
   },
 };
 
