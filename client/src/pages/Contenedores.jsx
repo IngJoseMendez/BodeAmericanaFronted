@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
   Package2, Plus, Edit2, Trash2, Eye, CheckCircle, X,
@@ -72,6 +72,102 @@ const inpBase =
   'placeholder:text-muted/60 transition-colors duration-150';
 const inp = `w-full ${inpBase}`;
 const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider';
+
+// ── Selector alimentado por el catálogo de Productos ──────────────
+//
+// POR QUÉ EXISTE
+// Estos campos eran <input list="…"> con <datalist>: sugerían, pero dejaban
+// escribir cualquier cosa. Y lo que se teclea aquí tiene consecuencias río
+// abajo, porque el cruce se hace por NOMBRE:
+//   · Al finalizar el contenedor, el servidor copia a cada paca la familia de
+//     su referencia buscándola por nombre en el catálogo. Una letra distinta,
+//     un acento o un plural y no casa: la paca nace SIN familia, la columna
+//     FAMILIA del Excel de matriz sale vacía y las referencias no se agrupan.
+//   · Cotizaciones resuelve el precio por referencia + calidad. Una referencia
+//     que no existe en el catálogo se queda sin precio y hay que escribirlo a
+//     mano en cada cotización.
+// Eligiendo de una lista, el dato siempre casa. No es un capricho de interfaz.
+//
+// POR QUÉ CONSERVA LO QUE YA ESTABA ESCRITO
+// Hay contenedores guardados con valores tecleados a mano que quizá no estén
+// en el catálogo. Si el <select> no contiene el valor actual, el navegador lo
+// descarta y el campo se vacía SOLO, sin avisar, al abrir la edición: eso
+// borraría líneas de un contenedor real. Por eso, cuando el valor no está
+// entre las opciones se añade arriba una opción con ese mismo valor marcada
+// "(fuera del catálogo)": se conserva y además se ve que hay que corregirlo.
+//
+// SE DECLARA AQUÍ FUERA A PROPÓSITO
+// Definido dentro del componente de pantalla, React lo vería como un tipo
+// nuevo en cada render, desmontaría el campo y se perdería el foco.
+function SelectCatalogo({
+  value = '', onChange, opciones = [], grupos = null,
+  placeholder = 'Seleccionar…', className = inp, ...rest
+}) {
+  const actual = (value ?? '').trim();
+  // El envoltorio se memoriza porque de él cuelgan las opciones de abajo, que
+  // también se memorizan: si se recreara en cada render, la memoria no serviría
+  // de nada. `opciones` y `grupos` ya llegan estables desde la pantalla.
+  const listas = useMemo(() => grupos ?? [{ label: null, opciones }], [grupos, opciones]);
+
+  // El <select> casa sus opciones por texto EXACTO. Lo guardado puede diferir
+  // del catálogo solo en mayúsculas o espacios ("chaqueta" vs "Chaqueta"); en
+  // ese caso NO es un valor ajeno, así que se muestra la opción equivalente
+  // del catálogo en lugar de marcarlo como fuera de él.
+  let equivalente = '';
+  for (const g of listas) {
+    const hit = (g.opciones || []).find(
+      (o) => (o || '').trim().toLowerCase() === actual.toLowerCase()
+    );
+    if (hit) { equivalente = hit; break; }
+  }
+  // Conservar el valor es INNEGOCIABLE: si no está entre las opciones, el
+  // navegador vacía el campo y el dato se pierde al guardar.
+  const conservarValor = actual !== '' && equivalente === '';
+  // Señalarlo como ajeno al catálogo, en cambio, solo tiene sentido si hay
+  // catálogo con el que compararlo. Mientras se está cargando —o si la petición
+  // falló, que el contexto lo tolera y deja las listas vacías— NADA casaría y
+  // los campos de un contenedor perfectamente sano se llenarían de avisos
+  // falsos, invitando a "corregir" datos que están bien.
+  const hayCatalogo = listas.some(g => (g.opciones || []).length > 0);
+  const fueraDeCatalogo = conservarValor && hayCatalogo;
+
+  // Antes había UN <datalist> compartido por catálogo: pintar la lista entera
+  // era barato. Ahora cada select trae la suya, así que con 20 líneas × 4
+  // campos son miles de <option> que se recrearían en CADA tecleo del
+  // formulario. Memorizadas en un fragmento estable, React se salta el subárbol
+  // completo mientras el catálogo no cambie.
+  const opcionesRender = useMemo(() => (
+    <>
+      {listas.map((g, gi) =>
+        g.label ? (
+          <optgroup key={`${gi}-${g.label}`} label={g.label}>
+            {(g.opciones || []).map((o) => <option key={`${gi}-${o}`} value={o}>{o}</option>)}
+          </optgroup>
+        ) : (
+          (g.opciones || []).map((o) => <option key={`${gi}-${o}`} value={o}>{o}</option>)
+        )
+      )}
+    </>
+  ), [listas]);
+
+  return (
+    <select
+      {...rest}
+      className={className}
+      value={equivalente || actual}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">{placeholder}</option>
+      {/* Valor escrito a mano que no está en el catálogo: se conserva tal cual
+          (mismo `value`) para no perderlo, y se etiqueta para corregirlo salvo
+          que el catálogo aún no haya llegado. */}
+      {conservarValor && (
+        <option value={actual}>{fueraDeCatalogo ? `${actual} (fuera del catálogo)` : actual}</option>
+      )}
+      {opcionesRender}
+    </select>
+  );
+}
 
 // ── Status badge ─────────────────────────────────────────────────
 function StatusBadge({ estado }) {
@@ -398,7 +494,7 @@ export default function Contenedores() {
   const [modalOpen, setModalOpen]                   = useState(false);
   // El formulario de alta/edición se construía en CADA render de la pantalla
   // aunque estuviera cerrado (JSX evalúa los hijos antes de que Modal decida no
-  // pintarlos), con sus datalists del catálogo completo. Ahora solo se monta
+  // pintarlos), con el catálogo completo dentro. Ahora solo se monta
   // cuando hace falta; este flag lo mantiene vivo los ~200 ms que dura la
   // animación de salida para no perder el cierre suave.
   const [modalMontado, setModalMontado]             = useState(false);
@@ -416,11 +512,18 @@ export default function Contenedores() {
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
-  const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
-  const tiposOpts      = tiposRaw.map(t => t.nombre);
-  const categoriasOpts = categoriasRaw;
-  const calidadesOpts  = calidadesRaw.map(t => t.nombre);
-  const temporadasOpts = temporadasRaw.map(t => t.nombre);
+  // Los nombres de las tablas mienten (paca_temporadas son CATEGORÍAS y
+  // paca_categorias son REFERENCIAS), y esa trampa de nombres ya provocó dos
+  // bugs. useCatalog expone alias con el nombre que usa el negocio: se usan
+  // esos para que el código se lea solo.
+  // `reload` hace falta porque los selects ya no admiten texto libre: si alguien
+  // crea la referencia que falta en la otra pestaña, el catálogo de ESTA se
+  // quedaría viejo y no habría forma de elegirla sin recargar la página —lo que
+  // borraría el formulario a medio llenar.
+  const { clasificaciones, referencias, calidades, categoriasPrecio, familias, reload: recargarCatalogo } = useCatalog();
+  const opcionesClasificacion = useMemo(() => clasificaciones.map(t => t.nombre).filter(Boolean), [clasificaciones]);
+  const opcionesCalidad       = useMemo(() => calidades.map(c => c.nombre).filter(Boolean), [calidades]);
+  const opcionesCategoria     = useMemo(() => categoriasPrecio.map(c => c.nombre).filter(Boolean), [categoriasPrecio]);
 
   // ── Form ───────────────────────────────────────────────────────
   const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
@@ -486,29 +589,66 @@ export default function Contenedores() {
     return () => clearTimeout(t);
   }, [modalOpen]);
 
-  // Sugerencias de referencia filtradas por categoría. Antes cada línea de cada
-  // proveedor recorría el catálogo entero en cada tecleo; ahora el resultado se
-  // memoriza por categoría y se reutiliza entre líneas.
-  const referenciasDe = useMemo(() => {
+  // Ficha de una referencia buscada por NOMBRE en minúsculas: es exactamente el
+  // mismo cruce que hace el servidor al finalizar el contenedor para copiar la
+  // familia a cada paca. Se memoriza para no recorrer el catálogo en cada
+  // render de cada línea.
+  const referenciaPorNombre = useMemo(() => {
+    const idx = new Map();
+    referencias.forEach(r => idx.set((r.nombre || '').trim().toLowerCase(), r));
+    return (nombre) => idx.get((nombre || '').trim().toLowerCase()) || null;
+  }, [referencias]);
+
+  // Familia a la que pertenece una referencia. Es el dato que agrupa las
+  // referencias en el Excel de matriz ("Chaquetas" junta "chaqueta deportiva" y
+  // "chaqueta mixta"). El catálogo suele traerla ya resuelta en familia_nombre;
+  // si no viene, se cruza familia_id contra el catálogo de familias.
+  const familiaDeReferencia = useMemo(() => {
+    const porId = new Map(familias.map(f => [String(f.id), f.nombre]));
+    return (nombreRef) => {
+      const ref = referenciaPorNombre(nombreRef);
+      if (!ref) return '';
+      return ref.familia_nombre || porId.get(String(ref.familia_id)) || '';
+    };
+  }, [familias, referenciaPorNombre]);
+
+  // Texto para el `title` de los selects estrechos de la revisión, donde no cabe
+  // la pista de familia debajo del campo.
+  const pistaFamilia = (nombreRef) => {
+    if (!nombreRef) return '';
+    const fam = familiaDeReferencia(nombreRef);
+    return fam ? ` · Familia: ${fam}` : ' · Sin familia: no se agrupará en la matriz';
+  };
+
+  // Referencias ORDENADAS por la categoría elegida: primero las de esa
+  // categoría, después el resto en un <optgroup> aparte. Es orden, no filtro
+  // duro: si se ocultaran las demás y la categoría estuviera equivocada, no
+  // habría forma de elegir la referencia correcta. Se memoriza por categoría y
+  // se reutiliza entre líneas, como hacía el filtro anterior.
+  const gruposReferencias = useMemo(() => {
     const cache = new Map();
+    const todas = referencias.map(r => r.nombre).filter(Boolean);
     return (categoria) => {
-      const k = (categoria || '').toLowerCase();
+      const k = (categoria || '').trim().toLowerCase();
       if (!cache.has(k)) {
-        cache.set(k, k
-          ? categoriasOpts.filter(c => !c.temporada_nombre || c.temporada_nombre.toLowerCase() === k)
-          : categoriasOpts);
+        if (!k) {
+          cache.set(k, [{ label: null, opciones: todas }]);
+        } else {
+          const dentro = [], fuera = [];
+          referencias.forEach(r => {
+            if (!r.nombre) return;
+            const suya = (r.temporada_nombre || '').trim().toLowerCase() === k;
+            (suya ? dentro : fuera).push(r.nombre);
+          });
+          cache.set(k, [
+            ...(dentro.length ? [{ label: 'De la categoría elegida', opciones: dentro }] : []),
+            ...(fuera.length  ? [{ label: 'Otras categorías',        opciones: fuera  }] : []),
+          ]);
+        }
       }
       return cache.get(k);
     };
-  }, [categoriasOpts]);
-
-  // Un <datalist> de referencias por cada categoría distinta en uso, en lugar de
-  // uno por línea: con 20 líneas se duplicaba 20 veces el catálogo completo.
-  const categoriasEnUso = useMemo(() => {
-    const set = new Set();
-    proveedores.forEach(p => (p.detalles || []).forEach(d => set.add((d.categoria || '').toLowerCase())));
-    return [...set];
-  }, [proveedores]);
+  }, [referencias]);
 
   // ── Filtered list (client-side search) ────────────────────────
   const contenedoresFiltrados = useMemo(() => {
@@ -1512,7 +1652,18 @@ export default function Contenedores() {
   };
   const updateDetalle = (pi, di, field, val) => {
     const n = [...proveedores];
-    const detalles = [...n[pi].detalles]; detalles[di] = { ...detalles[di], [field]: val };
+    const detalles = [...n[pi].detalles];
+    const actualizado = { ...detalles[di], [field]: val };
+    // Cada referencia del catálogo ya sabe a qué categoría pertenece
+    // (temporada_nombre). Rellenarla sola garantiza que referencia y categoría
+    // casen —de eso dependen el precio y la familia río abajo— y le quita un
+    // campo de encima a quien captura. Si la referencia elegida no tiene
+    // categoría asignada NO se borra la que hubiera: sería perder un dato.
+    if (field === 'referencia') {
+      const cat = referenciaPorNombre(val)?.temporada_nombre;
+      if (cat) actualizado.categoria = cat;
+    }
+    detalles[di] = actualizado;
     n[pi] = { ...n[pi], detalles }; setProveedores(n);
   };
 
@@ -2349,25 +2500,10 @@ export default function Contenedores() {
         size="full"
       >
         <form onSubmit={handleSubmit}>
-          {/* Catálogos compartidos por todo el formulario. Antes cada línea de
-              distribución emitía sus propios cuatro <datalist> con el catálogo
-              completo, así que un contenedor de 20 líneas repetía 80 listas.
-              Van dentro del mismo `!modoEstimacion` que las líneas: en modo
-              estimación no hay ningún input que los use y se estaban pintando
-              (con el catálogo entero de referencias) en cada tecleo del
-              formulario de estimación, que antes no pintaba ninguno. */}
-          {!modoEstimacion && (
-            <>
-              <datalist id="cont-temporadas">{temporadasOpts.map(t => <option key={t} value={t} />)}</datalist>
-              <datalist id="cont-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
-              <datalist id="cont-calidades">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
-              {categoriasEnUso.map((cat, ci) => (
-                <datalist key={cat} id={`cont-refs-${ci}`}>
-                  {referenciasDe(cat).map(c => <option key={c.nombre} value={c.nombre} />)}
-                </datalist>
-              ))}
-            </>
-          )}
+          {/* Los cuatro <datalist> compartidos (cont-temporadas, cont-tipos,
+              cont-calidades y cont-refs-N) desaparecieron: las líneas de
+              distribución ya no usan <input list="…"> sino <select>, que trae
+              sus propias opciones. */}
           <div className="flex flex-col lg:flex-row gap-6 items-start">
 
             {/* ── LEFT: form sections ─────────────────────────── */}
@@ -2616,6 +2752,11 @@ export default function Contenedores() {
                         <div className="space-y-4">
                           {prov.detalles.map((det, di) => {
                             const subtotal = (parseInt(det.cantidad)||0)*(parseFloat(det.costo_unitario)||0);
+                            // Familia de la referencia elegida. Se calcula aquí,
+                            // una sola vez por línea, para pintarla debajo del
+                            // select: así se ve la consecuencia al capturar y no
+                            // tres semanas después, al abrir el Excel de matriz.
+                            const familiaDeLaLinea = familiaDeReferencia(det.referencia);
                             return (
                               <div key={di} className="bg-surface rounded-xl border border-border/60 border-l-4 border-l-secondary/50 shadow-sm hover:shadow-md hover:border-l-secondary transition-all duration-150 overflow-hidden">
                                 {/* Cabecera de la línea */}
@@ -2644,29 +2785,52 @@ export default function Contenedores() {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                   <div>
                                     <label htmlFor={`det-categoria-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
-                                    <input id={`det-categoria-${pi}-${di}`} list="cont-temporadas" className={inp} placeholder="Verano / Invierno"
+                                    {/* Se rellena sola al elegir la referencia, pero
+                                        se deja cambiar por si la referencia aún no
+                                        tiene categoría asignada en Productos. */}
+                                    <SelectCatalogo id={`det-categoria-${pi}-${di}`}
+                                      placeholder="Categoría (Verano / Invierno)"
+                                      opciones={opcionesCategoria}
                                       value={det.categoria}
-                                      onChange={(e) => updateDetalle(pi, di, 'categoria', e.target.value)} />
+                                      onChange={(val) => updateDetalle(pi, di, 'categoria', val)} />
                                   </div>
                                   <div>
                                     <label htmlFor={`det-clasificacion-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Clasificación *</label>
-                                    <input id={`det-clasificacion-${pi}-${di}`} list="cont-tipos" className={inp} placeholder="Hombre / Mujer..."
+                                    <SelectCatalogo id={`det-clasificacion-${pi}-${di}`}
+                                      placeholder="Clasificación (Dama / Hombre…)"
+                                      opciones={opcionesClasificacion}
                                       value={det.clasificacion} required
-                                      onChange={(e) => updateDetalle(pi, di, 'clasificacion', e.target.value)} />
+                                      onChange={(val) => updateDetalle(pi, di, 'clasificacion', val)} />
                                   </div>
                                   <div>
                                     <label htmlFor={`det-referencia-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Referencia *</label>
-                                    <input id={`det-referencia-${pi}-${di}`}
-                                      list={`cont-refs-${categoriasEnUso.indexOf((det.categoria || '').toLowerCase())}`}
-                                      className={inp} placeholder="Chaqueta / Pantalón..."
+                                    <SelectCatalogo id={`det-referencia-${pi}-${di}`}
+                                      placeholder="Referencia (Chaqueta / Pantalón…)"
+                                      grupos={gruposReferencias(det.categoria)}
                                       value={det.referencia} required
-                                      onChange={(e) => updateDetalle(pi, di, 'referencia', e.target.value)} />
+                                      onChange={(val) => updateDetalle(pi, di, 'referencia', val)} />
+                                    {/* La familia es lo que agrupa las referencias en la
+                                        matriz, y se copia a la paca al finalizar. Se
+                                        avisa aquí para que se corrija ahora. */}
+                                    {det.referencia && (
+                                      familiaDeLaLinea ? (
+                                        <p className="text-[9px] text-muted mt-1 truncate" title={`Familia: ${familiaDeLaLinea}`}>
+                                          Familia: <span className="font-bold text-primary capitalize">{familiaDeLaLinea}</span>
+                                        </p>
+                                      ) : (
+                                        <p className="text-[9px] text-warning font-semibold mt-1" title="Asígnale una familia a esta referencia en Productos para que se agrupe en la matriz">
+                                          Sin familia — no se agrupará en la matriz
+                                        </p>
+                                      )
+                                    )}
                                   </div>
                                   <div>
                                     <label htmlFor={`det-calidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Calidad *</label>
-                                    <input id={`det-calidad-${pi}-${di}`} list="cont-calidades" className={inp} placeholder="Premium / Supreme..."
+                                    <SelectCatalogo id={`det-calidad-${pi}-${di}`}
+                                      placeholder="Calidad (Primera / Segunda…)"
+                                      opciones={opcionesCalidad}
                                       value={det.calidad} required
-                                      onChange={(e) => updateDetalle(pi, di, 'calidad', e.target.value)} />
+                                      onChange={(val) => updateDetalle(pi, di, 'calidad', val)} />
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -2695,6 +2859,36 @@ export default function Contenedores() {
                             );
                           })}
                         </div>
+                        {/* Las referencias, clasificaciones y calidades se dan de
+                            alta en Productos, no aquí: creándolas al vuelo se
+                            volverían a colar nombres sueltos que no casan con el
+                            catálogo, que es justo lo que se está corrigiendo. Va
+                            una sola vez por bloque y no en cada línea para que
+                            siga siendo un aviso discreto. */}
+                        {/* En pestaña nueva a propósito: este enlace vive DENTRO del
+                            formulario abierto. Navegando en la misma pestaña, React
+                            Router desmonta la pantalla y se pierde sin aviso todo lo
+                            capturado (proveedores, líneas, servicios) — y se pulsa
+                            justo cuando ya hay medio contenedor escrito. */}
+                        <p className="mt-2 text-[10px] text-muted">
+                          ¿Falta una referencia?{' '}
+                          <Link to="/tipos-paca" target="_blank" rel="noopener noreferrer"
+                            title="Se abre en una pestaña nueva para no perder lo que ya escribiste"
+                            className="font-semibold text-secondary hover:underline">
+                            Créala en Productos
+                          </Link>
+                          {' · '}
+                          {/* type="button" obligatorio: está dentro del <form> y por
+                              defecto enviaría el contenedor. Sin este botón el
+                              enlace de arriba no lleva a ninguna parte: la
+                              referencia recién creada no aparecería en los selects
+                              de esta pestaña hasta recargar la página. */}
+                          <button type="button" onClick={() => recargarCatalogo()}
+                            title="Vuelve a leer el catálogo para que salga la referencia que acabas de crear"
+                            className="font-semibold text-secondary hover:underline">
+                            Ya la creé, actualizar lista
+                          </button>
+                        </p>
                         <button type="button" onClick={() => addDetalle(pi)}
                           className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5 hover:border-secondary transition-all">
                           <Plus size={13} /> Agregar línea a {prov.proveedor_nombre || `Proveedor ${pi+1}`}
@@ -3757,21 +3951,30 @@ export default function Contenedores() {
                           {row.es_nuevo ? (
                             <div className="flex items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
                               <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
-                              <input list="rev-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              {/* Elegibles y no escribibles por lo mismo que en el alta:
+                                  estos productos también se convierten en pacas y su
+                                  familia y su precio se buscan por NOMBRE en el catálogo. */}
+                              <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                                 placeholder="Clasificación *" title="Clasificación del producto que llegó"
                                 aria-label="Clasificación del producto que llegó sin factura"
+                                opciones={opcionesClasificacion}
                                 value={row.clasificacion}
-                                onChange={e => updateRevisionRow(idx, 'clasificacion', e.target.value)} />
-                              <input list="rev-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
-                                placeholder="Referencia *" title="Referencia del producto que llegó"
+                                onChange={val => updateRevisionRow(idx, 'clasificacion', val)} />
+                              {/* La fila es demasiado estrecha para la pista de familia
+                                  debajo del campo, así que va en el `title`. */}
+                              <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                                placeholder="Referencia *"
+                                title={`Referencia del producto que llegó${pistaFamilia(row.referencia)}`}
                                 aria-label="Referencia del producto que llegó sin factura"
+                                grupos={gruposReferencias('')}
                                 value={row.referencia}
-                                onChange={e => updateRevisionRow(idx, 'referencia', e.target.value)} />
-                              <input list="rev-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                                onChange={val => updateRevisionRow(idx, 'referencia', val)} />
+                              <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
                                 placeholder="Calidad" title="Calidad"
                                 aria-label="Calidad del producto que llegó sin factura"
+                                opciones={opcionesCalidad}
                                 value={row.calidad}
-                                onChange={e => updateRevisionRow(idx, 'calidad', e.target.value)} />
+                                onChange={val => updateRevisionRow(idx, 'calidad', val)} />
                               <input type="text" inputMode="decimal" className={`${inpBase} text-xs w-24 flex-shrink-0 py-1.5 text-right`}
                                 placeholder="Costo u." title="Costo unitario de este producto"
                                 aria-label="Costo unitario del producto que llegó sin factura"
@@ -3803,28 +4006,36 @@ export default function Contenedores() {
                               Producto que llegó sin estar facturado.
                             </p>
                           ) : (
-                          /* Los datalist son los compartidos del final del modal:
-                             antes cada fila repetía los tres catálogos completos. */
+                          /* Lo que se corrige aquí es lo que acaba en la paca, así que
+                             también tiene que salir del catálogo: si se teclea, la
+                             paca nace sin familia y sin precio. Dejar el campo vacío
+                             sigue significando "llegó igual que lo pedido". */
                           <div className="flex items-center gap-1 bg-blue-50/40 border border-blue-100 rounded-lg p-1">
                             <p className="text-[9px] font-bold text-blue-700 uppercase lg:hidden mr-1">🔄 Tipo recibido:</p>
-                            <input list="rev-tipos" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
-                              placeholder={row.clasificacion}
-                              title="Clasificación recibida"
+                            <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={`Igual: ${row.clasificacion || '—'}`}
+                              title="Clasificación recibida (vacío = igual a lo pedido)"
                               aria-label={`Clasificación recibida de ${row.referencia}`}
+                              opciones={opcionesClasificacion}
                               value={row.clasificacion_recibida}
-                              onChange={e => updateRevisionRow(idx, 'clasificacion_recibida', e.target.value)} />
-                            <input list="rev-refs" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
-                              placeholder={row.referencia}
-                              title="Referencia recibida"
+                              onChange={val => updateRevisionRow(idx, 'clasificacion_recibida', val)} />
+                            {/* Se ordenan por la categoría de la línea pedida y la
+                                pista de familia va en el `title`: la fila es demasiado
+                                estrecha para ponerla debajo del campo. */}
+                            <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={`Igual: ${row.referencia || '—'}`}
+                              title={`Referencia recibida (vacío = igual a lo pedido)${pistaFamilia(row.referencia_recibida)}`}
                               aria-label={`Referencia recibida en lugar de ${row.referencia}`}
+                              grupos={gruposReferencias(row.categoria)}
                               value={row.referencia_recibida}
-                              onChange={e => updateRevisionRow(idx, 'referencia_recibida', e.target.value)} />
-                            <input list="rev-cals" className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
-                              placeholder={row.calidad || 'Calidad'}
-                              title="Calidad recibida"
+                              onChange={val => updateRevisionRow(idx, 'referencia_recibida', val)} />
+                            <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}
+                              placeholder={row.calidad ? `Igual: ${row.calidad}` : 'Calidad'}
+                              title="Calidad recibida (vacío = igual a lo pedido)"
                               aria-label={`Calidad recibida de ${row.referencia}`}
+                              opciones={opcionesCalidad}
                               value={row.calidad_recibida}
-                              onChange={e => updateRevisionRow(idx, 'calidad_recibida', e.target.value)} />
+                              onChange={val => updateRevisionRow(idx, 'calidad_recibida', val)} />
                           </div>
                           )}
 
@@ -3868,10 +4079,8 @@ export default function Contenedores() {
               });
             })()}
 
-            {/* Sugerencias compartidas por TODAS las filas de la revisión */}
-            <datalist id="rev-tipos">{tiposOpts.map(t => <option key={t} value={t} />)}</datalist>
-            <datalist id="rev-refs">{categoriasOpts.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
-            <datalist id="rev-cals">{calidadesOpts.map(c => <option key={c} value={c} />)}</datalist>
+            {/* Los <datalist> rev-tipos / rev-refs / rev-cals ya no existen: las
+                filas de revisión usan <select>, que trae sus propias opciones. */}
             </div>
 
             {/* Resumen totales (compacto, sticky) */}
