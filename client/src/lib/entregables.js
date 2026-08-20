@@ -237,13 +237,25 @@ export function hojaInventarioBodega(wb, filas) {
 export function hojaMatrizClientes(wb, filas, separadas) {
   const ws = wb.addWorksheet('MATRIZ');
 
-  // Clave de cruce entre inventario y separadas. Deliberadamente NO incluye
-  // familia ni categoría: aunque las dos fuentes ya las devuelven, quedan vacías
-  // en las pacas creadas antes de asignarle familia a la categoría, y una clave
-  // con un campo nulo no cruza. Con estos tres campos la matriz siempre cuadra;
-  // la familia se muestra en su columna, tomada de la fila de inventario.
-  const clave = (r) => [norm(r.clasificacion), norm(r.referencia), norm(r.calidad)]
-    .join('||').toLowerCase();
+  // Estructura tomada TAL CUAL de la plantilla que usa la operación
+  // ("ejemplo matriz.xlsx", hoja MATRIZ):
+  //
+  //   fila 1  INVENTARIO ..... MATRIZ ..... FECHA
+  //   fila 3  sub-rótulos PROMO / ORIGINAL sobre las dos columnas de precio,
+  //           y los totales de INVENTARIO, FISICO, DESPACHOS, SEP, DISP y de
+  //           cada cliente
+  //   fila 4  encabezados
+  //   fila 5+ una fila por producto; a la derecha, una columna por cliente con
+  //           lo que tiene apartado
+  //
+  // La plantilla NO lleva familia, clasificación ni categoría: identifica el
+  // producto por REFERENCIA + CALIDAD, que es la pareja con la que se separa y
+  // se cotiza en todo el sistema.
+
+  // Cruce entre el inventario y las pacas separadas. Sólo referencia + calidad,
+  // que es lo que ambas fuentes traen siempre lleno: con un campo nulo de más
+  // (familia, categoría) la clave no cruzaría y la matriz saldría vacía.
+  const clave = (r) => [norm(r.referencia), norm(r.calidad)].join('||').toLowerCase();
 
   const porProducto = new Map();
   const clientes = new Set();
@@ -258,76 +270,118 @@ export function hojaMatrizClientes(wb, filas, separadas) {
   }
   const cols = [...clientes].sort((a, b) => a.localeCompare(b, 'es'));
 
-  const FIJAS = ['FAMILIA', 'CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP'];
-  const nCols = FIJAS.length + cols.length;
+  const FIJAS = ['COD', 'PROVE', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PRECIO',
+                 'INVENTARIO', 'FISICO', 'DESPACHOS', 'SEP', 'DISP'];
+  const N = FIJAS.length;
+  const nCols = N + cols.length;
 
-  [16, 18, 16, 24, 14, 10, 11, 10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-  cols.forEach((_, i) => { ws.getColumn(FIJAS.length + i + 1).width = 16; });
+  [16, 20, 26, 14, 13, 13, 13, 12, 10, 12, 9, 9].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  cols.forEach((_, i) => { ws.getColumn(N + i + 1).width = 14; });
 
-  let fila = titulo(ws, `INVENTARIO Y SEPARADAS POR CLIENTE — ${hoyStr()}`, nCols);
-  fila = cabecera(ws, fila, [...FIJAS, ...cols]);
-  const filaCab = fila - 1;
+  // ── Cabecera de tres filas, como en la plantilla ───────────────
+  ws.getCell('A1').value = 'INVENTARIO';
+  ws.getCell('A1').font = { bold: true, size: 12, color: { argb: INK } };
+  ws.getCell('C1').value = 'MATRIZ';
+  ws.getCell('C1').font = { bold: true, size: 13, color: { argb: ACCENT } };
+  ws.getCell('D1').value = 'FECHA';
+  ws.getCell('D1').font = { bold: true, size: 10 };
+  ws.getCell('E1').value = hoyStr();
+  ws.getRow(1).height = 20;
 
-  // Las columnas de cliente se distinguen con otro color para que se lea dónde
-  // termina el inventario y empiezan los clientes.
+  // Los dos precios comparten el rótulo "PRECIO" en la fila de encabezados y se
+  // distinguen por el sub-rótulo de arriba, igual que en el original.
+  ws.getCell(3, 6).value = 'PROMO';
+  ws.getCell(3, 7).value = 'ORIGINAL';
+  [6, 7].forEach((c) => {
+    const cell = ws.getCell(3, c);
+    cell.font = { bold: true, size: 9, color: { argb: ACCENT } };
+    cell.alignment = { horizontal: 'center' };
+  });
+
+  const filaCab = cabecera(ws, 4, [...FIJAS, ...cols]) - 1;
+
+  // Las columnas de cliente van en otro color y en diagonal: así se ve de un
+  // golpe dónde termina el inventario y dónde empiezan los clientes, que con
+  // veinte columnas es lo único que hace la hoja legible.
   cols.forEach((_, i) => {
-    const c = ws.getRow(filaCab).getCell(FIJAS.length + i + 1);
+    const c = ws.getRow(filaCab).getCell(N + i + 1);
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ACCENT } };
     c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, textRotation: 45 };
   });
   ws.getRow(filaCab).height = 64;
 
-  const totales = { fisico: 0, sep: 0, disp: 0, porCliente: cols.map(() => 0) };
+  let fila = filaCab + 1;
+  const tot = { inventario: 0, fisico: 0, despachos: 0, sep: 0, disp: 0, porCliente: cols.map(() => 0) };
 
   for (const f of filas) {
     const r = ws.getRow(fila);
+    const promo = Boolean(f.tiene_promocion);
+    const precio = num(f.precio_unitario);
+
+    // Sólo una de las dos columnas de precio se llena por fila: si el grupo
+    // tiene promoción vigente, el precio que se está aplicando es el de promo;
+    // si no, es el original. Dejar la otra en blanco es lo que permite ver de
+    // un vistazo qué está rebajado.
     const base = [
-      f.familia || '', f.clasificacion || '', f.categoria || '', f.referencia || '', f.calidad || '',
-      int(f.fisico), int(f.separadas), int(f.disponibles),
+      f.contenedor || '', f.proveedor_nombre || '', f.referencia || '', f.calidad || '',
+      num(f.costo_unitario) || '',
+      promo ? precio : '',
+      promo ? '' : precio,
+      int(f.cantidad), int(f.fisico), int(f.despachadas), int(f.separadas), int(f.disponibles),
     ];
     base.forEach((v, i) => {
       const c = r.getCell(i + 1);
-      c.value = v ?? '';
-      c.font = { size: 10, bold: i >= 5 };
-      c.alignment = { horizontal: i >= 5 ? 'center' : 'left' };
+      c.value = v === '' ? '' : v;
+      c.font = { size: 10, bold: i >= 7 };
+      c.alignment = { horizontal: i >= 4 ? 'center' : 'left' };
+      if (i >= 4 && i <= 6 && v !== '') c.numFmt = '#,##0';
     });
 
     const m = porProducto.get(clave(f)) || new Map();
     cols.forEach((cli, i) => {
       const cant = m.get(cli) || 0;
-      const c = r.getCell(FIJAS.length + i + 1);
+      const c = r.getCell(N + i + 1);
       c.value = cant || '';
       c.alignment = { horizontal: 'center' };
       if (cant) {
-        c.font = { size: 10, bold: true, color: { argb: 'd97706' } };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fdf3e6' } };
+        c.font = { size: 10, bold: true, color: { argb: ACCENT } };
+        tot.porCliente[i] += cant;
       }
-      totales.porCliente[i] += cant;
     });
 
-    totales.fisico += int(f.fisico);
-    totales.sep += int(f.separadas);
-    totales.disp += int(f.disponibles);
+    zebra(ws, fila, nCols);
+    tot.inventario += int(f.cantidad);
+    tot.fisico     += int(f.fisico);
+    tot.despachos  += int(f.despachadas);
+    tot.sep        += int(f.separadas);
+    tot.disp       += int(f.disponibles);
     fila++;
   }
 
-  const t = ws.getRow(fila);
-  ws.mergeCells(fila, 1, fila, 5);
-  t.getCell(1).value = 'TOTAL';
-  t.getCell(6).value = totales.fisico;
-  t.getCell(7).value = totales.sep;
-  t.getCell(8).value = totales.disp;
-  cols.forEach((_, i) => { t.getCell(FIJAS.length + i + 1).value = totales.porCliente[i] || ''; });
-  for (let i = 1; i <= nCols; i++) {
-    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
-    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
-    t.getCell(i).alignment = { horizontal: i === 1 ? 'right' : 'center' };
-  }
-  t.height = 22;
+  // ── Totales en la fila 3, encima de su columna ─────────────────
+  const totalEn = (col, valor) => {
+    const c = ws.getCell(3, col);
+    c.value = valor;
+    c.font = { bold: true, size: 11, color: { argb: INK } };
+    c.alignment = { horizontal: 'center' };
+    c.numFmt = '#,##0';
+  };
+  totalEn(8,  tot.inventario);
+  totalEn(9,  tot.fisico);
+  totalEn(10, tot.despachos);
+  totalEn(11, tot.sep);
+  totalEn(12, tot.disp);
+  cols.forEach((_, i) => {
+    const c = ws.getCell(3, N + i + 1);
+    c.value = tot.porCliente[i] || '';
+    c.font = { bold: true, size: 11, color: { argb: ACCENT } };
+    c.alignment = { horizontal: 'center' };
+  });
 
-  // Se congelan las columnas de inventario para poder desplazarse entre clientes
-  // sin perder de vista de qué producto se está hablando.
-  ws.views = [{ state: 'frozen', xSplit: FIJAS.length, ySplit: filaCab }];
+  // La cabecera se congela: con cien productos y veinte clientes, desplazarse
+  // sin ver los encabezados vuelve la hoja inservible.
+  ws.views = [{ state: 'frozen', xSplit: 4, ySplit: filaCab }];
+
   return ws;
 }
 
