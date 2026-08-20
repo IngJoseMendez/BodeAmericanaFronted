@@ -5,6 +5,168 @@ import { tiposPacaApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes } from 'lucide-react';
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel y PanelItem viven FUERA del componente a propósito.
+//
+// Estaban declarados dentro, y eso los volvía un componente NUEVO en cada
+// render: React no los reconocía como el mismo tipo, así que desmontaba el
+// panel entero y lo volvía a montar. El efecto visible era que al escribir el
+// nombre de una familia se perdía el foco tras la primera letra y parecía que
+// la página se recargaba sola.
+//
+// Como ya no pueden leer el estado por cierre, reciben por props lo que
+// necesitan; `edicion` agrupa el estado y los manejadores de editar en línea.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Editar y Eliminar estaban en opacity-0 hasta el hover: en celular y tablet,
+// donde no hay puntero, quedaban invisibles y no había forma de llegar a
+// ellos; y navegando con Tab el foco caía en un botón que no se veía.
+// Ahora solo se ocultan donde SÍ hay hover real, y reaparecen al enfocarlos.
+// El color base pasó de text-border (#e2e8f0, casi blanco sobre blanco) a
+// text-muted, que sí se distingue.
+const BTN_ACCION =
+  'p-1.5 rounded-lg text-muted transition-all [@media(hover:hover)]:opacity-0 ' +
+  'group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 ' +
+  'focus:outline-none focus:ring-2 focus:ring-secondary/40';
+
+function PanelItem({ item, table, onDelete, edicion, temporadas, familias }) {
+  const { editando, setEditando, saveEdit, cancelEdit, startEdit, guardandoEdit } = edicion;
+  const isEditing = editando && editando.id === item.id && editando.table === table;
+  return (
+    <li className="flex items-center justify-between px-4 py-3 hover:bg-primary/3 transition-colors group">
+      <div className="flex-1 min-w-0 mr-2">
+        {isEditing ? (
+          <div className="space-y-1.5">
+            <input
+              className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
+              value={editando.nombre}
+              onChange={e => setEditando(prev => ({ ...prev, nombre: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
+              autoFocus
+            />
+            {table === 'categorias' && (
+              <select
+                value={editando.temporada_id || ''}
+                onChange={e => setEditando(prev => ({ ...prev, temporada_id: e.target.value }))}
+                className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
+              >
+                <option value="">Sin categoría</option>
+                {temporadas.map(t => (
+                  <option key={t.id} value={t.id}>{capitalize(t.nombre)}</option>
+                ))}
+              </select>
+            )}
+            {/* La familia agrupa referencias parecidas: "Chaqueta deportiva" y
+                "Chaqueta mixta" bajo "Chaquetas". */}
+            {table === 'categorias' && (
+              <select
+                value={editando.familia_id || ''}
+                onChange={e => setEditando(prev => ({ ...prev, familia_id: e.target.value }))}
+                className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
+              >
+                <option value="">Sin familia</option>
+                {familias.map(fa => (
+                  <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        ) : (
+          <div className="min-w-0">
+            <p className="font-medium text-sm text-primary">{capitalize(item.nombre)}</p>
+            {item.temporada_nombre && (
+              <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-medium">{capitalize(item.temporada_nombre)}</span>
+            )}
+            {item.familia_nombre && (
+              <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{capitalize(item.familia_nombre)}</span>
+            )}
+            {item.descripcion && <p className="text-xs text-muted truncate mt-0.5">{item.descripcion}</p>}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5 flex-shrink-0">
+        {isEditing ? (
+          <>
+            <button
+              onClick={saveEdit}
+              disabled={guardandoEdit}
+              className="p-1.5 rounded-lg text-secondary hover:bg-secondary/10 transition-all disabled:opacity-50"
+              title="Guardar"
+            >
+              <Check size={14} />
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="p-1.5 rounded-lg text-muted hover:bg-primary/5 transition-all"
+              title="Cancelar"
+            >
+              <X size={14} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => startEdit(table, item)}
+              className={`${BTN_ACCION} hover:text-secondary hover:bg-secondary/10`}
+              title="Editar"
+              aria-label={`Editar ${item.nombre}`}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={() => onDelete(item)}
+              className={`${BTN_ACCION} hover:text-error hover:bg-error/10`}
+              title="Eliminar"
+              aria-label={`Eliminar ${item.nombre}`}
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function Panel({ title, icon: Icon, count, error, form, loading, items, table, onDelete, onCreate,
+                 formState, setFormState, submitting, placeholder, extraFormContent, extraFormContent2,
+                 edicion, temporadas, familias }) {
+
+  return (
+  <section className="space-y-4">
+    <div className="flex items-center gap-2">
+      <div className="p-2 bg-primary/5 rounded-xl"><Icon className="w-5 h-5 text-primary" /></div>
+      <div>
+        <h2 className="font-display text-lg font-semibold text-primary">{title}</h2>
+        <p className="text-xs text-muted">{count} registradas</p>
+      </div>
+    </div>
+    <Card>
+      <CardBody className="p-4">
+        <p className="text-sm font-medium text-primary mb-3 flex items-center gap-1.5"><Plus size={15} /> Nueva {title.slice(0,-1).toLowerCase()}</p>
+        {error && <div className="mb-3 px-3 py-2 bg-error/10 text-error text-xs rounded-lg">{error}</div>}
+        <form onSubmit={onCreate} className="space-y-3">
+          <Input placeholder={placeholder} value={formState.nombre} onChange={e => setFormState({ ...formState, nombre: e.target.value })} />
+          <Input placeholder="Descripción (opcional)" value={formState.descripcion} onChange={e => setFormState({ ...formState, descripcion: e.target.value })} />
+          {extraFormContent}
+          {extraFormContent2}
+          <Button type="submit" variant="secondary" className="w-full" loading={submitting}>Agregar</Button>
+        </form>
+      </CardBody>
+    </Card>
+    <Card padding={false}>
+      {loading ? <div className="p-6 text-center text-muted text-sm">Cargando...</div>
+        : items.length === 0 ? <div className="p-6 text-center text-muted text-sm">Sin registros</div>
+        : <ul className="divide-y divide-border/50">{items.map(item => <PanelItem key={item.id} item={item} table={table} onDelete={onDelete}
+                          edicion={edicion} temporadas={temporadas} familias={familias} />)}</ul>}
+    </Card>
+  </section>
+);
+}
+
 export default function TiposPaca() {
   const [tipos, setTipos]           = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -240,146 +402,9 @@ export default function TiposPaca() {
     }
   };
 
-  const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-
-  // Editar y Eliminar estaban en opacity-0 hasta el hover: en celular y tablet,
-  // donde no hay puntero, quedaban invisibles y no había forma de llegar a
-  // ellos; y navegando con Tab el foco caía en un botón que no se veía.
-  // Ahora solo se ocultan donde SÍ hay hover real, y reaparecen al enfocarlos.
-  // El color base pasó de text-border (#e2e8f0, casi blanco sobre blanco) a
-  // text-muted, que sí se distingue.
-  const BTN_ACCION =
-    'p-1.5 rounded-lg text-muted transition-all [@media(hover:hover)]:opacity-0 ' +
-    'group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 ' +
-    'focus:outline-none focus:ring-2 focus:ring-secondary/40';
-
-  const PanelItem = ({ item, table, onDelete }) => {
-    const isEditing = editando && editando.id === item.id && editando.table === table;
-    return (
-      <li className="flex items-center justify-between px-4 py-3 hover:bg-primary/3 transition-colors group">
-        <div className="flex-1 min-w-0 mr-2">
-          {isEditing ? (
-            <div className="space-y-1.5">
-              <input
-                className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
-                value={editando.nombre}
-                onChange={e => setEditando(prev => ({ ...prev, nombre: e.target.value }))}
-                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                autoFocus
-              />
-              {table === 'categorias' && (
-                <select
-                  value={editando.temporada_id || ''}
-                  onChange={e => setEditando(prev => ({ ...prev, temporada_id: e.target.value }))}
-                  className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
-                >
-                  <option value="">Sin categoría</option>
-                  {temporadas.map(t => (
-                    <option key={t.id} value={t.id}>{capitalize(t.nombre)}</option>
-                  ))}
-                </select>
-              )}
-              {/* La familia agrupa referencias parecidas: "Chaqueta deportiva" y
-                  "Chaqueta mixta" bajo "Chaquetas". */}
-              {table === 'categorias' && (
-                <select
-                  value={editando.familia_id || ''}
-                  onChange={e => setEditando(prev => ({ ...prev, familia_id: e.target.value }))}
-                  className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
-                >
-                  <option value="">Sin familia</option>
-                  {familias.map(fa => (
-                    <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-          ) : (
-            <div className="min-w-0">
-              <p className="font-medium text-sm text-primary">{capitalize(item.nombre)}</p>
-              {item.temporada_nombre && (
-                <span className="text-xs bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-medium">{capitalize(item.temporada_nombre)}</span>
-              )}
-              {item.familia_nombre && (
-                <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{capitalize(item.familia_nombre)}</span>
-              )}
-              {item.descripcion && <p className="text-xs text-muted truncate mt-0.5">{item.descripcion}</p>}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          {isEditing ? (
-            <>
-              <button
-                onClick={saveEdit}
-                disabled={guardandoEdit}
-                className="p-1.5 rounded-lg text-secondary hover:bg-secondary/10 transition-all disabled:opacity-50"
-                title="Guardar"
-              >
-                <Check size={14} />
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="p-1.5 rounded-lg text-muted hover:bg-primary/5 transition-all"
-                title="Cancelar"
-              >
-                <X size={14} />
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => startEdit(table, item)}
-                className={`${BTN_ACCION} hover:text-secondary hover:bg-secondary/10`}
-                title="Editar"
-                aria-label={`Editar ${item.nombre}`}
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                onClick={() => onDelete(item)}
-                className={`${BTN_ACCION} hover:text-error hover:bg-error/10`}
-                title="Eliminar"
-                aria-label={`Eliminar ${item.nombre}`}
-              >
-                <Trash2 size={14} />
-              </button>
-            </>
-          )}
-        </div>
-      </li>
-    );
-  };
-
-  const Panel = ({ title, icon: Icon, count, error, form, loading, items, table, onDelete, onCreate, formState, setFormState, submitting, placeholder, extraFormContent, extraFormContent2 }) => (
-    <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="p-2 bg-primary/5 rounded-xl"><Icon className="w-5 h-5 text-primary" /></div>
-        <div>
-          <h2 className="font-display text-lg font-semibold text-primary">{title}</h2>
-          <p className="text-xs text-muted">{count} registradas</p>
-        </div>
-      </div>
-      <Card>
-        <CardBody className="p-4">
-          <p className="text-sm font-medium text-primary mb-3 flex items-center gap-1.5"><Plus size={15} /> Nueva {title.slice(0,-1).toLowerCase()}</p>
-          {error && <div className="mb-3 px-3 py-2 bg-error/10 text-error text-xs rounded-lg">{error}</div>}
-          <form onSubmit={onCreate} className="space-y-3">
-            <Input placeholder={placeholder} value={formState.nombre} onChange={e => setFormState({ ...formState, nombre: e.target.value })} />
-            <Input placeholder="Descripción (opcional)" value={formState.descripcion} onChange={e => setFormState({ ...formState, descripcion: e.target.value })} />
-            {extraFormContent}
-            {extraFormContent2}
-            <Button type="submit" variant="secondary" className="w-full" loading={submitting}>Agregar</Button>
-          </form>
-        </CardBody>
-      </Card>
-      <Card padding={false}>
-        {loading ? <div className="p-6 text-center text-muted text-sm">Cargando...</div>
-          : items.length === 0 ? <div className="p-6 text-center text-muted text-sm">Sin registros</div>
-          : <ul className="divide-y divide-border/50">{items.map(item => <PanelItem key={item.id} item={item} table={table} onDelete={onDelete} />)}</ul>}
-      </Card>
-    </section>
-  );
+  // Todo lo que Panel y PanelItem necesitan para editar en línea. Va junto para
+  // no repetir seis props en cada uno de los cinco paneles.
+  const edicion = { editando, setEditando, saveEdit, cancelEdit, startEdit, guardandoEdit };
 
   return (
     <Layout title="Productos" subtitle="Gestiona categorías, clasificaciones, referencias y calidades del inventario">
@@ -398,6 +423,7 @@ export default function TiposPaca() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
 
           <Panel
+            edicion={edicion} temporadas={temporadas} familias={familias}
             title="Categorías"
             icon={Sun}
             table="temporadas"
@@ -414,6 +440,7 @@ export default function TiposPaca() {
           />
 
           <Panel
+            edicion={edicion} temporadas={temporadas} familias={familias}
             title="Clasificaciones"
             icon={Tag}
             table="tipos"
@@ -430,6 +457,7 @@ export default function TiposPaca() {
           />
 
           <Panel
+            edicion={edicion} temporadas={temporadas} familias={familias}
             title="Referencias"
             icon={Layers}
             table="categorias"
@@ -470,6 +498,7 @@ export default function TiposPaca() {
           />
 
           <Panel
+            edicion={edicion} temporadas={temporadas} familias={familias}
             title="Calidades"
             icon={Star}
             table="calidades"
@@ -486,6 +515,7 @@ export default function TiposPaca() {
           />
 
           <Panel
+            edicion={edicion} temporadas={temporadas} familias={familias}
             title="Familias"
             icon={Boxes}
             table="familias"
