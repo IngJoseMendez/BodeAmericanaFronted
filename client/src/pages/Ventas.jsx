@@ -11,6 +11,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { hoy, formatFechaCorta } from '../lib/fecha';
 import { parseMonto, formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -467,15 +468,7 @@ export default function Ventas() {
    */
   const descargarLibro = async (wb, nombreArchivo) => {
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = nombreArchivo;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    descargarExcel(buffer, nombreArchivo);
   };
 
   const descargarExcel = async (data) => {

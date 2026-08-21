@@ -7,6 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { History, Upload, Download, FileSpreadsheet, Trash2, CheckCircle2 } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 const fmt = formatCOP;
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -262,8 +263,7 @@ export default function Historico() {
     ws.getRow(1).font = { bold: true };
     ws.addRow({ fecha: '15/03/2024', contenedor: 'C-12', proveedor: 'Proveedor A', cliente: 'Tienda La 80', precio: 10000, costo: 6000, cantidad: 100, precio_total: 1000000, costo_total: 600000 });
     const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Plantilla_Historico.xlsx'; a.click(); URL.revokeObjectURL(a.href);
+    descargarExcel(buf, 'Plantilla_Historico.xlsx');
   };
 
   const exportarClientes = async () => {
@@ -283,8 +283,7 @@ export default function Historico() {
       ws.getRow(1).font = { bold: true };
       filas.forEach(f => ws.addRow(f));
       const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Clientes_historico_${anio || 'todos'}.xlsx`; a.click(); URL.revokeObjectURL(a.href);
+      descargarExcel(buf, `Clientes_historico_${anio || 'todos'}.xlsx`);
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');
     }
@@ -307,8 +306,7 @@ export default function Historico() {
     addSheet('Por contenedor', moneyCols('contenedor'),
       (reporte.por_contenedor || []).map(c => ({ contenedor: c.contenedor, ventas: +c.ventas, costo: +c.costo, utilidad: +c.utilidad })));
     const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Reporte_historico_${anio || 'todos'}.xlsx`; a.click(); URL.revokeObjectURL(a.href);
+    descargarExcel(buf, `Reporte_historico_${anio || 'todos'}.xlsx`);
   };
 
   const chartData = useMemo(() => (reporte?.por_mes || []).map(m => ({

@@ -10,6 +10,7 @@ import ExcelJS from 'exceljs';
 import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIcon, Search, Package, AlertCircle, Info, ShoppingCart } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 // Los nombres de referencia, categoría y calidad vienen de tablas distintas y
 // difieren en mayúsculas y acentos: se comparan normalizados.
@@ -762,12 +763,7 @@ export default function Cotizaciones() {
     });
     ws.getColumn('total').numFmt = '#,##0.00';
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `cotizaciones-${hoy()}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    descargarExcel(buffer, `cotizaciones-${hoy()}.xlsx`);
   };
 
   return (

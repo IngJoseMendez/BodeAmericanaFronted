@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { Shield, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { aFecha, hoy } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 const ACTION_COLORS = {
   CREATE:   'bg-success/15 text-success',
@@ -139,12 +140,7 @@ export default function Auditoria() {
       });
 
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `auditoria-${hoy()}.xlsx`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      descargarExcel(buffer, `auditoria-${hoy()}.xlsx`);
 
       // El servidor puede recortar el `limit` que le pedimos. Si eso pasa, el
       // Excel sale incompleto y en un registro de auditoría nadie tiene cómo

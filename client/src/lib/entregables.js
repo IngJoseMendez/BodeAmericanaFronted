@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { hoy } from './fecha.js';
+import { descargarExcel } from './descargar.js';
 
 // Hojas replicadas del Excel que ya usa la operación ("Comercio Global
 // Logistico.xlsx"). Los encabezados y su orden se respetan tal cual para que
@@ -912,12 +913,7 @@ export function hojaUtilidadContenedor(wb, cont, nombreHoja, inversionistas = []
 /** Descarga un workbook con el nombre indicado. */
 export async function descargar(wb, nombre) {
   const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${nombre}_${hoy()}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  descargarExcel(buffer, `${nombre}_${hoy()}.xlsx`);
 }
 
 export function nuevoLibro() {

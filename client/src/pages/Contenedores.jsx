@@ -15,6 +15,7 @@ import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, formatFecha, aInputDate } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
@@ -867,12 +868,7 @@ export default function Contenedores() {
 
     // ── Descargar ──────────────────────────────────────────────────
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Contenedores_${hoy()}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    descargarExcel(buffer, `Contenedores_${hoy()}.xlsx`);
     addToast('Excel descargado correctamente', 'success');
   };
 
@@ -1208,12 +1204,7 @@ export default function Contenedores() {
     });
 
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Reclamacion_${full.numero}_${hoy()}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    descargarExcel(buffer, `Reclamacion_${full.numero}_${hoy()}.xlsx`);
     addToast('Reclamación exportada', 'success');
   };
 
@@ -1507,12 +1498,7 @@ export default function Contenedores() {
     });
 
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Contenedor_${full.numero}_${hoy()}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    descargarExcel(buffer, `Contenedor_${full.numero}_${hoy()}.xlsx`);
     addToast(`Excel de "${full.numero}" descargado`, 'success');
   };
 

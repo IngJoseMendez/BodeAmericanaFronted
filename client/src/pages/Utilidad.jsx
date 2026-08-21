@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, Download, Coins, Package, Receipt } from 'luc
 import { formatCOP } from '../lib/money';
 import { aInputDate } from '../lib/fecha';
 import { Inversionistas } from '../components/Inversionistas';
+import { descargarExcel } from '../lib/descargar';
 
 // La utilidad BRUTA es venta − costo de la mercancía. La NETA descuenta además
 // los gastos de operación del período, que es la plata que realmente queda.
@@ -213,12 +214,7 @@ export default function Utilidad() {
       wg.getColumn('total').numFmt = '$#,##0';
 
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Utilidad_${desde}_a_${hasta}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      descargarExcel(buffer, `Utilidad_${desde}_a_${hasta}.xlsx`);
       addToast('Excel de utilidad descargado', 'success');
     } catch (err) {
       addToast('No se pudo generar el Excel: ' + err.message, 'error');

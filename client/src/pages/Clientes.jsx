@@ -7,6 +7,7 @@ import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download
 import ExcelJS from 'exceljs';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -174,12 +175,7 @@ export default function Clientes() {
     });
     ws.getColumn('limite').numFmt = '#,##0.00';
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `clientes-${hoy()}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    descargarExcel(buffer, `clientes-${hoy()}.xlsx`);
   };
 
   return (

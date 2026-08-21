@@ -9,6 +9,7 @@ import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
@@ -640,11 +641,7 @@ export default function Cartera() {
       ws.mergeCells(`A${row}:I${row}`);
       
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Estado_Cuenta_${data.cliente.nombre.replace(/\s+/g, '_')}_${hoy()}.xlsx`;
-      link.click();
+      descargarExcel(buffer, `Estado_Cuenta_${data.cliente.nombre.replace(/\s+/g, '_')}_${hoy()}.xlsx`);
       
       addToast('Excel descargado correctamente', 'success');
     } catch (err) {

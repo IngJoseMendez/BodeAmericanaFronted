@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { Coins, Plus, Trash2, Download } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 const CATEGORIAS_FIJAS = [
   { value: 'arriendo',   label: 'Arriendo' },
@@ -176,12 +177,7 @@ export default function Gastos() {
         monto_cop: montoCOP(g),
       }));
       const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Gastos_${hoy()}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      descargarExcel(buf, `Gastos_${hoy()}.xlsx`);
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');
     }

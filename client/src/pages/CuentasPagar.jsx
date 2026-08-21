@@ -10,6 +10,7 @@ import {
 import ExcelJS from 'exceljs';
 import { parseMonto, formatMoneda, MONEDAS } from '../lib/money';
 import { hoy, formatFecha } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = (value, moneda = 'USD') => formatMoneda(value, moneda, { decimales: 0 });
 
@@ -290,12 +291,7 @@ export default function CuentasPagar() {
       ws.getColumn(k).numFmt = '#,##0.00';
     });
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `cuentas-pagar-${hoy()}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    descargarExcel(buffer, `cuentas-pagar-${hoy()}.xlsx`);
   };
 
   const grupos = {};

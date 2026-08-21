@@ -7,6 +7,7 @@ import { Package, Plus, Edit, Trash2, DollarSign, TrendingUp, Calendar, User, Ey
 import ExcelJS from 'exceljs';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = formatCOP;
 
@@ -272,12 +273,7 @@ export default function Lotes() {
     });
     ['costo', 'vendido'].forEach(k => { ws.getColumn(k).numFmt = '#,##0.00'; });
     const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `lotes-${hoy()}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    descargarExcel(buffer, `lotes-${hoy()}.xlsx`);
   };
 
   return (

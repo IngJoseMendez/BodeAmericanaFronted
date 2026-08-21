@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User, Download } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 export default function GestionarPedidos() {
   const [pedidos, setPedidos] = useState([]);
@@ -202,12 +203,7 @@ export default function GestionarPedidos() {
       });
       ws.getColumn('total').numFmt = '#,##0.00';
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `pedidos-${hoy()}.xlsx`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      descargarExcel(buffer, `pedidos-${hoy()}.xlsx`);
       addToast('Excel descargado', 'success');
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');

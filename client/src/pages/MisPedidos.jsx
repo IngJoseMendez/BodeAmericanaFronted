@@ -7,6 +7,7 @@ import html2pdf from 'html2pdf.js';
 import { Package, Clock, CheckCircle, XCircle, ShoppingCart, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 // El PDF se arma interpolando texto que escribió alguien (notas del pedido, tipo,
 // categoría) y luego se mete con innerHTML. Sin escapar, unas notas con
@@ -181,11 +182,7 @@ export default function MisPedidos() {
       ws.mergeCells(`A${row}:E${row}`);
       
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Pedido_${detallePedido.id}_${hoy()}.xlsx`;
-      link.click();
+      descargarExcel(buffer, `Pedido_${detallePedido.id}_${hoy()}.xlsx`);
       
       addToast('Excel descargado', 'success');
     } catch (err) {

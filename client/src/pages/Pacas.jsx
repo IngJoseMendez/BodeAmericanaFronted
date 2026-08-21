@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { hoy } from '../lib/fecha';
+import { descargarExcel } from '../lib/descargar';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -503,11 +504,7 @@ export default function Pacas() {
       wsAg.getColumn('precio_total').numFmt = '$#,##0.00';
 
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Inventario_Pacas_${hoy()}.xlsx`;
-      link.click();
+      descargarExcel(buffer, `Inventario_Pacas_${hoy()}.xlsx`);
 
       addToast('Excel exportado (Detallado + Agrupado)', 'success');
     } catch (err) {
@@ -797,12 +794,7 @@ export default function Pacas() {
       });
 
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Separadas_por_cliente_${hoy()}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      descargarExcel(buffer, `Separadas_por_cliente_${hoy()}.xlsx`);
       addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');
     } catch (err) {
       addToast('No se pudo generar el Excel: ' + err.message, 'error');

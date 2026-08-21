@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw, AlertTriangle } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = formatCOP;
 
@@ -399,11 +400,7 @@ export default function Reportes() {
       
       // Download
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `Reporte_Bodega_${mesActual?.mes_nombre?.replace(' ', '_')}_${hoy()}.xlsx`;
-      link.click();
+      descargarExcel(buffer, `Reporte_Bodega_${mesActual?.mes_nombre?.replace(' ', '_')}_${hoy()}.xlsx`);
       
       addToast('✅ Reporte Excel descargado correctamente', 'success');
     } catch (err) {

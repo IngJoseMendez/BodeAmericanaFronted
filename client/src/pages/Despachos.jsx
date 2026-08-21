@@ -7,6 +7,7 @@ import { despachosApi, pacasApi, transportesApi } from '../services/api';
 import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = formatCOP;
 
@@ -190,12 +191,7 @@ async function exportarExcelBodega(despacho) {
   ws.getColumn(4).width = 14;
 
   const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `Bodega_${despacho.numero || 'despacho'}_${hoy()}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  descargarExcel(buffer, `Bodega_${despacho.numero || 'despacho'}_${hoy()}.xlsx`);
 }
 
 async function exportarExcel(despacho) {
@@ -484,14 +480,8 @@ async function exportarExcel(despacho) {
   }
 
   // Descarga
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `${despacho.numero}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const buf = await wb.xlsx.writeBuffer();
+  descargarExcel(buf, `${despacho.numero}.xlsx`);
 }
 
 // La ventana de impresión se abre con document.write y es del MISMO origen que

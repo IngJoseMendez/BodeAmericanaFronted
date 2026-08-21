@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { Tag, Search, Download, AlertCircle } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = formatCOP;
 
@@ -51,12 +52,7 @@ export default function ListaPrecios() {
     }));
     ws.getRow(1).font = { bold: true };
     const buf = await wb.xlsx.writeBuffer();
-    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lista-precios-${hoy()}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    descargarExcel(buf, `lista-precios-${hoy()}.xlsx`);
   };
 
   return (
