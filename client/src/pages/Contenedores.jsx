@@ -10,7 +10,10 @@ import {
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../components/common';
-import { contenedoresApi, preciosApi } from '../services/api';
+// `api` suelto además de contenedoresApi: el consecutivo de número
+// (/contenedores/siguiente-numero) todavía no tiene método propio en el cliente
+// de la API, y ese archivo lo está tocando otra persona.
+import { api, contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import { parseMonto, formatCOP, formatNumero, formatMoneda } from '../lib/money';
@@ -57,6 +60,20 @@ const costoServicioEfectivo = (sv = {}) => {
   return (cantidad * valor) || valor || (parseFloat(sv.factura_estimada) || 0);
 };
 
+// ── Un importe calculado, limpio de basura de punto flotante ──────
+//
+// En JavaScript 285,50 × 3 da 856.4999999999999. Sin redondear, la casilla
+// AUTO de "Factura estimada" enseñaría eso mismo. Se redondea a DOS decimales
+// —el valor por unidad lleva centavos cuando el proveedor cobra en dólares— y
+// se devuelve sin ceros de relleno: 3720, no "3720,00".
+//
+// Devuelve texto porque el destino es un campo del formulario, donde todo se
+// guarda como string.
+const montoRedondeado = (n) => {
+  if (!Number.isFinite(n)) return '';
+  return String(parseFloat((Math.round(n * 100) / 100).toFixed(2)));
+};
+
 // ── Price input with auto-formatting ─────────────────────────────
 function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
   const [focused, setFocused] = useState(false);
@@ -68,7 +85,14 @@ function PriceInput({ value, onChange, className = '', placeholder = '0', ...res
   };
 
   const handleChange = (e) => {
-    const stripped = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+    // La COMA se acepta como separador decimal y se normaliza a punto.
+    // Antes se borraba: quien tecleaba "285,50" —que es como se escribe un
+    // decimal en Colombia, y es justo lo que sugiere el ejemplo del campo—
+    // guardaba 28550. En un valor por unidad eso multiplica la factura
+    // estimada por cien.
+    const sinBasura = e.target.value.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+    // Sólo el primer separador cuenta; los demás se descartan.
+    const stripped = sinBasura.replace(/(\..*)\./g, '$1');
     onChange(stripped);
   };
 
@@ -1664,13 +1688,17 @@ export default function Contenedores() {
     const utilidadTotal = utilidadUnitaria * totalPacas;
     const inversionTotal = costoTotal + utilidadTotal;
     const costoServiciosPorUnidad = totalPacas > 0 ? costoServicios / totalPacas : 0;
+    // Solo la MERCANCÍA por unidad, sin servicios. Es la base del precio de
+    // venta: los servicios entran por "gastos por unidad", y sumarlos también
+    // dentro del costo unitario los cobraría dos veces.
+    const costoMercanciaPorUnidad = totalPacas > 0 ? costoMercancia / totalPacas : 0;
 
     return {
       proveedoresDetalle, serviciosDetalle, costoMercancia, costoServicios, costoTotal,
       costoUnitario, sumDetalles, cantidadValida, esEstimado, totalPacas,
       avanceProveedores, avanceServicios, faltanUnidades, provsCompletos, svCompletos,
       cantidadTotal, baseProrrateo,
-      utilidadTotal, inversionTotal, costoServiciosPorUnidad,
+      utilidadTotal, inversionTotal, costoServiciosPorUnidad, costoMercanciaPorUnidad,
     };
   };
 
@@ -1680,10 +1708,41 @@ export default function Contenedores() {
   const updateProveedor = (pi, field, val) => {
     const n = [...proveedores];
     const updated = { ...n[pi], [field]: val };
-    if (field === 'factura_estimada' || field === 'cantidad_estimada') {
-      const factura  = parseFloat(field === 'factura_estimada'  ? val : updated.factura_estimada)  || 0;
+    // ── La factura estimada es la CONSECUENCIA, no el punto de partida ──
+    //
+    // Al estimar se sabe cuánto cuesta CADA paca y cuántas se van a pedir; el
+    // total de la factura sale de ahí. Antes era al revés (se tecleaba la
+    // factura y el valor por unidad se derivaba dividiendo), y eso obligaba a
+    // sacar la calculadora para el dato que sí se conoce.
+    //
+    // Se recalcula SOLO al tocar la cantidad o el valor por unidad. Nunca al
+    // abrir: hay estimaciones guardadas con la fórmula vieja donde el valor por
+    // unidad quedó redondeado a dos decimales, así que cantidad × valor no da
+    // exactamente la factura guardada. Machacarla al abrir cambiaría en
+    // silencio una cifra que la usuaria tecleó; la diferencia se le enseña
+    // debajo del campo y se corrige sola en cuanto toque uno de los dos datos.
+    if (field === 'cantidad_estimada' || field === 'valor_unidad_estimado') {
+      const previo   = n[pi];
       const cantidad = parseInt(field === 'cantidad_estimada' ? val : updated.cantidad_estimada) || 0;
-      if (factura > 0 && cantidad > 0) updated.valor_unidad_estimado = String((factura / cantidad).toFixed(2));
+      const valor    = parseFloat(field === 'valor_unidad_estimado' ? val : updated.valor_unidad_estimado) || 0;
+      if (cantidad > 0 && valor > 0) {
+        updated.factura_estimada = montoRedondeado(cantidad * valor);
+      } else {
+        // Falta uno de los dos datos, así que no hay nada que multiplicar. La
+        // factura se VACÍA en vez de quedarse en 0 —un 0 en pantalla se lee
+        // como "esta mercancía no cuesta nada" y así quedaría guardado—, pero
+        // SOLO si lo que había lo había escrito esta misma fórmula.
+        //
+        // Hay estimaciones viejas con la factura tecleada a mano y sin valor
+        // por unidad (la fórmula anterior solo lo derivaba cuando había
+        // cantidad). En esas, teclear la cantidad borraría la única cifra de
+        // dinero que la estimación tenía guardada, sin vuelta atrás. Se
+        // conserva hasta que haya cantidad Y valor con los que recalcularla.
+        const factPrevia   = parseFloat(previo.factura_estimada);
+        const eraCalculada = !previo.factura_estimada || !Number.isFinite(factPrevia) ||
+          Math.abs((parseInt(previo.cantidad_estimada) || 0) * (parseFloat(previo.valor_unidad_estimado) || 0) - factPrevia) < 0.01;
+        if (eraCalculada) updated.factura_estimada = '';
+      }
     }
     n[pi] = updated;
     setProveedores(n);
@@ -1717,19 +1776,18 @@ export default function Contenedores() {
   // ── Service row management ─────────────────────────────────────
   const addServicio    = () => setServicios([...servicios, emptyServicio()]);
   const removeServicio = (si) => servicios.length > 1 && setServicios(servicios.filter((_, i) => i !== si));
+  // Aquí VIVÍA una copia del cálculo "factura ÷ cantidad = valor/unidad" para
+  // los servicios. Estaba muerta: en estimación los servicios se capturan con
+  // una única casilla "Costo estimado" que escribe los tres campos de golpe
+  // (setCostoEstimadoServicio, más abajo), y esta función solo se llama con
+  // tipo_servicio, proveedor_nombre, moneda, costo y notas — nunca con
+  // factura_estimada ni cantidad_estimada. Se retira en vez de invertirla como
+  // en los proveedores: dejar dormida una fórmula que ya nadie ejecuta, y
+  // encima en el sentido contrario al de al lado, es una trampa para quien lea
+  // esto dentro de seis meses.
   const updateServicio = (si, field, val) => {
     const n = [...servicios];
-    const updated = { ...n[si], [field]: val };
-    if (field === 'factura_estimada' || field === 'cantidad_estimada') {
-      const factura  = parseFloat(field === 'factura_estimada'  ? val : updated.factura_estimada)  || 0;
-      const cantidad = parseInt(field === 'cantidad_estimada' ? val : updated.cantidad_estimada) || 0;
-      if (factura > 0 && cantidad > 0) {
-        updated.valor_unidad_estimado = String((factura / cantidad).toFixed(2));
-      } else if (field === 'factura_estimada' && factura > 0 && !updated.cantidad_estimada) {
-        updated.valor_unidad_estimado = String(factura.toFixed(2));
-      }
-    }
-    n[si] = updated;
+    n[si] = { ...n[si], [field]: val };
     setServicios(n);
   };
 
@@ -1829,7 +1887,28 @@ export default function Contenedores() {
   };
 
   // ── Open modals ────────────────────────────────────────────────
-  const openCreateModal = (estimacion = false) => { resetForm(); setEditMode(false); setModoEstimacion(estimacion); setSelectedContenedor(null); setModalOpen(true); };
+  // Al CREAR (nunca al editar) se propone el consecutivo del año: C + número +
+  // los dos últimos dígitos del año, p. ej. C526. El modal se abre en el acto y
+  // el número se escribe cuando el servidor conteste; sigue siendo editable,
+  // porque el consecutivo real lo manda la naviera, no nosotros.
+  //
+  // Si la petición falla NO se avisa de nada: el campo se queda vacío como
+  // siempre. No poder proponer un número no impide crear el contenedor, y una
+  // alerta roja al abrir el formulario solo asustaría.
+  const openCreateModal = (estimacion = false) => {
+    resetForm(); setEditMode(false); setModoEstimacion(estimacion); setSelectedContenedor(null); setModalOpen(true);
+    // `contenedoresApi` todavía no expone este endpoint (ese archivo lo lleva
+    // otra persona), así que se pide con el cliente crudo.
+    api.get('/contenedores/siguiente-numero')
+      .then((r) => {
+        const numero = r?.numero;
+        if (!numero) return;
+        // Solo si sigue vacío: la respuesta puede llegar tarde y no se le pisa
+        // a nadie el número que ya escribió a mano.
+        setFormData(prev => prev.numero ? prev : { ...prev, numero: String(numero) });
+      })
+      .catch(() => {});
+  };
 
   const openEditModal = async (contenedor) => {
     try {
@@ -1913,6 +1992,9 @@ export default function Contenedores() {
         // nadie lo vea y sin vuelta atrás, la utilidad por unidad de la que cuelga
         // el reparto entre inversionistas. En una estimación NUEVA llegan vacíos y
         // salen en null igual.
+        // `gastos_unitarios` ya no lo teclea nadie: en el contenedor normal lo
+        // rellena el efecto de arriba con los servicios por unidad, así que aquí
+        // sale la MISMA cifra que enseña la casilla AUTO.
         utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
         gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
@@ -2308,6 +2390,35 @@ export default function Contenedores() {
     [formData, proveedores, servicios, modoEstimacion]
   );
 
+  // ── "Gastos por unidad" se alimenta solo ───────────────────────
+  //
+  // Es el costo de servicios que NOS corresponde dividido entre NUESTRAS
+  // unidades: exactamente `resumen.costoServiciosPorUnidad`, que en un
+  // contenedor compartido ya viene prorrateado. Se copia a formData en vez de
+  // leerlo suelto en la casilla para que siga habiendo una sola fuente de
+  // verdad: de `gastos_unitarios` beben el payload, el precio de venta
+  // sugerido y el módulo de Utilidad, y lo que se ve es lo que se guarda.
+  //
+  // En ESTIMACIÓN no se toca: allí el campo ni se muestra, y el formulario
+  // reenvía intacto lo que trajo el servidor (ver la nota del payload). Con el
+  // modal cerrado tampoco, para no ensuciar el formulario ya reseteado.
+  //
+  // Se guarda en PESOS ENTEROS: parseMonto lee el punto como separador de
+  // MILES, así que un "1234.56" volvería del campo convertido en 123.456.
+  //
+  // Sin servicios registrados NO se borra lo que ya estaba guardado. Hay
+  // contenedores cerrados hace meses con esta cifra tecleada a mano y los
+  // gastos pagados por fuera (nunca se dieron de alta como servicios): abrirlos
+  // para corregir una referencia y guardar mandaría null y destruiría, sin que
+  // nadie lo pida, el número del que cuelgan el precio de venta y el módulo de
+  // Utilidad. Se conserva y se avisa debajo del campo.
+  useEffect(() => {
+    if (!modalOpen || modoEstimacion) return;
+    if (!(resumen.costoServiciosPorUnidad > 0)) return;
+    const calculado = String(Math.round(resumen.costoServiciosPorUnidad));
+    setFormData(prev => prev.gastos_unitarios === calculado ? prev : { ...prev, gastos_unitarios: calculado });
+  }, [resumen, modalOpen, modoEstimacion]);
+
   // ── Visualización del resumen en USD o COP ─────────────────────
   //
   // calcularResumen() devuelve TODO en pesos (ya convirtió lo que venía en
@@ -2672,8 +2783,12 @@ export default function Contenedores() {
                 <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="col-span-2">
                     <label htmlFor="cont-numero" className={lbl}>Número *</label>
-                    <input id="cont-numero" type="text" className={inp} placeholder="CNT-2026-0001"
+                    <input id="cont-numero" type="text" className={inp} placeholder="C526"
                       value={formData.numero} onChange={(e) => setFormData({ ...formData, numero: e.target.value })} required />
+                    {/* El consecutivo se propone solo al crear, pero se puede
+                        cambiar: aquí queda escrito el formato para quien tenga
+                        que escribirlo a mano. */}
+                    <p className="text-[10px] text-muted mt-0.5">C + consecutivo + año, ej. C526</p>
                   </div>
                   <div>
                     <label htmlFor="cont-fecha-salida" className={lbl}>Fecha Salida</label>
@@ -2739,11 +2854,39 @@ export default function Contenedores() {
                       </p>
                     )}
                   </div>
+                  {/* Los gastos por unidad NO se deciden: son una cuenta que esta
+                      misma pantalla ya hace más abajo ("Servicios por unidad").
+                      Tecleados a mano acababan discrepando de los servicios
+                      registrados, y de esta cifra cuelgan el módulo de Utilidad y
+                      el precio de venta sugerido. */}
                   <div>
-                    <label htmlFor="cont-gastos" className={lbl}>Gastos por unidad (COP)</label>
-                    <input id="cont-gastos" type="text" inputMode="decimal" className={inp} placeholder="ej. 15.000"
-                      value={formData.gastos_unitarios}
-                      onChange={(e) => setFormData({ ...formData, gastos_unitarios: e.target.value })} />
+                    <label htmlFor="cont-gastos" className={lbl}>
+                      Gastos por unidad (COP)
+                      <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
+                    </label>
+                    <input id="cont-gastos" type="text" readOnly tabIndex={-1}
+                      className={`${inp} bg-primary/5 text-primary font-mono font-bold tabular-nums cursor-not-allowed select-none`}
+                      placeholder="0"
+                      value={formData.gastos_unitarios === '' ? '' : formatNumero(parseMonto(formData.gastos_unitarios))}
+                      title="Costo de los servicios que les corresponden ÷ unidades propias. Se calcula solo." />
+                    {resumen.costoServiciosPorUnidad > 0 ? (
+                      <p className="text-[10px] text-muted mt-0.5">
+                        Servicios suyos ({formatCurrency(resumen.costoServicios)}) ÷ {resumen.totalPacas || 0} unidades suyas.
+                        {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && ' Contenedor compartido: ya es la parte proporcional.'}
+                      </p>
+                    ) : formData.gastos_unitarios !== '' ? (
+                      /* Cifra guardada de antes, sin servicios que la respalden:
+                         se conserva tal cual (no se manda null al guardar) y se
+                         dice qué hacer para que vuelva a calcularse sola. */
+                      <p className="text-[10px] text-warning mt-0.5 leading-tight">
+                        Sin servicios registrados: se conserva el valor guardado. Da de alta los gastos
+                        como servicios, abajo, para que la cifra se calcule sola.
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-muted mt-0.5">
+                        Sale de los servicios de abajo ÷ unidades suyas. Todavía no hay ninguno.
+                      </p>
+                    )}
                   </div>
                   </>)}
 
@@ -2791,13 +2934,22 @@ export default function Contenedores() {
                     </div>
                     {/* El precio sugerido SUMA utilidad y gastos al costo: en
                         estimación esos dos sumandos no se piden, así que la
-                        cifra no tendría de dónde salir. */}
+                        cifra no tendría de dónde salir.
+
+                        El sumando de costo es la MERCANCÍA por unidad, no el
+                        costo unitario completo: ese ya lleva dentro los
+                        servicios, y "gastos por unidad" son exactamente esos
+                        mismos servicios, así que sumar los dos los cobraba dos
+                        veces. Es además la misma fórmula que arma la hoja
+                        PRECIOSINTERNOS del Excel (mercancía + gastos +
+                        utilidad); antes la pantalla proponía un precio más alto
+                        que el del entregable que se le pasa al cliente. */}
                     {!modoEstimacion && parseMonto(formData.utilidad_unitaria) > 0 && (
                       <div className="rounded-xl bg-secondary/8 border border-secondary/20 px-3 py-2 col-span-2"
-                           title="Costo unitario + gastos por unidad + utilidad por unidad">
+                           title="Mercancía por unidad + gastos por unidad + utilidad por unidad (la misma cuenta del Excel de precios internos)">
                         <p className="text-[9px] font-bold text-secondary uppercase tracking-wide">Precio de venta sugerido</p>
                         <p className="text-sm font-mono font-bold text-secondary tabular-nums">
-                          {fmtVista(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria), { unitario: true })}
+                          {fmtVista(resumen.costoMercanciaPorUnidad + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria), { unitario: true })}
                         </p>
                       </div>
                     )}
@@ -2864,20 +3016,72 @@ export default function Contenedores() {
                             aria-label={`Notas del proveedor ${pi + 1}`}
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
-                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
-                        {modoEstimacion && (
+                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ───
+                            Se teclea lo que de verdad se sabe al estimar —cuánto
+                            cuesta cada paca y cuántas se van a pedir— y la factura
+                            sale sola. Van en ese orden a propósito: se leen como
+                            la cuenta que son, valor × cantidad = factura. */}
+                        {modoEstimacion && (() => {
+                          const cantEst    = parseInt(prov.cantidad_estimada) || 0;
+                          const valorEst   = parseFloat(prov.valor_unidad_estimado) || 0;
+                          const facturaEst = parseFloat(prov.factura_estimada) || 0;
+                          // Estimaciones creadas con la fórmula vieja: la factura
+                          // se tecleó y el valor por unidad salió de dividir, con
+                          // redondeo a dos decimales. Al multiplicar de vuelta la
+                          // cifra no cuadra al céntimo. Se AVISA, no se corrige a
+                          // espaldas de quien la escribió.
+                          const calculada  = cantEst * valorEst;
+                          // Umbral 0,006 y no 0,01: el caso más típico de la
+                          // fórmula vieja —factura 1000 entre 3 pacas, valor
+                          // 333,33— da 999,99, y esa diferencia vale
+                          // 0.009999999999990905 en coma flotante, así que con
+                          // 0,01 el aviso no salía justo cuando hacía falta.
+                          // Redondear a dos decimales desplaza como mucho
+                          // 0,005, de modo que 0,006 sigue sin dar falsos
+                          // avisos sobre datos creados con la fórmula nueva.
+                          const desfase    = facturaEst > 0 && calculada > 0 && Math.abs(calculada - facturaEst) > 0.006;
+                          return (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2.5">
-                          <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
-                            aria-label={`Factura estimada del proveedor ${pi + 1}`}
-                            value={prov.factura_estimada || ''} onChange={(e) => updateProveedor(pi, 'factura_estimada', e.target.value)} />
-                          <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
-                            aria-label={`Cantidad estimada del proveedor ${pi + 1}`}
-                            value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
-                          <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
-                            aria-label={`Valor por unidad estimado del proveedor ${pi + 1}`}
-                            value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
+                          <div>
+                            <label htmlFor={`prov-valor-est-${pi}`} className="block text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
+                              Valor por unidad
+                            </label>
+                            <PriceInput id={`prov-valor-est-${pi}`} className={`${inp} text-xs`} placeholder="ej. 285,50"
+                              title={`Lo que cuesta CADA paca de este proveedor, en ${prov.moneda || 'USD'}`}
+                              aria-label={`Valor por unidad estimado del proveedor ${pi + 1}`}
+                              value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
+                          </div>
+                          <div>
+                            <label htmlFor={`prov-cant-est-${pi}`} className="block text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
+                              Cantidad estimada
+                            </label>
+                            <input id={`prov-cant-est-${pi}`} type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="ej. 120"
+                              title="Cuántas pacas se le van a pedir a este proveedor"
+                              aria-label={`Cantidad estimada del proveedor ${pi + 1}`}
+                              value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
+                          </div>
+                          <div>
+                            <label htmlFor={`prov-factura-est-${pi}`} className="flex items-center gap-1 text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
+                              Factura estimada
+                              <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
+                            </label>
+                            <input id={`prov-factura-est-${pi}`} type="text" readOnly tabIndex={-1}
+                              className={`${inp} text-xs bg-primary/5 text-primary font-mono font-bold tabular-nums cursor-not-allowed select-none`}
+                              placeholder="0"
+                              title="Cantidad estimada × valor por unidad. No se escribe: se calcula."
+                              aria-label={`Factura estimada del proveedor ${pi + 1}`}
+                              value={prov.factura_estimada ? formatNumero(facturaEst, { maxDecimales: 2 }) : ''} />
+                            {desfase && (
+                              <p className="text-[10px] text-warning mt-0.5 leading-tight">
+                                Guardado <b className="font-mono">{formatNumero(facturaEst, { maxDecimales: 2 })}</b>;
+                                la cuenta da <b className="font-mono">{formatNumero(calculada, { maxDecimales: 2 })}</b>.
+                                Se actualizará al corregir la cantidad o el valor.
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        )}
+                          );
+                        })()}
                       </div>
 
                       {/* ── Líneas de distribución (oculto en modo estimación) ─── */}

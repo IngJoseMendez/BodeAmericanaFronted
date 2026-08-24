@@ -3,7 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
 import { clientesApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download, Truck } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
@@ -30,7 +30,10 @@ export default function Clientes() {
   const [editando, setEditando] = useState(null);
   const [formData, setFormData] = useState({
     nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', clasificacion_pago: 'contado', limite_credito: '', descuento: '0', estado: 'activo',
-    crear_usuario: false, username: '', password: '', saldo_inicial: ''
+    crear_usuario: false, username: '', password: '', saldo_inicial: '',
+    // Destino habitual de envío: la mercancía muchas veces no va al cliente
+    // sino a una bodega o a una transportadora. Los cuatro son opcionales.
+    destino_nombre: '', destino_direccion: '', destino_ciudad: '', destino_celular: ''
   });
   const [error, setError] = useState('');
   const { addToast } = useToast();
@@ -72,6 +75,13 @@ export default function Clientes() {
         descuento: parseFloat(formData.descuento) || 0,
         estado: formData.estado,
         saldo_inicial: parseFloat(formData.saldo_inicial) || 0,
+        // Destino de entrega: se manda null cuando queda vacío (y no ''), para
+        // que quien lo lea distinga "no tiene destino" de "tiene uno en blanco"
+        // y pueda caer en los datos del propio cliente.
+        destino_nombre:    formData.destino_nombre?.trim()    || null,
+        destino_direccion: formData.destino_direccion?.trim() || null,
+        destino_ciudad:    formData.destino_ciudad?.trim()    || null,
+        destino_celular:   formData.destino_celular?.trim()   || null,
       };
       
       if (!editando && formData.crear_usuario) {
@@ -115,7 +125,11 @@ export default function Clientes() {
       saldo_inicial: cliente.saldo_inicial || '',
       crear_usuario: false,
       username: '',
-      password: ''
+      password: '',
+      destino_nombre: cliente.destino_nombre || '',
+      destino_direccion: cliente.destino_direccion || '',
+      destino_ciudad: cliente.destino_ciudad || '',
+      destino_celular: cliente.destino_celular || ''
     });
     setModalOpen(true);
   };
@@ -141,7 +155,8 @@ export default function Clientes() {
     setEditando(null);
     setFormData({
       nombre: '', telefono: '', direccion: '', ciudad: '', tipo_cliente: 'mayorista', clasificacion_pago: 'contado',
-      limite_credito: '', descuento: '0', estado: 'activo', crear_usuario: false, username: '', password: '', saldo_inicial: ''
+      limite_credito: '', descuento: '0', estado: 'activo', crear_usuario: false, username: '', password: '', saldo_inicial: '',
+      destino_nombre: '', destino_direccion: '', destino_ciudad: '', destino_celular: ''
     });
   };
 
@@ -364,7 +379,60 @@ export default function Clientes() {
             onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
             placeholder="Dirección completa"
           />
-          
+
+          {/* Datos de entrega — bloque aparte a propósito: NO son datos del
+              cliente sino de a dónde va la mercancía, que muchas veces no es el
+              cliente mismo. Va enmarcado y con su propio título para que nadie
+              confunda el celular de la transportadora con el del cliente. */}
+          <div className="rounded-xl border border-border bg-primary/[0.02] p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-secondary" aria-hidden="true" />
+              <p className="text-xs font-bold text-muted uppercase tracking-widest">Datos de entrega</p>
+              <span className="text-[10px] font-semibold text-muted/70 border border-border rounded-full px-2 py-0.5">Opcional</span>
+            </div>
+            <p className="text-xs text-muted">
+              A dónde se manda la mercancía de este cliente habitualmente. No siempre va al
+              cliente: muchas veces va a una bodega o a una transportadora.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                label="Nombre de quien recibe"
+                value={formData.destino_nombre}
+                onChange={(e) => setFormData({ ...formData, destino_nombre: e.target.value })}
+                placeholder="Bodega, transportadora o persona"
+              />
+              <Input
+                label="Ciudad de entrega"
+                value={formData.destino_ciudad}
+                onChange={(e) => setFormData({ ...formData, destino_ciudad: e.target.value })}
+                placeholder="Ciudad del destino"
+              />
+              <div className="md:col-span-2">
+                <Input
+                  label="Dirección de entrega"
+                  value={formData.destino_direccion}
+                  onChange={(e) => setFormData({ ...formData, destino_direccion: e.target.value })}
+                  placeholder="Dirección completa del destino"
+                />
+              </div>
+              <Input
+                label="Celular de entrega"
+                value={formData.destino_celular}
+                onChange={(e) => setFormData({ ...formData, destino_celular: e.target.value })}
+                placeholder="Celular de quien recibe"
+              />
+            </div>
+
+            <p className="text-xs text-muted flex items-start gap-1.5">
+              <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-muted/70" aria-hidden="true" />
+              <span>
+                Si dejas esto vacío se usarán los datos del propio cliente (nombre, dirección,
+                ciudad y teléfono de arriba).
+              </span>
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <Select
               label="Forma de pago"

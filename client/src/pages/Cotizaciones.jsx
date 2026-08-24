@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
@@ -17,6 +17,36 @@ import { descargarExcel } from '../lib/descargar';
 const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
 const formatCurrency = formatCOP;
+
+// ── Datos de entrega: dos fuentes posibles ──────────────────────────────────
+// El cliente guarda sus propios datos y, aparte, un destino habitual de envío
+// (una bodega, una transportadora). Estas funciones arman el MISMO cuarteto de
+// campos desde una fuente o desde la otra, para que el selector solo tenga que
+// elegir cuál copiar.
+const datosDelCliente = (cli) => ({
+  destinatario:      cli?.nombre    || '',
+  direccion_entrega: cli?.direccion || '',
+  ciudad_entrega:    cli?.ciudad    || '',
+  celular:           cli?.telefono  || '',
+});
+
+const datosDelDestino = (cli) => ({
+  destinatario:      cli?.destino_nombre    || '',
+  direccion_entrega: cli?.destino_direccion || '',
+  ciudad_entrega:    cli?.destino_ciudad    || '',
+  celular:           cli?.destino_celular   || '',
+});
+
+const CAMPOS_ENTREGA = ['destinatario', 'direccion_entrega', 'ciudad_entrega', 'celular'];
+
+// "Tiene destino registrado" = al menos UNO de los cuatro con contenido. Exigir
+// los cuatro dejaría fuera a quien solo apuntó la transportadora y la ciudad.
+const tieneDestinoRegistrado = (cli) =>
+  Object.values(datosDelDestino(cli)).some(v => String(v).trim() !== '');
+
+// Compara los cuatro campos de entrega de dos objetos, ignorando espacios.
+const mismosDatosEntrega = (a, b) =>
+  CAMPOS_ENTREGA.every(k => String(a?.[k] ?? '').trim() === String(b?.[k] ?? '').trim());
 
 // El PDF se arma interpolando texto en una plantilla HTML. Ese texto lo teclean
 // los usuarios (nombre del cliente, notas, referencias), así que si lleva
@@ -257,6 +287,12 @@ export default function Cotizaciones() {
     celular: '',
   });
 
+  // Qué fuente eligió la usuaria para los datos de entrega: 'cliente',
+  // 'destino' o '' (nadie la ha tocado todavía). SOLO se escribe desde los
+  // manejadores del selector y del cliente; nunca desde un efecto, para que ni
+  // un re-render ni una recarga de la lista de clientes pise lo ya escrito.
+  const [modoEntrega, setModoEntrega] = useState('');
+
   const [items, setItems] = useState([
     { referencia: '', calidad: '', cantidad: 1, precio_unitario: 0, subtotal: 0, precio_promocion: null, disponibles: null }
   ]);
@@ -340,6 +376,9 @@ export default function Cotizaciones() {
     // marca de promoción o su stock sobre la primera fila —vacía— de la
     // cotización nueva.
     consultaItemSeq.current = {};
+    // Formulario nuevo: ninguna de las dos opciones de entrega está elegida
+    // hasta que se escoja cliente.
+    setModoEntrega('');
     setModalOpen(true);
   };
 
@@ -366,18 +405,46 @@ export default function Cotizaciones() {
     }
   };
 
-  // Rellena el destino con los datos del cliente elegido, que es el caso normal.
-  const copiarDatosCliente = () => {
-    const cli = clientes.find(c => String(c.id) === String(formData.cliente_id));
-    if (!cli) return;
+  // Cliente elegido ahora mismo, y de dónde pueden salir sus datos de entrega.
+  const clienteSeleccionado = clientes.find(c => String(c.id) === String(formData.cliente_id)) || null;
+  const hayDestinoRegistrado = tieneDestinoRegistrado(clienteSeleccionado);
+
+  // Copia de golpe los cuatro campos desde la fuente elegida. Es idempotente
+  // (escribe siempre lo mismo), así que da igual que el radio dispare click y
+  // change a la vez. Solo corre cuando la usuaria toca algo.
+  const aplicarModoEntrega = (modo, cliente = clienteSeleccionado) => {
+    if (!cliente) return;
+    if (modo === 'destino' && !tieneDestinoRegistrado(cliente)) return;
+    setModoEntrega(modo);
     setFormData(f => ({
       ...f,
-      destinatario: cli.nombre || '',
-      ciudad_entrega: cli.ciudad || '',
-      direccion_entrega: cli.direccion || '',
-      celular: cli.telefono || '',
+      ...(modo === 'destino' ? datosDelDestino(cliente) : datosDelCliente(cliente)),
     }));
   };
+
+  // Qué opción se ve marcada. Si la usuaria no ha tocado el selector —por
+  // ejemplo al abrir una cotización ya guardada— se DEDUCE mirando los datos:
+  // así refleja lo que hay guardado sin escribir nada encima, y si no coincide
+  // con ninguna de las dos fuentes no marca ninguna opción.
+  const modoEntregaVisible = modoEntrega || (
+    clienteSeleccionado
+      ? (hayDestinoRegistrado && mismosDatosEntrega(formData, datosDelDestino(clienteSeleccionado))
+          ? 'destino'
+          : mismosDatosEntrega(formData, datosDelCliente(clienteSeleccionado))
+            ? 'cliente'
+            : '')
+      : ''
+  );
+
+  // Eligió una fuente y luego escribió encima: el selector es un atajo, no una
+  // atadura, pero conviene avisar de que lo que se ve ya no es lo registrado.
+  const entregaEditadaAMano = Boolean(
+    clienteSeleccionado && modoEntrega &&
+    !mismosDatosEntrega(
+      formData,
+      modoEntrega === 'destino' ? datosDelDestino(clienteSeleccionado) : datosDelCliente(clienteSeleccionado)
+    )
+  );
 
   // Prioridad: 1° promoción activa (referencia+calidad), 2° precio preestablecido (categoria+calidad)
   const recheckPrices = async (index, item, seq) => {
@@ -881,12 +948,29 @@ export default function Cotizaciones() {
                   onChange={(e) => {
                     const clienteId = e.target.value;
                     const cliente = clientes.find(c => String(c.id) === clienteId);
+                    // Al cambiar de cliente la entrega se rellena sola: por
+                    // defecto su destino registrado (es su sitio habitual de
+                    // envío) y, si no tiene, sus propios datos. Cambiar de
+                    // cliente es un acto explícito, así que aquí sí es correcto
+                    // sobrescribir lo que hubiera escrito para el anterior.
+                    const modo = tieneDestinoRegistrado(cliente) ? 'destino' : 'cliente';
+                    // ...con UNA excepción: si todavía no había ningún cliente
+                    // elegido, lo que ya hay escrito en la entrega no es "del
+                    // cliente anterior" —no lo había—, lo tecleó la usuaria para
+                    // ESTA cotización y pisarlo sería borrarle el trabajo. En ese
+                    // caso se respeta y no se marca ninguna opción, para que se
+                    // vea que lo que hay no salió de ninguna de las dos fuentes.
+                    const escritoAMano = !formData.cliente_id &&
+                      CAMPOS_ENTREGA.some(k => String(formData[k] ?? '').trim() !== '');
+                    const rellenar = Boolean(cliente) && !escritoAMano;
+                    setModoEntrega(rellenar ? modo : '');
                     setFormData(f => ({
                       ...f,
                       cliente_id: clienteId,
                       // Descuento del cliente en PESOS por unidad (sobre pacas sin promo)
                       descuento: cliente?.descuento > 0 ? String(cliente.descuento) : f.descuento,
                       tipo_descuento: cliente?.descuento > 0 ? 'valor_fijo' : f.tipo_descuento,
+                      ...(rellenar ? (modo === 'destino' ? datosDelDestino(cliente) : datosDelCliente(cliente)) : {}),
                     }));
                   }}
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
@@ -967,15 +1051,68 @@ export default function Cotizaciones() {
               El destinatario no siempre es el cliente: se factura a uno y se
               envía a otra persona o local. */}
           <div className="rounded-xl border border-border bg-primary/[0.02] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <p className="text-xs font-bold text-muted uppercase tracking-widest">Datos de destino</p>
-              {formData.cliente_id && (
-                <button type="button" onClick={copiarDatosCliente}
-                  className="text-xs font-semibold text-secondary hover:underline underline-offset-2">
-                  Usar los datos del cliente
-                </button>
-              )}
-            </div>
+            <p className="text-xs font-bold text-muted uppercase tracking-widest">Datos de destino</p>
+
+            {/* Selector de fuente. Rellena los cuatro campos de golpe, y ya
+                está: después se puede escribir encima y no lo revierte, porque
+                solo escribe cuando se toca una opción.
+                onClick además de onChange: si la opción ya está marcada, el
+                change NO se dispara, y hace falta poder volver a tocarla para
+                recuperar los datos registrados tras haberlos editado a mano. */}
+            {clienteSeleccionado ? (
+              <div className="space-y-1.5">
+                <div role="radiogroup" aria-label="De dónde salen los datos de entrega"
+                  className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="modo-entrega-cotizacion"
+                      value="cliente"
+                      checked={modoEntregaVisible === 'cliente'}
+                      onChange={() => aplicarModoEntrega('cliente')}
+                      onClick={() => aplicarModoEntrega('cliente')}
+                      className="w-4 h-4 text-secondary border-border focus:ring-secondary"
+                    />
+                    <span className="text-primary">Enviar al cliente</span>
+                  </label>
+                  <label className={`flex items-center gap-2 text-sm ${hayDestinoRegistrado ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
+                    <input
+                      type="radio"
+                      name="modo-entrega-cotizacion"
+                      value="destino"
+                      disabled={!hayDestinoRegistrado}
+                      checked={modoEntregaVisible === 'destino'}
+                      onChange={() => aplicarModoEntrega('destino')}
+                      onClick={() => aplicarModoEntrega('destino')}
+                      className="w-4 h-4 text-secondary border-border focus:ring-secondary disabled:cursor-not-allowed"
+                    />
+                    <span className="text-primary">Enviar al destino registrado</span>
+                  </label>
+                </div>
+
+                {!hayDestinoRegistrado && (
+                  <p className="text-xs text-muted">
+                    Este cliente no tiene destino registrado.{' '}
+                    {/* En pestaña nueva a propósito: salir de aquí en la misma
+                        pestaña pierde la cotización a medio hacer. */}
+                    <Link to="/clientes" target="_blank" rel="noopener noreferrer"
+                      className="font-semibold text-secondary hover:underline underline-offset-2">
+                      Ponérselo en Clientes
+                    </Link>{' '}
+                    <span className="text-muted/70">(se abre en otra pestaña)</span>
+                  </p>
+                )}
+
+                {entregaEditadaAMano && (
+                  <p className="text-xs text-amber-600">
+                    Estos datos los escribiste a mano. Vuelve a tocar una opción si quieres
+                    recuperar los datos registrados.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted">Elige primero el cliente para poder traer sus datos de entrega.</p>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>

@@ -47,6 +47,41 @@ const itemVacio = () => ({ referencia: '', calidad: '', cantidad: '1', precio: '
 // identidad no cambie en cada render.
 const RAYA_CABECERA = { boxShadow: 'inset 0 -1px 0 var(--color-border)' };
 
+// ── A dónde se manda la mercancía de cada cliente ───────────────────────────
+// El cliente puede tener guardado un destino habitual de envío (una bodega, una
+// transportadora) distinto de sus propios datos. Aquí NO hay selector como en
+// Cotizaciones: son decenas de clientes y preguntar por cada uno sería
+// inmanejable, así que la regla es fija —si tiene destino registrado se usa
+// ese, y si no, los datos del propio cliente— y la línea bajo el nombre dice
+// cuál de los dos se va a usar.
+// Basta con que UNO de los cuatro campos tenga algo para considerar que hay
+// destino: exigirlos todos dejaría fuera a quien solo apuntó la transportadora
+// y la ciudad.
+const entregaDeCliente = (cliente) => {
+  const destino = {
+    destinatario:      cliente?.destino_nombre?.trim()    || '',
+    direccion_entrega: cliente?.destino_direccion?.trim() || '',
+    ciudad_entrega:    cliente?.destino_ciudad?.trim()    || '',
+    celular:           cliente?.destino_celular?.trim()   || '',
+  };
+  // Un destino a medias (por ejemplo, solo la ciudad) NO se completa con los
+  // datos del cliente: mezclar dos direcciones en un mismo envío es peor que
+  // uno incompleto. Pero entonces el despacho sale a medias, y aquí no hay
+  // selector ni casillas que editar, así que la fila tiene que avisarlo antes
+  // de guardar —si no, nadie se entera hasta que la guía sale en blanco—.
+  if (Object.values(destino).some(Boolean)) {
+    return { ...destino, fuente: 'destino', incompleto: Object.values(destino).some((v) => !v) };
+  }
+  return {
+    destinatario:      cliente?.nombre?.trim()    || '',
+    direccion_entrega: cliente?.direccion?.trim() || '',
+    ciudad_entrega:    cliente?.ciudad?.trim()    || '',
+    celular:           cliente?.telefono?.trim()  || '',
+    fuente: 'cliente',
+    incompleto: false,
+  };
+};
+
 /** Descuento pactado con el cliente, en pesos por paca, listo para el campo. */
 const descuentoPactado = (cliente) => {
   const n = Number(cliente?.descuento);
@@ -107,13 +142,18 @@ const FilaCliente = memo(function FilaCliente({
   const tipoDescuento = fila?.tipo_descuento || 'valor_fijo';
   const tieneItems = items.length > 0;
 
-  // Los datos de entrega no se piden: son los del cliente. En el title va la
-  // ficha completa —incluido el descuento pactado— para consultarla sin ocupar
-  // sitio; debajo del nombre solo se pintan en los clientes que sí llevan
-  // ítems, que son los que hay que confirmar antes de guardar.
+  // Los datos de entrega no se piden: salen del destino registrado del cliente
+  // y, si no tiene, del propio cliente. En el title va la ficha completa
+  // —incluido el descuento pactado— para consultarla sin ocupar sitio; debajo
+  // del nombre solo se pintan en los clientes que sí llevan ítems, que son los
+  // que hay que confirmar antes de guardar.
+  const entrega = entregaDeCliente(cliente);
+  const etiquetaEntrega = entrega.fuente === 'destino' ? 'Destino registrado' : 'Datos del cliente';
   const fichaEntrega =
-    `${cliente.nombre} · ${cliente.direccion || 'sin dirección registrada'}` +
-    ` · ${cliente.ciudad || 'sin ciudad'} · ${cliente.telefono || 'sin celular'}` +
+    `Se envía a: ${etiquetaEntrega.toLowerCase()}` +
+    ` · ${entrega.destinatario || 'sin nombre'} · ${entrega.direccion_entrega || 'sin dirección registrada'}` +
+    ` · ${entrega.ciudad_entrega || 'sin ciudad'} · ${entrega.celular || 'sin celular'}` +
+    (entrega.incompleto ? ' · OJO: el destino registrado está a medias, lo que falta se despacha en blanco' : '') +
     (Number(cliente.descuento) > 0
       ? ` · descuento pactado ${formatCOP(Number(cliente.descuento))}/paca`
       : '');
@@ -132,10 +172,19 @@ const FilaCliente = memo(function FilaCliente({
       {/* Los datos de entrega solo se muestran en los clientes a los que SÍ se
           les está separando algo: es donde hay que confirmarlos, y son cuatro
           filas, no cincuenta. En un tooltip no servirían: en tableta, que es
-          donde se revisa la bodega, no hay ratón que los saque. */}
+          donde se revisa la bodega, no hay ratón que los saque.
+          Delante va de dónde salen —destino registrado o datos del cliente—
+          porque aquí no hay selector y esta línea es el único aviso. */}
       {tieneItems && (
         <p className="text-[10px] text-muted/80 truncate leading-tight">
-          {[cliente.direccion, cliente.telefono].filter(Boolean).join(' · ') || 'Sin datos de entrega'}
+          <span className={`font-semibold ${entrega.fuente === 'destino' ? 'text-secondary' : ''}`}>
+            {etiquetaEntrega}:
+          </span>{' '}
+          {[entrega.direccion_entrega, entrega.ciudad_entrega, entrega.celular].filter(Boolean).join(' · ')
+            || 'sin datos de entrega'}
+          {entrega.incompleto && (
+            <span className="font-semibold text-error"> · destino incompleto</span>
+          )}
         </p>
       )}
     </div>
@@ -981,6 +1030,10 @@ export default function SeparacionMasiva() {
       const t = totalesFila(fila, transporteGlobalNum);
       if (!t.validos.length) continue;
 
+      // Misma regla que se anuncia en la fila: destino registrado si lo tiene,
+      // datos del cliente si no.
+      const entrega = entregaDeCliente(cliente);
+
       cotizaciones.push({
         cliente_id: cliente.id,
         vendedor_id: usuario?.id ?? null,
@@ -993,11 +1046,11 @@ export default function SeparacionMasiva() {
         tipo_descuento: fila.tipo_descuento || 'valor_fijo',
         transporte_unitario: t.transporteUnitario,
         tipo_transporte: fila.tipo_transporte?.trim() || null,
-        // Los datos de entrega no se piden: son los del cliente.
-        destinatario: cliente.nombre?.trim() || null,
-        direccion_entrega: cliente.direccion?.trim() || null,
-        ciudad_entrega: cliente.ciudad?.trim() || null,
-        celular: cliente.telefono?.trim() || null,
+        // Los datos de entrega no se piden: los decide entregaDeCliente().
+        destinatario: entrega.destinatario || null,
+        direccion_entrega: entrega.direccion_entrega || null,
+        ciudad_entrega: entrega.ciudad_entrega || null,
+        celular: entrega.celular || null,
         detalles: t.validos.map((it) => ({
           referencia: it.referencia,
           calidad: it.calidad,
@@ -1299,7 +1352,7 @@ export default function SeparacionMasiva() {
             <p className="text-xs text-muted">
               Mostrando {clientesVisibles.length} de {clientes.length} cliente(s) activos
               {resumen.numClientes > 0 ? ` · ${resumen.numClientes} con ítems listos` : ''}
-              {' · '}pon el cursor sobre el nombre para ver dirección y celular
+              {' · '}la entrega usa el destino registrado del cliente y, si no tiene, sus propios datos
             </p>
 
             {/* La tabla es ancha y se desplaza dentro de su caja, no la página.
