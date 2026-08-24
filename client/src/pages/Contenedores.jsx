@@ -13,7 +13,7 @@ import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../componen
 import { contenedoresApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
-import { parseMonto, formatCOP, formatNumero } from '../lib/money';
+import { parseMonto, formatCOP, formatNumero, formatMoneda } from '../lib/money';
 import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
@@ -35,6 +35,27 @@ const emptyServicio = () => ({
   proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '',
   factura_estimada: '', cantidad_estimada: '', valor_unidad_estimado: '',
 });
+
+// ── Lo que cuesta HOY un servicio, en su propia moneda ────────────
+//
+// El costo REAL manda: si el proveedor ya facturó, esa es la cifra. Mientras no
+// haya factura vale lo estimado, y se acepta escrito de las tres formas que ha
+// tenido esta pantalla: cantidad × valor por unidad, el valor suelto (que es lo
+// que escribe hoy la casilla única de "Costo estimado") o la factura estimada de
+// los registros viejos. Sin el último término, una estimación antigua guardada
+// solo con "Factura estimada" entraba al total valiendo CERO mientras la pantalla
+// enseñaba su importe.
+//
+// Vive fuera de la pantalla porque la consultan el resumen del formulario, el
+// modal de detalle y el Excel: tres copias de la misma fórmula acaban dando tres
+// cifras distintas para el mismo servicio.
+const costoServicioEfectivo = (sv = {}) => {
+  const real = parseFloat(sv.costo) || 0;
+  if (real > 0) return real;
+  const cantidad = parseInt(sv.cantidad_estimada) || 0;
+  const valor    = parseFloat(sv.valor_unidad_estimado) || 0;
+  return (cantidad * valor) || valor || (parseFloat(sv.factura_estimada) || 0);
+};
 
 // ── Price input with auto-formatting ─────────────────────────────
 function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
@@ -73,6 +94,39 @@ const inpBase =
   'placeholder:text-muted/60 transition-colors duration-150';
 const inp = `w-full ${inpBase}`;
 const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider';
+
+// ── Interruptor de moneda del resumen (USD / COP) ─────────────────
+//
+// La mercancía se compra en DÓLARES: es la moneda en la que la operación piensa
+// el contenedor, así que el resumen arranca en USD. Este control es SOLO de
+// visualización: no cambia lo que se guarda ni la moneda de ningún proveedor o
+// servicio, solo en qué unidad se leen las cifras ya calculadas.
+//
+// Se declara aquí fuera a propósito: definido dentro de la pantalla, React lo
+// vería como un tipo nuevo en cada render y lo desmontaría en cada tecla.
+function ToggleMoneda({ valor, onChange, deshabilitado = false, id }) {
+  return (
+    <div className={`inline-flex rounded-lg border border-border overflow-hidden flex-shrink-0 ${deshabilitado ? 'opacity-50' : ''}`}
+         role="group" aria-label="Moneda en la que se muestra el resumen">
+      {['USD', 'COP'].map((m) => (
+        <button
+          key={m}
+          type="button"            /* dentro de un <form>: sin esto enviaría el formulario */
+          id={id ? `${id}-${m}` : undefined}
+          disabled={deshabilitado}
+          aria-pressed={valor === m}
+          onClick={() => onChange(m)}
+          title={deshabilitado ? 'Falta la tasa USD→COP para poder convertir' : `Ver el resumen en ${m}`}
+          className={`px-2.5 py-1 text-[11px] font-bold tracking-wide transition-colors ${
+            valor === m ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'
+          } ${deshabilitado ? 'cursor-not-allowed' : ''}`}
+        >
+          {m}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ── Selector alimentado por el catálogo de Productos ──────────────
 //
@@ -530,6 +584,11 @@ export default function Contenedores() {
   const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
+
+  // Moneda en la que se LEE el resumen de costos. Arranca en USD porque la
+  // mercancía se compra en dólares y es la cifra que se compara contra la
+  // factura del proveedor. No afecta a lo que se guarda.
+  const [monedaResumen, setMonedaResumen] = useState('USD');
 
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
@@ -1415,7 +1474,8 @@ export default function Contenedores() {
     let totalServiciosCOP = 0;
     (full.servicios || []).forEach((s, i) => {
       const moneda = s.moneda || 'COP';
-      const costo = parseFloat(s.costo) || 0;
+      // Mismo criterio que el resumen y el modal: real si lo hay, estimado si no.
+      const costo = costoServicioEfectivo(s);
       const costoCOP = moneda === 'USD' ? costo * tasa : costo;
       const costoPorPaca = totalPacas > 0 ? costoCOP / totalPacas : 0;
       totalServiciosCOP += costoCOP;
@@ -1529,10 +1589,7 @@ export default function Contenedores() {
     const baseProrrateo = cantidadTotal > 0 ? cantidadTotal : totalPacas;
 
     const serviciosDetalle = servicios.map(sv => {
-      const costoReal = parseFloat(sv.costo) || 0;
-      const costoOriginal = costoReal > 0
-        ? costoReal
-        : ((parseInt(sv.cantidad_estimada) || 0) * (parseFloat(sv.valor_unidad_estimado) || 0)) || (parseFloat(sv.valor_unidad_estimado) || 0);
+      const costoOriginal = costoServicioEfectivo(sv);
       const moneda = sv.moneda || 'COP';
       const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
       // Costo unitario del servicio: se reparte entre TODO el contenedor.
@@ -1599,7 +1656,11 @@ export default function Contenedores() {
     const svCompletos = avanceServicios.filter(s => s.completo).length;
 
     // Cifras que la operación necesita ver sin sacar calculadora.
-    const utilidadUnitaria = parseMonto(formData.utilidad_unitaria);
+    // En una ESTIMACIÓN la utilidad no existe: la estimación sirve para saber
+    // cuánto va a COSTAR el contenedor, y lo que se gana se decide después en el
+    // módulo de Utilidad. Sin este 0, una estimación abierta para editar seguiría
+    // arrastrando la utilidad guardada y sumándola a cifras que ya no se muestran.
+    const utilidadUnitaria = modoEstimacion ? 0 : parseMonto(formData.utilidad_unitaria);
     const utilidadTotal = utilidadUnitaria * totalPacas;
     const inversionTotal = costoTotal + utilidadTotal;
     const costoServiciosPorUnidad = totalPacas > 0 ? costoServicios / totalPacas : 0;
@@ -1669,6 +1730,51 @@ export default function Contenedores() {
       }
     }
     n[si] = updated;
+    setServicios(n);
+  };
+
+  // ── Costo estimado de un servicio: UNA sola cifra ───────────────
+  //
+  // En una estimación pedir factura + cantidad + valor/unidad es pedir el
+  // detalle de algo que todavía no existe. Aquí se muestra y se escribe una
+  // única casilla con el costo estimado del servicio completo.
+  //
+  // QUÉ SE GUARDA Y POR QUÉ EN LOS TRES CAMPOS
+  // Lo tecleado se escribe en `valor_unidad_estimado`, se copia —el MISMO número,
+  // no otra cifra— a `factura_estimada` y la cantidad queda en 1. Así los tres
+  // campos cuentan la misma historia y CUALQUIERA de las fórmulas posibles del
+  // backend (la factura sola, el valor suelto o cantidad × valor) devuelve
+  // exactamente lo tecleado; no se pudo leer `costoBaseServicio` para saber cuál
+  // usa. Con la cantidad vacía, un backend que multiplicara habría cobrado 0, y
+  // guardando solo en `factura_estimada` el resumen de esta pantalla lo sumaría
+  // valiendo 0. De `factura_estimada` dependen además el filtro de servicios al
+  // guardar y el panel de avance. Nada en la pantalla muestra esa cantidad: es el
+  // "1 servicio" implícito.
+  const costoEstimadoServicio = (sv) => {
+    // El cálculo da prioridad al costo REAL sobre el estimado. Alguna estimación
+    // vieja puede traerlo (antes esta pantalla mostraba también esa casilla), y
+    // si no se leyera aquí la casilla enseñaría una cifra distinta de la que suma.
+    if ((parseFloat(sv.costo) || 0) > 0) return String(sv.costo);
+
+    if (sv.valor_unidad_estimado !== '' && sv.valor_unidad_estimado != null) {
+      // Datos viejos guardados como cantidad × valor: se enseña el producto,
+      // que es lo que suma. Al primer tecleo aquí se normaliza a una sola cifra.
+      const cant = parseInt(sv.cantidad_estimada) || 0;
+      if (cant > 1) return String(cant * (parseFloat(sv.valor_unidad_estimado) || 0));
+      // Lo tecleado se devuelve TAL CUAL, sin pasarlo por parseFloat: si no,
+      // "1500." volvería como "1500" en el mismo render y sería imposible
+      // escribir los centavos —el campo se comería el punto en cada tecla—, y
+      // un "0" recién escrito se convertiría en campo vacío.
+      return String(sv.valor_unidad_estimado);
+    }
+    return sv.factura_estimada ? String(sv.factura_estimada) : '';
+  };
+  const setCostoEstimadoServicio = (si, val) => {
+    const n = [...servicios];
+    // `costo` se vacía porque en una estimación no hay factura real todavía y,
+    // de quedarse, ganaría al estimado y la casilla dejaría de mandar sobre el
+    // total. Cuando el contenedor se convierta en normal se captura allí.
+    n[si] = { ...n[si], valor_unidad_estimado: val, factura_estimada: val, cantidad_estimada: val === '' ? '' : '1', costo: '' };
     setServicios(n);
   };
 
@@ -1800,6 +1906,13 @@ export default function Contenedores() {
         total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
         cantidad_total: formData.cantidad_total === '' ? null : (parseInt(formData.cantidad_total) || null),
+        // El formulario de estimación ya no MUESTRA utilidad ni gastos por unidad,
+        // pero tampoco los borra: se reenvía tal cual lo que trajo el servidor. Un
+        // campo que se oculta se deja quieto, no se pone en null — si no, abrir una
+        // estimación vieja para corregir un servicio y guardar destruiría, sin que
+        // nadie lo vea y sin vuelta atrás, la utilidad por unidad de la que cuelga
+        // el reparto entre inversionistas. En una estimación NUEVA llegan vacíos y
+        // salen en null igual.
         utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
         gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
@@ -2195,6 +2308,30 @@ export default function Contenedores() {
     [formData, proveedores, servicios, modoEstimacion]
   );
 
+  // ── Visualización del resumen en USD o COP ─────────────────────
+  //
+  // calcularResumen() devuelve TODO en pesos (ya convirtió lo que venía en
+  // dólares con la tasa del contenedor). Aquí solo se deshace esa conversión
+  // para mostrarlo; ninguna de estas variables toca lo que se guarda.
+  //
+  // Con tasa vacía, 0 o 1 NO se puede pasar a dólares: dividir por 1 pintaría
+  // el mismo número con el símbolo cambiado, que es peor que no mostrarlo. En
+  // ese caso se fuerza pesos y se avisa de que falta la tasa.
+  const tasaVista   = parseFloat(formData.tasa_conversion) || 0;
+  const tasaValida  = tasaVista > 1;
+  const monedaVista   = tasaValida ? monedaResumen : 'COP';
+  const monedaAlterna = monedaVista === 'USD' ? 'COP' : 'USD';
+
+  // Un importe en pesos, expresado en la moneda pedida.
+  const enMoneda = (cop, moneda) =>
+    moneda === 'USD' ? (tasaVista > 0 ? (cop || 0) / tasaVista : 0) : (cop || 0);
+  // Los totales se leen redondos; las cifras POR UNIDAD necesitan centavos en
+  // dólares (un costo unitario de 12,40 USD no se puede mostrar como 12).
+  const fmtMon = (cop, moneda, { unitario = false } = {}) =>
+    formatMoneda(enMoneda(cop, moneda), moneda, { decimales: moneda === 'USD' && unitario ? 2 : 0 });
+  const fmtVista   = (cop, opts) => fmtMon(cop, monedaVista, opts);   // la elegida
+  const fmtAlterna = (cop, opts) => fmtMon(cop, monedaAlterna, opts); // la de contraste
+
   // ════════════════════════════════════════════════════════════════
   return (
     <Layout
@@ -2502,7 +2639,8 @@ export default function Contenedores() {
                   <div className="text-sm text-amber-700">
                     <p className="font-semibold">Modo estimación</p>
                     <p className="text-xs text-amber-700/80 mt-0.5">
-                      Registra lo que <strong>crees que llegará</strong> en cada parte (factura, cantidad y valor por unidad estimados).
+                      Registra lo que <strong>crees que llegará</strong> de cada proveedor y el <strong>costo estimado</strong> de cada servicio.
+                      Aquí solo se calcula lo que va a <strong>costar</strong>: la utilidad se decide después, en el módulo de Utilidad.
                       Al guardar se generan las <strong>Cuentas por Pagar</strong> para que registres abonos antes de que llegue.
                       Cuando llegue, conviértelo a contenedor normal para registrar lo real.
                     </p>
@@ -2580,7 +2718,13 @@ export default function Contenedores() {
                       value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
                   </div>
                   {/* La utilidad NO se deduce de los precios: se fija aquí por
-                      unidad y de ella sale el precio de venta y la ganancia. */}
+                      unidad y de ella sale el precio de venta y la ganancia.
+                      En una ESTIMACIÓN no se pregunta: la estimación sirve para
+                      saber cuánto va a COSTAR el contenedor, y lo que se gana se
+                      decide después, en el módulo de Utilidad. En el contenedor
+                      normal se quedan, porque de `utilidad_unitaria` cuelga el
+                      reparto entre inversionistas. */}
+                  {!modoEstimacion && (<>
                   <div>
                     <label htmlFor="cont-utilidad" className={lbl}>Utilidad por unidad (COP)</label>
                     <input id="cont-utilidad" type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
@@ -2601,13 +2745,27 @@ export default function Contenedores() {
                       value={formData.gastos_unitarios}
                       onChange={(e) => setFormData({ ...formData, gastos_unitarios: e.target.value })} />
                   </div>
+                  </>)}
 
-                  {/* Cifras derivadas: no se escriben, se calculan solas */}
-                  <div className="col-span-2 md:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {/* Cifras derivadas: no se escriben, se calculan solas.
+                      Siguen el interruptor de moneda del resumen, que está más
+                      abajo: por eso se rotula aquí en qué moneda se están
+                      leyendo, o se confundirían dólares con pesos. */}
+                  <div className="col-span-2 md:col-span-3">
+                    <p className="text-[9px] font-bold text-muted uppercase tracking-wide mb-1.5">
+                      Cifras automáticas · en {monedaVista === 'USD' ? 'dólares' : 'pesos'}
+                      {!tasaValida && <span className="text-warning ml-1">(falta la tasa)</span>}
+                    </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
                       { l: 'Total costo', v: resumen.costoTotal, ayuda: 'Todas las facturas de proveedores + los servicios que les corresponden' },
-                      { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
-                      { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
+                      // Utilidad e inversión salen de campos que la estimación ya
+                      // no muestra: enseñarlas aquí sería enseñar una cifra sin
+                      // origen visible.
+                      ...(modoEstimacion ? [] : [
+                        { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
+                        { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
+                      ]),
                       { l: 'Total servicios', v: resumen.costoServicios, ayuda: 'Solo servicios, sin proveedores de mercancía' },
                     ].map((c, i) => (
                       <div key={i} className="rounded-xl bg-primary/5 border border-border px-3 py-2" title={c.ayuda}>
@@ -2616,7 +2774,7 @@ export default function Contenedores() {
                           <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
                         </p>
                         <p className={`text-sm font-mono font-bold tabular-nums ${c.color || 'text-primary'}`}>
-                          {formatCurrency(c.v)}
+                          {fmtVista(c.v)}
                         </p>
                       </div>
                     ))}
@@ -2627,19 +2785,23 @@ export default function Contenedores() {
                         <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
                       </p>
                       <p className="text-sm font-mono font-bold text-primary tabular-nums">
-                        {formatCurrency(resumen.costoServiciosPorUnidad)}
+                        {fmtVista(resumen.costoServiciosPorUnidad, { unitario: true })}
                         <span className="text-[10px] font-normal text-muted ml-1">/unidad</span>
                       </p>
                     </div>
-                    {parseMonto(formData.utilidad_unitaria) > 0 && (
+                    {/* El precio sugerido SUMA utilidad y gastos al costo: en
+                        estimación esos dos sumandos no se piden, así que la
+                        cifra no tendría de dónde salir. */}
+                    {!modoEstimacion && parseMonto(formData.utilidad_unitaria) > 0 && (
                       <div className="rounded-xl bg-secondary/8 border border-secondary/20 px-3 py-2 col-span-2"
                            title="Costo unitario + gastos por unidad + utilidad por unidad">
                         <p className="text-[9px] font-bold text-secondary uppercase tracking-wide">Precio de venta sugerido</p>
                         <p className="text-sm font-mono font-bold text-secondary tabular-nums">
-                          {formatCurrency(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria))}
+                          {fmtVista(resumen.costoUnitario + parseMonto(formData.gastos_unitarios) + parseMonto(formData.utilidad_unitaria), { unitario: true })}
                         </p>
                       </div>
                     )}
+                  </div>
                   </div>
 
                   <div className="col-span-2 md:col-span-3">
@@ -2913,6 +3075,10 @@ export default function Contenedores() {
                           <input type="text" className={`${inp} flex-1 min-w-0`} placeholder="Empresa o proveedor"
                             aria-label={`Empresa o proveedor del servicio ${si + 1}`}
                             value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
+                          {/* En estimación la moneda y el costo bajan a la casilla
+                              única de "Costo estimado": aquí arriba solo queda
+                              QUIÉN presta el servicio. */}
+                          {!modoEstimacion && (<>
                           <select className={`${inpBase} w-20 flex-shrink-0`} value={srv.moneda || 'COP'}
                             aria-label={`Moneda del servicio ${si + 1}`}
                             onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
@@ -2923,6 +3089,7 @@ export default function Contenedores() {
                             title="Lo que cobra el proveedor por TODO el contenedor"
                             aria-label={`Costo del servicio ${si + 1}`}
                             value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
+                          </>)}
                           {servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
                               title="Eliminar servicio" aria-label={`Eliminar servicio ${si + 1}`}
@@ -2931,6 +3098,39 @@ export default function Contenedores() {
                             </button>
                           )}
                         </div>
+                        {/* ── Costo estimado (solo en modo estimación) ───────
+                            Una ESTIMACIÓN no tiene factura ni cantidades todavía:
+                            pedir factura + cantidad + valor/unidad es pedir el
+                            detalle de algo que aún no existe. Una sola casilla,
+                            ancha y destacada, con su moneda al lado. */}
+                        {modoEstimacion && (
+                        <div className="rounded-xl border border-amber-400/40 bg-amber-500/[0.06] px-3 py-2.5">
+                          {/* Clases escritas enteras y no `${lbl} …`: al mezclarlas
+                              con lbl chocan el color y el margen, y cuál gana
+                              depende del orden en que Tailwind emita el CSS. */}
+                          <label htmlFor={`srv-costo-est-${si}`}
+                            className="block text-xs font-semibold text-amber-700 mb-1 uppercase tracking-wider">
+                            Costo estimado
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <PriceInput
+                              id={`srv-costo-est-${si}`}
+                              className={`${inpBase} flex-1 min-w-0 text-lg font-mono font-bold tabular-nums`}
+                              placeholder="0"
+                              title="Lo que calculas que va a costar este servicio por TODO el contenedor"
+                              aria-label={`Costo estimado del servicio ${si + 1}`}
+                              value={costoEstimadoServicio(srv)}
+                              onChange={(val) => setCostoEstimadoServicio(si, val)} />
+                            <select className={`${inpBase} w-20 flex-shrink-0 font-semibold`} value={srv.moneda || 'COP'}
+                              aria-label={`Moneda del servicio ${si + 1}`}
+                              onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
+                              <option value="USD">USD</option>
+                              <option value="COP">COP</option>
+                            </select>
+                          </div>
+                        </div>
+                        )}
+
                         {/* Cómo se reparte este servicio: se divide entre TODO el
                             contenedor y se imputa la parte de las unidades propias. */}
                         {resumen.serviciosDetalle[si]?.costoFacturado > 0 && (
@@ -2965,20 +3165,6 @@ export default function Contenedores() {
                         <input type="text" className={inp} placeholder="Notas (opcional)"
                           aria-label={`Notas del servicio ${si + 1}`}
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
-                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ─── */}
-                        {modoEstimacion && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <input type="text" className={`${inp} text-xs`} placeholder="Factura estimada"
-                            aria-label={`Factura estimada del servicio ${si + 1}`}
-                            value={srv.factura_estimada || ''} onChange={(e) => updateServicio(si, 'factura_estimada', e.target.value)} />
-                          <input type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="Cantidad estimada"
-                            aria-label={`Cantidad estimada del servicio ${si + 1}`}
-                            value={srv.cantidad_estimada || ''} onChange={(e) => updateServicio(si, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
-                          <PriceInput className={`${inp} text-xs`} placeholder="Valor/unidad (auto: factura÷cant.)"
-                            aria-label={`Valor por unidad estimado del servicio ${si + 1}`}
-                            value={srv.valor_unidad_estimado || ''} onChange={(val) => updateServicio(si, 'valor_unidad_estimado', val)} />
-                        </div>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -2993,14 +3179,59 @@ export default function Contenedores() {
 
               {/* Mobile cost summary — visible below lg */}
               <div className="lg:hidden rounded-2xl border border-border/60 bg-surface p-4 space-y-2.5">
-                <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted">Costo total</span>
-                  <span className="text-sm font-mono font-bold text-primary tabular-nums">{formatCurrency(resumen.costoTotal)}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
+                  <ToggleMoneda valor={monedaVista} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda-movil" />
                 </div>
-                <div className="flex items-center justify-between pb-2 border-b border-border/40">
+                {!tasaValida && (
+                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
+                    <AlertTriangle size={12} className="flex-shrink-0" />
+                    Falta la tasa USD→COP: todo se muestra en pesos.
+                  </p>
+                )}
+
+                {/* Detalle con NOMBRE: sin él hay que contar posiciones para
+                    saber de quién es cada cifra. */}
+                {resumen.proveedoresDetalle.some(p => p.costoEnCOP > 0) && (
+                  <div className="space-y-1 pb-2 border-b border-border/40">
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Mercancía</p>
+                    {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate min-w-0 text-primary">{p.nombre?.trim() || `Prov. ${i+1}`}</span>
+                        <span className="font-mono tabular-nums text-primary flex-shrink-0">{fmtVista(p.costoEnCOP)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {resumen.serviciosDetalle.some(s => s.costo > 0) && (
+                  <div className="space-y-1 pb-2 border-b border-border/40">
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Servicios</p>
+                    {resumen.serviciosDetalle.map((s, i) => s.costo > 0 && (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate min-w-0 text-primary capitalize">
+                          {s.nombre?.trim() || s.tipo?.trim() || `Srv. ${i+1}`}
+                          {s.nombre?.trim() && s.tipo?.trim() && <span className="text-muted/70"> · {s.tipo}</span>}
+                        </span>
+                        <span className="font-mono tabular-nums text-primary flex-shrink-0">{fmtVista(s.costo)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Totales: en las dos monedas a la vez */}
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs text-muted">Costo total</span>
+                  <span className="text-right">
+                    <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoTotal)}</span>
+                    {tasaValida && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoTotal)}</span>}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-2 pb-2 border-b border-border/40">
                   <span className="text-xs text-muted">Por unidad</span>
-                  <span className="text-sm font-mono font-bold text-secondary tabular-nums">{formatCurrency(resumen.costoUnitario)}</span>
+                  <span className="text-right">
+                    <span className="block text-sm font-mono font-bold text-secondary tabular-nums">{fmtVista(resumen.costoUnitario, { unitario: true })}</span>
+                    {tasaValida && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoUnitario, { unitario: true })}</span>}
+                  </span>
                 </div>
                 <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${modoEstimacion ? 'bg-amber-500/10 text-amber-600' : resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
                   {modoEstimacion
@@ -3043,49 +3274,50 @@ export default function Contenedores() {
             <div className="hidden lg:block w-[32rem] flex-shrink-0">
               <div className="sticky top-0 space-y-3">
                 <div className={`rounded-2xl border p-6 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
-                  {/* Título + cabecera de columnas */}
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-end mb-3">
+                  {/* Título + interruptor de moneda.
+                      El detalle (mercancía y servicios) va en UNA sola moneda —la
+                      elegida— para poder leerlo de un vistazo; el bloque de
+                      totales de más abajo sí va doble, porque esas son las cifras
+                      que se comparan contra la factura del proveedor (dólares) y
+                      contra la caja (pesos). */}
+                  <div className="flex items-center justify-between gap-3 mb-3">
                     <p className="text-xs font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
-                    <span className="text-xs font-bold text-primary/80 uppercase tracking-wider w-32 text-right">COP</span>
-                    <span className="text-xs font-bold text-secondary uppercase tracking-wider w-24 text-right">USD</span>
+                    <ToggleMoneda valor={monedaVista} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda" />
                   </div>
+                  {!tasaValida && (
+                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning mb-2">
+                      <AlertTriangle size={12} className="flex-shrink-0" />
+                      Falta la tasa USD→COP: todo se muestra en pesos.
+                    </p>
+                  )}
                   <div className="h-px bg-border/50 mb-4" />
 
-                  {/* Mercancía por proveedor */}
+                  {/* Mercancía por proveedor — cada línea con el NOMBRE de quién es */}
                   {resumen.proveedoresDetalle.some(p => p.costoEnCOP > 0) && (
                     <div className="mb-4">
                       <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Mercancía</p>
                       <div className="space-y-2">
                         {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
                           <div key={i} className="space-y-0.5">
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
-                              <span className="text-sm font-semibold text-primary truncate">{p.nombre || `Prov. ${i+1}`}</span>
-                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-32">
-                                {formatCurrency(p.costoEnCOP)}
-                              </span>
-                              <span className="text-sm font-mono font-medium text-secondary tabular-nums text-right w-24">
-                                ${(p.costoEnCOP / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
+                              <span className="text-sm font-semibold text-primary truncate min-w-0">{p.nombre?.trim() || `Prov. ${i+1}`}</span>
+                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-40">
+                                {fmtVista(p.costoEnCOP)}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                            <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
                               <span className="text-xs text-muted/70">por unidad</span>
-                              <span className="text-xs font-mono text-muted tabular-nums text-right w-32">
-                                {formatCurrency(p.costoPorPaca)}
-                              </span>
-                              <span className="text-xs font-mono text-muted/70 tabular-nums text-right w-24">
-                                ${(p.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                              <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
+                                {fmtVista(p.costoPorPaca, { unitario: true })}
                               </span>
                             </div>
                           </div>
                         ))}
                         {resumen.proveedoresDetalle.filter(p => p.costoEnCOP > 0).length > 1 && (
-                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
-                            <span className="text-xs font-semibold text-muted">Subtotal</span>
-                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-32">
-                              {formatCurrency(resumen.costoMercancia)}
-                            </span>
-                            <span className="text-sm font-mono font-semibold text-secondary tabular-nums text-right w-24">
-                              ${(resumen.costoMercancia / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                          <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
+                            <span className="text-xs font-semibold text-muted">Subtotal mercancía</span>
+                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-40">
+                              {fmtVista(resumen.costoMercancia)}
                             </span>
                           </div>
                         )}
@@ -3093,41 +3325,40 @@ export default function Contenedores() {
                     </div>
                   )}
 
-                  {/* Servicios */}
+                  {/* Servicios — el nombre de la empresa manda; el tipo va debajo,
+                      porque "transporte" solo no dice a quién se le paga. */}
                   {resumen.serviciosDetalle.some(s => s.costo > 0) && (
                     <div className="mb-4">
                       <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Servicios</p>
                       <div className="space-y-2">
                         {resumen.serviciosDetalle.map((s, i) => s.costo > 0 && (
                           <div key={i} className="space-y-0.5">
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
-                              <span className="text-sm font-semibold text-primary truncate capitalize">{s.tipo || s.nombre || `Srv. ${i+1}`}</span>
-                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-32">
-                                {formatCurrency(s.costo)}
-                              </span>
-                              <span className="text-sm font-mono font-medium text-secondary tabular-nums text-right w-24">
-                                ${(s.costo / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-primary truncate capitalize">
+                                  {s.nombre?.trim() || s.tipo?.trim() || `Srv. ${i+1}`}
+                                </p>
+                                {s.nombre?.trim() && s.tipo?.trim() && (
+                                  <p className="text-[10px] text-muted/70 capitalize truncate">{s.tipo}</p>
+                                )}
+                              </div>
+                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-40">
+                                {fmtVista(s.costo)}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline">
+                            <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
                               <span className="text-xs text-muted/70">por unidad</span>
-                              <span className="text-xs font-mono text-muted tabular-nums text-right w-32">
-                                {formatCurrency(s.costoPorPaca)}
-                              </span>
-                              <span className="text-xs font-mono text-muted/70 tabular-nums text-right w-24">
-                                ${(s.costoPorPaca / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                              <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
+                                {fmtVista(s.costoPorPaca, { unitario: true })}
                               </span>
                             </div>
                           </div>
                         ))}
                         {resumen.serviciosDetalle.filter(s => s.costo > 0).length > 1 && (
-                          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
-                            <span className="text-xs font-semibold text-muted">Subtotal</span>
-                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-32">
-                              {formatCurrency(resumen.costoServicios)}
-                            </span>
-                            <span className="text-sm font-mono font-semibold text-secondary tabular-nums text-right w-24">
-                              ${(resumen.costoServicios / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                          <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
+                            <span className="text-xs font-semibold text-muted">Subtotal servicios</span>
+                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-40">
+                              {fmtVista(resumen.costoServicios)}
                             </span>
                           </div>
                         )}
@@ -3135,29 +3366,46 @@ export default function Contenedores() {
                     </div>
                   )}
 
-                  {/* Total */}
+                  {/* ── Bloque de totales: SIEMPRE en las dos monedas ──────
+                      La elegida en grande y la otra debajo en pequeño. */}
                   <div className="h-px bg-border/60 mb-3" />
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-baseline mb-4">
-                    <span className="text-base font-bold text-primary">Total</span>
-                    <span className="text-lg font-mono font-bold text-primary tabular-nums text-right w-32">
-                      {formatCurrency(resumen.costoTotal)}
-                    </span>
-                    <span className="text-lg font-mono font-bold text-secondary tabular-nums text-right w-24">
-                      ${(resumen.costoTotal / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                  <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline mb-4">
+                    <span className="text-base font-bold text-primary">Costo total</span>
+                    <span className="text-right w-40">
+                      <span className="block text-lg font-mono font-bold text-primary tabular-nums">
+                        {fmtVista(resumen.costoTotal)}
+                      </span>
+                      {tasaValida && (
+                        <span className="block text-xs font-mono text-muted tabular-nums">
+                          {fmtAlterna(resumen.costoTotal)}
+                        </span>
+                      )}
                     </span>
                   </div>
 
                   {/* Por unidad */}
                   <div className="grid grid-cols-2 gap-4 border border-primary/10 rounded-xl p-4 bg-primary/5 mb-3">
-                    <div>
-                      <p className="text-xs font-bold text-primary/60 uppercase tracking-widest mb-1">COP / unidad</p>
-                      <p className="text-2xl font-display font-bold text-primary tabular-nums leading-tight">{formatCurrency(resumen.costoUnitario)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-secondary/80 uppercase tracking-widest mb-1">USD / unidad</p>
-                      <p className="text-2xl font-display font-bold text-secondary tabular-nums leading-tight">
-                        ${(resumen.costoUnitario / (parseFloat(formData.tasa_conversion) || 1)).toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-primary/60 uppercase tracking-widest mb-1">{monedaVista} / unidad</p>
+                      <p className="text-2xl font-display font-bold text-primary tabular-nums leading-tight">
+                        {fmtVista(resumen.costoUnitario, { unitario: true })}
                       </p>
+                      {tasaValida && (
+                        <p className="text-xs font-mono text-muted tabular-nums mt-0.5">
+                          {fmtAlterna(resumen.costoUnitario, { unitario: true })}
+                        </p>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-secondary/80 uppercase tracking-widest mb-1">Servicios / unidad</p>
+                      <p className="text-2xl font-display font-bold text-secondary tabular-nums leading-tight">
+                        {fmtVista(resumen.costoServiciosPorUnidad, { unitario: true })}
+                      </p>
+                      {tasaValida && (
+                        <p className="text-xs font-mono text-muted tabular-nums mt-0.5">
+                          {fmtAlterna(resumen.costoServiciosPorUnidad, { unitario: true })}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -3429,7 +3677,12 @@ export default function Contenedores() {
                   </div>
                   <div className="divide-y divide-border/30">
                     {selectedContenedor.servicios.map((srv, i) => {
-                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? parseFloat(srv.costo) / parseInt(selectedContenedor.total_pacas) : 0;
+                      // Una estimación no tiene costo real: si aquí se leyera solo
+                      // `costo`, TODOS sus servicios saldrían en $0 mientras el total
+                      // de abajo sí los cuenta.
+                      const costoServicio = costoServicioEfectivo(srv);
+                      const esEstimadoSrv = !(parseFloat(srv.costo) > 0) && costoServicio > 0;
+                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoServicio / parseInt(selectedContenedor.total_pacas) : 0;
                       return (
                         <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
                           <div className="flex items-center gap-2">
@@ -3437,7 +3690,12 @@ export default function Contenedores() {
                             <span className="text-sm text-muted">{srv.proveedor_nombre}</span>
                           </div>
                           <div className="text-right">
-                            <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(srv.costo)}</p>
+                            <p className="font-mono text-secondary text-sm font-semibold">
+                              {formatCurrency(costoServicio)}
+                              {esEstimadoSrv && (
+                                <span className="ml-1.5 text-[9px] font-sans font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">estimado</span>
+                              )}
+                            </p>
                             <p className="text-[10px] text-muted">{formatCurrency(costoPorUnidad)}/unidad</p>
                           </div>
                         </div>

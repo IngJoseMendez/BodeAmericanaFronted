@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, EmptyState, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, EmptyState, useToast, useConfirm, SelectorTransporte } from '../components/common';
 import {
   clientesApi, cotizacionesApi, listaPreciosApi, pacasApi, preciosApi,
   preciosPromocionApi, transportesApi,
@@ -96,7 +96,7 @@ const faltaEnItem = (it) => {
 const FilaCliente = memo(function FilaCliente({
   cliente, fila, avisos, problemas, transporteGlobal, transportes,
   opcionesReferencia, calidadesPorReferencia, deshabilitado,
-  onCampo, onItemCampo, onAgregarItem, onQuitarItem,
+  onCampo, onItemCampo, onAgregarItem, onQuitarItem, onCatalogo,
 }) {
   const uid = useId();
   const items = fila?.items || [];
@@ -443,19 +443,21 @@ const FilaCliente = memo(function FilaCliente({
                     className={campo(false, 'w-28 px-2 tabular-nums')}
                   />
                   <label htmlFor={`${uid}-tipotrans`} className="sr-only">Tipo de transporte</label>
-                  <select
+                  {/* Mismo selector que en Cotizaciones: el catálogo se le pasa ya
+                      cargado (esta pantalla lo pide al abrir) para no repetir la
+                      petición en cada una de las filas, y si falta un transporte
+                      se crea aquí mismo sin irse a Despachos perdiendo la matriz. */}
+                  <SelectorTransporte
                     id={`${uid}-tipotrans`}
                     value={fila?.tipo_transporte || ''}
                     disabled={deshabilitado}
                     aria-label={`Tipo de transporte de ${cliente.nombre}`}
-                    onChange={(e) => onCampo(cliente.id, 'tipo_transporte', e.target.value)}
+                    transportes={transportes}
+                    onCatalogo={onCatalogo}
+                    onChange={(v) => onCampo(cliente.id, 'tipo_transporte', v)}
+                    placeholder="Tipo…"
                     className={campo(false, 'w-32 px-2')}
-                  >
-                    <option value="">Tipo…</option>
-                    {transportes.map((t) => (
-                      <option key={t.id ?? t.nombre} value={t.nombre}>{t.nombre}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
             </td>
@@ -1328,7 +1330,11 @@ export default function SeparacionMasiva() {
                   </tr>
                 </thead>
 
-                {/* Un <tbody> por cliente: agrupa sin desplegar nada */}
+                {/* Un <tbody> por cliente: agrupa sin desplegar nada.
+                    `onCatalogo` va con el setState de React tal cual: ya tiene
+                    identidad estable, así que el memo de la fila sigue en pie.
+                    Una función escrita en línea aquí sería nueva en cada render
+                    y teclear en una fila repintaría todas las demás. */}
                 {clientesVisibles.map((c) => (
                   <FilaCliente
                     key={c.id}
@@ -1345,6 +1351,7 @@ export default function SeparacionMasiva() {
                     onItemCampo={setItemCampo}
                     onAgregarItem={agregarItem}
                     onQuitarItem={quitarItem}
+                    onCatalogo={setTransportes}
                   />
                 ))}
               </table>

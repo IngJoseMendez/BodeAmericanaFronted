@@ -9,4 +9,5 @@ export { ConfirmProvider, useConfirm } from './ConfirmDialog';
 export { TableSkeleton } from './TableSkeleton';
 export { EmptyState } from './EmptyState';
 export { RefLink } from './RefLink';
-export { PreviewProvider, usePreview } from './PreviewProvider';
+export { PreviewProvider, usePreview } from './PreviewProvider';
+export { SelectorTransporte } from './SelectorTransporte';

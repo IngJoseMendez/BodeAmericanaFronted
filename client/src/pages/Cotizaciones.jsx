@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -985,16 +985,20 @@ export default function Cotizaciones() {
                   placeholder="Si es distinto al cliente…"
                   className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
               </div>
+              {/* El transporte se elige del catálogo de verdad. Antes era texto
+                  libre con una lista de sugerencias fija: lo que se escribía no
+                  quedaba guardado en ninguna parte, así que la cotización
+                  siguiente volvía a no tenerlo, y bastaba una tilde de más para
+                  que dejara de casar con el catálogo de Despachos. */}
               <div>
-                <label className="block text-xs font-medium text-muted mb-1">Tipo de transporte</label>
-                <input type="text" list="cot-transportes" value={formData.tipo_transporte}
-                  onChange={(e) => setFormData(f => ({ ...f, tipo_transporte: e.target.value }))}
-                  placeholder="Elige o escribe uno nuevo…" autoComplete="off"
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
-                <datalist id="cot-transportes">
-                  {['terrestre', 'maritimo', 'aereo', 'recoge_cliente', 'paqueteria', 'mensajero', 'flota', 'contenedor']
-                    .map(t => <option key={t} value={t} />)}
-                </datalist>
+                <label htmlFor="cot-tipo-transporte" className="block text-xs font-medium text-muted mb-1">Tipo de transporte</label>
+                <SelectorTransporte
+                  id="cot-tipo-transporte"
+                  value={formData.tipo_transporte}
+                  onChange={(v) => setFormData(f => ({ ...f, tipo_transporte: v }))}
+                  placeholder="Elige uno…"
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">Ciudad</label>
