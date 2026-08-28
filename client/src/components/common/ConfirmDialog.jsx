@@ -47,6 +47,19 @@ export function ConfirmProvider({ children }) {
     setDialog(null);
   };
 
+  // Tercera salida, opcional. Hay decisiones que no son sí/no: al cerrar un
+  // formulario a medio llenar hay TRES respuestas —guardar y salir, salir
+  // perdiendo lo escrito, o seguir aquí— y meterlas en dos botones obliga a
+  // elegir cuál de las dos cosas que sí quiere hacer se esconde detrás de
+  // "cancelar". Solo aparece si se pide `alternaText`; sin ella, este diálogo se
+  // comporta exactamente como siempre y sigue resolviendo true/false.
+  const handleAlterna = () => {
+    const resolver = resolverRef.current;
+    resolverRef.current = null;
+    resolver?.('alterna');
+    setDialog(null);
+  };
+
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
@@ -56,6 +69,7 @@ export function ConfirmProvider({ children }) {
           {...dialog}
           onConfirm={handleConfirm}
           onCancel={handleCancel}
+          onAlterna={handleAlterna}
         />
       )}
     </ConfirmContext.Provider>
@@ -79,9 +93,13 @@ function ConfirmDialogUI({
   message,
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
+  // Tercer botón, opcional: la otra cosa que el usuario sí quiere hacer.
+  // Resuelve la cadena 'alterna'.
+  alternaText,
   variant = 'danger',   // 'danger' | 'warning' | 'info' | 'success'
   onConfirm,
   onCancel,
+  onAlterna,
 }) {
   const confirmRef = useRef(null);
   const cardRef = useRef(null);
@@ -104,11 +122,21 @@ function ConfirmDialogUI({
     confirmRef.current?.focus();
 
     const onKey = (e) => {
+      // stopPropagation, y en fase de CAPTURA (ver el addEventListener de abajo):
+      // este diálogo se abre a menudo ENCIMA de un modal, y el modal escucha
+      // Escape y Tab en `document` durante el burbujeo. Sin cortar el evento
+      // aquí, pulsar Escape con el diálogo abierto llegaba también al modal de
+      // atrás: en el formulario de contenedores eso volvía a lanzar el aviso de
+      // "tienes cambios sin guardar" en bucle, en vez de descartarlo.
       if (e.key === 'Escape') {
+        e.stopPropagation();
         onCancelRef.current?.();
         return;
       }
       if (e.key !== 'Tab' || !cardRef.current) return;
+      // El foco es de este diálogo mientras esté abierto; que el modal de atrás
+      // no intente atraparlo también.
+      e.stopPropagation();
 
       const focusables = cardRef.current.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -129,9 +157,9 @@ function ConfirmDialogUI({
       }
     };
 
-    window.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
-      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       const previo = previousFocusRef.current;
       // Puede que el elemento ya no exista (se borró la fila que lo contenía).
       if (previo && document.contains(previo) && typeof previo.focus === 'function') {
@@ -186,7 +214,9 @@ function ConfirmDialogUI({
       {/* Card */}
       <div
         ref={cardRef}
-        className="relative w-full max-w-sm rounded-2xl shadow-2xl animate-fade-in-up"
+        /* Con tres botones el ancho de una tarjeta pequeña no alcanza y los
+           rótulos se parten en dos líneas cada uno. */
+        className={`relative w-full ${alternaText ? 'max-w-md' : 'max-w-sm'} rounded-2xl shadow-2xl animate-fade-in-up`}
         style={{
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
@@ -226,13 +256,23 @@ function ConfirmDialogUI({
           )}
 
           {/* Actions */}
-          <div className="flex justify-end gap-3 pt-2">
+          {/* flex-wrap: con tres botones en un móvil estrecho, sin esto el
+              último se sale de la tarjeta. */}
+          <div className="flex flex-wrap justify-end gap-3 pt-2">
             <button
               onClick={onCancel}
               className="px-4 py-2 rounded-xl text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors"
             >
               {cancelText}
             </button>
+            {alternaText && (
+              <button
+                onClick={onAlterna}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border border-error/40 text-error hover:bg-error/10 transition-colors active:scale-95"
+              >
+                {alternaText}
+              </button>
+            )}
             <button
               ref={confirmRef}
               onClick={onConfirm}

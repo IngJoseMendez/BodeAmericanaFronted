@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
@@ -730,6 +730,9 @@ export default function Contenedores() {
 
   // ── Revisión ────────────────────────────────────────────────────
   const [revisionRows, setRevisionRows] = useState([]);
+  // Igual que el formulario: contar el contenedor son horas de trabajo, y Escape
+  // lo tiraba sin preguntar. Se marca por interacción, no comparando.
+  const [revisionTocada, setRevisionTocada] = useState(false);
 
   // ── Selection ──────────────────────────────────────────────────
   const [selectedContenedor, setSelectedContenedor] = useState(null);
@@ -777,6 +780,35 @@ export default function Contenedores() {
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
   const [nombrePlantilla, setNombrePlantilla]             = useState('');
   const [templateFromView, setTemplateFromView]           = useState(false);
+
+  // ── ¿Hay trabajo sin guardar en el formulario? ─────────────────
+  //
+  // Llenar un contenedor son veinte minutos: proveedores, líneas, servicios.
+  // Escape cerraba el modal en el acto y se perdía todo sin una palabra.
+  //
+  // Se marca por INTERACCIÓN, no comparando el formulario contra su estado
+  // inicial. Comparando saldrían falsos positivos el 100% de las veces: al abrir
+  // el modal, dos efectos recalculan solos `total_pacas` y `gastos_unitarios`, y
+  // al crear llega después el número consecutivo del servidor. Nada de eso lo
+  // escribió nadie, pero el formulario ya no sería igual al que se abrió.
+  //
+  // Lo pone en true todo lo que sí teclea el usuario: `editarForm` (los siete
+  // campos de arriba), las funciones que añaden, quitan y editan proveedores,
+  // líneas y servicios, el cambio de moneda del contenedor y la carga de una
+  // plantilla. Se apaga al abrir, al resetear y al guardar con éxito.
+  const [formTocado, setFormTocado] = useState(false);
+  const marcarTocado = () => setFormTocado(true);
+  const editarForm = (campo, valor) => {
+    setFormTocado(true);
+    setFormData(prev => ({ ...prev, [campo]: valor }));
+  };
+  // El <form> real, para poder pedirle la validación del navegador (campos
+  // obligatorios) desde el botón "Guardar y salir" del aviso, que no dispara el
+  // submit y por tanto se saltaría los `required`.
+  const formRef = useRef(null);
+  // Mientras el aviso de "cambios sin guardar" está en pantalla, no se vuelve a
+  // pedir: sin esto, un segundo Escape descartaba el aviso y abría otro igual.
+  const avisoCierreAbiertoRef = useRef(false);
 
   // ── Load ───────────────────────────────────────────────────────
   const loadContenedores = async () => {
@@ -2044,9 +2076,10 @@ export default function Contenedores() {
   // El proveedor nuevo nace en la moneda del contenedor: si el contenedor se
   // está pensando en pesos, un proveedor en dólares tiene que ser una decisión,
   // no el descuido de no haber mirado un select.
-  const addProveedor    = () => setProveedores([...proveedores, emptyProveedor(monedaBase)]);
-  const removeProveedor = (pi) => proveedores.length > 1 && setProveedores(proveedores.filter((_, i) => i !== pi));
+  const addProveedor    = () => { marcarTocado(); setProveedores([...proveedores, emptyProveedor(monedaBase)]); };
+  const removeProveedor = (pi) => { if (proveedores.length > 1) { marcarTocado(); setProveedores(proveedores.filter((_, i) => i !== pi)); } };
   const updateProveedor = (pi, field, val) => {
+    marcarTocado();
     const n = [...proveedores];
     const updated = { ...n[pi], [field]: val };
     // ── La factura estimada es la CONSECUENCIA, no el punto de partida ──
@@ -2089,15 +2122,18 @@ export default function Contenedores() {
     setProveedores(n);
   };
   const addDetalle    = (pi) => {
+    marcarTocado();
     const n = [...proveedores];
     n[pi] = { ...n[pi], detalles: [...n[pi].detalles, { categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }] };
     setProveedores(n);
   };
   const removeDetalle = (pi, di) => {
+    marcarTocado();
     const n = [...proveedores];
     if (n[pi].detalles.length > 1) { n[pi] = { ...n[pi], detalles: n[pi].detalles.filter((_, i) => i !== di) }; setProveedores(n); }
   };
   const updateDetalle = (pi, di, field, val) => {
+    marcarTocado();
     const n = [...proveedores];
     const detalles = [...n[pi].detalles];
     const actualizado = { ...detalles[di], [field]: val };
@@ -2116,8 +2152,8 @@ export default function Contenedores() {
 
   // ── Service row management ─────────────────────────────────────
   // Igual que los proveedores: hereda la moneda del contenedor.
-  const addServicio    = () => setServicios([...servicios, emptyServicio(monedaBase)]);
-  const removeServicio = (si) => servicios.length > 1 && setServicios(servicios.filter((_, i) => i !== si));
+  const addServicio    = () => { marcarTocado(); setServicios([...servicios, emptyServicio(monedaBase)]); };
+  const removeServicio = (si) => { if (servicios.length > 1) { marcarTocado(); setServicios(servicios.filter((_, i) => i !== si)); } };
   // Aquí VIVÍA una copia del cálculo "factura ÷ cantidad = valor/unidad" para
   // los servicios. Estaba muerta: en estimación los servicios se capturan con
   // una única casilla "Costo estimado" que escribe los tres campos de golpe
@@ -2128,6 +2164,7 @@ export default function Contenedores() {
   // encima en el sentido contrario al de al lado, es una trampa para quien lea
   // esto dentro de seis meses.
   const updateServicio = (si, field, val) => {
+    marcarTocado();
     const n = [...servicios];
     n[si] = { ...n[si], [field]: val };
     setServicios(n);
@@ -2170,6 +2207,7 @@ export default function Contenedores() {
     return sv.factura_estimada ? String(sv.factura_estimada) : '';
   };
   const setCostoEstimadoServicio = (si, val) => {
+    marcarTocado();
     const n = [...servicios];
     // `costo` se vacía porque en una estimación no hay factura real todavía y,
     // de quedarse, ganaría al estimado y la casilla dejaría de mandar sobre el
@@ -2193,6 +2231,7 @@ export default function Contenedores() {
   const cambiarMonedaBase = (nueva) => {
     const anterior = monedaBase;
     if (nueva === anterior) return;
+    marcarTocado();
     setFormData(prev => ({ ...prev, moneda_base: nueva }));
     setProveedores(prev => prev.map(p => (p.moneda || 'USD') === anterior ? { ...p, moneda: nueva } : p));
     setServicios(prev => prev.map(s => (s.moneda || 'COP') === anterior ? { ...s, moneda: nueva } : s));
@@ -2212,6 +2251,8 @@ export default function Contenedores() {
     setFormData(FORM_VACIO);
     setProveedores([emptyProveedor(FORM_VACIO.moneda_base)]);
     setServicios([emptyServicio(FORM_VACIO.moneda_base)]);
+    // Un formulario vacío no tiene nada que perder.
+    setFormTocado(false);
   };
 
   const handleSaveTemplate = () => {
@@ -2271,6 +2312,9 @@ export default function Contenedores() {
   // alerta roja al abrir el formulario solo asustaría.
   const openCreateModal = (estimacion = false) => {
     resetForm(); setEditMode(false); setModoEstimacion(estimacion); setSelectedContenedor(null); setModalOpen(true);
+    // El número que llega abajo lo escribe el servidor, no la usuaria: no cuenta
+    // como trabajo por perder.
+    setFormTocado(false);
     // `contenedoresApi` todavía no expone este endpoint (ese archivo lo lleva
     // otra persona), así que se pide con el cliente crudo.
     api.get('/contenedores/siguiente-numero')
@@ -2345,6 +2389,8 @@ export default function Contenedores() {
             propio: esServicioPropio(s),
           }))
         : [emptyServicio(baseDelContenedor)]);
+      // Acabamos de volcar lo que trajo el servidor: todavía no hay nada tecleado.
+      setFormTocado(false);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
@@ -2355,15 +2401,18 @@ export default function Contenedores() {
   };
 
   // ── Submit form ────────────────────────────────────────────────
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  //
+  // El guardado vive suelto porque lo llaman DOS sitios: el submit del
+  // formulario y el botón "Guardar y salir" del aviso de cambios sin guardar.
+  // Devuelve si se guardó, para que quien lo llame sepa si puede cerrar.
+  const guardarContenedor = async () => {
     const r = calcularResumen();
     // Se permite guardar a medias: el contenedor se puede ir cargando proveedor por
     // proveedor a lo largo de varios días. Que las líneas cuadren con el total solo
     // se exige al FINALIZAR, que es el paso irreversible que crea las unidades.
     if (modoEstimacion && !proveedores.some(p => p.proveedor_nombre?.trim())) {
       addToast('Agrega al menos un proveedor con su estimación', 'error');
-      return;
+      return false;
     }
     setSubmitting(true);
     try {
@@ -2430,8 +2479,54 @@ export default function Contenedores() {
           : 'Contenedor creado' + avisoParcial, parcial ? 'warning' : 'success');
       }
       setModalOpen(false); resetForm(); loadContenedores();
-    } catch (err) { addToast(err.message, 'error'); }
+      return true;
+    } catch (err) { addToast(err.message, 'error'); return false; }
     finally { setSubmitting(false); }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    return guardarContenedor();
+  };
+
+  // ── Cerrar el formulario sin perder el trabajo ─────────────────
+  //
+  // Lo llaman Escape, la X, el clic en el fondo y los dos botones de Cancelar:
+  // todos pasan por aquí. Sin cambios sin guardar cierra en seco, como siempre.
+  //
+  // Con cambios se pregunta, y se pregunta con las TRES respuestas que tiene la
+  // situación en vez de esconder una detrás de "cancelar": guardar y salir, salir
+  // perdiendo lo escrito, o seguir donde estaba.
+  const cerrarFormulario = async () => {
+    if (avisoCierreAbiertoRef.current) return;
+    if (!formTocado) { setModalOpen(false); resetForm(); return; }
+    avisoCierreAbiertoRef.current = true;
+    let respuesta;
+    try {
+      respuesta = await confirm({
+        title: 'Tienes cambios sin guardar',
+        message: `Lo que escribiste en ${editMode ? `"${selectedContenedor?.numero || 'este contenedor'}"` : (modoEstimacion ? 'esta estimación' : 'este contenedor')} todavía no está guardado.
+
+Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escribirlos otra vez.`,
+        confirmText: 'Guardar y salir',
+        alternaText: 'Salir sin guardar',
+        cancelText: 'Seguir editando',
+        variant: 'warning',
+      });
+    } finally { avisoCierreAbiertoRef.current = false; }
+    if (respuesta === 'alterna') { setModalOpen(false); resetForm(); return; }
+    if (!respuesta) return;                       // seguir editando
+
+    // "Guardar y salir" no dispara el submit del formulario, así que los campos
+    // obligatorios del navegador se saltarían: se le pide la validación a mano y,
+    // si falta algo, se deja el formulario abierto con el campo señalado.
+    if (formRef.current && !formRef.current.reportValidity()) {
+      addToast('Falta algún campo obligatorio: revísalo y vuelve a intentarlo', 'warning');
+      return;
+    }
+    // guardarContenedor cierra y limpia solo cuando el guardado sale bien; si el
+    // servidor lo rechaza, el formulario se queda como está con todo dentro.
+    await guardarContenedor();
   };
 
   // ── Delete ─────────────────────────────────────────────────────
@@ -2550,6 +2645,7 @@ export default function Contenedores() {
         }
       }
       setRevisionRows(rows);
+      setRevisionTocada(false);
       setViewModalOpen(false);
       setRevisionModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
@@ -2558,6 +2654,7 @@ export default function Contenedores() {
   // Producto que llegó en el contenedor pero no estaba en la factura original.
   // Se registra dentro del proveedor que lo mandó, con su propio costo unitario.
   const addRevisionItem = (proveedorNombre) => {
+    setRevisionTocada(true);
     setRevisionRows(prev => ([
       ...prev,
       {
@@ -2581,9 +2678,10 @@ export default function Contenedores() {
     ]));
   };
 
-  const removeRevisionItem = (idx) => setRevisionRows(prev => prev.filter((_, i) => i !== idx));
+  const removeRevisionItem = (idx) => { setRevisionTocada(true); setRevisionRows(prev => prev.filter((_, i) => i !== idx)); };
 
   const updateRevisionRow = (idx, field, val) => {
+    setRevisionTocada(true);
     setRevisionRows(prev => {
       const next = [...prev];
       const updated = { ...next[idx], [field]: val };
@@ -2645,6 +2743,7 @@ export default function Contenedores() {
       const contenedorActualizado = await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
       addToast('Revisión guardada — el contenedor está listo para finalizar', 'success');
       setRevisionModalOpen(false);
+      setRevisionTocada(false);
       loadContenedores();
 
       // Si hay discrepancias, ofrecer exportar reclamación inmediatamente.
@@ -2661,6 +2760,30 @@ export default function Contenedores() {
       }
     } catch (err) { addToast(err.message, 'error'); }
     finally { setSubmitting(false); }
+  };
+
+  // El mismo aviso que en el formulario, para el conteo de la revisión: son
+  // horas contando pacas y Escape las tiraba sin preguntar.
+  const cerrarRevision = async () => {
+    if (avisoCierreAbiertoRef.current) return;
+    if (!revisionTocada) { setRevisionModalOpen(false); return; }
+    avisoCierreAbiertoRef.current = true;
+    let respuesta;
+    try {
+      respuesta = await confirm({
+        title: 'La revisión no está guardada',
+        message: `Lo que llevas contado de "${selectedContenedor?.numero || 'este contenedor'}" todavía no está guardado.
+
+Si sales sin guardar se pierde y hay que volver a contarlo.`,
+        confirmText: 'Guardar y salir',
+        alternaText: 'Salir sin guardar',
+        cancelText: 'Seguir contando',
+        variant: 'warning',
+      });
+    } finally { avisoCierreAbiertoRef.current = false; }
+    if (respuesta === 'alterna') { setRevisionModalOpen(false); setRevisionTocada(false); return; }
+    if (!respuesta) return;
+    await handleGuardarRevision();   // cierra solo si el guardado sale bien
   };
 
   // Cuánto queda por distribuir en un contenedor ya guardado. Se usa para avisar
@@ -3167,12 +3290,13 @@ export default function Contenedores() {
       <Modal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); resetForm(); }}
+        onSolicitarCierre={cerrarFormulario}
         title={editMode
           ? `${modoEstimacion ? 'Editar estimación' : 'Editar'} — ${selectedContenedor?.numero}`
           : (modoEstimacion ? 'Nueva estimación de contenedor' : 'Nuevo Contenedor')}
         size="full"
       >
-        <form onSubmit={handleSubmit}>
+        <form ref={formRef} onSubmit={handleSubmit}>
           {/* Los cuatro <datalist> compartidos (cont-temporadas, cont-tipos,
               cont-calidades y cont-refs-N) desaparecieron: las líneas de
               distribución ya no usan <input list="…"> sino <select>, que trae
@@ -3250,7 +3374,7 @@ export default function Contenedores() {
                   <div className="col-span-2">
                     <label htmlFor="cont-numero" className={lbl}>Número *</label>
                     <input id="cont-numero" type="text" className={inp} placeholder="C526"
-                      value={formData.numero} onChange={(e) => setFormData({ ...formData, numero: e.target.value })} required />
+                      value={formData.numero} onChange={(e) => editarForm('numero', e.target.value)} required />
                     {/* El consecutivo se propone solo al crear, pero se puede
                         cambiar: aquí queda escrito el formato para quien tenga
                         que escribirlo a mano. */}
@@ -3259,12 +3383,12 @@ export default function Contenedores() {
                   <div>
                     <label htmlFor="cont-fecha-salida" className={lbl}>Fecha Salida</label>
                     <input id="cont-fecha-salida" type="date" className={inp}
-                      value={formData.fecha_salida} onChange={(e) => setFormData({ ...formData, fecha_salida: e.target.value })} />
+                      value={formData.fecha_salida} onChange={(e) => editarForm('fecha_salida', e.target.value)} />
                   </div>
                   <div>
                     <label htmlFor="cont-fecha-llegada" className={lbl}>Fecha Llegada</label>
                     <input id="cont-fecha-llegada" type="date" className={inp}
-                      value={formData.fecha_llegada} onChange={(e) => setFormData({ ...formData, fecha_llegada: e.target.value })} />
+                      value={formData.fecha_llegada} onChange={(e) => editarForm('fecha_llegada', e.target.value)} />
                   </div>
 
                   {/* Unidades del contenedor FÍSICO completo. Los servicios se
@@ -3274,7 +3398,7 @@ export default function Contenedores() {
                     <label htmlFor="cont-cantidad-total" className={lbl}>Cantidad total del contenedor</label>
                     <input id="cont-cantidad-total" type="number" min="0" className={inp} placeholder="ej. 312"
                       value={formData.cantidad_total}
-                      onChange={(e) => setFormData({ ...formData, cantidad_total: e.target.value })}
+                      onChange={(e) => editarForm('cantidad_total', e.target.value)}
                       title="Unidades de TODO el contenedor, incluidas las de otros si va compartido. Sobre esta cantidad se reparten los servicios." />
                     <p className="text-[10px] text-muted mt-0.5">
                       {parseInt(formData.cantidad_total) > 0 && parseInt(formData.cantidad_total) !== (parseInt(formData.total_pacas) || 0)
@@ -3296,7 +3420,7 @@ export default function Contenedores() {
                   <div>
                     <label htmlFor="cont-tasa" className={lbl}>Tasa USD→COP</label>
                     <input id="cont-tasa" type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
-                      value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
+                      value={formData.tasa_conversion} onChange={(e) => editarForm('tasa_conversion', e.target.value)} required />
                     {!tasaValida && (
                       <p className="text-[10px] text-warning mt-0.5 leading-tight">
                         Sin tasa no se pueden convertir los dólares: todo se lee en pesos.
@@ -3352,7 +3476,7 @@ export default function Contenedores() {
                     </label>
                     <input id="cont-utilidad" type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
                       value={formData.utilidad_unitaria}
-                      onChange={(e) => setFormData({ ...formData, utilidad_unitaria: e.target.value })} />
+                      onChange={(e) => editarForm('utilidad_unitaria', e.target.value)} />
                     {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
                     {parseMonto(formData.utilidad_unitaria) > 0 ? (
                       <p className="text-[10px] mt-0.5">
@@ -3479,7 +3603,7 @@ export default function Contenedores() {
                   <div className="col-span-2 md:col-span-3">
                     <label htmlFor="cont-notas" className={lbl}>Notas</label>
                     <input id="cont-notas" type="text" className={inp} placeholder="Observaciones opcionales..."
-                      value={formData.notas} onChange={(e) => setFormData({ ...formData, notas: e.target.value })} />
+                      value={formData.notas} onChange={(e) => editarForm('notas', e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -4128,7 +4252,7 @@ export default function Contenedores() {
 
               {/* Mobile action row */}
               <div className="flex lg:hidden gap-3 pt-1">
-                <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
+                <button type="button" onClick={cerrarFormulario}
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                   Cancelar
                 </button>
@@ -4390,7 +4514,7 @@ export default function Contenedores() {
                     {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                     {submitting ? 'Guardando...' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
                   </button>
-                  <button type="button" onClick={() => { setModalOpen(false); resetForm(); }}
+                  <button type="button" onClick={cerrarFormulario}
                     className="w-full py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                     Cancelar
                   </button>
@@ -5147,7 +5271,7 @@ export default function Contenedores() {
           REVISIÓN MODAL — Etapa 2: verificación física
       ════════════════════════════════════════════════════════ */}
       {selectedContenedor && (
-        <Modal isOpen={revisionModalOpen} onClose={() => setRevisionModalOpen(false)} title={`Revisión — ${selectedContenedor.numero}`} size="full">
+        <Modal isOpen={revisionModalOpen} onClose={() => setRevisionModalOpen(false)} onSolicitarCierre={cerrarRevision} title={`Revisión — ${selectedContenedor.numero}`} size="full">
           <div className="space-y-3">
             {/* Banner compacto */}
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
@@ -5407,7 +5531,7 @@ export default function Contenedores() {
 
             {/* Acciones */}
             <div className="flex justify-end gap-3 pt-1">
-              <button type="button" onClick={() => setRevisionModalOpen(false)}
+              <button type="button" onClick={cerrarRevision}
                 className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                 Cancelar
               </button>
@@ -5465,6 +5589,9 @@ export default function Contenedores() {
                     }));
                     setProveedores(t.proveedores);
                     setServicios(t.servicios);
+                    // Cargar una plantilla llena el formulario: si se cierra sin
+                    // guardar, se pierde igual que si se hubiera tecleado.
+                    marcarTocado();
                     setTemplateModalOpen(false);
                     addToast(`Plantilla "${t.nombre}" cargada`, 'success');
                   }}>

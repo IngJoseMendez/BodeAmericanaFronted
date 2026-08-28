@@ -6,7 +6,16 @@ import { X } from 'lucide-react';
 // también el modal padre al pulsar Escape.
 const modalStack = [];
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+// `onSolicitarCierre` (opcional) intercepta los TRES caminos por los que se
+// cierra un modal —Escape, la X y el clic en el fondo—: si se pasa, el modal no
+// se cierra solo, sino que avisa a la pantalla y es ella quien decide. Sirve
+// para un formulario a medio llenar, donde cerrar sin más pierde el trabajo.
+//
+// No se resolvió interceptando `onClose` porque para entonces la animación de
+// salida ya ha corrido y `visible` ya es false: al decidir NO cerrar, el modal
+// se quedaba en pantalla pero con el manejador de Escape apagado. La pantalla
+// cierra poniendo `isOpen` en false, que es el camino de siempre.
+export function Modal({ isOpen, onClose, title, children, size = 'md', onSolicitarCierre }) {
   const [visible, setVisible] = useState(false);
   const [animatingOut, setAnimatingOut] = useState(false);
   const modalRef = useRef(null);
@@ -61,18 +70,36 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
     }
   }, [visible]);
 
+  // Las dos devoluciones de llamada se guardan en refs porque las pantallas las
+  // pasan como funciones nuevas en cada render (`onClose={() => …}`). Usadas
+  // directamente como dependencias, el efecto de abajo se desmontaba y volvía a
+  // montarse EN CADA TECLA del formulario: quitaba y volvía a poner la escucha
+  // de teclado, y sacaba y metía este modal de la pila —soltando y volviendo a
+  // bloquear el scroll del body por el camino—.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const onSolicitarCierreRef = useRef(onSolicitarCierre);
+  onSolicitarCierreRef.current = onSolicitarCierre;
+
   const handleClose = useCallback(() => {
     setAnimatingOut(true);
     setTimeout(() => {
       setVisible(false);
       setAnimatingOut(false);
-      onClose();
+      onCloseRef.current?.();
       // Restaurar foco al elemento que abrió el modal
       if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
         previousFocusRef.current.focus();
       }
     }, 200); // tiempo de la animación de salida
-  }, [onClose]);
+  }, []);
+
+  // El cierre que pide el USUARIO. Si la pantalla quiere decidir (formulario a
+  // medio llenar), se le pasa la pelota y no se cierra nada aquí.
+  const solicitarCierre = useCallback(() => {
+    if (onSolicitarCierreRef.current) { onSolicitarCierreRef.current(); return; }
+    handleClose();
+  }, [handleClose]);
 
   // Cerrar con Escape + focus trap para Tab
   useEffect(() => {
@@ -87,7 +114,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
 
       if (e.key === 'Escape') {
         e.stopPropagation();
-        handleClose();
+        solicitarCierre();
         return;
       }
 
@@ -125,7 +152,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
         document.body.style.overflow = '';
       }
     };
-  }, [visible, handleClose]);
+  }, [visible, solicitarCierre]);
 
   if (!visible && !isOpen) return null;
 
@@ -162,7 +189,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
         className={`absolute inset-0 bg-primary/40 backdrop-blur-sm ${
           animatingOut ? 'animate-overlay-out' : 'animate-overlay-in'
         }`}
-        onClick={handleClose}
+        onClick={solicitarCierre}
         aria-hidden="true"
       />
 
@@ -185,7 +212,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }) {
           </h2>
           <button
             ref={triggerRef}
-            onClick={handleClose}
+            onClick={solicitarCierre}
             className="p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
             aria-label="Cerrar modal"
           >
