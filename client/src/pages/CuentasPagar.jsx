@@ -298,7 +298,16 @@ export default function CuentasPagar() {
   filtered.forEach(c => {
     const key = c.contenedor_id ? String(c.contenedor_id) : 'sin';
     const label = c.contenedor_numero || 'Sin Contenedor';
-    if (!grupos[key]) grupos[key] = { label, cuentas: [], pendienteCOP: 0, pendienteUSD: 0, pagadas: 0 };
+    // Una cuenta nacida de una ESTIMACIÓN corresponde a una factura que todavía
+    // no existe: el proveedor aún no ha despachado nada. Se le abona igual —para
+    // eso se crea la estimación—, pero mezclada con las reales no había forma de
+    // saber cuál era cuál, ni por qué un contenedor "debe" plata de mercancía
+    // que no ha llegado.
+    if (!grupos[key]) grupos[key] = {
+      label, cuentas: [], pendienteCOP: 0, pendienteUSD: 0, pagadas: 0,
+      esEstimacion: c.contenedor_estado === 'estimacion',
+      deEstimacion: c.contenedor_origen === 'estimacion',
+    };
     grupos[key].cuentas.push(c);
     if (c.estado === 'pagada') grupos[key].pagadas++;
     else {
@@ -452,6 +461,17 @@ export default function CuentasPagar() {
                             ) : (
                               <RefLink to="/contenedores" id={key} title="Ver contenedor"
                                 className="text-sm font-bold">Contenedor {grupo.label}</RefLink>
+                            )}
+                            {grupo.esEstimacion ? (
+                              <span title="Estas cuentas salen de una estimación: el proveedor todavía no ha facturado"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60">
+                                Estimación
+                              </span>
+                            ) : grupo.deEstimacion && (
+                              <span title="El contenedor nació como estimación: estas cuentas se crearon antes de que llegara"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/10 text-blue-600 border border-blue-400/40">
+                                De estimación
+                              </span>
                             )}
                             <span className="text-xs text-muted">
                               {grupo.cuentas.length} cuenta{grupo.cuentas.length !== 1 ? 's' : ''}

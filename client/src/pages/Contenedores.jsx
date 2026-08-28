@@ -19,24 +19,51 @@ import { useAuth } from '../context/AuthContext';
 import { parseMonto, formatCOP, formatNumero, formatMoneda } from '../lib/money';
 import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
+// Las cuentas del contenedor viven fuera de la pantalla porque el SERVIDOR tiene
+// su propia copia de las mismas fórmulas —él decide lo que se guarda, esta
+// pantalla lo que se ve— y las dos tienen que dar lo mismo. En lib se pueden
+// probar sin navegador: tests/contenedor-costos.test.mjs.
+import {
+  etiquetaEstado, hayEstimadoProveedor, vieneDeEstimacion,
+  esServicioPropio, costoServicioEfectivo, costoProveedorEfectivo,
+  costoServicioAsignado,
+} from '../lib/contenedor';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
+
+// Las dos monedas con las que trabaja un contenedor. Todo lo de adentro se
+// captura en una de ellas y la tasa del contenedor las une.
+const MONEDAS_CONTENEDOR = ['USD', 'COP'];
 
 const formatCurrency = formatCOP;
 
 const formatDate = formatFecha;
 
 // ── Factory helpers ───────────────────────────────────────────────
+//
+// Las líneas nuevas HEREDAN la moneda del contenedor: es lo que evita que se
+// cuele un proveedor en dólares dentro de un contenedor que se está pensando en
+// pesos. Sigue pudiéndose cambiar una línea suelta, y entonces queda señalada
+// como excepción.
+//
+// La moneda con la que arranca un contenedor nuevo: la mercancía se compra en
+// dólares. Vive aquí para que el formulario, sus líneas iniciales y el reset
+// coincidan; cuando cada uno tenía su propio valor por defecto, el primer
+// servicio nacía en pesos dentro de un contenedor en dólares y aparecía marcado
+// como excepción sin que nadie hubiera tocado nada.
+const MONEDA_BASE_POR_DEFECTO = 'USD';
 
-const emptyProveedor = () => ({
-  proveedor_nombre: '', moneda: 'USD', notas: '',
+const emptyProveedor = (moneda = MONEDA_BASE_POR_DEFECTO) => ({
+  proveedor_nombre: '', moneda, notas: '',
   factura_estimada: '', cantidad_estimada: '', valor_unidad_estimado: '',
   detalles: [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
 });
-const emptyServicio = () => ({
-  proveedor_nombre: '', tipo_servicio: '', moneda: 'COP', costo: '', notas: '',
+const emptyServicio = (moneda = MONEDA_BASE_POR_DEFECTO) => ({
+  proveedor_nombre: '', tipo_servicio: '', moneda, costo: '', notas: '',
   factura_estimada: '', cantidad_estimada: '', valor_unidad_estimado: '',
+  // false = compartido, que es como se comportaban todos hasta ahora.
+  propio: false,
 });
 
 // ── Lo que cuesta HOY un servicio, en su propia moneda ────────────
@@ -47,18 +74,13 @@ const emptyServicio = () => ({
 // que escribe hoy la casilla única de "Costo estimado") o la factura estimada de
 // los registros viejos. Sin el último término, una estimación antigua guardada
 // solo con "Factura estimada" entraba al total valiendo CERO mientras la pantalla
-// enseñaba su importe.
+// enseñaba su importe. El backend (`costoBaseServicio`) cuenta hoy exactamente
+// igual, incluido ese último término: mientras no coincidieron, lo guardado en
+// costo_servicios_total y en la cuenta por pagar no era lo que se veía aquí.
 //
 // Vive fuera de la pantalla porque la consultan el resumen del formulario, el
 // modal de detalle y el Excel: tres copias de la misma fórmula acaban dando tres
 // cifras distintas para el mismo servicio.
-const costoServicioEfectivo = (sv = {}) => {
-  const real = parseFloat(sv.costo) || 0;
-  if (real > 0) return real;
-  const cantidad = parseInt(sv.cantidad_estimada) || 0;
-  const valor    = parseFloat(sv.valor_unidad_estimado) || 0;
-  return (cantidad * valor) || valor || (parseFloat(sv.factura_estimada) || 0);
-};
 
 // ── Un importe calculado, limpio de basura de punto flotante ──────
 //
@@ -119,35 +141,140 @@ const inpBase =
 const inp = `w-full ${inpBase}`;
 const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider';
 
-// ── Interruptor de moneda del resumen (USD / COP) ─────────────────
+// ── Interruptor de moneda del resumen (Ambas / USD / COP) ─────────
 //
-// La mercancía se compra en DÓLARES: es la moneda en la que la operación piensa
-// el contenedor, así que el resumen arranca en USD. Este control es SOLO de
-// visualización: no cambia lo que se guarda ni la moneda de ningún proveedor o
-// servicio, solo en qué unidad se leen las cifras ya calculadas.
+// El resumen arranca en AMBAS: el contenedor se compra en dólares y se paga en
+// pesos, así que las dos cifras hacen falta y tenerlas juntas ahorra el paso
+// mental de convertir. Quien solo quiera una la fija con este control.
+//
+// Es SOLO de visualización: no cambia lo que se guarda ni la moneda de ningún
+// proveedor o servicio, solo en qué unidad se leen las cifras ya calculadas.
 //
 // Se declara aquí fuera a propósito: definido dentro de la pantalla, React lo
 // vería como un tipo nuevo en cada render y lo desmontaría en cada tecla.
+const VISTAS_MONEDA = [
+  { v: 'AMBAS', label: 'Ambas', ayuda: 'Ver cada cifra en dólares y en pesos' },
+  { v: 'USD',   label: 'USD',   ayuda: 'Ver el resumen solo en dólares' },
+  { v: 'COP',   label: 'COP',   ayuda: 'Ver el resumen solo en pesos' },
+];
 function ToggleMoneda({ valor, onChange, deshabilitado = false, id }) {
   return (
     <div className={`inline-flex rounded-lg border border-border overflow-hidden flex-shrink-0 ${deshabilitado ? 'opacity-50' : ''}`}
          role="group" aria-label="Moneda en la que se muestra el resumen">
-      {['USD', 'COP'].map((m) => (
+      {VISTAS_MONEDA.map(({ v, label, ayuda }) => (
         <button
-          key={m}
+          key={v}
           type="button"            /* dentro de un <form>: sin esto enviaría el formulario */
-          id={id ? `${id}-${m}` : undefined}
-          disabled={deshabilitado}
-          aria-pressed={valor === m}
-          onClick={() => onChange(m)}
-          title={deshabilitado ? 'Falta la tasa USD→COP para poder convertir' : `Ver el resumen en ${m}`}
+          id={id ? `${id}-${v}` : undefined}
+          /* Sin tasa no hay conversión posible, así que "Ambas" y "USD" no
+             tienen nada que enseñar: solo queda pesos. */
+          disabled={deshabilitado && v !== 'COP'}
+          aria-pressed={valor === v}
+          onClick={() => onChange(v)}
+          title={deshabilitado && v !== 'COP' ? 'Falta la tasa USD→COP para poder convertir' : ayuda}
           className={`px-2.5 py-1 text-[11px] font-bold tracking-wide transition-colors ${
-            valor === m ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'
-          } ${deshabilitado ? 'cursor-not-allowed' : ''}`}
+            valor === v ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'
+          } ${deshabilitado && v !== 'COP' ? 'cursor-not-allowed' : ''}`}
         >
-          {m}
+          {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Sello de "esto es una estimación" ─────────────────────────────
+//
+// El mismo distintivo ámbar en todas partes —lista, detalle, formulario,
+// cabecera del Excel— para que en ningún momento haya que deducir si una cifra
+// es lo que se cree que va a llegar o lo que llegó.
+function SelloEstimacion({ children = 'Estimación', title, className = '' }) {
+  return (
+    <span title={title}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide
+                  bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60 ${className}`}>
+      <Sparkles size={10} className="flex-shrink-0" />
+      {children}
+    </span>
+  );
+}
+
+// ── Sello de "este contenedor nació de una estimación" ────────────
+//
+// Va donde el contenedor YA es normal: dice de dónde viene sin confundirlo con
+// una estimación viva. Se pinta en azul, no en ámbar, justo para eso.
+function SelloOrigenEstimacion({ convertidoEn, className = '' }) {
+  return (
+    <span
+      title={convertidoEn
+        ? `Nació como estimación. Se convirtió a contenedor normal el ${formatFecha(convertidoEn)}.`
+        : 'Nació como estimación y se convirtió a contenedor normal.'}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide
+                  bg-blue-500/10 text-blue-600 border border-blue-400/40 ${className}`}>
+      <RefreshCw size={10} className="flex-shrink-0" />
+      De estimación
+    </span>
+  );
+}
+
+// ── El camino que recorre un contenedor ───────────────────────────
+//
+// POR QUÉ EXISTE
+// El flujo estimación → contenedor → revisión → finalizado estaba solo en la
+// cabeza de quien lo usa: la pantalla enseñaba el estado ACTUAL con un badge,
+// pero en ningún sitio se veía de dónde venía ni qué faltaba. Y de las dos
+// primeras casillas depende algo que no se puede deshacer: al finalizar se
+// crean las pacas con el costo que salga de aquí.
+//
+// Se pinta igual en el formulario y en el detalle: el mismo dibujo en los dos
+// sitios es lo que hace que se lea sin pensar.
+//
+// `origen` decide si la casilla de estimación es parte del camino de ESTE
+// contenedor o un paso que nunca existió (uno creado directo en borrador).
+const PASOS_CONTENEDOR = [
+  { estado: 'estimacion', label: 'Estimación', ayuda: 'Lo que se cree que va a llegar. Genera cuentas por pagar para abonar antes.' },
+  { estado: 'borrador',   label: 'Contenedor', ayuda: 'Lo que de verdad llegó: líneas de distribución con cantidades y costos.' },
+  { estado: 'revision',   label: 'Revisión',   ayuda: 'Conteo físico contra lo facturado.' },
+  { estado: 'finalizado', label: 'Finalizado', ayuda: 'Las pacas entran al inventario con su costo. Ya no se puede editar.' },
+];
+function FlujoContenedor({ estado, origen, convertidoEn, compacto = false }) {
+  const deEstimacion = origen === 'estimacion' || estado === 'estimacion';
+  const idxActual = PASOS_CONTENEDOR.findIndex(p => p.estado === estado);
+  return (
+    <div className={`flex items-center gap-1 flex-wrap ${compacto ? 'text-[10px]' : 'text-[11px]'}`}
+         role="list" aria-label="Camino del contenedor">
+      {PASOS_CONTENEDOR.map((paso, i) => {
+        // La casilla de estimación se apaga del todo cuando el contenedor nació
+        // directo: enseñarla como "pendiente" haría creer que falta hacerla.
+        const noAplica = paso.estado === 'estimacion' && !deEstimacion;
+        const actual   = i === idxActual;
+        const hecho    = idxActual > i && !noAplica;
+        return (
+          <div key={paso.estado} className="flex items-center gap-1" role="listitem">
+            <span
+              title={noAplica ? 'Este contenedor se creó directo, sin pasar por una estimación' : paso.ayuda}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide whitespace-nowrap ${
+                noAplica ? 'text-muted/40 line-through decoration-muted/40'
+                : actual  ? (paso.estado === 'estimacion'
+                              ? 'bg-amber-500/15 text-amber-700 border border-dashed border-amber-400/60'
+                              : 'bg-secondary text-white')
+                : hecho   ? 'bg-success/10 text-success'
+                          : 'text-muted/60 border border-border'
+              }`}>
+              {hecho && <CheckCircle size={9} className="flex-shrink-0" />}
+              {paso.label}
+            </span>
+            {i < PASOS_CONTENEDOR.length - 1 && (
+              <ChevronRight size={11} className={hecho ? 'text-success/50' : 'text-muted/30'} />
+            )}
+          </div>
+        );
+      })}
+      {deEstimacion && convertidoEn && estado !== 'estimacion' && (
+        <span className="text-[10px] text-muted ml-1">
+          convertido el {formatFecha(convertidoEn)}
+        </span>
+      )}
     </div>
   );
 }
@@ -340,7 +467,13 @@ function TimelineView({ items, onView, isAdmin = false }) {
             <div className="absolute left-2.5 top-1 bottom-4 w-px bg-border/50" />
             {conts.map(cont => (
               <div key={cont.id} className="relative flex items-center gap-3">
-                <div className={`absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface flex-shrink-0 ${cont.estado === 'finalizado' ? 'bg-success' : 'bg-warning'}`} />
+                {/* El punto dice el estado sin leer: una estimación no es un
+                    borrador a medias, es algo que todavía no ha llegado. */}
+                <div className={`absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface flex-shrink-0 ${
+                  cont.estado === 'finalizado' ? 'bg-success'
+                  : cont.estado === 'estimacion' ? 'bg-amber-400'
+                  : cont.estado === 'revision' ? 'bg-blue-500'
+                  : 'bg-warning'}`} />
                 <div
                   className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-secondary/40"
                   onClick={() => onView(cont)}
@@ -378,7 +511,12 @@ function TimelineView({ items, onView, isAdmin = false }) {
                         <p className="text-sm font-mono font-bold text-secondary">{formatCurrency(cont.costo_unitario)}</p>
                       </div>
                     )}
-                    <StatusBadge estado={cont.estado} />
+                    <div className="flex flex-col items-end gap-1">
+                      <StatusBadge estado={cont.estado} />
+                      {cont.estado !== 'estimacion' && vieneDeEstimacion(cont) && (
+                        <SelloOrigenEstimacion convertidoEn={cont.convertido_en} />
+                      )}
+                    </div>
                     <ChevronRight size={14} className="text-muted/50 group-hover:text-secondary transition-colors" />
                   </div>
                 </div>
@@ -413,6 +551,9 @@ function TimelineView({ items, onView, isAdmin = false }) {
                   <p className="font-semibold text-primary text-sm">{cont.numero}</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted">{parseInt(cont.total_pacas).toLocaleString()} unidades</span>
+                    {cont.estado !== 'estimacion' && vieneDeEstimacion(cont) && (
+                      <SelloOrigenEstimacion convertidoEn={cont.convertido_en} />
+                    )}
                     <StatusBadge estado={cont.estado} />
                   </div>
                 </div>
@@ -537,6 +678,12 @@ function useContenedorTemplates() {
       tasa_conversion: formData.tasa_conversion,
       total_pacas: formData.total_pacas,
       notas: formData.notas,
+      // La moneda del contenedor y las unidades del contenedor físico son parte
+      // de la plantilla: cargarla sin ellas dejaba las líneas en una moneda y el
+      // contenedor en otra, y los servicios prorrateados sobre la base
+      // equivocada. `propio` viaja dentro de cada servicio.
+      moneda_base: formData.moneda_base,
+      cantidad_total: formData.cantidad_total,
       proveedores,
       servicios,
     };
@@ -605,14 +752,19 @@ export default function Contenedores() {
   const opcionesCategoria     = useMemo(() => categoriasPrecio.map(c => c.nombre).filter(Boolean), [categoriasPrecio]);
 
   // ── Form ───────────────────────────────────────────────────────
-  const [formData, setFormData]       = useState({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
+  // `moneda_base` es la moneda en la que se piensa el contenedor ENTERO: la
+  // heredan las líneas nuevas y con ella se rotula todo. Arranca en USD porque
+  // la mercancía se compra en dólares.
+  const FORM_VACIO = { numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '', moneda_base: MONEDA_BASE_POR_DEFECTO };
+  const [formData, setFormData]       = useState(FORM_VACIO);
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
+  const monedaBase = formData.moneda_base === 'COP' ? 'COP' : 'USD';
 
-  // Moneda en la que se LEE el resumen de costos. Arranca en USD porque la
-  // mercancía se compra en dólares y es la cifra que se compara contra la
-  // factura del proveedor. No afecta a lo que se guarda.
-  const [monedaResumen, setMonedaResumen] = useState('USD');
+  // Moneda en la que se LEE el resumen de costos: 'AMBAS' | 'USD' | 'COP'.
+  // Arranca en AMBAS porque el contenedor se compra en dólares y se paga en
+  // pesos: las dos cifras hacen falta. No afecta a lo que se guarda.
+  const [monedaResumen, setMonedaResumen] = useState('AMBAS');
 
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
@@ -766,17 +918,18 @@ export default function Contenedores() {
       { key: 'numero',     width: 22 }, // A
       { key: 'fecha',      width: 14 }, // B
       { key: 'estado',     width: 13 }, // C
-      { key: 'pacas',      width: 13 }, // D
-      { key: 'costo_u',    width: 18 }, // E
-      { key: 'mercancia',  width: 20 }, // F
-      { key: 'servicios',  width: 18 }, // G
-      { key: 'total',      width: 20 }, // H
-      { key: 'nprov',      width: 14 }, // I
-      { key: 'nsrv',       width: 14 }, // J
+      { key: 'origen',     width: 15 }, // D
+      { key: 'pacas',      width: 13 }, // E
+      { key: 'costo_u',    width: 18 }, // F
+      { key: 'mercancia',  width: 20 }, // G
+      { key: 'servicios',  width: 18 }, // H
+      { key: 'total',      width: 20 }, // I
+      { key: 'nprov',      width: 14 }, // J
+      { key: 'nsrv',       width: 14 }, // K
     ];
 
     // ── Fila 1: Título ─────────────────────────────────────────────
-    ws.mergeCells('A1:J1');
+    ws.mergeCells('A1:K1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'Comercio Global Logístico — Reporte de Contenedores';
     titleCell.font = { size: 16, bold: true, color: { argb: 'FFFFFF' } };
@@ -785,7 +938,7 @@ export default function Contenedores() {
     ws.getRow(1).height = 32;
 
     // ── Fila 2: Fecha ──────────────────────────────────────────────
-    ws.mergeCells('A2:J2');
+    ws.mergeCells('A2:K2');
     const subCell = ws.getCell('A2');
     subCell.value = `Generado: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}   |   Total registros: ${contenedoresFiltrados.length}`;
     subCell.font = { size: 10, italic: true, color: { argb: '888888' } };
@@ -793,7 +946,7 @@ export default function Contenedores() {
     ws.getRow(2).height = 18;
 
     // ── Fila 4: Sección KPIs ───────────────────────────────────────
-    ws.mergeCells('A4:J4');
+    ws.mergeCells('A4:K4');
     const kpiHeader = ws.getCell('A4');
     kpiHeader.value = 'RESUMEN EJECUTIVO';
     kpiHeader.font = { size: 11, bold: true, color: { argb: 'FFFFFF' } };
@@ -813,8 +966,13 @@ export default function Contenedores() {
 
     const kpis = [
       ['Total contenedores', totales.length,               primary,   null],
+      // Las estimaciones se contaban dentro del total pero no aparecían en
+      // ninguna línea: el reporte no permitía saber cuánta de esa "inversión"
+      // era mercancía que todavía no ha llegado.
+      ['Estimaciones (aún no llegan)', totales.filter(c => c.estado === 'estimacion').length, warning, null],
       ['Finalizados',         finalizados.length,           success,   null],
       ['En borrador',         borradores.length,            warning,   null],
+      ['Nacidos de una estimación', totales.filter(vieneDeEstimacion).length, warning, null],
       ['Total unidades generadas', totalPacas,               primary,   null],
       ['Inversión total (finalizados)', invTotal,           accent,    '$#,##0.00'],
       ['Costo promedio por paca',       promUnitario,       secondary, '$#,##0.00'],
@@ -831,7 +989,7 @@ export default function Contenedores() {
       ws.getCell(`E${row}`).font = { bold: true, size: 12, color: { argb: color } };
       ws.getCell(`E${row}`).alignment = { horizontal: 'right' };
       if (fmt) ws.getCell(`E${row}`).numFmt = fmt;
-      ws.mergeCells(`E${row}:J${row}`);
+      ws.mergeCells(`E${row}:K${row}`);
       ws.getRow(row).height = 20;
       row++;
     }
@@ -839,7 +997,7 @@ export default function Contenedores() {
     row++; // blank row
 
     // ── Sección detalle ────────────────────────────────────────────
-    ws.mergeCells(`A${row}:J${row}`);
+    ws.mergeCells(`A${row}:K${row}`);
     const detHeader = ws.getCell(`A${row}`);
     detHeader.value = 'DETALLE DE CONTENEDORES';
     detHeader.font = { size: 11, bold: true, color: { argb: 'FFFFFF' } };
@@ -849,7 +1007,7 @@ export default function Contenedores() {
     row++;
 
     // ── Cabeceras de tabla ─────────────────────────────────────────
-    const cols = ['Número', 'Fecha Llegada', 'Estado', 'Total Unidades', 'Costo/Unidad', 'Costo Mercancía', 'Costo Servicios', 'Costo Total', 'Proveedores', 'Servicios'];
+    const cols = ['Número', 'Fecha Llegada', 'Estado', 'Origen', 'Total Unidades', 'Costo/Unidad', 'Costo Mercancía', 'Costo Servicios', 'Costo Total', 'Proveedores', 'Servicios'];
     cols.forEach((h, i) => {
       const cell = ws.getCell(`${String.fromCharCode(65 + i)}${row}`);
       cell.value = h;
@@ -881,36 +1039,53 @@ export default function Contenedores() {
         numFmt: c.fecha_llegada ? 'dd/mm/yyyy' : undefined,
         alignment: { horizontal: 'center', vertical: 'middle' },
       });
-      setCell('C', c.estado === 'finalizado' ? 'Finalizado' : 'Borrador', {
-        font: { bold: true, size: 10, color: { argb: isFinalizado ? success : warning } },
+      // Antes preguntaba solo por 'finalizado' y todo lo demás salía como
+      // "Borrador": una estimación y un contenedor en revisión se leían igual
+      // que un borrador recién creado.
+      setCell('C', etiquetaEstado(c.estado), {
+        font: { bold: true, size: 10, color: { argb:
+          c.estado === 'finalizado' ? success
+          : c.estado === 'estimacion' ? 'd97706'
+          : c.estado === 'revision' ? '2563eb'
+          : warning } },
         alignment: { horizontal: 'center', vertical: 'middle' },
       });
-      setCell('D', parseInt(c.total_pacas || 0), {
+      // De dónde vienen sus cifras. En un contenedor ya convertido es la única
+      // manera de saber, meses después, que empezaron siendo una estimación.
+      setCell('D', c.estado === 'estimacion' ? 'Estimación'
+        : vieneDeEstimacion(c) ? 'De estimación' : 'Directo', {
+        font: { size: 10, italic: c.estado !== 'estimacion' && vieneDeEstimacion(c),
+                color: { argb: vieneDeEstimacion(c) ? 'd97706' : '999999' } },
+        alignment: { horizontal: 'center', vertical: 'middle' },
+      });
+      setCell('E', parseInt(c.total_pacas || 0), {
         numFmt: '#,##0',
         alignment: { horizontal: 'right', vertical: 'middle' },
       });
-      setCell('E', parseFloat(c.costo_unitario || 0), {
+      setCell('F', parseFloat(c.costo_unitario || 0), {
         numFmt: '$#,##0.00',
         alignment: { horizontal: 'right', vertical: 'middle' },
         font: { bold: isFinalizado, size: 10, color: { argb: isFinalizado ? primary : '999999' } },
       });
-      setCell('F', parseFloat(c.costo_mercancia_total || 0), {
+      setCell('G', parseFloat(c.costo_mercancia_total || 0), {
         numFmt: '$#,##0.00',
         alignment: { horizontal: 'right', vertical: 'middle' },
       });
-      setCell('G', parseFloat(c.costo_servicios_total || 0), {
+      setCell('H', parseFloat(c.costo_servicios_total || 0), {
         numFmt: '$#,##0.00',
         alignment: { horizontal: 'right', vertical: 'middle' },
       });
-      setCell('H', parseFloat(c.costo_total || 0), {
+      setCell('I', parseFloat(c.costo_total || 0), {
         numFmt: '$#,##0.00',
         alignment: { horizontal: 'right', vertical: 'middle' },
         font: { bold: true, size: 10 },
       });
-      setCell('I', parseInt(c.num_proveedores || 0), {
+      // La API devuelve `num_proveedores_mercancia`, no `num_proveedores`: esta
+      // columna salía en 0 para todos los contenedores.
+      setCell('J', parseInt(c.num_proveedores_mercancia || c.num_proveedores || 0), {
         alignment: { horizontal: 'center', vertical: 'middle' },
       });
-      setCell('J', parseInt(c.num_servicios || 0), {
+      setCell('K', parseInt(c.num_servicios || 0), {
         alignment: { horizontal: 'center', vertical: 'middle' },
       });
 
@@ -919,18 +1094,18 @@ export default function Contenedores() {
     });
 
     // ── Fila de totales ────────────────────────────────────────────
-    ws.mergeCells(`A${row}:C${row}`);
+    ws.mergeCells(`A${row}:D${row}`);
     ws.getCell(`A${row}`).value = 'TOTALES (finalizados)';
     ws.getCell(`A${row}`).font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
     ws.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondary } };
     ws.getCell(`A${row}`).alignment = { horizontal: 'center', vertical: 'middle' };
 
     const totalsCells = [
-      ['D', totalPacas,  '#,##0',    true],
-      ['E', promUnitario,'$#,##0.00',true],
-      ['F', finalizados.reduce((s, c) => s + parseFloat(c.costo_mercancia_total || 0), 0), '$#,##0.00', true],
-      ['G', finalizados.reduce((s, c) => s + parseFloat(c.costo_servicios_total || 0), 0), '$#,##0.00', true],
-      ['H', invTotal,    '$#,##0.00',true],
+      ['E', totalPacas,  '#,##0',    true],
+      ['F', promUnitario,'$#,##0.00',true],
+      ['G', finalizados.reduce((s, c) => s + parseFloat(c.costo_mercancia_total || 0), 0), '$#,##0.00', true],
+      ['H', finalizados.reduce((s, c) => s + parseFloat(c.costo_servicios_total || 0), 0), '$#,##0.00', true],
+      ['I', invTotal,    '$#,##0.00',true],
     ];
     for (const [col, val, fmt, bold] of totalsCells) {
       const cell = ws.getCell(`${col}${row}`);
@@ -944,7 +1119,7 @@ export default function Contenedores() {
     row += 2;
 
     // ── Pie de página ──────────────────────────────────────────────
-    ws.mergeCells(`A${row}:J${row}`);
+    ws.mergeCells(`A${row}:K${row}`);
     ws.getCell(`A${row}`).value = `Documento generado el ${new Date().toLocaleString('es-CO')} — Comercio Global Logístico`;
     ws.getCell(`A${row}`).font = { size: 8, italic: true, color: { argb: 'AAAAAA' } };
     ws.getCell(`A${row}`).alignment = { horizontal: 'center' };
@@ -1307,29 +1482,59 @@ export default function Contenedores() {
     const tasa = parseFloat(full.tasa_conversion) || 1;
     const totalPacas = parseInt(full.total_pacas) || 0;
 
+    // ── ¿Este Excel es de una estimación? ──────────────────────────
+    //
+    // Un contenedor en estimación NO tiene líneas de distribución: se captura
+    // por proveedor (valor por unidad × cantidad). Las hojas de Mercancía y
+    // Distribución se armaban recorriendo esas líneas, así que el Excel de una
+    // estimación salía con las dos hojas VACÍAS —justo el documento que se
+    // manda para pedir plata o para cuadrar con el proveedor—.
+    //
+    // Aquí se arma la misma estructura a partir de lo estimado: mismas hojas,
+    // mismas columnas, mismos totales, con "ESTIMACIÓN" en cada cabecera y una
+    // fila por proveedor en lugar de una por línea. Es el mismo documento en
+    // formato estimación, no un documento distinto.
+    const esEstimacionExcel = full.estado === 'estimacion';
+    const marca = esEstimacionExcel ? 'ESTIMACIÓN — ' : '';
+    const amber = 'd97706';
+
     // ── Hoja Resumen ────────────────────────────────────────────────
-    const wsR = wb.addWorksheet('Resumen');
-    wsR.properties.tabColor = { argb: secondary };
+    const wsR = wb.addWorksheet(esEstimacionExcel ? 'Resumen (estimación)' : 'Resumen');
+    wsR.properties.tabColor = { argb: esEstimacionExcel ? amber : secondary };
     wsR.columns = [{ width: 30 }, { width: 28 }, { width: 20 }, { width: 20 }];
     const addHeader = (ws, text, cols = 'A1:D1') => {
       ws.mergeCells(cols);
       const c = ws.getCell(cols.split(':')[0]);
       c.value = text; c.font = { bold: true, color: { argb: 'FFFFFF' }, size: 12 };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: esEstimacionExcel ? amber : primary } };
       c.alignment = { horizontal: 'center', vertical: 'middle' };
       ws.getRow(parseInt(cols.match(/\d+/)[0])).height = 26;
     };
-    addHeader(wsR, `CONTENEDOR ${full.numero} — Detalle Completo`);
+    addHeader(wsR, esEstimacionExcel
+      ? `ESTIMACIÓN DE CONTENEDOR ${full.numero} — Cifras estimadas, nada ha llegado todavía`
+      : `CONTENEDOR ${full.numero} — Detalle Completo`);
     const fields = [
-      ['Número', full.numero], ['Estado', full.estado],
+      ['Número', full.numero],
+      ['Estado', etiquetaEstado(full.estado)],
+      // De dónde vienen estas cifras. En un contenedor ya convertido es la
+      // única forma de saber, meses después, que empezaron siendo una creencia.
+      ['Origen', vieneDeEstimacion(full)
+        ? (esEstimacionExcel ? 'Estimación (aún no ha llegado)' : 'Nació como estimación')
+        : 'Creado directo'],
+      ...(full.convertido_en && !esEstimacionExcel
+        ? [['Convertido a contenedor', new Date(full.convertido_en).toLocaleDateString('es-CO')]]
+        : []),
       ['Fecha Salida', full.fecha_salida ? new Date(full.fecha_salida).toLocaleDateString('es-CO') : '—'],
       ['Fecha Llegada', full.fecha_llegada ? new Date(full.fecha_llegada).toLocaleDateString('es-CO') : '—'],
+      ['Moneda del contenedor', full.moneda_base || '— (mixta)'],
       ['Tasa USD→COP', tasa.toLocaleString('es-CO')],
-      ['Total Unidades', totalPacas],
-      ['Costo Mercancía', fmtCOP(full.costo_mercancia_total)],
-      ['Costo Servicios', fmtCOP(full.costo_servicios_total)],
-      ['Costo Total', fmtCOP(full.costo_total)],
-      ['Costo por Paca', fmtCOP(full.costo_unitario)],
+      [esEstimacionExcel ? 'Total Unidades (estimadas)' : 'Total Unidades', totalPacas],
+      ...(parseInt(full.cantidad_total) > 0 && parseInt(full.cantidad_total) !== totalPacas
+        ? [['Unidades del contenedor completo', parseInt(full.cantidad_total)]] : []),
+      [esEstimacionExcel ? 'Costo Mercancía (estimado)' : 'Costo Mercancía', fmtCOP(full.costo_mercancia_total)],
+      [esEstimacionExcel ? 'Costo Servicios (estimado)' : 'Costo Servicios', fmtCOP(full.costo_servicios_total)],
+      [esEstimacionExcel ? 'Costo Total (estimado)' : 'Costo Total', fmtCOP(full.costo_total)],
+      [esEstimacionExcel ? 'Costo por Paca (estimado)' : 'Costo por Paca', fmtCOP(full.costo_unitario)],
     ];
     fields.forEach(([label, val], i) => {
       const r = i + 2;
@@ -1337,6 +1542,16 @@ export default function Contenedores() {
       wsR.getCell(`B${r}`).value = val;   wsR.getCell(`B${r}`).font = { size: 10 };
       wsR.getRow(r).height = 18;
     });
+    if (esEstimacionExcel) {
+      const r = fields.length + 3;
+      wsR.mergeCells(`A${r}:D${r}`);
+      const c = wsR.getCell(`A${r}`);
+      c.value = 'Estas cifras son una ESTIMACIÓN: lo que se cree que va a llegar. No son facturas ni mercancía recibida.';
+      c.font = { bold: true, size: 10, color: { argb: amber } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } };
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      wsR.getRow(r).height = 24;
+    }
 
     // ── Estilos compartidos ──────────────────────────────────────────
     const thinBorder = {
@@ -1375,7 +1590,7 @@ export default function Contenedores() {
       { width: 18 }, // J Subtotal COP
       { width: 16 }, // K Costo/Paca COP
     ];
-    addHeader(wsM, `MERCANCÍA — Contenedor ${full.numero}`, 'A1:K1');
+    addHeader(wsM, `${marca}MERCANCÍA — Contenedor ${full.numero}`, 'A1:K1');
 
     drawTableHeader(wsM, [
       'Proveedor', 'Categoría', 'Clasificación', 'Referencia', 'Calidad',
@@ -1389,20 +1604,50 @@ export default function Contenedores() {
       const moneda = p.moneda || 'USD';
       const factor = moneda === 'USD' ? tasa : 1;
       const provStart = mRow;
-      (p.detalles || []).forEach((d) => {
-        const cantidad = parseInt(d.cantidad) || 0;
-        const costoUnit = parseFloat(d.costo_unitario) || 0;
-        const subtotal = cantidad * costoUnit;
+
+      // Las filas de esta hoja. Con líneas de distribución, una por línea. Sin
+      // ellas —una estimación, o un proveedor al que todavía no se le ha
+      // capturado nada— UNA fila con lo estimado: misma estructura, mismas
+      // columnas, y las casillas que aún no se conocen dicen "estimado" en vez
+      // de quedarse en blanco. Antes, sin líneas, no se escribía NADA.
+      const cantEst = parseInt(p.cantidad_estimada) || 0;
+      const valEst  = parseFloat(p.valor_unidad_estimado) || 0;
+      const factEst = (cantEst * valEst) || (parseFloat(p.factura_estimada) || 0);
+      const filas = (p.detalles || []).length > 0
+        ? (p.detalles || []).map((d) => ({
+            categoria: d.categoria || '—', clasificacion: d.clasificacion,
+            referencia: d.referencia, calidad: d.calidad || '—',
+            cantidad: parseInt(d.cantidad) || 0,
+            costoUnit: parseFloat(d.costo_unitario) || 0,
+            estimada: false,
+          }))
+        : (cantEst > 0 || factEst > 0
+            ? [{
+                categoria: '—', clasificacion: '(estimado)', referencia: '(sin detallar)', calidad: '—',
+                cantidad: cantEst,
+                // Cuando solo hay factura tecleada a mano, el valor por unidad
+                // se deduce para que la fila cuadre: cantidad × unitario = factura.
+                costoUnit: valEst || (cantEst > 0 ? factEst / cantEst : factEst),
+                estimada: true,
+              }]
+            : []);
+
+      filas.forEach((f) => {
+        const cantidad = f.cantidad;
+        const costoUnit = f.costoUnit;
+        // Con la factura suelta y sin cantidad, cantidad × unitario da 0 pero la
+        // factura sí vale: se respeta la factura, que es lo que suma el sistema.
+        const subtotal = (cantidad * costoUnit) || (f.estimada ? factEst : 0);
         const subtotalCOP = subtotal * factor;
         const costoPorPaca = totalPacas > 0 ? subtotalCOP / totalPacas : 0;
         totalMercanciaCOP += subtotalCOP;
 
-        const bg = rowStripe(mIdx);
+        const bg = f.estimada ? 'FEF3C7' : rowStripe(mIdx);
         wsM.getCell(`A${mRow}`).value = p.proveedor_nombre;
-        wsM.getCell(`B${mRow}`).value = d.categoria || '—';
-        wsM.getCell(`C${mRow}`).value = d.clasificacion;
-        wsM.getCell(`D${mRow}`).value = d.referencia;
-        wsM.getCell(`E${mRow}`).value = d.calidad || '—';
+        wsM.getCell(`B${mRow}`).value = f.categoria;
+        wsM.getCell(`C${mRow}`).value = f.clasificacion;
+        wsM.getCell(`D${mRow}`).value = f.referencia;
+        wsM.getCell(`E${mRow}`).value = f.calidad;
         wsM.getCell(`F${mRow}`).value = cantidad;
         wsM.getCell(`G${mRow}`).value = costoUnit;
         wsM.getCell(`G${mRow}`).numFmt = '#,##0.00';
@@ -1417,7 +1662,9 @@ export default function Contenedores() {
         ['A','B','C','D','E','F','G','H','I','J','K'].forEach((col, ci) => {
           const cell = wsM.getCell(`${col}${mRow}`);
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-          cell.font = { size: 10, ...(cell.font || {}) };
+          cell.font = f.estimada
+            ? { size: 10, italic: true, color: { argb: amber } }
+            : { size: 10, ...(cell.font || {}) };
           cell.alignment = {
             horizontal: ['F','G','I','J','K'].includes(col) ? 'right' : (col === 'H' ? 'center' : 'left'),
             vertical: 'middle',
@@ -1429,7 +1676,7 @@ export default function Contenedores() {
       });
 
       // Subtotal por proveedor
-      if ((p.detalles || []).length > 0) {
+      if (filas.length > 0) {
         const provEnd = mRow;
         wsM.mergeCells(`A${provEnd}:H${provEnd}`);
         wsM.getCell(`A${provEnd}`).value = `Subtotal — ${p.proveedor_nombre}`;
@@ -1437,8 +1684,11 @@ export default function Contenedores() {
         wsM.getCell(`A${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
         wsM.getCell(`A${provEnd}`).alignment = { horizontal: 'right', vertical: 'middle' };
 
-        const subProvOriginal = (p.detalles || []).reduce(
-          (s, d) => s + ((parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0)), 0
+        // Se suma sobre `filas`, no sobre `p.detalles`: así el subtotal de un
+        // proveedor estimado cuadra con la fila que se acaba de escribir en vez
+        // de salir en cero.
+        const subProvOriginal = filas.reduce(
+          (s, f) => s + ((f.cantidad * f.costoUnit) || (f.estimada ? factEst : 0)), 0
         );
         const subProvCOP = subProvOriginal * factor;
 
@@ -1462,7 +1712,7 @@ export default function Contenedores() {
 
     // Total general mercancía
     wsM.mergeCells(`A${mRow}:I${mRow}`);
-    wsM.getCell(`A${mRow}`).value = 'TOTAL MERCANCÍA (COP)';
+    wsM.getCell(`A${mRow}`).value = esEstimacionExcel ? 'TOTAL MERCANCÍA ESTIMADA (COP)' : 'TOTAL MERCANCÍA (COP)';
     wsM.getCell(`A${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
     wsM.getCell(`A${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
     wsM.getCell(`A${mRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
@@ -1487,23 +1737,40 @@ export default function Contenedores() {
       { width: 10 }, // C Moneda
       { width: 16 }, // D Costo Original
       { width: 18 }, // E Costo COP
-      { width: 16 }, // F Costo/Paca COP
-      { width: 32 }, // G Notas
+      { width: 13 }, // F Reparto
+      { width: 18 }, // G Le corresponde COP
+      { width: 16 }, // H Costo/Paca COP
+      { width: 30 }, // I Notas
     ];
-    addHeader(wsS, `SERVICIOS — Contenedor ${full.numero}`, 'A1:G1');
+    addHeader(wsS, `${marca}SERVICIOS — Contenedor ${full.numero}`, 'A1:I1');
 
-    drawTableHeader(wsS, ['Tipo', 'Proveedor', 'Moneda', 'Costo Original', 'Costo COP', 'Costo/Paca COP', 'Notas'], 2);
+    // "Reparto" y "Le corresponde" son columnas nuevas: sin ellas, dos
+    // servicios del mismo importe salían idénticos aunque uno se repartiera
+    // entre todo el contenedor y el otro se cargara entero. La diferencia entre
+    // "Costo COP" (lo que factura el proveedor) y "Le corresponde" (lo que entra
+    // al costo unitario) es justo lo que estaba invisible.
+    drawTableHeader(wsS, ['Tipo', 'Proveedor', 'Moneda', 'Costo Original', 'Costo COP', 'Reparto', 'Le corresponde COP', 'Costo/Paca COP', 'Notas'], 2);
+
+    // La base de prorrateo del contenedor: las unidades del contenedor físico
+    // completo si va compartido, o las propias si no.
+    const basePro = (parseInt(full.cantidad_total) || 0) > 0 ? parseInt(full.cantidad_total) : totalPacas;
 
     let sRow = 3;
-    let totalServiciosCOP = 0;
+    let totalServiciosCOP = 0;      // lo que facturan los proveedores
+    let totalAsignadoCOP  = 0;      // lo que entra al costo del contenedor
     (full.servicios || []).forEach((s, i) => {
       const moneda = s.moneda || 'COP';
       // Mismo criterio que el resumen y el modal: real si lo hay, estimado si no.
       const costo = costoServicioEfectivo(s);
       const costoCOP = moneda === 'USD' ? costo * tasa : costo;
-      const costoPorPaca = totalPacas > 0 ? costoCOP / totalPacas : 0;
+      const propio = esServicioPropio(s);
+      // La misma cuenta del servidor: propio → entero; compartido → su parte.
+      const asignadoCOP = costoServicioAsignado(costoCOP, { propio, base: basePro, propias: totalPacas });
+      const costoPorPaca = totalPacas > 0 ? asignadoCOP / totalPacas : 0;
       totalServiciosCOP += costoCOP;
-      const bg = rowStripe(i);
+      totalAsignadoCOP  += asignadoCOP;
+      const esEstimadoSrv = !(parseFloat(s.costo) > 0) && costo > 0;
+      const bg = esEstimadoSrv ? 'FEF3C7' : rowStripe(i);
 
       wsS.getCell(`A${sRow}`).value = (s.tipo_servicio || '').toString();
       wsS.getCell(`B${sRow}`).value = s.proveedor_nombre || '—';
@@ -1512,18 +1779,23 @@ export default function Contenedores() {
       wsS.getCell(`D${sRow}`).numFmt = '#,##0.00';
       wsS.getCell(`E${sRow}`).value = costoCOP;
       wsS.getCell(`E${sRow}`).numFmt = '$ #,##0';
-      wsS.getCell(`F${sRow}`).value = costoPorPaca;
-      wsS.getCell(`F${sRow}`).numFmt = '$ #,##0.00';
-      wsS.getCell(`G${sRow}`).value = s.notas || '';
+      wsS.getCell(`F${sRow}`).value = propio ? 'Propio' : 'Compartido';
+      wsS.getCell(`G${sRow}`).value = asignadoCOP;
+      wsS.getCell(`G${sRow}`).numFmt = '$ #,##0';
+      wsS.getCell(`H${sRow}`).value = costoPorPaca;
+      wsS.getCell(`H${sRow}`).numFmt = '$ #,##0.00';
+      wsS.getCell(`I${sRow}`).value = [s.notas || '', esEstimadoSrv ? '(costo estimado)' : ''].filter(Boolean).join(' ');
 
-      ['A','B','C','D','E','F','G'].forEach(col => {
+      ['A','B','C','D','E','F','G','H','I'].forEach(col => {
         const cell = wsS.getCell(`${col}${sRow}`);
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-        cell.font = { size: 10, ...(col === 'A' ? { bold: true } : {}) };
+        cell.font = esEstimadoSrv
+          ? { size: 10, italic: true, color: { argb: amber }, ...(col === 'A' ? { bold: true } : {}) }
+          : { size: 10, ...(col === 'A' ? { bold: true } : {}) };
         cell.alignment = {
-          horizontal: ['D','E','F'].includes(col) ? 'right' : (col === 'C' ? 'center' : 'left'),
+          horizontal: ['D','E','G','H'].includes(col) ? 'right' : (['C','F'].includes(col) ? 'center' : 'left'),
           vertical: 'middle',
-          wrapText: col === 'G',
+          wrapText: col === 'I',
         };
         cell.border = thinBorder;
       });
@@ -1538,31 +1810,49 @@ export default function Contenedores() {
     // Total general servicios
     if ((full.servicios || []).length > 0) {
       wsS.mergeCells(`A${sRow}:D${sRow}`);
-      wsS.getCell(`A${sRow}`).value = 'TOTAL SERVICIOS (COP)';
+      wsS.getCell(`A${sRow}`).value = esEstimacionExcel ? 'TOTAL SERVICIOS ESTIMADOS (COP)' : 'TOTAL SERVICIOS (COP)';
       wsS.getCell(`A${sRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
       wsS.getCell(`A${sRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
       wsS.getCell(`A${sRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
       wsS.getCell(`E${sRow}`).value = totalServiciosCOP;
       wsS.getCell(`E${sRow}`).numFmt = '$ #,##0';
-      wsS.getCell(`F${sRow}`).value = totalPacas > 0 ? totalServiciosCOP / totalPacas : 0;
-      wsS.getCell(`F${sRow}`).numFmt = '$ #,##0.00';
-      ['E','F'].forEach(col => {
+      wsS.getCell(`G${sRow}`).value = totalAsignadoCOP;
+      wsS.getCell(`G${sRow}`).numFmt = '$ #,##0';
+      wsS.getCell(`H${sRow}`).value = totalPacas > 0 ? totalAsignadoCOP / totalPacas : 0;
+      wsS.getCell(`H${sRow}`).numFmt = '$ #,##0.00';
+      ['E','F','G','H'].forEach(col => {
         wsS.getCell(`${col}${sRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
         wsS.getCell(`${col}${sRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
         wsS.getCell(`${col}${sRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
       });
       wsS.getRow(sRow).height = 24;
+      // Si hay diferencia entre lo facturado y lo que le corresponde, se dice de
+      // dónde sale: es la parte que asumen los otros dueños del contenedor.
+      if (Math.abs(totalServiciosCOP - totalAsignadoCOP) > 1) {
+        sRow += 2;
+        wsS.mergeCells(`A${sRow}:I${sRow}`);
+        const c = wsS.getCell(`A${sRow}`);
+        c.value = `Contenedor compartido: de ${fmtCOP(totalServiciosCOP)} facturados en servicios, le corresponden ${fmtCOP(totalAsignadoCOP)} (${totalPacas} de ${basePro} unidades). Los servicios marcados "Propio" no se reparten.`;
+        c.font = { italic: true, size: 9, color: { argb: '666666' } };
+        c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        wsS.getRow(sRow).height = 24;
+      }
     } else {
-      wsS.mergeCells(`A${sRow}:G${sRow}`);
+      wsS.mergeCells(`A${sRow}:I${sRow}`);
       wsS.getCell(`A${sRow}`).value = 'Sin servicios registrados';
       wsS.getCell(`A${sRow}`).font = { italic: true, size: 10, color: { argb: '888888' } };
       wsS.getCell(`A${sRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
     }
 
     // ── Hoja Distribución ────────────────────────────────────────────
-    const wsD = wb.addWorksheet('Distribución');
+    // En una estimación no hay líneas: se escribe una fila por proveedor con lo
+    // estimado, en vez de dejar la hoja en blanco.
+    const wsD = wb.addWorksheet(esEstimacionExcel ? 'Distribución (estimada)' : 'Distribución');
+    wsD.properties.tabColor = { argb: esEstimacionExcel ? amber : secondary };
     wsD.columns = [{ width: 20 }, { width: 18 }, { width: 16 }, { width: 12 }, { width: 12 }];
-    addHeader(wsD, 'DISTRIBUCIÓN DE PACAS POR PROVEEDOR', 'A1:E1');
+    addHeader(wsD, esEstimacionExcel
+      ? 'DISTRIBUCIÓN ESTIMADA POR PROVEEDOR — todavía sin detallar'
+      : 'DISTRIBUCIÓN DE PACAS POR PROVEEDOR', 'A1:E1');
     ['Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Cantidad'].forEach((h, i) => {
       const c = wsD.getCell(`${String.fromCharCode(65+i)}2`);
       c.value = h; c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
@@ -1571,6 +1861,20 @@ export default function Contenedores() {
     wsD.getRow(2).height = 20;
     let dr = 3;
     (full.proveedores_mercancia || []).forEach(p => {
+      if ((p.detalles || []).length === 0) {
+        const cantEstD = parseInt(p.cantidad_estimada) || 0;
+        if (cantEstD === 0 && !hayEstimadoProveedor(p)) return;
+        wsD.getCell(`A${dr}`).value = p.proveedor_nombre;
+        wsD.getCell(`B${dr}`).value = '(estimado)';
+        wsD.getCell(`C${dr}`).value = '(sin detallar)';
+        wsD.getCell(`D${dr}`).value = '—';
+        wsD.getCell(`E${dr}`).value = cantEstD;
+        ['A','B','C','D','E'].forEach(col => {
+          wsD.getCell(`${col}${dr}`).font = { size: 10, italic: true, color: { argb: amber } };
+        });
+        wsD.getRow(dr).height = 18; dr++;
+        return;
+      }
       (p.detalles || []).forEach(d => {
         wsD.getCell(`A${dr}`).value = p.proveedor_nombre;
         wsD.getCell(`B${dr}`).value = d.clasificacion;
@@ -1582,8 +1886,11 @@ export default function Contenedores() {
     });
 
     const buffer = await wb.xlsx.writeBuffer();
-    descargarExcel(buffer, `Contenedor_${full.numero}_${hoy()}.xlsx`);
-    addToast(`Excel de "${full.numero}" descargado`, 'success');
+    // El nombre del archivo también lo dice: dos Excel del mismo contenedor —el
+    // estimado y el real— acaban en la misma carpeta, y con el mismo nombre no
+    // hay forma de saber cuál se está mandando.
+    descargarExcel(buffer, `${esEstimacionExcel ? 'Estimacion' : 'Contenedor'}_${full.numero}_${hoy()}.xlsx`);
+    addToast(`${esEstimacionExcel ? 'Estimación' : 'Excel'} de "${full.numero}" descargada`, 'success');
   };
 
   // ── Derived summary (live) ─────────────────────────────────────
@@ -1594,39 +1901,51 @@ export default function Contenedores() {
     const totalPacas = (parseInt(formData.total_pacas) || 0) || (modoEstimacion ? sumEstimada : 0);
 
     const proveedoresDetalle = proveedores.map(p => {
-      // Costo real de las líneas; si no hay, la estimación (cantidad_estimada × valor_unidad_estimado).
+      // Lo real manda; si no hay líneas, lo estimado. Misma cuenta que
+      // `costoBaseProveedor` en el servidor — literalmente la misma función.
       const costoReal = (p.detalles || []).reduce(
         (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
       );
-      const costoOriginal = costoReal > 0
-        ? costoReal
-        : (parseInt(p.cantidad_estimada) || 0) * (parseFloat(p.valor_unidad_estimado) || 0);
-      const costoEnCOP = p.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
-      return { nombre: p.proveedor_nombre, moneda: p.moneda || 'USD', costoOriginal, costoEnCOP,
+      const costoOriginal = costoProveedorEfectivo(p);
+      const moneda = p.moneda || 'USD';
+      const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+      return { nombre: p.proveedor_nombre, moneda, costoOriginal, costoEnCOP,
+               esEstimado: costoReal === 0 && costoOriginal > 0,
                costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
     });
 
     // Los servicios se facturan por el contenedor COMPLETO, que puede ir
     // compartido. Se dividen entre la cantidad total (manual) y solo la parte
     // proporcional a las unidades propias entra al costo.
+    //
+    // Salvo los marcados como PROPIOS: ese servicio no es del contenedor, es
+    // suyo (el transporte de su mercancía desde el puerto, su bodegaje), y
+    // repartirlo entre las unidades de otro dejaba el costo unitario más barato
+    // de lo que es.
     const cantidadTotal = parseInt(formData.cantidad_total) || 0;
     const baseProrrateo = cantidadTotal > 0 ? cantidadTotal : totalPacas;
 
     const serviciosDetalle = servicios.map(sv => {
       const costoOriginal = costoServicioEfectivo(sv);
       const moneda = sv.moneda || 'COP';
+      const propio = esServicioPropio(sv);
       const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
-      // Costo unitario del servicio: se reparte entre TODO el contenedor.
-      const costoUnitarioServicio = baseProrrateo > 0 ? costoEnCOP / baseProrrateo : 0;
-      // Lo que efectivamente cuesta ese servicio para las unidades propias.
-      const costoAsignado = costoUnitarioServicio * totalPacas;
+      // Lo que efectivamente cuesta ese servicio para las unidades propias:
+      // entero si es propio, la parte proporcional si se comparte. Misma
+      // función que usa el servidor para lo que se guarda.
+      const costoAsignado = costoServicioAsignado(costoEnCOP, {
+        propio, base: baseProrrateo, propias: totalPacas,
+      });
+      // Lo que suma cada unidad PROPIA. En un servicio propio no es
+      // costo ÷ contenedor entero, sino costo ÷ unidades suyas.
+      const costoPorPaca = totalPacas > 0 ? costoAsignado / totalPacas : 0;
       return {
-        tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda,
+        tipo: sv.tipo_servicio, nombre: sv.proveedor_nombre, moneda, propio,
         costoOriginal,
         costoFacturado: costoEnCOP,        // lo que cobra el proveedor por el contenedor
-        costoUnitario: costoUnitarioServicio,
+        costoUnitario: costoPorPaca,
         costo: costoAsignado,              // la parte que asumen ustedes
-        costoPorPaca: costoUnitarioServicio,
+        costoPorPaca,
       };
     });
 
@@ -1671,6 +1990,11 @@ export default function Contenedores() {
           nombre: sv.tipo_servicio?.trim() || sv.proveedor_nombre?.trim() || 'Servicio',
           proveedor: sv.proveedor_nombre?.trim() || '',
           real, estimado,
+          // Estos dos importes están en la moneda DEL SERVICIO, no en pesos: sin
+          // arrastrarla, el panel de avance pintaba con símbolo de peso lo que
+          // eran dólares.
+          moneda: sv.moneda || 'COP',
+          propio: esServicioPropio(sv),
           completo: real > 0,
         };
       });
@@ -1703,7 +2027,10 @@ export default function Contenedores() {
   };
 
   // ── Provider row management ────────────────────────────────────
-  const addProveedor    = () => setProveedores([...proveedores, emptyProveedor()]);
+  // El proveedor nuevo nace en la moneda del contenedor: si el contenedor se
+  // está pensando en pesos, un proveedor en dólares tiene que ser una decisión,
+  // no el descuido de no haber mirado un select.
+  const addProveedor    = () => setProveedores([...proveedores, emptyProveedor(monedaBase)]);
   const removeProveedor = (pi) => proveedores.length > 1 && setProveedores(proveedores.filter((_, i) => i !== pi));
   const updateProveedor = (pi, field, val) => {
     const n = [...proveedores];
@@ -1774,7 +2101,8 @@ export default function Contenedores() {
   };
 
   // ── Service row management ─────────────────────────────────────
-  const addServicio    = () => setServicios([...servicios, emptyServicio()]);
+  // Igual que los proveedores: hereda la moneda del contenedor.
+  const addServicio    = () => setServicios([...servicios, emptyServicio(monedaBase)]);
   const removeServicio = (si) => servicios.length > 1 && setServicios(servicios.filter((_, i) => i !== si));
   // Aquí VIVÍA una copia del cálculo "factura ÷ cantidad = valor/unidad" para
   // los servicios. Estaba muerta: en estimación los servicios se capturan con
@@ -1836,11 +2164,40 @@ export default function Contenedores() {
     setServicios(n);
   };
 
+  // ── Cambiar la moneda del contenedor ───────────────────────────
+  //
+  // La moneda del contenedor manda sobre todo lo de adentro, pero SIN pisar las
+  // excepciones: si alguien puso a mano un flete en pesos dentro de un
+  // contenedor en dólares, esa línea se queda como está.
+  //
+  // Cómo se distingue una excepción de una línea que solo heredaba, sin guardar
+  // un campo más por línea: heredaba la que coincide con la moneda base ANTERIOR
+  // —arrastrarla es lo que se espera— y es excepción la que ya no coincidía.
+  //
+  // Y OJO: esto NO convierte importes. 3.720 no pasa a valer 15 millones; lo que
+  // cambia es en qué moneda está escrito ese 3.720. Por eso se avisa.
+  const cambiarMonedaBase = (nueva) => {
+    const anterior = monedaBase;
+    if (nueva === anterior) return;
+    setFormData(prev => ({ ...prev, moneda_base: nueva }));
+    setProveedores(prev => prev.map(p => (p.moneda || 'USD') === anterior ? { ...p, moneda: nueva } : p));
+    setServicios(prev => prev.map(s => (s.moneda || 'COP') === anterior ? { ...s, moneda: nueva } : s));
+  };
+
+  // Líneas que NO siguen la moneda del contenedor. Se cuentan para poder
+  // avisarlo: un contenedor con la mitad de las cifras en otra moneda se lee mal
+  // si nadie lo dice.
+  const excepcionesMoneda = useMemo(() => {
+    const provs = proveedores.filter(p => p.proveedor_nombre?.trim() && (p.moneda || 'USD') !== monedaBase).length;
+    const srvs  = servicios.filter(s => (s.tipo_servicio?.trim() || s.proveedor_nombre?.trim()) && (s.moneda || 'COP') !== monedaBase).length;
+    return { provs, srvs, total: provs + srvs };
+  }, [proveedores, servicios, monedaBase]);
+
   // ── Reset ──────────────────────────────────────────────────────
   const resetForm = () => {
-    setFormData({ numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '' });
-    setProveedores([emptyProveedor()]);
-    setServicios([emptyServicio()]);
+    setFormData(FORM_VACIO);
+    setProveedores([emptyProveedor(FORM_VACIO.moneda_base)]);
+    setServicios([emptyServicio(FORM_VACIO.moneda_base)]);
   };
 
   const handleSaveTemplate = () => {
@@ -1872,10 +2229,13 @@ export default function Contenedores() {
         factura_estimada: s.factura_estimada || '',
         cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
         valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
+        propio: esServicioPropio(s),
       }));
       saveTemplate(nombrePlantilla, {
         tasa_conversion: String(c.tasa_conversion || '1'),
         total_pacas: String(c.total_pacas || ''),
+        moneda_base: c.moneda_base || MONEDA_BASE_POR_DEFECTO,
+        cantidad_total: c.cantidad_total != null ? String(c.cantidad_total) : '',
         notas: c.notas || '',
       }, provs, srvs, c.estado === 'estimacion' ? 'estimacion' : 'normal');
     } else {
@@ -1915,6 +2275,15 @@ export default function Contenedores() {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
       setModoEstimacion(full.estado === 'estimacion');
+      // Los contenedores guardados antes de que existiera la moneda del
+      // contenedor llegan sin ella. Se deduce de la mercancía —que es donde vive
+      // el grueso del dinero— en vez de forzar dólares: así el rótulo del
+      // resumen dice la verdad desde el primer render y ninguna línea cambia de
+      // moneda por el mero hecho de abrir el formulario.
+      const provsApi = full.proveedores_mercancia || [];
+      const baseDelContenedor = full.moneda_base
+        || (provsApi.length > 0 && provsApi.every(p => (p.moneda || 'USD') === 'COP')
+              ? 'COP' : MONEDA_BASE_POR_DEFECTO);
       setFormData({
         numero: full.numero,
         fecha_llegada: full.fecha_llegada?.split('T')[0] || '',
@@ -1925,6 +2294,12 @@ export default function Contenedores() {
         cantidad_total: full.cantidad_total != null ? String(full.cantidad_total) : '',
         utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
         gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
+        // Los contenedores guardados antes de que existiera la moneda del
+        // contenedor llegan sin ella. Se deduce de la mercancía —que es donde
+        // vive el grueso del dinero— en vez de forzar USD: así el rótulo del
+        // resumen dice la verdad desde el primer render, y ninguna línea cambia
+        // de moneda por abrir el formulario.
+        moneda_base: baseDelContenedor,
       });
       setProveedores(full.proveedores_mercancia.length > 0
         ? full.proveedores_mercancia.map((p) => ({
@@ -1945,7 +2320,7 @@ export default function Contenedores() {
                 }))
               : [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
           }))
-        : [emptyProveedor()]);
+        : [emptyProveedor(baseDelContenedor)]);
       setServicios(full.servicios.length > 0
         ? full.servicios.map((s) => ({
             proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP',
@@ -1953,8 +2328,9 @@ export default function Contenedores() {
             factura_estimada: s.factura_estimada || '',
             cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
             valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
+            propio: esServicioPropio(s),
           }))
-        : [emptyServicio()]);
+        : [emptyServicio(baseDelContenedor)]);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
@@ -1985,6 +2361,7 @@ export default function Contenedores() {
         total_pacas: parseInt(formData.total_pacas) || 0,
         notas: formData.notas || null,
         cantidad_total: formData.cantidad_total === '' ? null : (parseInt(formData.cantidad_total) || null),
+        moneda_base: monedaBase,
         // El formulario de estimación ya no MUESTRA utilidad ni gastos por unidad,
         // pero tampoco los borra: se reenvía tal cual lo que trajo el servidor. Un
         // campo que se oculta se deja quieto, no se pone en null — si no, abrir una
@@ -2020,6 +2397,10 @@ export default function Contenedores() {
           factura_estimada: s.factura_estimada || null,
           cantidad_estimada: s.cantidad_estimada ? parseInt(s.cantidad_estimada) : null,
           valor_unidad_estimado: s.valor_unidad_estimado ? parseFloat(s.valor_unidad_estimado) : null,
+          // Booleano de verdad, no lo que haya quedado en el estado: si viajara
+          // como la cadena "false" el servidor lo daría por propio y el costo
+          // dejaría de repartirse.
+          propio: esServicioPropio(s),
         })),
       };
       // Aviso de avance: deja claro que quedó guardado a medias y qué falta.
@@ -2053,15 +2434,24 @@ export default function Contenedores() {
   // ── Convertir estimación → contenedor normal ───────────────────
   const handleConvertirNormal = async (contenedor) => {
     const ok = await confirm({
-      title: '¿Convertir a contenedor normal?',
-      message: `El contenedor "${contenedor.numero}" pasará de estimación a borrador para registrar lo que realmente llegó (líneas de distribución, revisión y finalización). Las Cuentas por Pagar y sus abonos se conservan.`,
-      confirmText: 'Convertir',
+      title: `¿"${contenedor.numero}" ya llegó?`,
+      message:
+        `Estimación → Contenedor. A partir de aquí se registra lo que REALMENTE llegó: ` +
+        `líneas de distribución con sus cantidades y costos, revisión física y finalización.\n\n` +
+        `· Lo estimado NO se borra: se conserva para comparar y sigue contando en el costo ` +
+        `mientras un proveedor no tenga líneas reales.\n` +
+        `· Las Cuentas por Pagar y sus abonos se conservan.\n` +
+        `· El contenedor queda marcado como "de estimación", así que después se sabrá de dónde vienen sus cifras.\n\n` +
+        `No se puede deshacer desde la pantalla.`,
+      confirmText: 'Sí, ya llegó',
+      cancelText: 'Todavía no',
       variant: 'info',
     });
     if (!ok) return;
     try {
       const full = await contenedoresApi.convertirNormal(contenedor.id);
-      addToast('Convertido a contenedor normal — completa las líneas reales', 'success');
+      addToast('Ahora es un contenedor — registra las líneas de lo que llegó', 'success');
+      setViewModalOpen(false);
       loadContenedores();
       openEditModal(full); // abre el formulario normal para diligenciar lo real
     } catch (err) { addToast(err.message, 'error'); }
@@ -2373,9 +2763,13 @@ export default function Contenedores() {
   };
 
   // ── Derived stats ──────────────────────────────────────────────
+  const estimaciones = contenedores.filter((c) => c.estado === 'estimacion').length;
   const borradores  = contenedores.filter((c) => c.estado === 'borrador').length;
   const enRevision  = contenedores.filter((c) => c.estado === 'revision').length;
   const finalizados = contenedores.filter((c) => c.estado === 'finalizado').length;
+  // Contenedores que ya son normales pero nacieron de una estimación: es el
+  // segundo tramo del flujo y hasta ahora no se veía en ninguna parte.
+  const exEstimaciones = contenedores.filter((c) => c.estado !== 'estimacion' && vieneDeEstimacion(c)).length;
   const totalPacas  = contenedores.reduce((s, c) => s + parseInt(c.total_pacas || 0), 0);
   const costoPromedio = finalizados > 0
     ? contenedores.filter((c) => c.estado === 'finalizado').reduce((s, c) => s + parseFloat(c.costo_unitario || 0), 0) / finalizados
@@ -2419,7 +2813,7 @@ export default function Contenedores() {
     setFormData(prev => prev.gastos_unitarios === calculado ? prev : { ...prev, gastos_unitarios: calculado });
   }, [resumen, modalOpen, modoEstimacion]);
 
-  // ── Visualización del resumen en USD o COP ─────────────────────
+  // ── Visualización del resumen: ambas monedas, o una sola ───────
   //
   // calcularResumen() devuelve TODO en pesos (ya convirtió lo que venía en
   // dólares con la tasa del contenedor). Aquí solo se deshace esa conversión
@@ -2427,11 +2821,22 @@ export default function Contenedores() {
   //
   // Con tasa vacía, 0 o 1 NO se puede pasar a dólares: dividir por 1 pintaría
   // el mismo número con el símbolo cambiado, que es peor que no mostrarlo. En
-  // ese caso se fuerza pesos y se avisa de que falta la tasa.
+  // ese caso se fuerza pesos y se avisa de que falta la tasa. Ese aviso importa
+  // más de lo que parece: la mercancía nace en USD y la tasa por defecto es 1,
+  // así que sin él una estimación recién creada enseña dólares con símbolo de
+  // peso y nadie lo nota.
   const tasaVista   = parseFloat(formData.tasa_conversion) || 0;
   const tasaValida  = tasaVista > 1;
-  const monedaVista   = tasaValida ? monedaResumen : 'COP';
+  // 'AMBAS' | 'USD' | 'COP'. Sin tasa solo se puede pesos.
+  const vistaMoneda   = tasaValida ? monedaResumen : 'COP';
+  const verAmbas      = vistaMoneda === 'AMBAS';
+  // Cuando se piden las dos, la grande es la moneda del contenedor y la pequeña
+  // la otra: se lee primero en la moneda en la que se está pensando la compra.
+  const monedaVista   = verAmbas ? monedaBase : vistaMoneda;
   const monedaAlterna = monedaVista === 'USD' ? 'COP' : 'USD';
+  // ¿Hay que pintar la segunda línea de contraste? Solo si se pidieron las dos
+  // y además hay tasa con la que convertir.
+  const mostrarAlterna = verAmbas && tasaValida;
 
   // Un importe en pesos, expresado en la moneda pedida.
   const enMoneda = (cop, moneda) =>
@@ -2440,8 +2845,17 @@ export default function Contenedores() {
   // dólares (un costo unitario de 12,40 USD no se puede mostrar como 12).
   const fmtMon = (cop, moneda, { unitario = false } = {}) =>
     formatMoneda(enMoneda(cop, moneda), moneda, { decimales: moneda === 'USD' && unitario ? 2 : 0 });
-  const fmtVista   = (cop, opts) => fmtMon(cop, monedaVista, opts);   // la elegida
+  const fmtVista   = (cop, opts) => fmtMon(cop, monedaVista, opts);   // la principal
   const fmtAlterna = (cop, opts) => fmtMon(cop, monedaAlterna, opts); // la de contraste
+
+  // ── Un importe en la moneda en la que está escrito ─────────────
+  //
+  // Para los campos que NO pasan por el resumen: el valor por unidad de un
+  // proveedor, la factura estimada, el costo de un servicio. Esos importes
+  // están en la moneda de SU línea, y se venían pintando con formatCOP, que
+  // antepone "$": un valor por unidad de 285,50 USD se leía como 286 pesos.
+  const fmtPropia = (n, moneda, { unitario = false } = {}) =>
+    formatMoneda(parseFloat(n) || 0, moneda || 'COP', { decimales: moneda === 'USD' ? (unitario ? 2 : 0) : 0 });
 
   // ════════════════════════════════════════════════════════════════
   return (
@@ -2473,8 +2887,12 @@ export default function Contenedores() {
       }
     >
       {/* ── KPI Cards ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${borradores} borrador · ${enRevision} en revisión`} />
+      {/* Las estimaciones tenían su propia tarjeta a deber: se contaban en
+          "Total" pero no aparecían en ninguna otra, así que Total no cuadraba
+          con la suma de las demás y no había forma de saber cuántas había. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <KpiCard label="Total"        value={contenedores.length}          icon={Boxes}    color="bg-secondary/80" sub={`${estimaciones} estimación · ${borradores} borrador · ${enRevision} en revisión`} />
+        <KpiCard label="Estimaciones" value={estimaciones}                 icon={Sparkles} color="bg-amber-500/80" sub={exEstimaciones > 0 ? `${exEstimaciones} ya convertida${exEstimaciones !== 1 ? 's' : ''}` : 'Aún no llegan'} />
         <KpiCard label="Borradores"   value={borradores}                   icon={Layers}   color="bg-warning/70"   sub="Registro inicial pendiente" />
         <KpiCard label="En Revisión"  value={enRevision}                   icon={ClipboardCheck} color="bg-blue-500/70" sub="Verificación física" />
         <KpiCard label="Finalizados"  value={finalizados}                  icon={Archive}  color="bg-success/70"   sub={costoPromedio > 0 ? `Costo prom. ${formatCurrency(costoPromedio)}` : 'Lotes en inventario'} />
@@ -2666,7 +3084,17 @@ export default function Contenedores() {
                         {cont.num_servicios}
                       </span>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge estado={cont.estado} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusBadge estado={cont.estado} />
+                        {/* De un vistazo: este contenedor ya es normal pero sus
+                            cifras empezaron siendo una estimación. Antes no
+                            había forma de distinguirlo de uno hecho a mano. */}
+                        {cont.estado !== 'estimacion' && vieneDeEstimacion(cont) && (
+                          <SelloOrigenEstimacion convertidoEn={cont.convertido_en} />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <ActionBtn icon={Eye} title="Ver detalle" onClick={() => openViewModal(cont)} />
@@ -2743,18 +3171,45 @@ export default function Contenedores() {
             {/* ── LEFT: form sections ─────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
 
-              {/* Banner modo estimación */}
-              {modoEstimacion && (
-                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-amber-400/60 bg-amber-500/5 px-4 py-3">
-                  <Sparkles size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-amber-700">
-                    <p className="font-semibold">Modo estimación</p>
-                    <p className="text-xs text-amber-700/80 mt-0.5">
-                      Registra lo que <strong>crees que llegará</strong> de cada proveedor y el <strong>costo estimado</strong> de cada servicio.
-                      Aquí solo se calcula lo que va a <strong>costar</strong>: la utilidad se decide después, en el módulo de Utilidad.
-                      Al guardar se generan las <strong>Cuentas por Pagar</strong> para que registres abonos antes de que llegue.
-                      Cuando llegue, conviértelo a contenedor normal para registrar lo real.
-                    </p>
+              {/* ── Dónde estamos del flujo ─────────────────────
+                  En estimación (ámbar) y en el contenedor que VIENE de una
+                  estimación (azul). En un contenedor creado directo no se pinta
+                  nada: no hay dos etapas que distinguir. */}
+              {modoEstimacion ? (
+                <div className="rounded-2xl border border-dashed border-amber-400/60 bg-amber-500/5 px-4 py-3 space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <Sparkles size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-700 min-w-0">
+                      <p className="font-semibold">Modo estimación — nada de esto ha llegado todavía</p>
+                      <p className="text-xs text-amber-700/80 mt-0.5">
+                        Registra lo que <strong>crees que llegará</strong> de cada proveedor y el <strong>costo estimado</strong> de cada servicio.
+                        Aquí solo se calcula lo que va a <strong>costar</strong>: la utilidad se decide después, en el módulo de Utilidad.
+                        Al guardar se generan las <strong>Cuentas por Pagar</strong> para que registres abonos antes de que llegue.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pl-[30px]">
+                    <FlujoContenedor estado="estimacion" origen="estimacion" />
+                  </div>
+                </div>
+              ) : editMode && vieneDeEstimacion(selectedContenedor || {}) && (
+                <div className="rounded-2xl border border-blue-400/40 bg-blue-500/5 px-4 py-3 space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <RefreshCw size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-blue-700 min-w-0">
+                      <p className="font-semibold">Este contenedor viene de una estimación</p>
+                      <p className="text-xs text-blue-700/80 mt-0.5">
+                        Lo que estimaste sigue guardado y se ve en cada proveedor, en ámbar, para que puedas
+                        capturar contra ello. Mientras un proveedor no tenga líneas reales, su
+                        <strong> estimado sigue contando</strong> en el costo del contenedor y en su cuenta por pagar.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pl-[30px]">
+                    <FlujoContenedor
+                      estado={selectedContenedor?.estado || 'borrador'}
+                      origen="estimacion"
+                      convertidoEn={selectedContenedor?.convertido_en} />
                   </div>
                 </div>
               )}
@@ -2818,7 +3273,7 @@ export default function Contenedores() {
                   </div>
                   <div>
                     <label htmlFor="cont-total-unidades" className={lbl}>
-                      Total de Unidades
+                      {modoEstimacion ? 'Total de Unidades estimadas' : 'Total de Unidades'}
                       <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
                     </label>
                     <input id="cont-total-unidades" type="number" readOnly tabIndex={-1}
@@ -2831,6 +3286,41 @@ export default function Contenedores() {
                     <label htmlFor="cont-tasa" className={lbl}>Tasa USD→COP</label>
                     <input id="cont-tasa" type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
                       value={formData.tasa_conversion} onChange={(e) => setFormData({ ...formData, tasa_conversion: e.target.value })} required />
+                    {!tasaValida && (
+                      <p className="text-[10px] text-warning mt-0.5 leading-tight">
+                        Sin tasa no se pueden convertir los dólares: todo se lee en pesos.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ── Moneda del contenedor ──────────────────────
+                      La moneda vivía SOLO en cada proveedor y en cada servicio,
+                      cada uno con su select suelto: se podía guardar la
+                      mercancía en dólares y el flete en pesos sin que nada lo
+                      dijera. Aquí se decide una vez y la heredan todas las
+                      líneas nuevas; la que haga falta se cambia igual abajo y
+                      queda señalada como excepción.
+
+                      Cambiarla NO convierte importes: cambia en qué moneda está
+                      escrito lo que ya hay. Por eso se dice. */}
+                  <div>
+                    <label htmlFor="cont-moneda-base" className={lbl}>Moneda del contenedor</label>
+                    <select id="cont-moneda-base" className={`${inp} font-semibold`}
+                      value={monedaBase}
+                      onChange={(e) => cambiarMonedaBase(e.target.value)}
+                      title="Moneda en la que se piensa TODO el contenedor. Las líneas nuevas la heredan.">
+                      <option value="USD">USD — Dólares</option>
+                      <option value="COP">COP — Pesos</option>
+                    </select>
+                    <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                      {excepcionesMoneda.total > 0
+                        ? <span className="text-warning font-semibold">
+                            {excepcionesMoneda.total} línea{excepcionesMoneda.total !== 1 ? 's' : ''} en otra moneda
+                            {excepcionesMoneda.provs > 0 && ` · ${excepcionesMoneda.provs} proveedor${excepcionesMoneda.provs !== 1 ? 'es' : ''}`}
+                            {excepcionesMoneda.srvs > 0 && ` · ${excepcionesMoneda.srvs} servicio${excepcionesMoneda.srvs !== 1 ? 's' : ''}`}
+                          </span>
+                        : 'La heredan proveedores y servicios nuevos.'}
+                    </p>
                   </div>
                   {/* La utilidad NO se deduce de los precios: se fija aquí por
                       unidad y de ella sale el precio de venta y la ganancia.
@@ -2896,8 +3386,10 @@ export default function Contenedores() {
                       leyendo, o se confundirían dólares con pesos. */}
                   <div className="col-span-2 md:col-span-3">
                     <p className="text-[9px] font-bold text-muted uppercase tracking-wide mb-1.5">
-                      Cifras automáticas · en {monedaVista === 'USD' ? 'dólares' : 'pesos'}
-                      {!tasaValida && <span className="text-warning ml-1">(falta la tasa)</span>}
+                      Cifras automáticas · {mostrarAlterna
+                        ? 'en dólares y pesos'
+                        : `en ${monedaVista === 'USD' ? 'dólares' : 'pesos'}`}
+                      {!tasaValida && <span className="text-warning ml-1">(falta la tasa: se leen en pesos)</span>}
                     </p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
@@ -2919,6 +3411,9 @@ export default function Contenedores() {
                         <p className={`text-sm font-mono font-bold tabular-nums ${c.color || 'text-primary'}`}>
                           {fmtVista(c.v)}
                         </p>
+                        {mostrarAlterna && (
+                          <p className="text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(c.v)}</p>
+                        )}
                       </div>
                     ))}
                     <div className="rounded-xl bg-primary/5 border border-border px-3 py-2 col-span-2"
@@ -2930,6 +3425,9 @@ export default function Contenedores() {
                       <p className="text-sm font-mono font-bold text-primary tabular-nums">
                         {fmtVista(resumen.costoServiciosPorUnidad, { unitario: true })}
                         <span className="text-[10px] font-normal text-muted ml-1">/unidad</span>
+                        {mostrarAlterna && (
+                          <span className="text-[10px] font-normal text-muted ml-1.5">· {fmtAlterna(resumen.costoServiciosPorUnidad, { unitario: true })}</span>
+                        )}
                       </p>
                     </div>
                     {/* El precio sugerido SUMA utilidad y gastos al costo: en
@@ -2988,12 +3486,24 @@ export default function Contenedores() {
                               aria-label={`Nombre del proveedor ${pi + 1}`}
                               value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
                           </div>
-                          <select className={`${inpBase} w-20 flex-shrink-0 font-semibold`} value={prov.moneda || 'USD'}
-                            aria-label={`Moneda del proveedor ${pi + 1}`}
-                            onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
-                            <option value="USD">USD</option>
-                            <option value="COP">COP</option>
-                          </select>
+                          {/* La moneda se hereda del contenedor. Cuando NO
+                              coincide es una excepción a propósito y se marca:
+                              antes un proveedor en dólares dentro de un
+                              contenedor pensado en pesos no se distinguía. */}
+                          <div className="flex-shrink-0">
+                            <select className={`${inpBase} w-20 font-semibold ${(prov.moneda || 'USD') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                              value={prov.moneda || 'USD'}
+                              aria-label={`Moneda del proveedor ${pi + 1}`}
+                              title={(prov.moneda || 'USD') !== monedaBase
+                                ? `Distinta de la moneda del contenedor (${monedaBase})`
+                                : `Heredada del contenedor (${monedaBase})`}
+                              onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
+                              {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                            <p className={`text-[9px] text-center mt-0.5 font-semibold ${(prov.moneda || 'USD') !== monedaBase ? 'text-warning' : 'text-muted/60'}`}>
+                              {(prov.moneda || 'USD') !== monedaBase ? 'excepción' : 'heredada'}
+                            </p>
+                          </div>
                           {proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
                               title="Eliminar proveedor"
@@ -3016,15 +3526,24 @@ export default function Contenedores() {
                             aria-label={`Notas del proveedor ${pi + 1}`}
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
-                        {/* ── Datos estimados (solo en modo estimación; en el contenedor real se ocultan) ───
-                            Se teclea lo que de verdad se sabe al estimar —cuánto
-                            cuesta cada paca y cuántas se van a pedir— y la factura
-                            sale sola. Van en ese orden a propósito: se leen como
-                            la cuenta que son, valor × cantidad = factura. */}
-                        {modoEstimacion && (() => {
+                        {/* ── Datos estimados ────────────────────────────
+                            EN ESTIMACIÓN se teclean: lo que de verdad se sabe al
+                            estimar —cuánto cuesta cada paca y cuántas se van a
+                            pedir— y la factura sale sola. Van en ese orden a
+                            propósito: se leen como la cuenta que son,
+                            valor × cantidad = factura.
+
+                            EN EL CONTENEDOR NORMAL se enseñan de solo lectura si
+                            el contenedor nació de una estimación. Antes se
+                            ocultaban, justo cuando más falta hacen: al capturar
+                            lo que llegó de verdad hay que poder ver contra qué
+                            se está comparando sin salir del formulario. */}
+                        {(modoEstimacion || (hayEstimadoProveedor(prov) && vieneDeEstimacion(selectedContenedor || {}))) && (() => {
+                          const soloLectura = !modoEstimacion;
                           const cantEst    = parseInt(prov.cantidad_estimada) || 0;
                           const valorEst   = parseFloat(prov.valor_unidad_estimado) || 0;
                           const facturaEst = parseFloat(prov.factura_estimada) || 0;
+                          const monedaProv = prov.moneda || 'USD';
                           // Estimaciones creadas con la fórmula vieja: la factura
                           // se tecleó y el valor por unidad salió de dividir, con
                           // redondeo a dos decimales. Al multiplicar de vuelta la
@@ -3040,14 +3559,28 @@ export default function Contenedores() {
                           // 0,005, de modo que 0,006 sigue sin dar falsos
                           // avisos sobre datos creados con la fórmula nueva.
                           const desfase    = facturaEst > 0 && calculada > 0 && Math.abs(calculada - facturaEst) > 0.006;
+                          // La factura estimada mandaba sobre el total del
+                          // contenedor solo si había cantidad × valor. Cuando no
+                          // los hay —estimaciones viejas con la factura tecleada
+                          // a mano— ahora también cuenta, y se dice de dónde
+                          // sale para que no parezca magia.
+                          const facturaSuelta = facturaEst > 0 && calculada === 0;
                           return (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2.5">
+                        <div className={`mt-2.5 rounded-xl px-3 py-2.5 ${soloLectura ? 'border border-dashed border-amber-400/50 bg-amber-500/[0.05]' : ''}`}>
+                          {soloLectura && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <SelloEstimacion title="Lo que se estimó de este proveedor antes de que llegara">Lo estimado</SelloEstimacion>
+                              <span className="text-[10px] text-muted">se conserva para comparar; ya no se edita</span>
+                            </div>
+                          )}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div>
                             <label htmlFor={`prov-valor-est-${pi}`} className="block text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
-                              Valor por unidad
+                              Valor por unidad ({monedaProv})
                             </label>
-                            <PriceInput id={`prov-valor-est-${pi}`} className={`${inp} text-xs`} placeholder="ej. 285,50"
-                              title={`Lo que cuesta CADA paca de este proveedor, en ${prov.moneda || 'USD'}`}
+                            <PriceInput id={`prov-valor-est-${pi}`} className={`${inp} text-xs ${soloLectura ? 'bg-primary/5 cursor-not-allowed select-none' : ''}`} placeholder="ej. 285,50"
+                              readOnly={soloLectura} tabIndex={soloLectura ? -1 : undefined}
+                              title={`Lo que cuesta CADA paca de este proveedor, en ${monedaProv}`}
                               aria-label={`Valor por unidad estimado del proveedor ${pi + 1}`}
                               value={prov.valor_unidad_estimado || ''} onChange={(val) => updateProveedor(pi, 'valor_unidad_estimado', val)} />
                           </div>
@@ -3055,15 +3588,16 @@ export default function Contenedores() {
                             <label htmlFor={`prov-cant-est-${pi}`} className="block text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
                               Cantidad estimada
                             </label>
-                            <input id={`prov-cant-est-${pi}`} type="text" inputMode="numeric" className={`${inp} text-xs`} placeholder="ej. 120"
+                            <input id={`prov-cant-est-${pi}`} type="text" inputMode="numeric" className={`${inp} text-xs ${soloLectura ? 'bg-primary/5 cursor-not-allowed select-none' : ''}`} placeholder="ej. 120"
+                              readOnly={soloLectura} tabIndex={soloLectura ? -1 : undefined}
                               title="Cuántas pacas se le van a pedir a este proveedor"
                               aria-label={`Cantidad estimada del proveedor ${pi + 1}`}
                               value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
                           </div>
                           <div>
                             <label htmlFor={`prov-factura-est-${pi}`} className="flex items-center gap-1 text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
-                              Factura estimada
-                              <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
+                              Factura estimada ({monedaProv})
+                              {!facturaSuelta && <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>}
                             </label>
                             <input id={`prov-factura-est-${pi}`} type="text" readOnly tabIndex={-1}
                               className={`${inp} text-xs bg-primary/5 text-primary font-mono font-bold tabular-nums cursor-not-allowed select-none`}
@@ -3071,6 +3605,19 @@ export default function Contenedores() {
                               title="Cantidad estimada × valor por unidad. No se escribe: se calcula."
                               aria-label={`Factura estimada del proveedor ${pi + 1}`}
                               value={prov.factura_estimada ? formatNumero(facturaEst, { maxDecimales: 2 }) : ''} />
+                            {/* Su equivalente en la otra moneda: sin esto, un
+                                proveedor en dólares no dice en ninguna parte
+                                cuánta plata es en pesos hasta el resumen. */}
+                            {facturaEst > 0 && monedaProv === 'USD' && tasaValida && (
+                              <p className="text-[10px] text-muted mt-0.5 font-mono">
+                                ≈ {formatCurrency(facturaEst * tasaVista)} COP
+                              </p>
+                            )}
+                            {facturaSuelta && (
+                              <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                                Tecleada a mano (sin cantidad × valor). Es la cifra que suma.
+                              </p>
+                            )}
                             {desfase && (
                               <p className="text-[10px] text-warning mt-0.5 leading-tight">
                                 Guardado <b className="font-mono">{formatNumero(facturaEst, { maxDecimales: 2 })}</b>;
@@ -3079,6 +3626,7 @@ export default function Contenedores() {
                               </p>
                             )}
                           </div>
+                        </div>
                         </div>
                           );
                         })()}
@@ -3094,12 +3642,21 @@ export default function Contenedores() {
                               Líneas de Distribución ({prov.detalles.length})
                             </p>
                           </div>
-                          <span className="text-[10px] font-bold text-secondary tabular-nums bg-secondary/10 px-2 py-0.5 rounded-full">
-                            Total: {formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0))}
-                            {(prov.moneda==='USD') && (parseFloat(formData.tasa_conversion)||1) > 1 &&
-                              ` ≈ ${formatCurrency(prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0)*(parseFloat(formData.tasa_conversion)||1))} COP`
-                            }
-                          </span>
+                          {/* El total de las líneas está en la moneda DEL
+                              PROVEEDOR, no en pesos: se rotula con la suya y se
+                              añade el equivalente. Antes salía con formatCOP, y
+                              3.720 dólares se leían como 3.720 pesos. */}
+                          {(() => {
+                            const totalLineas = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0);
+                            const monedaProv = prov.moneda || 'USD';
+                            return (
+                              <span className="text-[10px] font-bold text-secondary tabular-nums bg-secondary/10 px-2 py-0.5 rounded-full">
+                                Total: {fmtPropia(totalLineas, monedaProv)} {monedaProv}
+                                {monedaProv === 'USD' && tasaValida && totalLineas > 0 &&
+                                  ` ≈ ${formatCurrency(totalLineas * tasaVista)} COP`}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="space-y-4">
                           {prov.detalles.map((det, di) => {
@@ -3193,14 +3750,22 @@ export default function Contenedores() {
                                       onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
                                   </div>
                                   <div className="flex-1">
-                                    <label htmlFor={`det-costo-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Costo Unitario *</label>
+                                    {/* La moneda en el rótulo: este costo va en
+                                        la del proveedor, no en pesos, y sin
+                                        decirlo se teclean dólares creyendo que
+                                        son pesos (o al revés). */}
+                                    <label htmlFor={`det-costo-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">
+                                      Costo Unitario * <span className="text-secondary">({prov.moneda || 'USD'})</span>
+                                    </label>
                                     <PriceInput id={`det-costo-${pi}-${di}`} className={inp} placeholder="0"
                                       value={det.costo_unitario}
                                       onChange={(val) => updateDetalle(pi, di, 'costo_unitario', val)} />
                                   </div>
                                   <div className="flex-1">
                                     {/* No es <label>: no hay control debajo, es una cifra calculada */}
-                                    <span className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Subtotal</span>
+                                    <span className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">
+                                      Subtotal <span className="text-secondary">({prov.moneda || 'USD'})</span>
+                                    </span>
                                     <div className={`${inp} bg-primary/3 text-secondary font-mono font-semibold text-sm text-right select-none`}>
                                       {subtotal > 0 ? subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0}) : '—'}
                                     </div>
@@ -3283,17 +3848,45 @@ export default function Contenedores() {
                               única de "Costo estimado": aquí arriba solo queda
                               QUIÉN presta el servicio. */}
                           {!modoEstimacion && (<>
-                          <select className={`${inpBase} w-20 flex-shrink-0`} value={srv.moneda || 'COP'}
+                          <select className={`${inpBase} w-20 flex-shrink-0 ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                            value={srv.moneda || 'COP'}
                             aria-label={`Moneda del servicio ${si + 1}`}
+                            title={(srv.moneda || 'COP') !== monedaBase
+                              ? `Distinta de la moneda del contenedor (${monedaBase})`
+                              : `Heredada del contenedor (${monedaBase})`}
                             onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
-                            <option value="USD">USD</option>
-                            <option value="COP">COP</option>
+                            {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
                           </select>
                           <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo servicio"
-                            title="Lo que cobra el proveedor por TODO el contenedor"
+                            title={`Lo que cobra el proveedor por ${esServicioPropio(srv) ? 'este servicio, que es solo suyo' : 'TODO el contenedor'}, en ${srv.moneda || 'COP'}`}
                             aria-label={`Costo del servicio ${si + 1}`}
                             value={srv.costo} onChange={(val) => updateServicio(si, 'costo', val)} />
                           </>)}
+                          {/* ── ¿Compartido o propio? ────────────────────
+                              Un flete o una nacionalización se cobran por el
+                              contenedor entero y se reparten entre TODAS sus
+                              unidades, sean suyas o de otro. Pero el transporte
+                              de SU mercancía desde el puerto, o su bodegaje, son
+                              suyos enteros: repartirlos entre las unidades de
+                              otro dejaba el costo unitario más barato de lo que
+                              es, y de ese número sale el costo de cada paca.
+                              Va aquí arriba, junto a quién presta el servicio,
+                              porque se sabe al mismo tiempo que eso. */}
+                          <label
+                            className={`flex items-center gap-1.5 flex-shrink-0 px-2.5 py-2 rounded-xl border cursor-pointer select-none transition-colors ${
+                              esServicioPropio(srv)
+                                ? 'border-secondary/50 bg-secondary/10 text-secondary'
+                                : 'border-border text-muted hover:text-primary hover:bg-primary/5'
+                            }`}
+                            title={esServicioPropio(srv)
+                              ? 'Propio: el costo entero se carga a SUS unidades, no se reparte con el resto del contenedor'
+                              : 'Compartido: el costo se reparte entre todas las unidades del contenedor y solo se le imputa su parte'}>
+                            <input type="checkbox" className="accent-current w-3.5 h-3.5 cursor-pointer"
+                              checked={esServicioPropio(srv)}
+                              aria-label={`El servicio ${si + 1} es propio (no se reparte con el resto del contenedor)`}
+                              onChange={(e) => updateServicio(si, 'propio', e.target.checked)} />
+                            <span className="text-[11px] font-bold uppercase tracking-wide">Propio</span>
+                          </label>
                           {servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
                               title="Eliminar servicio" aria-label={`Eliminar servicio ${si + 1}`}
@@ -3314,58 +3907,89 @@ export default function Contenedores() {
                               depende del orden en que Tailwind emita el CSS. */}
                           <label htmlFor={`srv-costo-est-${si}`}
                             className="block text-xs font-semibold text-amber-700 mb-1 uppercase tracking-wider">
-                            Costo estimado
+                            Costo estimado ({srv.moneda || 'COP'})
                           </label>
                           <div className="flex items-center gap-2">
                             <PriceInput
                               id={`srv-costo-est-${si}`}
                               className={`${inpBase} flex-1 min-w-0 text-lg font-mono font-bold tabular-nums`}
                               placeholder="0"
-                              title="Lo que calculas que va a costar este servicio por TODO el contenedor"
+                              title={`Lo que calculas que va a costar este servicio por ${esServicioPropio(srv) ? 'lo suyo' : 'TODO el contenedor'}, en ${srv.moneda || 'COP'}`}
                               aria-label={`Costo estimado del servicio ${si + 1}`}
                               value={costoEstimadoServicio(srv)}
                               onChange={(val) => setCostoEstimadoServicio(si, val)} />
-                            <select className={`${inpBase} w-20 flex-shrink-0 font-semibold`} value={srv.moneda || 'COP'}
+                            <select className={`${inpBase} w-20 flex-shrink-0 font-semibold ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                              value={srv.moneda || 'COP'}
                               aria-label={`Moneda del servicio ${si + 1}`}
+                              title={(srv.moneda || 'COP') !== monedaBase
+                                ? `Distinta de la moneda del contenedor (${monedaBase})`
+                                : `Heredada del contenedor (${monedaBase})`}
                               onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
-                              <option value="USD">USD</option>
-                              <option value="COP">COP</option>
+                              {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                           </div>
                         </div>
                         )}
 
-                        {/* Cómo se reparte este servicio: se divide entre TODO el
-                            contenedor y se imputa la parte de las unidades propias. */}
-                        {resumen.serviciosDetalle[si]?.costoFacturado > 0 && (
+                        {/* Cómo se reparte este servicio. Compartido: se divide
+                            entre TODO el contenedor y se imputa la parte de las
+                            unidades propias. Propio: se asume entero. */}
+                        {resumen.serviciosDetalle[si]?.costoFacturado > 0 && (() => {
+                          const d = resumen.serviciosDetalle[si];
+                          const compartido = resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas;
+                          return (
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-primary/[0.03] border border-border/60 px-2.5 py-1.5 text-[11px]">
                             <span className="text-muted">
-                              Costo unitario{' '}
-                              <b className="font-mono text-primary">{formatCurrency(resumen.serviciosDetalle[si].costoUnitario)}</b>
-                              <span className="text-muted/70"> (÷ {resumen.baseProrrateo || 0} und.)</span>
+                              Por unidad{' '}
+                              <b className="font-mono text-primary">{formatCurrency(d.costoUnitario)}</b>
+                              <span className="text-muted/70">
+                                {d.propio
+                                  ? ` (÷ ${resumen.totalPacas || 0} suyas)`
+                                  : ` (÷ ${resumen.baseProrrateo || 0} und.)`}
+                              </span>
                             </span>
                             <span className="text-muted">
-                              Costo total{' '}
-                              <b className="font-mono text-secondary">{formatCurrency(resumen.serviciosDetalle[si].costo)}</b>
-                              <span className="text-muted/70"> (× {resumen.totalPacas} suyas)</span>
+                              Le corresponde{' '}
+                              <b className="font-mono text-secondary">{formatCurrency(d.costo)}</b>
+                              <span className="text-muted/70">
+                                {d.propio ? ' (entero)' : ` (× ${resumen.totalPacas} suyas)`}
+                              </span>
                             </span>
-                            {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && (
+                            {d.propio ? (
+                              <span className="text-[10px] font-semibold text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">
+                                propio · no se reparte
+                              </span>
+                            ) : compartido && (
                               <span className="text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
                                 compartido
                               </span>
                             )}
                           </div>
-                        )}
+                          );
+                        })()}
 
-                        {(srv.moneda || 'COP') === 'USD' && parseFloat(srv.costo) > 0 && (
-                          <div className="flex items-center gap-2 pl-1">
-                            <span className="text-[10px] text-muted">≈</span>
-                            <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
-                              {formatCurrency(parseFloat(srv.costo) * (parseFloat(formData.tasa_conversion) || 1))}
-                            </span>
-                            <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
-                          </div>
-                        )}
+                        {/* El equivalente en pesos de un servicio en dólares.
+                            Antes solo salía si había costo REAL, y en una
+                            estimación ese campo se vacía siempre: un flete
+                            estimado en dólares no decía en ninguna parte cuánta
+                            plata era. Ahora se calcula sobre lo que vale HOY el
+                            servicio, facturado o estimado. */}
+                        {(() => {
+                          const monedaSrv = srv.moneda || 'COP';
+                          const costoSrv = costoServicioEfectivo(srv);
+                          if (monedaSrv !== 'USD' || !(costoSrv > 0) || !tasaValida) return null;
+                          const esEst = !(parseFloat(srv.costo) > 0);
+                          return (
+                            <div className="flex items-center gap-2 pl-1">
+                              <span className="text-[10px] text-muted">≈</span>
+                              <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
+                                {formatCurrency(costoSrv * tasaVista)}
+                              </span>
+                              <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
+                              {esEst && <span className="text-[10px] text-amber-600">estimado</span>}
+                            </div>
+                          );
+                        })()}
                         <input type="text" className={inp} placeholder="Notas (opcional)"
                           aria-label={`Notas del servicio ${si + 1}`}
                           value={srv.notas} onChange={(e) => updateServicio(si, 'notas', e.target.value)} />
@@ -3385,7 +4009,7 @@ export default function Contenedores() {
               <div className="lg:hidden rounded-2xl border border-border/60 bg-surface p-4 space-y-2.5">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
-                  <ToggleMoneda valor={monedaVista} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda-movil" />
+                  <ToggleMoneda valor={vistaMoneda} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda-movil" />
                 </div>
                 {!tasaValida && (
                   <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
@@ -3415,6 +4039,7 @@ export default function Contenedores() {
                         <span className="truncate min-w-0 text-primary capitalize">
                           {s.nombre?.trim() || s.tipo?.trim() || `Srv. ${i+1}`}
                           {s.nombre?.trim() && s.tipo?.trim() && <span className="text-muted/70"> · {s.tipo}</span>}
+                          {s.propio && <span className="ml-1 text-[9px] font-bold uppercase text-secondary normal-case">propio</span>}
                         </span>
                         <span className="font-mono tabular-nums text-primary flex-shrink-0">{fmtVista(s.costo)}</span>
                       </div>
@@ -3427,14 +4052,14 @@ export default function Contenedores() {
                   <span className="text-xs text-muted">Costo total</span>
                   <span className="text-right">
                     <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoTotal)}</span>
-                    {tasaValida && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoTotal)}</span>}
+                    {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoTotal)}</span>}
                   </span>
                 </div>
                 <div className="flex items-start justify-between gap-2 pb-2 border-b border-border/40">
                   <span className="text-xs text-muted">Por unidad</span>
                   <span className="text-right">
                     <span className="block text-sm font-mono font-bold text-secondary tabular-nums">{fmtVista(resumen.costoUnitario, { unitario: true })}</span>
-                    {tasaValida && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoUnitario, { unitario: true })}</span>}
+                    {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoUnitario, { unitario: true })}</span>}
                   </span>
                 </div>
                 <div className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl ${modoEstimacion ? 'bg-amber-500/10 text-amber-600' : resumen.cantidadValida ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
@@ -3486,7 +4111,7 @@ export default function Contenedores() {
                       contra la caja (pesos). */}
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <p className="text-xs font-bold text-muted uppercase tracking-widest">Resumen de Costos</p>
-                    <ToggleMoneda valor={monedaVista} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda" />
+                    <ToggleMoneda valor={vistaMoneda} onChange={setMonedaResumen} deshabilitado={!tasaValida} id="resumen-moneda" />
                   </div>
                   {!tasaValida && (
                     <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning mb-2">
@@ -3504,15 +4129,27 @@ export default function Contenedores() {
                         {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
                           <div key={i} className="space-y-0.5">
                             <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
-                              <span className="text-sm font-semibold text-primary truncate min-w-0">{p.nombre?.trim() || `Prov. ${i+1}`}</span>
-                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-40">
-                                {fmtVista(p.costoEnCOP)}
+                              <span className="text-sm font-semibold text-primary truncate min-w-0">
+                                {p.nombre?.trim() || `Prov. ${i+1}`}
+                                {/* Cuando la cifra viene del estimado y no de
+                                    líneas reales, se dice: es la diferencia
+                                    entre "esto cuesta" y "esto va a costar". */}
+                                {p.esEstimado && (
+                                  <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                    estimado
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-right w-40">
+                                <span className="block text-sm font-mono font-semibold text-primary tabular-nums">{fmtVista(p.costoEnCOP)}</span>
+                                {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(p.costoEnCOP)}</span>}
                               </span>
                             </div>
                             <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
                               <span className="text-xs text-muted/70">por unidad</span>
                               <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
                                 {fmtVista(p.costoPorPaca, { unitario: true })}
+                                {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(p.costoPorPaca, { unitario: true })}</span>}
                               </span>
                             </div>
                           </div>
@@ -3520,8 +4157,9 @@ export default function Contenedores() {
                         {resumen.proveedoresDetalle.filter(p => p.costoEnCOP > 0).length > 1 && (
                           <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
                             <span className="text-xs font-semibold text-muted">Subtotal mercancía</span>
-                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-40">
-                              {fmtVista(resumen.costoMercancia)}
+                            <span className="text-right w-40">
+                              <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoMercancia)}</span>
+                              {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoMercancia)}</span>}
                             </span>
                           </div>
                         )}
@@ -3541,19 +4179,29 @@ export default function Contenedores() {
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-primary truncate capitalize">
                                   {s.nombre?.trim() || s.tipo?.trim() || `Srv. ${i+1}`}
+                                  {/* Un servicio propio no se reparte: si dos
+                                      cifras parecidas se reparten distinto, hay
+                                      que poder ver por qué sin abrir nada. */}
+                                  {s.propio && (
+                                    <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide text-secondary bg-secondary/10 px-1.5 py-0.5 rounded normal-case">
+                                      propio
+                                    </span>
+                                  )}
                                 </p>
                                 {s.nombre?.trim() && s.tipo?.trim() && (
                                   <p className="text-[10px] text-muted/70 capitalize truncate">{s.tipo}</p>
                                 )}
                               </div>
-                              <span className="text-sm font-mono font-semibold text-primary tabular-nums text-right w-40">
-                                {fmtVista(s.costo)}
+                              <span className="text-right w-40">
+                                <span className="block text-sm font-mono font-semibold text-primary tabular-nums">{fmtVista(s.costo)}</span>
+                                {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(s.costo)}</span>}
                               </span>
                             </div>
                             <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
                               <span className="text-xs text-muted/70">por unidad</span>
                               <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
                                 {fmtVista(s.costoPorPaca, { unitario: true })}
+                                {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(s.costoPorPaca, { unitario: true })}</span>}
                               </span>
                             </div>
                           </div>
@@ -3561,8 +4209,9 @@ export default function Contenedores() {
                         {resumen.serviciosDetalle.filter(s => s.costo > 0).length > 1 && (
                           <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
                             <span className="text-xs font-semibold text-muted">Subtotal servicios</span>
-                            <span className="text-sm font-mono font-bold text-primary tabular-nums text-right w-40">
-                              {fmtVista(resumen.costoServicios)}
+                            <span className="text-right w-40">
+                              <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoServicios)}</span>
+                              {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoServicios)}</span>}
                             </span>
                           </div>
                         )}
@@ -3579,7 +4228,7 @@ export default function Contenedores() {
                       <span className="block text-lg font-mono font-bold text-primary tabular-nums">
                         {fmtVista(resumen.costoTotal)}
                       </span>
-                      {tasaValida && (
+                      {mostrarAlterna && (
                         <span className="block text-xs font-mono text-muted tabular-nums">
                           {fmtAlterna(resumen.costoTotal)}
                         </span>
@@ -3594,7 +4243,7 @@ export default function Contenedores() {
                       <p className="text-2xl font-display font-bold text-primary tabular-nums leading-tight">
                         {fmtVista(resumen.costoUnitario, { unitario: true })}
                       </p>
-                      {tasaValida && (
+                      {mostrarAlterna && (
                         <p className="text-xs font-mono text-muted tabular-nums mt-0.5">
                           {fmtAlterna(resumen.costoUnitario, { unitario: true })}
                         </p>
@@ -3605,7 +4254,7 @@ export default function Contenedores() {
                       <p className="text-2xl font-display font-bold text-secondary tabular-nums leading-tight">
                         {fmtVista(resumen.costoServiciosPorUnidad, { unitario: true })}
                       </p>
-                      {tasaValida && (
+                      {mostrarAlterna && (
                         <p className="text-xs font-mono text-muted tabular-nums mt-0.5">
                           {fmtAlterna(resumen.costoServiciosPorUnidad, { unitario: true })}
                         </p>
@@ -3668,12 +4317,17 @@ export default function Contenedores() {
                                   ? <CheckCircle size={12} className="flex-shrink-0" />
                                   : <span className="w-2 h-2 rounded-full bg-border flex-shrink-0" />}
                                 {s.nombre}{s.proveedor && <span className="text-muted/60"> · {s.proveedor}</span>}
+                                {s.propio && <span className="text-[9px] font-bold uppercase text-secondary">propio</span>}
                               </span>
+                              {/* En la moneda del servicio: estas dos cifras no
+                                  pasan por el resumen, están tal como se
+                                  tecleraron, y con formatCOP un flete de 1.500
+                                  dólares se leía como 1.500 pesos. */}
                               <span className="font-mono tabular-nums flex-shrink-0 text-muted">
                                 {s.completo
-                                  ? formatCurrency(s.real)
+                                  ? `${fmtPropia(s.real, s.moneda)} ${s.moneda}`
                                   : s.estimado > 0
-                                    ? <span className="text-warning">est. {formatCurrency(s.estimado)}</span>
+                                    ? <span className="text-warning">est. {fmtPropia(s.estimado, s.moneda)} {s.moneda}</span>
                                     : <span className="text-warning">pendiente</span>}
                               </span>
                             </div>
@@ -3715,6 +4369,9 @@ export default function Contenedores() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-3">
               <StatusBadge estado={selectedContenedor.estado} />
+              {selectedContenedor.estado !== 'estimacion' && vieneDeEstimacion(selectedContenedor) && (
+                <SelloOrigenEstimacion convertidoEn={selectedContenedor.convertido_en} />
+              )}
               {selectedContenedor.fecha_salida && (
                 <span className="text-xs text-muted">Salida: {formatDate(selectedContenedor.fecha_salida)}</span>
               )}
@@ -3725,6 +4382,11 @@ export default function Contenedores() {
               {selectedContenedor.tasa_conversion && parseFloat(selectedContenedor.tasa_conversion) !== 1 && (
                 <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full">Tasa: {parseFloat(selectedContenedor.tasa_conversion).toLocaleString('es-CO')}</span>
               )}
+              {selectedContenedor.moneda_base && (
+                <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full" title="Moneda en la que se capturó el contenedor">
+                  Moneda: {selectedContenedor.moneda_base}
+                </span>
+              )}
               {selectedContenedor.lote_id && (
                 <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
               )}
@@ -3732,15 +4394,35 @@ export default function Contenedores() {
                 className="text-xs bg-warning/10 px-2 py-0.5 rounded-full font-semibold">Cuentas por pagar</RefLink>
             </div>
 
+            {/* ── En qué punto del camino está ────────────────────
+                El mismo dibujo que en el formulario. Solo tiene algo que contar
+                cuando el contenedor pasó (o está) por la etapa de estimación:
+                en uno creado directo, el badge de arriba ya lo dice todo. */}
+            {vieneDeEstimacion(selectedContenedor) && (
+              <div className="rounded-2xl border border-border/60 bg-primary/[0.02] px-4 py-3">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Camino del contenedor</p>
+                <FlujoContenedor
+                  estado={selectedContenedor.estado}
+                  origen="estimacion"
+                  convertidoEn={selectedContenedor.convertido_en} />
+                <p className="text-[11px] text-muted mt-2 leading-relaxed">
+                  {selectedContenedor.estado === 'estimacion'
+                    ? <>Todo lo que se ve aquí es <b className="text-amber-600">lo que se cree que va a llegar</b>. Las cuentas por pagar ya existen para poder abonar; cuando llegue, conviértelo a contenedor normal y registra lo real.</>
+                    : <>Las cifras de este contenedor <b className="text-blue-600">empezaron siendo una estimación</b>. Mientras un proveedor no tenga líneas reales, su estimado es lo que sigue contando en el costo.</>}
+                </p>
+              </div>
+            )}
+
             {/* ── Estimado vs. Real ──────────────────────────────
-                Solo aparece si el contenedor nació como estimación (hay datos
-                estimados guardados). Compara lo que se creyó que venía contra lo
-                que efectivamente se registró al convertirlo a contenedor normal. */}
-            {(() => {
+                Compara lo que se creyó que venía contra lo que se registró al
+                convertirlo a contenedor normal.
+
+                Mientras SIGUE siendo estimación no se pinta: no hay nada real
+                con qué comparar y la tabla salía entera en ceros. Ese caso lo
+                cubre el bloque "Mercancía estimada", más abajo. */}
+            {selectedContenedor.estado !== 'estimacion' && (() => {
               const provs = selectedContenedor.proveedores_mercancia || [];
-              const conEstimacion = provs.filter(p =>
-                (parseInt(p.cantidad_estimada) || 0) > 0 || (parseFloat(p.factura_estimada) || 0) > 0
-              );
+              const conEstimacion = provs.filter(hayEstimadoProveedor);
               if (conEstimacion.length === 0) return null;
 
               const filas = conEstimacion.map(p => {
@@ -3849,15 +4531,25 @@ export default function Contenedores() {
                   <div className="divide-y divide-border/30">
                     {selectedContenedor.proveedores_mercancia.map((prov, i) => {
                       const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-                      // Costo real de las líneas; si aún no hay, usa la estimación (igual que el backend).
+                      // Costo real de las líneas; si aún no hay, la estimación.
+                      // El último término es la factura estimada suelta, para
+                      // las estimaciones viejas: es exactamente lo que hace
+                      // `costoBaseProveedor` en el servidor, y sin él esta línea
+                      // enseñaba 0 mientras el total de abajo sí la contaba.
                       const costoReal = (prov.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
-                      const costoOriginal = costoReal > 0 ? costoReal : (parseInt(prov.cantidad_estimada) || 0) * (parseFloat(prov.valor_unidad_estimado) || 0);
+                      const costoEstimado = ((parseInt(prov.cantidad_estimada) || 0) * (parseFloat(prov.valor_unidad_estimado) || 0))
+                        || (parseFloat(prov.factura_estimada) || 0);
+                      const costoOriginal = costoReal > 0 ? costoReal : costoEstimado;
+                      const esEstimadoProv = costoReal === 0 && costoEstimado > 0;
                       const costoCOP = prov.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
                       const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
                       return (
                         <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
                           <div>
-                            <p className="text-sm font-semibold text-primary">{prov.proveedor_nombre}</p>
+                            <p className="text-sm font-semibold text-primary flex items-center gap-1.5">
+                              {prov.proveedor_nombre}
+                              {esEstimadoProv && <SelloEstimacion title="Sin líneas reales: cuenta lo estimado">estimado</SelloEstimacion>}
+                            </p>
                             {prov.moneda === 'USD' && costoOriginal > 0 && (
                               <p className="text-xs text-muted">USD {costoOriginal.toLocaleString('es-CO')} × {tasa.toLocaleString('es-CO')}</p>
                             )}
@@ -3884,23 +4576,47 @@ export default function Contenedores() {
                       // Una estimación no tiene costo real: si aquí se leyera solo
                       // `costo`, TODOS sus servicios saldrían en $0 mientras el total
                       // de abajo sí los cuenta.
-                      const costoServicio = costoServicioEfectivo(srv);
+                      const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
+                      const monedaSrv = srv.moneda || 'COP';
+                      const costoServicio = costoServicioEfectivo(srv);      // en SU moneda
+                      const costoSrvCOP = monedaSrv === 'USD' ? costoServicio * tasa : costoServicio;
                       const esEstimadoSrv = !(parseFloat(srv.costo) > 0) && costoServicio > 0;
-                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoServicio / parseInt(selectedContenedor.total_pacas) : 0;
+                      const propio = esServicioPropio(srv);
+                      // La misma cuenta que hace el servidor: un servicio propio
+                      // se carga entero a las unidades propias; uno compartido se
+                      // reparte entre TODO el contenedor y solo entra su parte.
+                      const propias = parseInt(selectedContenedor.total_pacas) || 0;
+                      const base = (parseInt(selectedContenedor.cantidad_total) || 0) > 0
+                        ? parseInt(selectedContenedor.cantidad_total) : propias;
+                      const asignadoCOP = costoServicioAsignado(costoSrvCOP, { propio, base, propias });
+                      const costoPorUnidad = propias > 0 ? asignadoCOP / propias : 0;
                       return (
-                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
-                          <div className="flex items-center gap-2">
+                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors gap-3">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
                             <span className="capitalize text-xs font-semibold bg-primary/8 text-primary px-2 py-0.5 rounded-md">{srv.tipo_servicio}</span>
-                            <span className="text-sm text-muted">{srv.proveedor_nombre}</span>
+                            <span className="text-sm text-muted truncate">{srv.proveedor_nombre}</span>
+                            <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                              propio ? 'text-secondary bg-secondary/10' : 'text-muted bg-primary/8'}`}
+                              title={propio
+                                ? 'Propio: el costo entero se carga a sus unidades'
+                                : 'Compartido: se reparte entre todas las unidades del contenedor'}>
+                              {propio ? 'propio' : 'compartido'}
+                            </span>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right flex-shrink-0">
+                            {/* En la moneda del servicio, con su equivalente
+                                debajo: antes salía con símbolo de peso aunque
+                                estuviera facturado en dólares. */}
                             <p className="font-mono text-secondary text-sm font-semibold">
-                              {formatCurrency(costoServicio)}
+                              {fmtPropia(costoServicio, monedaSrv)} {monedaSrv}
                               {esEstimadoSrv && (
                                 <span className="ml-1.5 text-[9px] font-sans font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">estimado</span>
                               )}
                             </p>
-                            <p className="text-[10px] text-muted">{formatCurrency(costoPorUnidad)}/unidad</p>
+                            <p className="text-[10px] text-muted">
+                              {monedaSrv === 'USD' && tasa > 1 && <>≈ {formatCurrency(costoSrvCOP)} · </>}
+                              {formatCurrency(costoPorUnidad)}/unidad
+                            </p>
                           </div>
                         </div>
                       );
@@ -3936,7 +4652,76 @@ export default function Contenedores() {
                 </div>
               </div>
             </div>
-            {/* Distribución de unidades por proveedor */}
+            {/* ── Mercancía estimada, por proveedor ───────────────
+                El bloque de abajo se arma con las LÍNEAS de distribución, y una
+                estimación no tiene ninguna: salía un recuadro por proveedor
+                completamente vacío. Aquí va lo que sí hay —valor por unidad ×
+                cantidad = factura, con su equivalente en pesos—, que es el
+                equivalente en formato estimación de esa misma distribución. */}
+            {selectedContenedor.estado === 'estimacion' && (() => {
+              const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
+              const hayTasa = tasa > 1;
+              const provs = (selectedContenedor.proveedores_mercancia || []).filter(hayEstimadoProveedor);
+              if (provs.length === 0) return null;
+              return (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-xs font-semibold text-muted uppercase tracking-wider">Mercancía estimada</p>
+                    <SelloEstimacion title="Todavía no hay líneas de distribución: esto es lo que se cree que llegará">
+                      no ha llegado
+                    </SelloEstimacion>
+                  </div>
+                  <div className="space-y-2">
+                    {provs.map((prov, i) => {
+                      const moneda = prov.moneda || 'USD';
+                      const cantEst = parseInt(prov.cantidad_estimada) || 0;
+                      const valorEst = parseFloat(prov.valor_unidad_estimado) || 0;
+                      const factEst = (cantEst * valorEst) || (parseFloat(prov.factura_estimada) || 0);
+                      return (
+                        <div key={i} className="rounded-xl border border-dashed border-amber-400/50 bg-amber-500/[0.04] overflow-hidden">
+                          <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-400/30 flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
+                              <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{moneda}</span>
+                            </div>
+                            <div className="text-right">
+                              {/* En la moneda del proveedor. Antes esta cifra
+                                  salía con formatCOP: un valor por unidad de
+                                  285,50 dólares se leía como 286 pesos. */}
+                              <p className="font-mono text-sm font-bold text-primary tabular-nums">
+                                {fmtPropia(factEst, moneda)} {moneda}
+                              </p>
+                              {moneda === 'USD' && hayTasa && (
+                                <p className="text-[10px] text-muted font-mono">≈ {formatCurrency(factEst * tasa)} COP</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-xs">
+                            <span className="text-muted">
+                              Cantidad estimada <b className="font-mono text-primary tabular-nums">{cantEst ? cantEst.toLocaleString('es-CO') : '—'}</b>
+                            </span>
+                            <span className="text-muted/40">×</span>
+                            <span className="text-muted">
+                              Valor por unidad <b className="font-mono text-primary tabular-nums">{valorEst ? fmtPropia(valorEst, moneda, { unitario: true }) : '—'}</b>
+                            </span>
+                            <span className="text-muted/40">=</span>
+                            <span className="text-muted">
+                              Factura estimada <b className="font-mono text-secondary tabular-nums">{fmtPropia(factEst, moneda)}</b>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Distribución de unidades por proveedor.
+                Se oculta en una estimación: no hay líneas todavía y quedaba un
+                recuadro vacío por proveedor. Lo suyo lo enseña el bloque de
+                arriba, en formato estimación. */}
+            {selectedContenedor.estado !== 'estimacion' && (
             <div>
               <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Distribución de Unidades</p>
               <div className="space-y-2">
@@ -3947,16 +4732,22 @@ export default function Contenedores() {
                         <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
                         {prov.moneda && <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{prov.moneda}</span>}
                       </div>
-                      {selectedContenedor.estado === 'estimacion' && (prov.factura_estimada || prov.cantidad_estimada || prov.valor_unidad_estimado) && (
+                      {/* Lo estimado sigue a la vista cuando el contenedor viene
+                          de una estimación: es contra lo que se compara lo que
+                          llegó, y en la moneda del proveedor, no en pesos. */}
+                      {vieneDeEstimacion(selectedContenedor) && hayEstimadoProveedor(prov) && (
                         <div className="flex items-center gap-2 text-[10px] text-muted">
-                          {prov.factura_estimada && <span>Fact. est.: <strong className="text-primary">{prov.factura_estimada}</strong></span>}
-                          {prov.cantidad_estimada != null && <span>Cant. est.: <strong className="text-primary">{prov.cantidad_estimada}</strong></span>}
-                          {prov.valor_unidad_estimado != null && <span>Val/u est.: <strong className="text-primary">{formatCurrency(prov.valor_unidad_estimado)}</strong></span>}
+                          <SelloEstimacion className="!text-[9px]">estimado</SelloEstimacion>
+                          {prov.cantidad_estimada != null && <span>Cant.: <strong className="text-primary">{prov.cantidad_estimada}</strong></span>}
+                          {prov.valor_unidad_estimado != null && <span>Val/u: <strong className="text-primary">{fmtPropia(prov.valor_unidad_estimado, prov.moneda, { unitario: true })}</strong></span>}
+                          {prov.factura_estimada && <span>Factura: <strong className="text-primary">{fmtPropia(prov.factura_estimada, prov.moneda)} {prov.moneda || 'USD'}</strong></span>}
                         </div>
                       )}
                     </div>
                     <div className="px-4 py-2.5 flex flex-wrap gap-2">
-                      {prov.detalles.map((det, di) => (
+                      {prov.detalles.length === 0 ? (
+                        <span className="text-xs text-warning">Sin líneas registradas todavía — su estimado es lo que cuenta en el costo.</span>
+                      ) : prov.detalles.map((det, di) => (
                         <span key={di} className="inline-flex items-center gap-1.5 bg-primary/5 border border-border/50 rounded-lg px-2.5 py-1 text-xs">
                           <span className="capitalize font-semibold text-secondary">{det.clasificacion}</span>
                           <span className="text-muted">/</span>
@@ -3971,6 +4762,7 @@ export default function Contenedores() {
                 ))}
               </div>
             </div>
+            )}
             {/* Comparación detallada por proveedor — visible cuando hay revisión */}
             {(selectedContenedor.estado === 'revision' || selectedContenedor.estado === 'finalizado') && selectedContenedor.total_pacas_recibidas != null && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-4">
@@ -4121,6 +4913,22 @@ export default function Contenedores() {
                   <Save size={15} /> Guardar como plantilla
                 </button>
               </div>
+              {/* El paso siguiente del flujo, donde se está mirando el
+                  contenedor: sin él había que cerrar el detalle y buscar un
+                  icono en la fila de la lista. */}
+              {canEdit && selectedContenedor.estado === 'estimacion' && (
+                <div className="flex gap-3 ml-auto">
+                  <button onClick={() => { setViewModalOpen(false); openEditModal(selectedContenedor); }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                    <Edit2 size={15} /> Editar estimación
+                  </button>
+                  <button onClick={() => handleConvertirNormal(selectedContenedor)}
+                    title="Ya llegó: pasar a contenedor y registrar lo real"
+                    className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 active:scale-95 transition-all duration-150">
+                    <RefreshCw size={17} /> Ya llegó — convertir
+                  </button>
+                </div>
+              )}
               {isAdmin && selectedContenedor.estado === 'borrador' && (
                 <div className="flex gap-3 ml-auto">
                   <button onClick={() => openEditModal(selectedContenedor)}
@@ -4603,7 +5411,17 @@ export default function Contenedores() {
                   {/* Era un <div onClick>: con teclado no había forma de cargar una
                       plantilla. Como <button> entra en el orden de tabulación. */}
                   <button type="button" className="flex-1 cursor-pointer min-w-0 text-left" onClick={() => {
-                    setFormData(f => ({ ...f, tasa_conversion: t.tasa_conversion, total_pacas: t.total_pacas, notas: t.notas }));
+                    setFormData(f => ({
+                      ...f,
+                      tasa_conversion: t.tasa_conversion,
+                      total_pacas: t.total_pacas,
+                      notas: t.notas,
+                      // Plantillas guardadas antes de que existieran estos dos
+                      // campos no los traen: se deja lo que ya había en el
+                      // formulario en vez de vaciarlos.
+                      moneda_base: t.moneda_base || f.moneda_base,
+                      cantidad_total: t.cantidad_total ?? f.cantidad_total,
+                    }));
                     setProveedores(t.proveedores);
                     setServicios(t.servicios);
                     setTemplateModalOpen(false);
