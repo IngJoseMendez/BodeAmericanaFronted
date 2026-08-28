@@ -1535,6 +1535,17 @@ export default function Contenedores() {
       [esEstimacionExcel ? 'Costo Servicios (estimado)' : 'Costo Servicios', fmtCOP(full.costo_servicios_total)],
       [esEstimacionExcel ? 'Costo Total (estimado)' : 'Costo Total', fmtCOP(full.costo_total)],
       [esEstimacionExcel ? 'Costo por Paca (estimado)' : 'Costo por Paca', fmtCOP(full.costo_unitario)],
+      // La utilidad y la inversión no salían en ningún Excel, ni siquiera en el
+      // del contenedor real: había que abrir la pantalla para saber cuánta plata
+      // hay que poner. En el de una estimación es la cifra que se manda para
+      // pedirla, así que va aquí. Solo si está fijada; sin ella no hay nada que
+      // decir y una fila en $0 se lee como "no se gana nada".
+      ...(parseFloat(full.utilidad_unitaria) > 0 ? [
+        ['Utilidad por unidad', fmtCOP(full.utilidad_unitaria)],
+        ['Utilidad total', fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas)],
+        [esEstimacionExcel ? 'Inversión total (estimada)' : 'Inversión total',
+         fmtCOP((parseFloat(full.costo_total) || 0) + parseFloat(full.utilidad_unitaria) * totalPacas)],
+      ] : []),
     ];
     fields.forEach(([label, val], i) => {
       const r = i + 2;
@@ -2004,11 +2015,14 @@ export default function Contenedores() {
     const svCompletos = avanceServicios.filter(s => s.completo).length;
 
     // Cifras que la operación necesita ver sin sacar calculadora.
-    // En una ESTIMACIÓN la utilidad no existe: la estimación sirve para saber
-    // cuánto va a COSTAR el contenedor, y lo que se gana se decide después en el
-    // módulo de Utilidad. Sin este 0, una estimación abierta para editar seguiría
-    // arrastrando la utilidad guardada y sumándola a cifras que ya no se muestran.
-    const utilidadUnitaria = modoEstimacion ? 0 : parseMonto(formData.utilidad_unitaria);
+    //
+    // La utilidad cuenta IGUAL en una estimación. Antes se forzaba a 0 porque el
+    // formulario de estimación no la preguntaba, y el resultado era que la
+    // estimación —que es justamente donde se decide si el contenedor vale la
+    // pena— no podía decir cuánto se va a ganar ni cuánta plata hay que poner.
+    // La utilidad por unidad se fija a mano; que todavía no haya llegado nada no
+    // la hace menos conocida.
+    const utilidadUnitaria = parseMonto(formData.utilidad_unitaria);
     const utilidadTotal = utilidadUnitaria * totalPacas;
     const inversionTotal = costoTotal + utilidadTotal;
     const costoServiciosPorUnidad = totalPacas > 0 ? costoServicios / totalPacas : 0;
@@ -2362,16 +2376,13 @@ export default function Contenedores() {
         notas: formData.notas || null,
         cantidad_total: formData.cantidad_total === '' ? null : (parseInt(formData.cantidad_total) || null),
         moneda_base: monedaBase,
-        // El formulario de estimación ya no MUESTRA utilidad ni gastos por unidad,
-        // pero tampoco los borra: se reenvía tal cual lo que trajo el servidor. Un
-        // campo que se oculta se deja quieto, no se pone en null — si no, abrir una
-        // estimación vieja para corregir un servicio y guardar destruiría, sin que
-        // nadie lo vea y sin vuelta atrás, la utilidad por unidad de la que cuelga
-        // el reparto entre inversionistas. En una estimación NUEVA llegan vacíos y
-        // salen en null igual.
-        // `gastos_unitarios` ya no lo teclea nadie: en el contenedor normal lo
-        // rellena el efecto de arriba con los servicios por unidad, así que aquí
-        // sale la MISMA cifra que enseña la casilla AUTO.
+        // La utilidad por unidad se pregunta igual en la estimación que en el
+        // contenedor: de ella cuelgan la utilidad total, la inversión total, el
+        // precio de venta sugerido y el reparto entre inversionistas. Vacía viaja
+        // como null, que es lo que había antes.
+        // `gastos_unitarios` no lo teclea nadie: lo rellena el efecto de arriba con
+        // los servicios por unidad, así que aquí sale la MISMA cifra que enseña la
+        // casilla AUTO.
         utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
         gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
@@ -2793,9 +2804,9 @@ export default function Contenedores() {
   // verdad: de `gastos_unitarios` beben el payload, el precio de venta
   // sugerido y el módulo de Utilidad, y lo que se ve es lo que se guarda.
   //
-  // En ESTIMACIÓN no se toca: allí el campo ni se muestra, y el formulario
-  // reenvía intacto lo que trajo el servidor (ver la nota del payload). Con el
-  // modal cerrado tampoco, para no ensuciar el formulario ya reseteado.
+  // Se calcula igual en ESTIMACIÓN: son los servicios estimados divididos entre
+  // las unidades estimadas, la misma cuenta con las cifras que se conocen. Con
+  // el modal cerrado no se toca, para no ensuciar el formulario ya reseteado.
   //
   // Se guarda en PESOS ENTEROS: parseMonto lee el punto como separador de
   // MILES, así que un "1234.56" volvería del campo convertido en 123.456.
@@ -2807,11 +2818,11 @@ export default function Contenedores() {
   // nadie lo pida, el número del que cuelgan el precio de venta y el módulo de
   // Utilidad. Se conserva y se avisa debajo del campo.
   useEffect(() => {
-    if (!modalOpen || modoEstimacion) return;
+    if (!modalOpen) return;
     if (!(resumen.costoServiciosPorUnidad > 0)) return;
     const calculado = String(Math.round(resumen.costoServiciosPorUnidad));
     setFormData(prev => prev.gastos_unitarios === calculado ? prev : { ...prev, gastos_unitarios: calculado });
-  }, [resumen, modalOpen, modoEstimacion]);
+  }, [resumen, modalOpen]);
 
   // ── Visualización del resumen: ambas monedas, o una sola ───────
   //
@@ -3183,7 +3194,7 @@ export default function Contenedores() {
                       <p className="font-semibold">Modo estimación — nada de esto ha llegado todavía</p>
                       <p className="text-xs text-amber-700/80 mt-0.5">
                         Registra lo que <strong>crees que llegará</strong> de cada proveedor y el <strong>costo estimado</strong> de cada servicio.
-                        Aquí solo se calcula lo que va a <strong>costar</strong>: la utilidad se decide después, en el módulo de Utilidad.
+                        Sale la misma cuenta que en un contenedor normal —costo, utilidad, inversión y precio sugerido—, solo que con cifras estimadas.
                         Al guardar se generan las <strong>Cuentas por Pagar</strong> para que registres abonos antes de que llegue.
                       </p>
                     </div>
@@ -3323,24 +3334,35 @@ export default function Contenedores() {
                     </p>
                   </div>
                   {/* La utilidad NO se deduce de los precios: se fija aquí por
-                      unidad y de ella sale el precio de venta y la ganancia.
-                      En una ESTIMACIÓN no se pregunta: la estimación sirve para
-                      saber cuánto va a COSTAR el contenedor, y lo que se gana se
-                      decide después, en el módulo de Utilidad. En el contenedor
-                      normal se quedan, porque de `utilidad_unitaria` cuelga el
-                      reparto entre inversionistas. */}
-                  {!modoEstimacion && (<>
+                      unidad y de ella salen el precio de venta, la ganancia y el
+                      reparto entre inversionistas.
+
+                      Se pregunta TAMBIÉN en la estimación. Antes se ocultaba con
+                      el argumento de que la utilidad se decide después, y el
+                      resultado era que la estimación —que es justo donde se
+                      decide si el contenedor vale la pena, y con qué plata se
+                      paga— no podía enseñar ni la utilidad ni la inversión
+                      total. Que todavía no haya llegado nada no hace la utilidad
+                      por unidad menos conocida: es una decisión, no un dato que
+                      traiga el contenedor. */}
                   <div>
-                    <label htmlFor="cont-utilidad" className={lbl}>Utilidad por unidad (COP)</label>
+                    <label htmlFor="cont-utilidad" className={lbl}>
+                      Utilidad por unidad (COP)
+                      {modoEstimacion && <span className="ml-1.5 text-[9px] font-semibold normal-case text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">ESTIMADA</span>}
+                    </label>
                     <input id="cont-utilidad" type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
                       value={formData.utilidad_unitaria}
                       onChange={(e) => setFormData({ ...formData, utilidad_unitaria: e.target.value })} />
                     {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
-                    {parseMonto(formData.utilidad_unitaria) > 0 && (
+                    {parseMonto(formData.utilidad_unitaria) > 0 ? (
                       <p className="text-[10px] mt-0.5">
                         <span className="text-muted">Total: </span>
                         <b className="font-mono text-emerald-600">{formatCurrency(resumen.utilidadTotal)}</b>
-                        <span className="text-muted/70"> ({resumen.totalPacas} unidades suyas)</span>
+                        <span className="text-muted/70"> ({resumen.totalPacas} unidades {modoEstimacion ? 'estimadas' : 'suyas'})</span>
+                      </p>
+                    ) : modoEstimacion && (
+                      <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                        Lo que piensas ganar por unidad. De aquí salen la utilidad y la inversión totales.
                       </p>
                     )}
                   </div>
@@ -3378,7 +3400,6 @@ export default function Contenedores() {
                       </p>
                     )}
                   </div>
-                  </>)}
 
                   {/* Cifras derivadas: no se escriben, se calculan solas.
                       Siguen el interruptor de moneda del resumen, que está más
@@ -3386,7 +3407,7 @@ export default function Contenedores() {
                       leyendo, o se confundirían dólares con pesos. */}
                   <div className="col-span-2 md:col-span-3">
                     <p className="text-[9px] font-bold text-muted uppercase tracking-wide mb-1.5">
-                      Cifras automáticas · {mostrarAlterna
+                      Cifras {modoEstimacion ? 'automáticas estimadas' : 'automáticas'} · {mostrarAlterna
                         ? 'en dólares y pesos'
                         : `en ${monedaVista === 'USD' ? 'dólares' : 'pesos'}`}
                       {!tasaValida && <span className="text-warning ml-1">(falta la tasa: se leen en pesos)</span>}
@@ -3394,13 +3415,13 @@ export default function Contenedores() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
                       { l: 'Total costo', v: resumen.costoTotal, ayuda: 'Todas las facturas de proveedores + los servicios que les corresponden' },
-                      // Utilidad e inversión salen de campos que la estimación ya
-                      // no muestra: enseñarlas aquí sería enseñar una cifra sin
-                      // origen visible.
-                      ...(modoEstimacion ? [] : [
-                        { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
-                        { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
-                      ]),
+                      // Utilidad e inversión se enseñan también en la estimación:
+                      // ahora la utilidad por unidad se pregunta arriba, así que
+                      // las dos tienen origen visible. Ocultarlas dejaba la
+                      // estimación sin la cifra que de verdad se necesita antes
+                      // de comprar: cuánta plata hay que poner.
+                      { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
+                      { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
                       { l: 'Total servicios', v: resumen.costoServicios, ayuda: 'Solo servicios, sin proveedores de mercancía' },
                     ].map((c, i) => (
                       <div key={i} className="rounded-xl bg-primary/5 border border-border px-3 py-2" title={c.ayuda}>
@@ -3430,9 +3451,10 @@ export default function Contenedores() {
                         )}
                       </p>
                     </div>
-                    {/* El precio sugerido SUMA utilidad y gastos al costo: en
-                        estimación esos dos sumandos no se piden, así que la
-                        cifra no tendría de dónde salir.
+                    {/* El precio sugerido SUMA utilidad y gastos al costo. En la
+                        estimación sale igual: los dos sumandos se piden aquí
+                        arriba, y saber a cuánto habría que vender es media
+                        decisión de si el contenedor se compra o no.
 
                         El sumando de costo es la MERCANCÍA por unidad, no el
                         costo unitario completo: ese ya lleva dentro los
@@ -3442,7 +3464,7 @@ export default function Contenedores() {
                         PRECIOSINTERNOS del Excel (mercancía + gastos +
                         utilidad); antes la pantalla proponía un precio más alto
                         que el del entregable que se le pasa al cliente. */}
-                    {!modoEstimacion && parseMonto(formData.utilidad_unitaria) > 0 && (
+                    {parseMonto(formData.utilidad_unitaria) > 0 && (
                       <div className="rounded-xl bg-secondary/8 border border-secondary/20 px-3 py-2 col-span-2"
                            title="Mercancía por unidad + gastos por unidad + utilidad por unidad (la misma cuenta del Excel de precios internos)">
                         <p className="text-[9px] font-bold text-secondary uppercase tracking-wide">Precio de venta sugerido</p>
@@ -3931,63 +3953,82 @@ export default function Contenedores() {
                         </div>
                         )}
 
-                        {/* Cómo se reparte este servicio. Compartido: se divide
-                            entre TODO el contenedor y se imputa la parte de las
-                            unidades propias. Propio: se asume entero. */}
-                        {resumen.serviciosDetalle[si]?.costoFacturado > 0 && (() => {
+                        {/* ── Qué cuesta y cómo se reparte ─────────────
+                            Tres cifras que antes salían TODAS con formatCOP, es
+                            decir con símbolo de peso, aunque el servicio
+                            estuviera facturado en dólares y aunque el resumen
+                            estuviera puesto en dólares: quien ponía el servicio
+                            en USD seguía leyendo pesos y no había manera de
+                            saberlo.
+
+                            Ahora la primera va en la moneda DEL SERVICIO —que es
+                            lo que le factura el proveedor, el dato que se compara
+                            contra su factura— y las otras dos siguen el
+                            interruptor del resumen, porque son ya cifras
+                            convertidas y prorrateadas del contenedor. */}
+                        {(() => {
                           const d = resumen.serviciosDetalle[si];
+                          if (!(d?.costoFacturado > 0)) return null;
+                          const monedaSrv = srv.moneda || 'COP';
+                          const esEst = !(parseFloat(srv.costo) > 0);
                           const compartido = resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas;
+                          // Sin unidades no hay entre qué repartir: enseñar
+                          // "÷ 0 und." y un "por unidad" de 0 es peor que decir
+                          // qué falta para que la cuenta salga.
+                          const hayUnidades = resumen.totalPacas > 0;
+                          const divisor = d.propio ? resumen.totalPacas : resumen.baseProrrateo;
                           return (
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-primary/[0.03] border border-border/60 px-2.5 py-1.5 text-[11px]">
-                            <span className="text-muted">
-                              Por unidad{' '}
-                              <b className="font-mono text-primary">{formatCurrency(d.costoUnitario)}</b>
-                              <span className="text-muted/70">
-                                {d.propio
-                                  ? ` (÷ ${resumen.totalPacas || 0} suyas)`
-                                  : ` (÷ ${resumen.baseProrrateo || 0} und.)`}
+                          <div className="rounded-lg bg-primary/[0.03] border border-border/60 px-2.5 py-1.5 text-[11px] space-y-1">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                              <span className="text-muted">
+                                Le factura{' '}
+                                <b className="font-mono text-primary">{fmtPropia(d.costoOriginal, monedaSrv)} {monedaSrv}</b>
+                                {monedaSrv === 'USD' && tasaValida && (
+                                  <span className="text-muted/70"> ≈ {formatCurrency(d.costoFacturado)} COP</span>
+                                )}
                               </span>
-                            </span>
-                            <span className="text-muted">
-                              Le corresponde{' '}
-                              <b className="font-mono text-secondary">{formatCurrency(d.costo)}</b>
-                              <span className="text-muted/70">
-                                {d.propio ? ' (entero)' : ` (× ${resumen.totalPacas} suyas)`}
-                              </span>
-                            </span>
-                            {d.propio ? (
-                              <span className="text-[10px] font-semibold text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">
-                                propio · no se reparte
-                              </span>
-                            ) : compartido && (
-                              <span className="text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
-                                compartido
-                              </span>
+                              {esEst && (
+                                <span className="text-[10px] font-semibold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                  estimado
+                                </span>
+                              )}
+                              {d.propio ? (
+                                <span className="text-[10px] font-semibold text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">
+                                  propio · no se reparte
+                                </span>
+                              ) : compartido && (
+                                <span className="text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
+                                  compartido
+                                </span>
+                              )}
+                            </div>
+                            {hayUnidades ? (
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                <span className="text-muted">
+                                  Por unidad{' '}
+                                  <b className="font-mono text-primary">{fmtVista(d.costoUnitario, { unitario: true })}</b>
+                                  {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(d.costoUnitario, { unitario: true })}</span>}
+                                  <span className="text-muted/70">
+                                    {' '}(÷ {divisor} {d.propio ? 'suyas' : 'und.'})
+                                  </span>
+                                </span>
+                                <span className="text-muted">
+                                  Le corresponde{' '}
+                                  <b className="font-mono text-secondary">{fmtVista(d.costo)}</b>
+                                  {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(d.costo)}</span>}
+                                  <span className="text-muted/70">
+                                    {d.propio ? ' (entero)' : ` (× ${resumen.totalPacas} suyas)`}
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              <p className="text-warning">
+                                Todavía no hay unidades: {modoEstimacion
+                                  ? 'escribe la cantidad estimada de algún proveedor'
+                                  : 'registra las líneas de algún proveedor'} para poder repartir este servicio.
+                              </p>
                             )}
                           </div>
-                          );
-                        })()}
-
-                        {/* El equivalente en pesos de un servicio en dólares.
-                            Antes solo salía si había costo REAL, y en una
-                            estimación ese campo se vacía siempre: un flete
-                            estimado en dólares no decía en ninguna parte cuánta
-                            plata era. Ahora se calcula sobre lo que vale HOY el
-                            servicio, facturado o estimado. */}
-                        {(() => {
-                          const monedaSrv = srv.moneda || 'COP';
-                          const costoSrv = costoServicioEfectivo(srv);
-                          if (monedaSrv !== 'USD' || !(costoSrv > 0) || !tasaValida) return null;
-                          const esEst = !(parseFloat(srv.costo) > 0);
-                          return (
-                            <div className="flex items-center gap-2 pl-1">
-                              <span className="text-[10px] text-muted">≈</span>
-                              <span className="text-sm font-semibold font-mono text-secondary tabular-nums">
-                                {formatCurrency(costoSrv * tasaVista)}
-                              </span>
-                              <span className="text-[10px] font-medium text-muted bg-secondary/10 px-1.5 py-0.5 rounded">COP</span>
-                              {esEst && <span className="text-[10px] text-amber-600">estimado</span>}
-                            </div>
                           );
                         })()}
                         <input type="text" className={inp} placeholder="Notas (opcional)"
