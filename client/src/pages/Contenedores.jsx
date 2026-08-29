@@ -26,11 +26,18 @@ import { descargarExcel } from '../lib/descargar';
 import {
   etiquetaEstado, hayEstimadoProveedor, vieneDeEstimacion,
   esServicioPropio, costoServicioEfectivo, costoProveedorEfectivo,
-  costoServicioAsignado,
+  costoServicioAsignado, claveCombinacion, costosPorCombinacion,
+  costoUnitarioTotalCOP, serviciosPorUnidadGuardados,
 } from '../lib/contenedor';
 
 // ── Constants ────────────────────────────────────────────────────
 const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
+
+// La raya de una cabecera de tabla PEGAJOSA. Va como sombra interior y no como
+// borde porque un `border-bottom` lo pinta la TABLA, no la celda: al despegarse
+// la cabecera se queda clavado en su sitio y el encabezado acaba flotando sin
+// línea sobre las filas. Misma solución y mismo motivo que en Separación Masiva.
+const RAYA_CABECERA = { boxShadow: 'inset 0 -1px 0 var(--color-border)' };
 
 // Las dos monedas con las que trabaja un contenedor. Todo lo de adentro se
 // captura en una de ellas y la tasa del contenedor las une.
@@ -772,6 +779,11 @@ export default function Contenedores() {
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
   const [combsFinalizacion, setCombsFinalizacion] = useState([]);
+  // Los dos sumandos que comparten TODOS los productos del contenedor: los
+  // servicios por unidad y la utilidad por unidad. Se calculan una vez al abrir
+  // el modal y se enseñan aparte, porque repetirlos en cada fila de la tabla es
+  // ruido: lo que cambia de un producto a otro es solo la mercancía.
+  const [baseFinalizacion, setBaseFinalizacion] = useState({ serviciosUnidad: 0, serviciosDerivados: false, utilidadUnidad: 0 });
   const [preciosAutocompletados, setPreciosAutocompletados] = useState(new Set());
 
   // ── Templates ─────────────────────────────────────────────────
@@ -2568,23 +2580,46 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
+
+      // Lo que cuesta CADA producto por su cuenta, no el promedio del
+      // contenedor: es lo único con lo que se puede decidir a cuánto vender una
+      // chaqueta sin que la subvencione un jean. Vive en lib/contenedor.js para
+      // poder probarlo sin navegador.
+      const costosComb = costosPorCombinacion(full);
+      const { valor: serviciosUnidad, derivado: serviciosDerivados } = serviciosPorUnidadGuardados(full);
+      const utilidadUnidad = parseFloat(full.utilidad_unitaria) || 0;
+
       const combMap = new Map();
       full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => {
         const cantidad = parseInt(d.cantidad_final) || 0;
         if (cantidad === 0 && full.estado === 'revision') return;
-        const clasificacion = d.clasificacion_recibida || d.clasificacion;
-        const referencia    = d.referencia_recibida    || d.referencia;
-        const calidad       = d.calidad_recibida       || d.calidad || '';
-        const categoria     = d.categoria || '';
-        const key = `${categoria}|${clasificacion}|${referencia}|${calidad}`;
+        const { categoria, clasificacion, referencia, calidad, key } = claveCombinacion(d);
         if (!combMap.has(key)) {
           combMap.set(key, { categoria, clasificacion, referencia, calidad, key, cantidad });
         } else {
           combMap.get(key).cantidad += cantidad;
         }
       }));
-      const combs = Array.from(combMap.values());
+      const combs = Array.from(combMap.values()).map((c) => {
+        const costo = costosComb.get(c.key) || { costoUnitarioCOP: 0, sinCosto: true };
+        return {
+          ...c,
+          // Mercancía de ESTE producto, ya en pesos y ponderada entre proveedores.
+          costoMercanciaUnidad: costo.costoUnitarioCOP,
+          // Lo mínimo a cobrar para no perder y sacar la utilidad fijada. Misma
+          // cuenta que la hoja PRECIOSINTERNOS del Excel.
+          minimo: costoUnitarioTotalCOP(costo.costoUnitarioCOP, {
+            serviciosPorUnidad: serviciosUnidad,
+            utilidadPorUnidad: utilidadUnidad,
+          }),
+          // Lo que cuesta de verdad ponerlo en la bodega, sin la utilidad: la
+          // base de la ganancia real.
+          costoRealUnidad: costo.costoUnitarioCOP + serviciosUnidad,
+          sinCosto: costo.sinCosto,
+        };
+      });
       setCombsFinalizacion(combs);
+      setBaseFinalizacion({ serviciosUnidad, serviciosDerivados, utilidadUnidad });
 
       // Autocompletar precios preestablecidos — una sola llamada por par único (categoria+calidad)
       const uniquePairs = [...new Set(
@@ -2687,6 +2722,18 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       const updated = { ...next[idx], [field]: val };
       // Cantidad final siempre refleja lo recibido (lo que entra al inventario).
       if (field === 'cantidad_recibida') updated.cantidad_final = val;
+      // La categoría se rellena sola al elegir la referencia, igual que en el
+      // alta: cada referencia del catálogo ya sabe a cuál pertenece.
+      //
+      // SOLO para 'referencia', que es el campo de las líneas agregadas a mano.
+      // Nunca para 'referencia_recibida': ahí se está corrigiendo QUÉ llegó en
+      // una línea que sí venía facturada, y su categoría es la de la factura —
+      // reescribirla sería cambiar el documento original. Y si la referencia no
+      // tiene categoría asignada NO se borra la que hubiera: sería perder un dato.
+      if (field === 'referencia') {
+        const cat = referenciaPorNombre(val)?.temporada_nombre;
+        if (cat) updated.categoria = cat;
+      }
       next[idx] = updated;
       return next;
     });
@@ -2819,9 +2866,16 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
     };
   };
 
+  // El precio tal y como lo va a leer el servidor. Existe como funcion suelta
+  // para que la pantalla y el guardado no lo interpreten de dos maneras: la
+  // ganancia que se ensena tiene que salir del MISMO numero que se manda.
+  // parseFloat y no parseMonto porque es lo que valida handleFinalizar y lo que
+  // viaja en el payload, y PriceInput ya guarda el valor con punto decimal.
+  const precioTecleado = (key) => parseFloat(preciosVenta[key]) || 0;
+
   const handleFinalizar = async () => {
     for (const c of combsFinalizacion) {
-      const pv = parseFloat(preciosVenta[c.key]);
+      const pv = precioTecleado(c.key);
       if (isNaN(pv) || pv <= 0) {
         addToast(`Falta precio de venta para "${c.clasificacion} / ${c.referencia} / ${c.calidad}"`, 'error'); return;
       }
@@ -3490,40 +3544,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       </p>
                     )}
                   </div>
-                  {/* Los gastos por unidad NO se deciden: son una cuenta que esta
-                      misma pantalla ya hace más abajo ("Servicios por unidad").
-                      Tecleados a mano acababan discrepando de los servicios
-                      registrados, y de esta cifra cuelgan el módulo de Utilidad y
-                      el precio de venta sugerido. */}
-                  <div>
-                    <label htmlFor="cont-gastos" className={lbl}>
-                      Gastos por unidad (COP)
-                      <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
-                    </label>
-                    <input id="cont-gastos" type="text" readOnly tabIndex={-1}
-                      className={`${inp} bg-primary/5 text-primary font-mono font-bold tabular-nums cursor-not-allowed select-none`}
-                      placeholder="0"
-                      value={formData.gastos_unitarios === '' ? '' : formatNumero(parseMonto(formData.gastos_unitarios))}
-                      title="Costo de los servicios que les corresponden ÷ unidades propias. Se calcula solo." />
-                    {resumen.costoServiciosPorUnidad > 0 ? (
-                      <p className="text-[10px] text-muted mt-0.5">
-                        Servicios suyos ({formatCurrency(resumen.costoServicios)}) ÷ {resumen.totalPacas || 0} unidades suyas.
-                        {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && ' Contenedor compartido: ya es la parte proporcional.'}
-                      </p>
-                    ) : formData.gastos_unitarios !== '' ? (
-                      /* Cifra guardada de antes, sin servicios que la respalden:
-                         se conserva tal cual (no se manda null al guardar) y se
-                         dice qué hacer para que vuelva a calcularse sola. */
-                      <p className="text-[10px] text-warning mt-0.5 leading-tight">
-                        Sin servicios registrados: se conserva el valor guardado. Da de alta los gastos
-                        como servicios, abajo, para que la cifra se calcule sola.
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-muted mt-0.5">
-                        Sale de los servicios de abajo ÷ unidades suyas. Todavía no hay ninguno.
-                      </p>
-                    )}
-                  </div>
+                  {/* Aquí vivía la casilla "Gastos por unidad (COP)". Se retira:
+                      enseñaba EXACTAMENTE la misma cifra que la tarjeta
+                      "Servicios por unidad" de dos bloques más abajo —las dos
+                      salen de `resumen.costoServiciosPorUnidad`—, y tener el
+                      mismo número dos veces con dos nombres distintos hacía
+                      pensar que eran dos cosas que se suman.
+
+                      El VALOR no desaparece: el efecto de más arriba lo sigue
+                      calculando en `formData.gastos_unitarios`, se sigue
+                      guardando, y de él siguen colgando el precio de venta
+                      sugerido de aquí abajo y la hoja PRECIOSINTERNOS de los
+                      entregables. Lo único que se fue es la casilla. */}
 
                   {/* Cifras derivadas: no se escriben, se calculan solas.
                       Siguen el interruptor de moneda del resumen, que está más
@@ -3561,8 +3593,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         )}
                       </div>
                     ))}
+                    {/* Esta tarjeta es la que sobrevive de las dos que enseñaban
+                        la misma cifra, así que hereda lo que explicaba la otra:
+                        de dónde sale, y el aviso de los contenedores viejos con
+                        la cifra tecleada a mano y ningún servicio dado de alta
+                        que la respalde. Sin ese aviso, esos contenedores
+                        enseñarían $0 aquí y guardarían otra cosa. */}
                     <div className="rounded-xl bg-primary/5 border border-border px-3 py-2 col-span-2"
-                         title="Total de servicios dividido entre las unidades propias">
+                         title="Total de servicios que les corresponde, dividido entre las unidades propias. Es lo que se guarda como gastos por unidad.">
                       <p className="text-[9px] font-bold text-muted uppercase tracking-wide flex items-center gap-1">
                         Servicios por unidad
                         <span className="text-[8px] text-secondary bg-secondary/10 px-1 rounded">AUTO</span>
@@ -3574,6 +3612,23 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           <span className="text-[10px] font-normal text-muted ml-1.5">· {fmtAlterna(resumen.costoServiciosPorUnidad, { unitario: true })}</span>
                         )}
                       </p>
+                      {resumen.costoServiciosPorUnidad > 0 ? (
+                        <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                          Servicios suyos ({formatCurrency(resumen.costoServicios)}) ÷ {resumen.totalPacas || 0} unidades suyas.
+                          {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && ' Contenedor compartido: ya es la parte proporcional.'}
+                        </p>
+                      ) : parseMonto(formData.gastos_unitarios) > 0 ? (
+                        <p className="text-[10px] text-warning mt-0.5 leading-tight">
+                          Sin servicios registrados, pero este contenedor tiene guardados{' '}
+                          <b className="font-mono">{formatCurrency(parseMonto(formData.gastos_unitarios))}</b> por unidad,
+                          tecleados en su día. Se conservan. Da de alta esos gastos como servicios, abajo,
+                          para que la cifra se calcule sola.
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                          Sale de los servicios de abajo ÷ unidades suyas. Todavía no hay ninguno.
+                        </p>
+                      )}
                     </div>
                     {/* El precio sugerido SUMA utilidad y gastos al costo. En la
                         estimación sale igual: los dos sumandos se piden aquí
@@ -5127,143 +5182,322 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           FINALIZAR MODAL
       ════════════════════════════════════════════════════════ */}
       {selectedContenedor && (
-        <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title="Finalizar Contenedor" size="lg">
-          <div className="space-y-5">
-            {(() => {
-              const totalFinal = parseInt(selectedContenedor.total_pacas_recibidas) || parseInt(selectedContenedor.total_pacas);
-              const costoFinal = totalFinal > 0 ? parseFloat(selectedContenedor.costo_total) / totalFinal : parseFloat(selectedContenedor.costo_unitario);
-              const costoOriginal = parseFloat(selectedContenedor.costo_unitario);
-              const recalculado = totalFinal !== parseInt(selectedContenedor.total_pacas);
-              return (
-                <div className="relative overflow-hidden rounded-2xl bg-primary/5 border border-primary/10 p-5 text-center">
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <DollarSign size={16} className="text-muted" />
-                    <p className="text-xs font-semibold text-primary uppercase tracking-wider">Costo total del contenedor</p>
-                  </div>
-                  <p className="text-4xl font-display font-bold text-primary tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</p>
-                  <p className="text-xs text-muted mt-1">
-                    {totalFinal?.toLocaleString('es-CO')} unidades · mercancía + servicios
-                  </p>
+        <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title={`Finalizar — ${selectedContenedor.numero}`} size="xl">
+          {(() => {
+            const totalFinal = parseInt(selectedContenedor.total_pacas_recibidas) || parseInt(selectedContenedor.total_pacas);
+            const costoFinal = totalFinal > 0 ? parseFloat(selectedContenedor.costo_total) / totalFinal : parseFloat(selectedContenedor.costo_unitario);
+            const costoOriginal = parseFloat(selectedContenedor.costo_unitario);
+            const recalculado = totalFinal !== parseInt(selectedContenedor.total_pacas);
 
-                  <div className="mt-3 pt-3 border-t border-primary/10">
-                    <div className="flex items-center justify-center gap-2 flex-wrap">
-                      <span className="text-xs text-muted uppercase tracking-wider">Costo por unidad</span>
-                      <span className="text-lg font-display font-bold text-secondary tabular-nums">{formatCurrency(costoFinal)}</span>
-                    </div>
-                    {recalculado && (
-                      <p className="text-[11px] text-blue-600 mt-1 font-medium">
-                        Recalculado para {totalFinal} unidades (originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas})
+            // ── Dólares ──
+            // La tasa sale del CONTENEDOR, no de `formData`: este modal se abre
+            // desde la lista y nunca rellena el formulario, así que `tasaVista`
+            // sería la de otro contenedor o ninguna.
+            //
+            // El umbral es > 1 por lo mismo que en el resumen: con tasa 1
+            // dividir no convierte nada, solo repinta el mismo número con otro
+            // símbolo, y eso es peor que no enseñarlo.
+            const tasaCont = parseFloat(selectedContenedor.tasa_conversion) || 0;
+            const hayTasa = tasaCont > 1;
+            const enUSD = (cop) => (parseFloat(cop) || 0) / tasaCont;
+
+            const { serviciosUnidad, serviciosDerivados, utilidadUnidad } = baseFinalizacion;
+            const avance = avanceFinalizacion(selectedContenedor);
+            const faltaAlgo = avance && !avance.todoListo;
+
+            // Totales del pie. La ganancia que se suma es la REAL —precio menos
+            // lo que de verdad cuesta puesto en bodega—, no la que sobra del
+            // mínimo: es la plata que entra si todo se vende a estos precios.
+            const conPrecio = combsFinalizacion.filter(c => precioTecleado(c.key) > 0);
+            const gananciaTotal = conPrecio.reduce(
+              (t, c) => t + (precioTecleado(c.key) - c.costoRealUnidad) * (c.cantidad || 0), 0);
+            const ventaTotal = conPrecio.reduce(
+              (t, c) => t + precioTecleado(c.key) * (c.cantidad || 0), 0);
+            const faltanPrecios = combsFinalizacion.length - conPrecio.length;
+
+            return (
+            <div className="flex flex-col gap-4">
+
+              {/* ══ Cabecera: las cifras del contenedor, en una sola fila ══
+                  Antes eran tres cajas apiladas que se comían media pantalla y
+                  dejaban la tabla de precios —que es a lo que se viene— debajo
+                  del pliegue. */}
+              <div className="rounded-2xl bg-primary/5 border border-primary/10 px-4 py-3">
+                <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                  <div>
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+                      <DollarSign size={12} /> Costo total del contenedor
+                    </p>
+                    <p className="text-3xl font-display font-bold text-primary tabular-nums leading-tight">
+                      {formatCurrency(selectedContenedor.costo_total)}
+                    </p>
+                    {hayTasa && (
+                      <p className="text-xs font-mono text-muted tabular-nums">
+                        {fmtPropia(enUSD(selectedContenedor.costo_total), 'USD')} USD
                       </p>
                     )}
-                    <p className="text-[11px] text-muted mt-1">Se asignará como <strong className="text-primary">costo_base</strong> a cada unidad</p>
                   </div>
-                </div>
-              );
-            })()}
-            {/* Aviso explícito: como ahora se puede guardar el contenedor a medias,
-                este es el punto donde hay que ver si quedó algo sin registrar. */}
-            {(() => {
-              const a = avanceFinalizacion(selectedContenedor);
-              if (!a || a.todoListo) return null;
-              return (
-                <div className="rounded-xl border-2 border-warning/40 bg-warning/10 px-4 py-3.5">
-                  <p className="text-sm font-bold text-warning flex items-center gap-2 mb-2">
-                    <AlertTriangle size={16} className="flex-shrink-0" />
-                    Falta información por completar
-                  </p>
-                  {!a.cuadra && (
-                    <p className="text-sm text-primary">
-                      Tienes <b>{a.sumLineas.toLocaleString('es-CO')}</b> unidades distribuidas,
-                      pero el contenedor declara <b>{a.totalDeclarado.toLocaleString('es-CO')}</b>
-                      {a.faltan > 0
-                        ? <> — <b className="text-warning">faltan {a.faltan.toLocaleString('es-CO')}</b>.</>
-                        : <> — hay <b className="text-error">{Math.abs(a.faltan).toLocaleString('es-CO')} de más</b>.</>}
-                    </p>
-                  )}
-                  {a.serviciosPendientes.length > 0 && (
-                    <p className="text-sm text-primary mt-1.5">
-                      Hay <b>{a.serviciosPendientes.length} servicio{a.serviciosPendientes.length !== 1 ? 's' : ''} sin costo real</b>:{' '}
-                      <span className="text-muted">{a.serviciosPendientes.join(', ')}</span>.
-                      Si finalizas así, el costo por unidad saldrá <b className="text-warning">más bajo de lo real</b>.
-                    </p>
-                  )}
-                  {a.pendientes.length > 0 && (
-                    <ul className="mt-2 space-y-0.5">
-                      {a.pendientes.map((p, i) => (
-                        <li key={i} className="text-xs text-muted flex items-center justify-between gap-2">
-                          <span className="truncate">{p.nombre}</span>
-                          <span className="font-mono tabular-nums flex-shrink-0">
-                            {p.registrada}{p.estimada > 0 && `/${p.estimada}`}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="text-xs text-muted mt-2.5 pt-2 border-t border-warning/25">
-                    Si finalizas así, el costo por unidad se repartirá entre <b className="text-primary">{a.totalDeclarado.toLocaleString('es-CO')}</b> unidades
-                    y solo entrarán al inventario las que estén distribuidas. Puedes cerrar esta ventana y completar lo que falta desde <b className="text-primary">Editar</b>.
-                  </p>
-                </div>
-              );
-            })()}
 
-            <div className="flex items-start gap-3 bg-primary/5 rounded-xl px-4 py-3 text-sm text-muted">
-              <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
-              <p>Se crearán <strong className="text-primary">{selectedContenedor.total_pacas_recibidas ?? selectedContenedor.total_pacas} unidades</strong> en el inventario y un nuevo lote. Esta acción es irreversible.</p>
-            </div>
-            <div>
-              <p className={lbl}>Precio de Venta por Clasificación / Referencia / Calidad</p>
-              <div className="rounded-xl border border-border/60 bg-surface overflow-hidden divide-y divide-border/40">
-                {combsFinalizacion.map((comb) => (
-                  <div key={comb.key} className="flex items-center justify-between px-4 py-3 gap-4">
-                    <div className="flex items-center gap-2 flex-1 flex-wrap">
-                      {comb.categoria && (
-                        <><span className="capitalize text-xs font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded">{comb.categoria}</span>
-                        <ArrowRight size={13} className="text-muted flex-shrink-0" /></>
-                      )}
-                      <span className="capitalize text-sm font-semibold bg-secondary/10 text-secondary px-2.5 py-1 rounded-lg">{comb.clasificacion}</span>
-                      <ArrowRight size={13} className="text-muted flex-shrink-0" />
-                      <span className="capitalize text-sm text-muted">{comb.referencia}</span>
-                      {comb.calidad && (
-                        <><ArrowRight size={13} className="text-muted flex-shrink-0" />
-                        <span className="capitalize text-sm text-muted">{comb.calidad}</span></>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {comb.cantidad != null && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/8 text-primary text-xs font-bold tabular-nums whitespace-nowrap">
-                          <Boxes size={11} />
-                          {comb.cantidad} {comb.cantidad === 1 ? 'paca' : 'pacas'}
-                        </span>
-                      )}
-                      {preciosAutocompletados.has(comb.key) && (
-                        <span className="text-xs text-secondary font-medium whitespace-nowrap">⚡ Preset</span>
-                      )}
-                      <span className="text-xs text-muted">$</span>
-                      <PriceInput
-                        className={`${inp} w-32 text-right font-mono ${preciosAutocompletados.has(comb.key) ? 'border-secondary/50 bg-secondary/5' : ''}`} placeholder="0.00"
-                        aria-label={`Precio de venta de ${comb.clasificacion} ${comb.referencia}${comb.calidad ? ' ' + comb.calidad : ''}`}
-                        value={preciosVenta[comb.key] || ''}
-                        onChange={(val) => {
-                          setPreciosVenta({ ...preciosVenta, [comb.key]: val });
-                          setPreciosAutocompletados(prev => { const s = new Set(prev); s.delete(comb.key); return s; });
-                        }} />
-                    </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Unidades</p>
+                    <p className="text-2xl font-display font-bold text-primary tabular-nums leading-tight">
+                      {totalFinal?.toLocaleString('es-CO')}
+                    </p>
+                    <p className="text-[11px] text-muted">mercancía + servicios</p>
                   </div>
-                ))}
+
+                  <div>
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Costo por unidad</p>
+                    <p className="text-2xl font-display font-bold text-secondary tabular-nums leading-tight">
+                      {formatCurrency(costoFinal)}
+                    </p>
+                    {hayTasa && (
+                      <p className="text-xs font-mono text-muted tabular-nums">
+                        {fmtPropia(enUSD(costoFinal), 'USD', { unitario: true })} USD
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-start gap-1">
+                    {hayTasa ? (
+                      <span className="text-[11px] bg-primary/8 text-muted px-2 py-0.5 rounded-full"
+                            title="Tasa con la que se convirtieron los dólares de este contenedor">
+                        Tasa {tasaCont.toLocaleString('es-CO')}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-warning" title="Sin tasa no se puede convertir a dólares">
+                        Sin tasa USD→COP
+                      </span>
+                    )}
+                    <span className="text-[11px] text-muted">
+                      se asigna como <b className="text-primary">costo base</b> a cada unidad
+                    </span>
+                  </div>
+                </div>
+
+                {recalculado && (
+                  <p className="text-xs text-blue-600 mt-2 pt-2 border-t border-primary/10 font-medium">
+                    Recalculado para {totalFinal} unidades — originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas}.
+                  </p>
+                )}
+              </div>
+
+              {/* ══ Lo que falta, plegado ══
+                  El aviso tenía hasta cuatro párrafos y una lista, y empujaba la
+                  tabla fuera de la pantalla. Se queda la línea que importa; el
+                  detalle se despliega solo si se quiere leer. */}
+              {faltaAlgo && (
+                <details className="rounded-xl border-2 border-warning/40 bg-warning/10 px-4 py-2.5">
+                  <summary className="text-sm font-bold text-warning flex items-center gap-2 cursor-pointer select-none">
+                    <AlertTriangle size={15} className="flex-shrink-0" />
+                    Falta información por completar
+                    <span className="font-normal text-xs text-muted ml-auto">ver detalle</span>
+                  </summary>
+                  <div className="mt-2.5 pt-2.5 border-t border-warning/25 space-y-1.5">
+                    {!avance.cuadra && (
+                      <p className="text-sm text-primary">
+                        Tienes <b>{avance.sumLineas.toLocaleString('es-CO')}</b> unidades distribuidas,
+                        pero el contenedor declara <b>{avance.totalDeclarado.toLocaleString('es-CO')}</b>
+                        {avance.faltan > 0
+                          ? <> — <b className="text-warning">faltan {avance.faltan.toLocaleString('es-CO')}</b>.</>
+                          : <> — hay <b className="text-error">{Math.abs(avance.faltan).toLocaleString('es-CO')} de más</b>.</>}
+                      </p>
+                    )}
+                    {avance.serviciosPendientes.length > 0 && (
+                      <p className="text-sm text-primary">
+                        Hay <b>{avance.serviciosPendientes.length} servicio{avance.serviciosPendientes.length !== 1 ? 's' : ''} sin costo real</b>:{' '}
+                        <span className="text-muted">{avance.serviciosPendientes.join(', ')}</span>.
+                        Si finalizas así, el costo por unidad saldrá <b className="text-warning">más bajo de lo real</b>.
+                      </p>
+                    )}
+                    {avance.pendientes.length > 0 && (
+                      <ul className="space-y-0.5">
+                        {avance.pendientes.map((x, i) => (
+                          <li key={i} className="text-xs text-muted flex items-center justify-between gap-2">
+                            <span className="truncate">{x.nombre}</span>
+                            <span className="font-mono tabular-nums flex-shrink-0">
+                              {x.registrada}{x.estimada > 0 && `/${x.estimada}`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs text-muted pt-1.5">
+                      Puedes cerrar esta ventana y completar lo que falta desde <b className="text-primary">Editar</b>.
+                    </p>
+                  </div>
+                </details>
+              )}
+
+              {/* ══ De qué se compone el mínimo ══
+                  Los dos sumandos que comparten TODOS los productos van aquí una
+                  vez, no repetidos en cada fila: lo único que cambia de un
+                  producto a otro es la mercancía. */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted px-1">
+                <span className="font-semibold text-primary">Mínimo a cobrar</span>
+                <span>= mercancía del producto</span>
+                <span className="text-muted/50">+</span>
+                <span>servicios <b className="font-mono text-primary">{formatCurrency(serviciosUnidad)}</b>/u
+                  {serviciosDerivados && <span className="text-warning" title="Este contenedor no tenía guardados los servicios por unidad: se han deducido dividiendo el total de servicios entre las unidades"> (deducido)</span>}
+                </span>
+                <span className="text-muted/50">+</span>
+                <span>utilidad <b className="font-mono text-emerald-600">{formatCurrency(utilidadUnidad)}</b>/u
+                  {!(utilidadUnidad > 0) && <span className="text-warning" title="No se fijó utilidad por unidad en este contenedor: el mínimo solo cubre el costo"> (sin fijar)</span>}
+                </span>
+              </div>
+
+              {/* ══ La tabla de precios ══
+                  Con cabeceras de columna y una sola zona de scroll. Antes era una
+                  lista de filas flex sin títulos, donde no se sabía qué era cada
+                  número, y cada fila se comía 300 px fijos por la derecha.
+
+                  El max-h no es decorativo: sin un alto que respetar, la caja no
+                  se comporta como zona desplazable y la cabecera `sticky` no
+                  tiene contra qué pegarse. Mismo patrón que Separación Masiva. */}
+              <div className="overflow-x-auto max-h-[42vh] rounded-2xl border border-border/60 bg-surface">
+                <table className="w-full min-w-[720px] text-sm">
+                  {/* El sticky va también en cada <th>: en Safari un <thead>
+                      pegajoso no basta y la cabecera se iría con el scroll. */}
+                  <thead className="sticky top-0 z-[1]">
+                    <tr className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                      <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left   px-3 py-2 min-w-[230px]">Producto</th>
+                      <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-center px-2 py-2 w-[64px]">Pacas</th>
+                      <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[130px]"
+                          title="Mercancía de este producto + servicios por unidad + utilidad por unidad">
+                        Mínimo a cobrar
+                      </th>
+                      <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[130px]">Precio venta (COP)</th>
+                      <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[150px]">Ganancia</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {combsFinalizacion.map((comb) => {
+                      const precio = precioTecleado(comb.key);
+                      const hayPrecio = precio > 0;
+                      // Las dos lecturas de la ganancia. "Sobre el mínimo" es lo
+                      // que sobra de la utilidad que se fijó; "real" es lo que de
+                      // verdad se gana por unidad, utilidad incluida. Vendiendo
+                      // justo al mínimo la primera es 0 y la segunda es la
+                      // utilidad: sin enseñar las dos, ese 0 se lee como "no gano
+                      // nada" y no es verdad.
+                      const sobreMinimo = precio - comb.minimo;
+                      const real        = precio - comb.costoRealUnidad;
+                      const preset      = preciosAutocompletados.has(comb.key);
+                      return (
+                        <tr key={comb.key} className="hover:bg-primary/[0.03] transition-colors">
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {comb.categoria && (
+                                <span className="capitalize text-[10px] font-medium bg-primary/10 text-primary px-1.5 py-0.5 rounded">{comb.categoria}</span>
+                              )}
+                              <span className="capitalize text-xs font-semibold bg-secondary/10 text-secondary px-1.5 py-0.5 rounded">{comb.clasificacion}</span>
+                              <span className="capitalize text-xs text-muted">{comb.referencia}</span>
+                              {comb.calidad && <span className="capitalize text-xs text-muted/80">/ {comb.calidad}</span>}
+                              {comb.sinCosto && (
+                                <span className="text-[9px] font-bold uppercase text-warning bg-warning/10 px-1.5 py-0.5 rounded"
+                                      title="Alguna línea de este producto no tiene costo unitario registrado: su mínimo sale más bajo de lo real">
+                                  costo incompleto
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-2 py-1.5 text-center font-mono font-bold text-primary tabular-nums">
+                            {comb.cantidad}
+                          </td>
+
+                          <td className="px-2 py-1.5 text-right">
+                            <span className="font-mono font-semibold text-primary tabular-nums"
+                                  title={`Mercancía ${formatCurrency(comb.costoMercanciaUnidad)} + servicios ${formatCurrency(serviciosUnidad)} + utilidad ${formatCurrency(utilidadUnidad)}`}>
+                              {formatCurrency(comb.minimo)}
+                            </span>
+                            <span className="block text-[10px] text-muted font-mono tabular-nums">
+                              merc. {formatCurrency(comb.costoMercanciaUnidad)}
+                            </span>
+                          </td>
+
+                          <td className="px-2 py-1.5">
+                            <PriceInput
+                              className={`${inpBase} w-full text-right font-mono tabular-nums py-1.5 ${preset ? 'border-secondary/50 bg-secondary/5' : ''}`}
+                              placeholder="0"
+                              title={preset ? 'Precio preestablecido para esta categoría y calidad' : undefined}
+                              aria-label={`Precio de venta en pesos de ${comb.clasificacion} ${comb.referencia}${comb.calidad ? ' ' + comb.calidad : ''}`}
+                              value={preciosVenta[comb.key] || ''}
+                              onChange={(val) => {
+                                setPreciosVenta({ ...preciosVenta, [comb.key]: val });
+                                setPreciosAutocompletados(prev => { const s = new Set(prev); s.delete(comb.key); return s; });
+                              }} />
+                          </td>
+
+                          <td className="px-2 py-1.5 text-right">
+                            {!hayPrecio ? (
+                              <span className="text-xs text-muted/60">—</span>
+                            ) : (
+                              <>
+                                <span className={`block font-mono font-semibold tabular-nums ${sobreMinimo >= 0 ? 'text-success' : 'text-error'}`}
+                                      title="Lo que se gana POR ENCIMA del mínimo. Vendiendo justo al mínimo es 0, y aún así se gana la utilidad fijada.">
+                                  {sobreMinimo >= 0 ? '+' : ''}{formatCurrency(sobreMinimo)}
+                                  <span className="text-[10px] font-normal text-muted"> sobre el mínimo</span>
+                                </span>
+                                <span className="block text-[10px] font-mono text-muted tabular-nums"
+                                      title="Ganancia real por unidad: precio de venta menos lo que cuesta puesto en bodega (mercancía + servicios)">
+                                  {formatCurrency(real)} real / unidad
+                                </span>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="text-[11px] text-muted px-1 leading-relaxed">
+                El mínimo y la ganancia son para <b className="text-primary">decidir el precio</b>: a cada paca se le
+                asigna igualmente el costo base plano del contenedor ({formatCurrency(costoFinal)}), que es el que
+                después usa la utilidad de cada venta.
+              </p>
+
+              {/* ══ Pie pegajoso ══
+                  Los botones se iban con el scroll y en un contenedor con veinte
+                  productos había que bajar del todo para encontrarlos. El fondo
+                  es opaco a propósito: con uno translúcido la tabla se transparenta
+                  por debajo. Los márgenes negativos compensan el padding del Modal. */}
+              <div className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-surface border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-muted min-w-0">
+                  <p>
+                    <b className="text-primary">{combsFinalizacion.length}</b> producto{combsFinalizacion.length !== 1 ? 's' : ''}
+                    {' · '}<b className="text-primary tabular-nums">{totalFinal?.toLocaleString('es-CO')}</b> unidades
+                    {faltanPrecios > 0 && (
+                      <span className="text-warning font-semibold"> · faltan {faltanPrecios} precio{faltanPrecios !== 1 ? 's' : ''}</span>
+                    )}
+                  </p>
+                  {conPrecio.length > 0 && (
+                    <p className="mt-0.5">
+                      Vendiendo todo a estos precios: <b className="font-mono text-primary tabular-nums">{formatCurrency(ventaTotal)}</b>
+                      {' · '}ganancia <b className={`font-mono tabular-nums ${gananciaTotal >= 0 ? 'text-success' : 'text-error'}`}>{formatCurrency(gananciaTotal)}</b>
+                      {faltanPrecios > 0 && <span className="text-muted/70"> (solo los {conPrecio.length} con precio)</span>}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-muted/80">
+                    Se crearán {totalFinal?.toLocaleString('es-CO')} unidades y un lote nuevo. <b className="text-warning">Es irreversible.</b>
+                  </p>
+                </div>
+                <div className="flex gap-3 flex-shrink-0">
+                  <button type="button" onClick={() => setFinalizarModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
+                    Cancelar
+                  </button>
+                  <button onClick={handleFinalizar} disabled={submitting}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
+                    {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-1">
-              <button type="button" onClick={() => setFinalizarModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
-                Cancelar
-              </button>
-              <button onClick={handleFinalizar} disabled={submitting}
-                className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
-                {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
-              </button>
-            </div>
-          </div>
+            );
+          })()}
         </Modal>
       )}
 
@@ -5370,8 +5604,23 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
                           {/* Col 1: Enviado — solo lectura, salvo en los items agregados a mano */}
                           {row.es_nuevo ? (
-                            <div className="flex items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
+                            <div className="flex flex-wrap items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
                               <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
+                              {/* La CATEGORÍA se pedía en el alta pero no aquí, y estos
+                                  productos acaban siendo pacas igual que los demás: sin
+                                  ella nacían sin categoría, se agrupaban todos juntos al
+                                  finalizar, no encontraban su precio preestablecido
+                                  (que se busca por categoría + calidad) y salían con la
+                                  columna vacía en la matriz y en la reclamación.
+                                  Ancho fijo y no flex-1: las categorías son cortas y así
+                                  no le roba sitio a la referencia. */}
+                              <SelectCatalogo className={`${inpBase} text-xs w-28 flex-shrink-0 py-1.5`}
+                                placeholder="Categoría"
+                                title="Categoría del producto que llegó. Con la calidad determina el precio preestablecido."
+                                aria-label="Categoría del producto que llegó sin factura"
+                                opciones={opcionesCategoria}
+                                value={row.categoria}
+                                onChange={val => updateRevisionRow(idx, 'categoria', val)} />
                               {/* Elegibles y no escribibles por lo mismo que en el alta:
                                   estos productos también se convierten en pacas y su
                                   familia y su precio se buscan por NOMBRE en el catálogo. */}
@@ -5387,7 +5636,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 placeholder="Referencia *"
                                 title={`Referencia del producto que llegó${pistaFamilia(row.referencia)}`}
                                 aria-label="Referencia del producto que llegó sin factura"
-                                grupos={gruposReferencias('')}
+                                grupos={gruposReferencias(row.categoria)}
                                 value={row.referencia}
                                 onChange={val => updateRevisionRow(idx, 'referencia', val)} />
                               <SelectCatalogo className={`${inpBase} text-xs flex-1 min-w-0 py-1.5`}

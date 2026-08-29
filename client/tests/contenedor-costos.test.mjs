@@ -12,6 +12,8 @@
 import {
   costoServicioEfectivo, costoProveedorEfectivo, costoServicioAsignado,
   esServicioPropio, vieneDeEstimacion, hayEstimadoProveedor, etiquetaEstado,
+  claveCombinacion, costosPorCombinacion, costoUnitarioTotalCOP,
+  serviciosPorUnidadGuardados,
 } from '../src/lib/contenedor.js';
 
 let malos = 0;
@@ -131,6 +133,120 @@ grupo('El contenedor entero, como lo cuenta el servidor');
   comprobar('costo servicios', servicios, 4200000);
   comprobar('costo total', mercancia + servicios, 34200000);
   comprobar('costo por unidad', (mercancia + servicios) / propias, 114000);
+}
+
+grupo('Clave de agrupacion al finalizar');
+{
+  // Lo REVISADO manda: si al contar aparecio que la chaqueta era una chaqueta
+  // mixta, la paca se crea con lo que llego, no con lo que decia la factura.
+  const facturada = claveCombinacion({ categoria: 'Invierno', clasificacion: 'dama', referencia: 'chaqueta', calidad: 'primera' });
+  comprobar('sin revision usa lo facturado', facturada.key, 'Invierno|dama|chaqueta|primera');
+  const revisada = claveCombinacion({
+    categoria: 'Invierno', clasificacion: 'dama', referencia: 'chaqueta', calidad: 'primera',
+    referencia_recibida: 'chaqueta mixta', calidad_recibida: 'segunda',
+  });
+  comprobar('lo revisado pisa a lo facturado', revisada.key, 'Invierno|dama|chaqueta mixta|segunda');
+  comprobar('sin calidad no rompe la clave',
+    claveCombinacion({ clasificacion: 'dama', referencia: 'jean' }).key, '|dama|jean|');
+}
+
+grupo('Costo de mercancia por producto');
+{
+  // Misma referencia servida por DOS proveedores en monedas distintas.
+  //   Prov USD: 100 unidades x 40 USD x 4.000 = 16.000.000 COP
+  //   Prov COP: 100 unidades x 120.000 COP    = 12.000.000 COP
+  //   promedio ponderado = 28.000.000 / 200   =    140.000 COP/unidad
+  const cont = {
+    tasa_conversion: 4000,
+    proveedores_mercancia: [
+      { moneda: 'USD', detalles: [{ clasificacion: 'dama', referencia: 'chaqueta', calidad: 'primera', costo_unitario: 40, cantidad_final: 100 }] },
+      { moneda: 'COP', detalles: [{ clasificacion: 'dama', referencia: 'chaqueta', calidad: 'primera', costo_unitario: 120000, cantidad_final: 100 }] },
+    ],
+  };
+  const m = costosPorCombinacion(cont);
+  const c = m.get('|dama|chaqueta|primera');
+  comprobar('cantidad sumada de los dos proveedores', c.cantidad, 200);
+  comprobar('cada linea se convierte con SU moneda', c.costoMercanciaCOP, 28000000);
+  comprobar('promedio ponderado por unidad', c.costoUnitarioCOP, 140000);
+  comprobar('una sola combinacion', m.size, 1);
+}
+
+{
+  // Dos productos distintos no se mezclan, y el que no llego (cantidad_final 0)
+  // no aparece: no habra paca de el, asi que no hay precio que ponerle.
+  const cont = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama',   referencia: 'chaqueta', calidad: 'primera', costo_unitario: 100000, cantidad_final: 10 },
+      { clasificacion: 'hombre', referencia: 'jean',     calidad: 'segunda', costo_unitario: 50000,  cantidad_final: 4 },
+      { clasificacion: 'nino',   referencia: 'buzo',     calidad: 'primera', costo_unitario: 30000,  cantidad_final: 0 },
+    ] }],
+  };
+  const m = costosPorCombinacion(cont);
+  comprobar('dos productos, no tres', m.size, 2);
+  comprobar('chaqueta', m.get('|dama|chaqueta|primera').costoUnitarioCOP, 100000);
+  comprobar('jean', m.get('|hombre|jean|segunda').costoUnitarioCOP, 50000);
+  comprobar('lo que no llego no esta', m.has('|nino|buzo|primera'), false);
+}
+
+{
+  // Un producto que aparecio en la revision sin estar facturado: se guarda con
+  // cantidad 0 y cantidad_final real. Ponderando por `cantidad` se quedaria
+  // fuera del promedio y su costo desapareceria.
+  const cont = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera', costo_unitario: 80000, cantidad: 0, cantidad_final: 25 },
+    ] }],
+  };
+  comprobar('el excedente de la revision si cuenta',
+    costosPorCombinacion(cont).get('|dama|blusa|primera').costoUnitarioCOP, 80000);
+
+  // Una linea sin costo tecleado abarata el promedio: hay que poder avisarlo.
+  const flojo = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera', costo_unitario: 80000, cantidad_final: 10 },
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera', costo_unitario: 0,     cantidad_final: 10 },
+    ] }],
+  };
+  const c = costosPorCombinacion(flojo).get('|dama|blusa|primera');
+  comprobar('promedio con una linea en cero', c.costoUnitarioCOP, 40000);
+  comprobar('y queda marcada como incompleta', c.sinCosto, true);
+  comprobar('contenedor vacio no revienta', costosPorCombinacion({}).size, 0);
+}
+
+grupo('Minimo a cobrar por producto');
+{
+  // La misma cuenta de PRECIOSINTERNOS: mercancia + servicios + utilidad.
+  comprobar('mercancia + servicios + utilidad',
+    costoUnitarioTotalCOP(140000, { serviciosPorUnidad: 18000, utilidadPorUnidad: 60000 }), 218000);
+  comprobar('sin servicios ni utilidad es el costo pelado',
+    costoUnitarioTotalCOP(140000), 140000);
+  comprobar('nada definido da 0, no NaN', costoUnitarioTotalCOP(undefined, {}), 0);
+
+  // Vender justo al minimo deja EXACTAMENTE la utilidad fijada. Es la
+  // comprobacion que hace honesta la columna de ganancia de la pantalla.
+  const minimo = costoUnitarioTotalCOP(140000, { serviciosPorUnidad: 18000, utilidadPorUnidad: 60000 });
+  comprobar('sobre el minimo, vendiendo al minimo', minimo - minimo, 0);
+  comprobar('ganancia real, vendiendo al minimo', minimo - 140000 - 18000, 60000);
+}
+
+grupo('Servicios por unidad de un contenedor guardado');
+{
+  // Manda lo guardado: ya viene prorrateado y ya respeta los servicios propios.
+  comprobar('usa gastos_unitarios',
+    serviciosPorUnidadGuardados({ gastos_unitarios: '18000', costo_servicios_total: 999, total_pacas: 1 }).valor, 18000);
+  comprobar('y no lo marca como derivado',
+    serviciosPorUnidadGuardados({ gastos_unitarios: '18000' }).derivado, false);
+
+  // Contenedores guardados antes de que existiera esa columna.
+  const viejo = serviciosPorUnidadGuardados({ costo_servicios_total: 6000000, total_pacas: 300 });
+  comprobar('reserva: servicios entre unidades', viejo.valor, 20000);
+  comprobar('y se marca como derivado', viejo.derivado, true);
+  comprobar('manda lo recibido sobre lo pedido',
+    serviciosPorUnidadGuardados({ costo_servicios_total: 6000000, total_pacas: 300, total_pacas_recibidas: 200 }).valor, 30000);
+  comprobar('sin nada, 0 y no NaN', serviciosPorUnidadGuardados({}).valor, 0);
 }
 
 console.log(malos

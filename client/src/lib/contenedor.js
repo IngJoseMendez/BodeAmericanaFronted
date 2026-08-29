@@ -120,3 +120,112 @@ export function costoServicioAsignado(costoCOP, { propio = false, base = 0, prop
   const p = parseInt(propias) || 0;
   return b > 0 ? (costo / b) * p : costo;
 }
+
+// ── La clave con la que se agrupa un producto al finalizar ────────
+//
+// Categoría, clasificación, referencia y calidad. Las tres últimas en su versión
+// REVISADA cuando la hay: si al contar apareció que lo que llegó era otra cosa,
+// la paca se crea con lo que llegó, no con lo que decía la factura. La categoría
+// no tiene versión revisada, así que va tal cual.
+//
+// Tiene que dar EXACTAMENTE la misma cadena que el agrupador de la pantalla y
+// que la validación del servidor: si las tres claves no coinciden, el precio que
+// se teclea para un producto se le aplicaría a otro.
+export const claveCombinacion = (d = {}) => {
+  const clasificacion = d.clasificacion_recibida || d.clasificacion;
+  const referencia    = d.referencia_recibida    || d.referencia;
+  const calidad       = d.calidad_recibida       || d.calidad || '';
+  const categoria     = d.categoria || '';
+  return { categoria, clasificacion, referencia, calidad, key: `${categoria}|${clasificacion}|${referencia}|${calidad}` };
+};
+
+/**
+ * Cuánto cuesta CADA unidad de cada producto, en pesos, mirando solo la
+ * mercancía.
+ *
+ * POR QUÉ HACE FALTA
+ * El contenedor tiene un costo unitario ÚNICO —lo que cuesta en promedio cada
+ * paca— y ese es el que se le estampa a todas al finalizar. Pero para decidir a
+ * cuánto vender una chaqueta no sirve el promedio del contenedor: sirve lo que
+ * costó ESA chaqueta. Ese dato existe línea a línea (`costo_unitario`) y hasta
+ * ahora no se enseñaba en ninguna pantalla.
+ *
+ * LA CONVERSIÓN VA LÍNEA A LÍNEA, NO AL FINAL
+ * `costo_unitario` está en la moneda DEL PROVEEDOR. Una misma referencia puede
+ * venir de un proveedor en dólares y de otro en pesos; convertir la suma en vez
+ * de cada línea daría un número inventado. Por eso se multiplica por la tasa
+ * dentro del bucle y solo después se promedia.
+ *
+ * SE PONDERA POR `cantidad_final`, NO POR `cantidad`
+ * Es lo que de verdad llegó y lo que el servidor convierte en pacas. Además, los
+ * productos que aparecieron en la revisión sin estar facturados se guardan con
+ * `cantidad` en 0 pero con su `cantidad_final` real: ponderando por `cantidad`
+ * se quedarían fuera del promedio.
+ *
+ * @param {object} contenedor  el contenedor completo que devuelve la API
+ * @returns {Map<string, {cantidad, costoMercanciaCOP, costoUnitarioCOP, sinCosto}>}
+ */
+export function costosPorCombinacion(contenedor = {}) {
+  const tasa = parseFloat(contenedor.tasa_conversion) || 1;
+  const porClave = new Map();
+
+  for (const p of contenedor.proveedores_mercancia || []) {
+    const factor = (p.moneda || 'USD') === 'USD' ? tasa : 1;
+    for (const d of p.detalles || []) {
+      const cantidad = parseInt(d.cantidad_final) || 0;
+      if (cantidad === 0) continue;
+      const { key } = claveCombinacion(d);
+      const costoUnit = parseFloat(d.costo_unitario) || 0;
+
+      const acc = porClave.get(key) || { cantidad: 0, costoMercanciaCOP: 0, costoUnitarioCOP: 0, sinCosto: false };
+      acc.cantidad += cantidad;
+      acc.costoMercanciaCOP += costoUnit * factor * cantidad;
+      // Una línea sin costo tecleado abarata el promedio en silencio. Se marca
+      // para poder decirlo en pantalla en vez de enseñar una cifra baja y ya.
+      if (!(costoUnit > 0)) acc.sinCosto = true;
+      porClave.set(key, acc);
+    }
+  }
+
+  for (const acc of porClave.values()) {
+    acc.costoUnitarioCOP = acc.cantidad > 0 ? acc.costoMercanciaCOP / acc.cantidad : 0;
+  }
+  return porClave;
+}
+
+/**
+ * Lo mínimo a lo que habría que vender una unidad de ese producto para no perder
+ * y además sacar la utilidad que se fijó en el contenedor.
+ *
+ *   mercancía de ESE producto + servicios por unidad + utilidad por unidad
+ *
+ * Es la MISMA cuenta que ya arma la hoja PRECIOSINTERNOS de los entregables
+ * (lib/entregables.js) y que el "precio de venta sugerido" del formulario; lo
+ * único que cambia es el primer sumando, que aquí es el costo de la referencia
+ * concreta en vez del promedio del contenedor entero. No es una fórmula nueva:
+ * tres cuentas distintas para lo mismo acabarían dando tres precios distintos.
+ */
+export function costoUnitarioTotalCOP(costoMercanciaUnitarioCOP, { serviciosPorUnidad = 0, utilidadPorUnidad = 0 } = {}) {
+  return (parseFloat(costoMercanciaUnitarioCOP) || 0)
+    + (parseFloat(serviciosPorUnidad) || 0)
+    + (parseFloat(utilidadPorUnidad) || 0);
+}
+
+/**
+ * Los servicios que le tocan a CADA unidad de un contenedor ya guardado.
+ *
+ * Manda `gastos_unitarios`, que es lo que la pantalla calculó y guardó al
+ * capturarlo: ya viene prorrateado si el contenedor iba compartido y ya respeta
+ * los servicios marcados como propios. Rehacer aquí la división
+ * `costo_servicios_total ÷ unidades` daría otro número en esos dos casos.
+ *
+ * El cálculo de reserva es solo para contenedores guardados antes de que esa
+ * columna existiera; se devuelve `derivado: true` para poder avisarlo.
+ */
+export function serviciosPorUnidadGuardados(contenedor = {}) {
+  const guardado = parseFloat(contenedor.gastos_unitarios);
+  if (Number.isFinite(guardado) && guardado > 0) return { valor: guardado, derivado: false };
+  const unidades = parseInt(contenedor.total_pacas_recibidas) || parseInt(contenedor.total_pacas) || 0;
+  const servicios = parseFloat(contenedor.costo_servicios_total) || 0;
+  return { valor: unidades > 0 ? servicios / unidades : 0, derivado: servicios > 0 && unidades > 0 };
+}
