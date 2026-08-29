@@ -731,7 +731,6 @@ export default function Contenedores() {
   // cuando hace falta; este flag lo mantiene vivo los ~200 ms que dura la
   // animación de salida para no perder el cierre suave.
   const [modalMontado, setModalMontado]             = useState(false);
-  const [viewModalOpen, setViewModalOpen]           = useState(false);
   const [finalizarModalOpen, setFinalizarModalOpen] = useState(false);
   const [revisionModalOpen, setRevisionModalOpen]   = useState(false);
 
@@ -745,6 +744,12 @@ export default function Contenedores() {
   const [selectedContenedor, setSelectedContenedor] = useState(null);
   const [editMode, setEditMode]                     = useState(false);
   const [modoEstimacion, setModoEstimacion]         = useState(false);
+  // Ver un contenedor abre EL MISMO formulario con el que se creó, apagado.
+  // Antes había dos pantallas distintas para el mismo contenedor —una para
+  // crearlo y otra para mirarlo— y no se parecían en nada: los datos estaban en
+  // otro orden, con otros nombres y otro aspecto, así que había que volver a
+  // aprender dónde está cada cosa según por qué botón se hubiera entrado.
+  const [soloLectura, setSoloLectura]               = useState(false);
   const [submitting, setSubmitting]                 = useState(false);
 
   // ── Catálogo dinámico ─────────────────────────────────────────
@@ -844,7 +849,11 @@ export default function Contenedores() {
     const focus = searchParams.get('focus');
     if (!focus) return;
     contenedoresApi.getOne(focus)
-      .then(data => { setSelectedContenedor(data); setViewModalOpen(true); })
+      .then(data => {
+        setSelectedContenedor(data);
+        volcarContenedorAlFormulario(data, { lectura: true });
+        setSoloLectura(true); setEditMode(true); setModalOpen(true);
+      })
       .catch(() => addToast('No se encontró el contenedor', 'error'));
     setSearchParams({}, { replace: true });
   }, [searchParams]);
@@ -852,6 +861,11 @@ export default function Contenedores() {
   // Auto-calcula total_pacas: suma de cantidades de las líneas; en estimación,
   // suma de las cantidades estimadas de cada proveedor.
   useEffect(() => {
+    // Mirando un contenedor NO se recalcula: se enseña el total que el servidor
+    // tiene guardado. En uno a medias, o convertido de estimación, la suma de
+    // las líneas no tiene por qué coincidir, y la cifra habría cambiado sola
+    // delante de quien solo vino a mirar.
+    if (soloLectura) return;
     const sumaLineas = proveedores.reduce(
       (s, p) => s + (p.detalles || []).reduce((s2, d) => s2 + (parseInt(d.cantidad) || 0), 0),
       0
@@ -861,7 +875,7 @@ export default function Contenedores() {
       : (modoEstimacion ? proveedores.reduce((s, p) => s + (parseInt(p.cantidad_estimada) || 0), 0) : 0);
     const sumaStr = suma > 0 ? String(suma) : '';
     setFormData(prev => prev.total_pacas === sumaStr ? prev : { ...prev, total_pacas: sumaStr });
-  }, [proveedores, modoEstimacion]);
+  }, [proveedores, modoEstimacion, soloLectura]);
 
   useEffect(() => {
     if (modalOpen) { setModalMontado(true); return; }
@@ -2340,76 +2354,98 @@ export default function Contenedores() {
       .catch(() => {});
   };
 
+  // Vuelca un contenedor del servidor a los estados del formulario. Lo comparten
+  // "Editar" y "Ver detalle": es lo que permite que las dos sean la misma
+  // pantalla.
+  const volcarContenedorAlFormulario = (full, { lectura = false } = {}) => {
+    setModoEstimacion(full.estado === 'estimacion');
+    // Los contenedores guardados antes de que existiera la moneda del
+    // contenedor llegan sin ella. Se deduce de la mercancía —que es donde vive
+    // el grueso del dinero— en vez de forzar dólares: así el rótulo del
+    // resumen dice la verdad desde el primer render y ninguna línea cambia de
+    // moneda por el mero hecho de abrir el formulario.
+    const provsApi = full.proveedores_mercancia || [];
+    const baseDelContenedor = full.moneda_base
+      || (provsApi.length > 0 && provsApi.every(p => (p.moneda || 'USD') === 'COP')
+            ? 'COP' : MONEDA_BASE_POR_DEFECTO);
+    setFormData({
+      numero: full.numero,
+      fecha_llegada: full.fecha_llegada?.split('T')[0] || '',
+      fecha_salida: full.fecha_salida?.split('T')[0] || '',
+      tasa_conversion: String(full.tasa_conversion || '1'),
+      total_pacas: String(full.total_pacas),
+      notas: full.notas || '',
+      cantidad_total: full.cantidad_total != null ? String(full.cantidad_total) : '',
+      utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
+      gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
+      moneda_base: baseDelContenedor,
+    });
+    // Las filas en blanco son una comodidad para CAPTURAR: al editar, un
+    // proveedor vacío listo para escribir. Mirando, en cambio, son mentira: un
+    // formulario en blanco donde no hay nada registrado. En lectura no se
+    // inyecta ninguna.
+    setProveedores(provsApi.length > 0
+      ? provsApi.map((p) => ({
+          proveedor_nombre: p.proveedor_nombre,
+          moneda: p.moneda || 'USD',
+          notas: p.notas || '',
+          factura_estimada: p.factura_estimada || '',
+          cantidad_estimada: p.cantidad_estimada != null ? String(p.cantidad_estimada) : '',
+          valor_unidad_estimado: p.valor_unidad_estimado != null ? String(p.valor_unidad_estimado) : '',
+          detalles: p.detalles.length > 0
+            ? p.detalles.map((d) => ({
+                categoria: d.categoria || '',
+                clasificacion: d.clasificacion,
+                referencia: d.referencia,
+                calidad: d.calidad || '',
+                cantidad: String(d.cantidad),
+                costo_unitario: String(d.costo_unitario || ''),
+              }))
+            : (lectura ? [] : [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }]),
+        }))
+      : (lectura ? [] : [emptyProveedor(baseDelContenedor)]));
+    setServicios((full.servicios || []).length > 0
+      ? full.servicios.map((s) => ({
+          proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP',
+          costo: String(s.costo || ''), notas: s.notas || '',
+          factura_estimada: s.factura_estimada || '',
+          cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
+          valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
+          propio: esServicioPropio(s),
+        }))
+      : (lectura ? [] : [emptyServicio(baseDelContenedor)]));
+    // Acabamos de volcar lo que trajo el servidor: todavía no hay nada tecleado.
+    setFormTocado(false);
+  };
+
   const openEditModal = async (contenedor) => {
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
-      setModoEstimacion(full.estado === 'estimacion');
-      // Los contenedores guardados antes de que existiera la moneda del
-      // contenedor llegan sin ella. Se deduce de la mercancía —que es donde vive
-      // el grueso del dinero— en vez de forzar dólares: así el rótulo del
-      // resumen dice la verdad desde el primer render y ninguna línea cambia de
-      // moneda por el mero hecho de abrir el formulario.
-      const provsApi = full.proveedores_mercancia || [];
-      const baseDelContenedor = full.moneda_base
-        || (provsApi.length > 0 && provsApi.every(p => (p.moneda || 'USD') === 'COP')
-              ? 'COP' : MONEDA_BASE_POR_DEFECTO);
-      setFormData({
-        numero: full.numero,
-        fecha_llegada: full.fecha_llegada?.split('T')[0] || '',
-        fecha_salida: full.fecha_salida?.split('T')[0] || '',
-        tasa_conversion: String(full.tasa_conversion || '1'),
-        total_pacas: String(full.total_pacas),
-        notas: full.notas || '',
-        cantidad_total: full.cantidad_total != null ? String(full.cantidad_total) : '',
-        utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
-        gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
-        // Los contenedores guardados antes de que existiera la moneda del
-        // contenedor llegan sin ella. Se deduce de la mercancía —que es donde
-        // vive el grueso del dinero— en vez de forzar USD: así el rótulo del
-        // resumen dice la verdad desde el primer render, y ninguna línea cambia
-        // de moneda por abrir el formulario.
-        moneda_base: baseDelContenedor,
-      });
-      setProveedores(full.proveedores_mercancia.length > 0
-        ? full.proveedores_mercancia.map((p) => ({
-            proveedor_nombre: p.proveedor_nombre,
-            moneda: p.moneda || 'USD',
-            notas: p.notas || '',
-            factura_estimada: p.factura_estimada || '',
-            cantidad_estimada: p.cantidad_estimada != null ? String(p.cantidad_estimada) : '',
-            valor_unidad_estimado: p.valor_unidad_estimado != null ? String(p.valor_unidad_estimado) : '',
-            detalles: p.detalles.length > 0
-              ? p.detalles.map((d) => ({
-                  categoria: d.categoria || '',
-                  clasificacion: d.clasificacion,
-                  referencia: d.referencia,
-                  calidad: d.calidad || '',
-                  cantidad: String(d.cantidad),
-                  costo_unitario: String(d.costo_unitario || ''),
-                }))
-              : [{ categoria: '', clasificacion: '', referencia: '', calidad: '', cantidad: '', costo_unitario: '' }],
-          }))
-        : [emptyProveedor(baseDelContenedor)]);
-      setServicios(full.servicios.length > 0
-        ? full.servicios.map((s) => ({
-            proveedor_nombre: s.proveedor_nombre, tipo_servicio: s.tipo_servicio, moneda: s.moneda || 'COP',
-            costo: String(s.costo || ''), notas: s.notas || '',
-            factura_estimada: s.factura_estimada || '',
-            cantidad_estimada: s.cantidad_estimada != null ? String(s.cantidad_estimada) : '',
-            valor_unidad_estimado: s.valor_unidad_estimado != null ? String(s.valor_unidad_estimado) : '',
-            propio: esServicioPropio(s),
-          }))
-        : [emptyServicio(baseDelContenedor)]);
-      // Acabamos de volcar lo que trajo el servidor: todavía no hay nada tecleado.
-      setFormTocado(false);
+      volcarContenedorAlFormulario(full);
+      setSoloLectura(false);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
 
   const openViewModal = async (contenedor) => {
-    try { const full = await contenedoresApi.getOne(contenedor.id); setSelectedContenedor(full); setViewModalOpen(true); }
-    catch (err) { addToast(err.message, 'error'); }
+    try {
+      const full = await contenedoresApi.getOne(contenedor.id);
+      setSelectedContenedor(full);
+      volcarContenedorAlFormulario(full, { lectura: true });
+      // editMode en true a propósito: no se está creando nada, se está mirando
+      // un contenedor que existe, y de eso dependen el título y los bloques que
+      // solo tienen sentido sobre algo guardado.
+      setSoloLectura(true);
+      setEditMode(true); setModalOpen(true);
+    } catch (err) { addToast(err.message, 'error'); }
+  };
+
+  // Pasar de mirar a editar SIN volver a pedir el contenedor: los datos ya están
+  // volcados y el formulario ya está en pantalla. Solo se enciende.
+  const editarLoQueSeEstaViendo = () => {
+    setSoloLectura(false);
+    setFormTocado(false);
   };
 
   // ── Submit form ────────────────────────────────────────────────
@@ -2490,7 +2526,7 @@ export default function Contenedores() {
           ? 'Estimación creada — revisa Cuentas por Pagar para registrar abonos'
           : 'Contenedor creado' + avisoParcial, parcial ? 'warning' : 'success');
       }
-      setModalOpen(false); resetForm(); loadContenedores();
+      setModalOpen(false); setSoloLectura(false); resetForm(); loadContenedores();
       return true;
     } catch (err) { addToast(err.message, 'error'); return false; }
     finally { setSubmitting(false); }
@@ -2511,6 +2547,8 @@ export default function Contenedores() {
   // perdiendo lo escrito, o seguir donde estaba.
   const cerrarFormulario = async () => {
     if (avisoCierreAbiertoRef.current) return;
+    // Mirando no se ha escrito nada, así que no hay nada que preguntar.
+    if (soloLectura) { setModalOpen(false); setSoloLectura(false); resetForm(); return; }
     if (!formTocado) { setModalOpen(false); resetForm(); return; }
     avisoCierreAbiertoRef.current = true;
     let respuesta;
@@ -2526,7 +2564,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
         variant: 'warning',
       });
     } finally { avisoCierreAbiertoRef.current = false; }
-    if (respuesta === 'alterna') { setModalOpen(false); resetForm(); return; }
+    if (respuesta === 'alterna') { setModalOpen(false); setSoloLectura(false); resetForm(); return; }
     if (!respuesta) return;                       // seguir editando
 
     // "Guardar y salir" no dispara el submit del formulario, así que los campos
@@ -2569,7 +2607,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
     try {
       const full = await contenedoresApi.convertirNormal(contenedor.id);
       addToast('Ahora es un contenedor — registra las líneas de lo que llegó', 'success');
-      setViewModalOpen(false);
+      setModalOpen(false); setSoloLectura(false);
       loadContenedores();
       openEditModal(full); // abre el formulario normal para diligenciar lo real
     } catch (err) { addToast(err.message, 'error'); }
@@ -2648,7 +2686,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       }
       setPreciosVenta(init);
       setPreciosAutocompletados(autoKeys);
-      setViewModalOpen(false); setFinalizarModalOpen(true);
+      setModalOpen(false); setSoloLectura(false); setFinalizarModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
 
@@ -2681,7 +2719,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       }
       setRevisionRows(rows);
       setRevisionTocada(false);
-      setViewModalOpen(false);
+      setModalOpen(false); setSoloLectura(false);
       setRevisionModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
   };
@@ -2995,11 +3033,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
   // nadie lo pida, el número del que cuelgan el precio de venta y el módulo de
   // Utilidad. Se conserva y se avisa debajo del campo.
   useEffect(() => {
-    if (!modalOpen) return;
+    // Igual que arriba: mirando no se toca nada. Hay contenedores cerrados con
+    // esta cifra tecleada a mano, y recalcularla enseñaría un número distinto
+    // del que está guardado.
+    if (!modalOpen || soloLectura) return;
     if (!(resumen.costoServiciosPorUnidad > 0)) return;
     const calculado = String(Math.round(resumen.costoServiciosPorUnidad));
     setFormData(prev => prev.gastos_unitarios === calculado ? prev : { ...prev, gastos_unitarios: calculado });
-  }, [resumen, modalOpen]);
+  }, [resumen, modalOpen, soloLectura]);
 
   // ── Visualización del resumen: ambas monedas, o una sola ───────
   //
@@ -3343,14 +3384,17 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
       {(modalOpen || modalMontado) && (
       <Modal
         isOpen={modalOpen}
-        onClose={() => { setModalOpen(false); resetForm(); }}
+        onClose={() => { setModalOpen(false); setSoloLectura(false); resetForm(); }}
         onSolicitarCierre={cerrarFormulario}
-        title={editMode
-          ? `${modoEstimacion ? 'Editar estimación' : 'Editar'} — ${selectedContenedor?.numero}`
-          : (modoEstimacion ? 'Nueva estimación de contenedor' : 'Nuevo Contenedor')}
+        title={soloLectura
+          ? `${modoEstimacion ? 'Estimación' : 'Contenedor'} ${selectedContenedor?.numero || ''}`
+          : editMode
+            ? `${modoEstimacion ? 'Editar estimación' : 'Editar'} — ${selectedContenedor?.numero}`
+            : (modoEstimacion ? 'Nueva estimación de contenedor' : 'Nuevo Contenedor')}
         size="full"
       >
-        <form ref={formRef} onSubmit={handleSubmit}>
+        {/* Mirando, el submit no existe: ni con Enter en un campo. */}
+        <form ref={formRef} onSubmit={soloLectura ? (e) => e.preventDefault() : handleSubmit}>
           {/* Los cuatro <datalist> compartidos (cont-temporadas, cont-tipos,
               cont-calidades y cont-refs-N) desaparecieron: las líneas de
               distribución ya no usan <input list="…"> sino <select>, que trae
@@ -3359,6 +3403,101 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
 
             {/* ── LEFT: form sections ─────────────────────────── */}
             <div className="flex-1 min-w-0 space-y-5">
+
+              {/* ── La ficha del contenedor ─────────────────────
+                  Estado, de dónde viene, fechas, tasa, lote y el enlace a sus
+                  cuentas por pagar. Nada de esto se teclea —son consecuencias de
+                  lo de abajo o cosas que decide el servidor—, así que solo se
+                  pinta cuando se está mirando. */}
+              {soloLectura && selectedContenedor && (
+              <div className="flex flex-wrap items-center gap-3">
+                <StatusBadge estado={selectedContenedor.estado} />
+                {selectedContenedor.estado !== 'estimacion' && vieneDeEstimacion(selectedContenedor) && (
+                  <SelloOrigenEstimacion convertidoEn={selectedContenedor.convertido_en} />
+                )}
+                {selectedContenedor.fecha_salida && (
+                  <span className="text-xs text-muted">Salida: {formatDate(selectedContenedor.fecha_salida)}</span>
+                )}
+                {selectedContenedor.fecha_llegada && (
+                  <span className="text-xs text-muted">Llegada: {formatDate(selectedContenedor.fecha_llegada)}</span>
+                )}
+                <span className="text-xs text-muted">{selectedContenedor.total_pacas} unidades</span>
+                {selectedContenedor.tasa_conversion && parseFloat(selectedContenedor.tasa_conversion) !== 1 && (
+                  <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full">Tasa: {parseFloat(selectedContenedor.tasa_conversion).toLocaleString('es-CO')}</span>
+                )}
+                {selectedContenedor.moneda_base && (
+                  <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full" title="Moneda en la que se capturó el contenedor">
+                    Moneda: {selectedContenedor.moneda_base}
+                  </span>
+                )}
+                {selectedContenedor.lote_id && (
+                  <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
+                )}
+                <RefLink to="/cuentas-pagar" param="contenedor" id={selectedContenedor.id} title="Ver cuentas por pagar de este contenedor"
+                  className="text-xs bg-warning/10 px-2 py-0.5 rounded-full font-semibold">Cuentas por pagar</RefLink>
+              </div>
+              )}
+
+              {/* ── Lo que hay GUARDADO ─────────────────────────
+                  El resumen de la derecha se calcula en vivo sobre lo que hay en
+                  el formulario, que son las cantidades PEDIDAS. Estas tres
+                  cifras son las que el servidor tiene escritas, y son las que de
+                  verdad mandan: de `costo_unitario` sale el costo_base que se le
+                  estampa a cada paca al finalizar.
+                  Normalmente coinciden. Cuando no —un contenedor revisado donde
+                  llegó distinto de lo pedido, o uno guardado antes de alguna
+                  corrección de fórmula— la diferencia importa, así que se avisa
+                  en vez de dejar que la pantalla enseñe una sola de las dos y
+                  parezca que no hay nada que mirar. */}
+              {soloLectura && selectedContenedor && parseFloat(selectedContenedor.costo_total) > 0 && (() => {
+                const tasaG = parseFloat(selectedContenedor.tasa_conversion) || 0;
+                const totalG = parseFloat(selectedContenedor.costo_total) || 0;
+                const unitG  = parseFloat(selectedContenedor.costo_unitario) || 0;
+                // Un peso de diferencia es redondeo; a partir de ahí es otra cosa.
+                const difiere = Math.abs(totalG - (resumen.costoTotal || 0)) > 1;
+                return (
+                  <div className="rounded-2xl border border-border/60 bg-primary/[0.02] px-4 py-3">
+                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">
+                      Lo que hay guardado
+                    </p>
+                    <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
+                      <div>
+                        <p className="text-[10px] text-muted uppercase tracking-wide">Costo total</p>
+                        <p className="text-xl font-display font-bold text-primary tabular-nums leading-tight">{formatCurrency(totalG)}</p>
+                        {tasaG > 1 && (
+                          <p className="text-[11px] font-mono text-muted tabular-nums">{fmtPropia(totalG / tasaG, 'USD')} USD</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted uppercase tracking-wide">Costo por unidad</p>
+                        <p className="text-xl font-display font-bold text-secondary tabular-nums leading-tight">{formatCurrency(unitG)}</p>
+                        {tasaG > 1 && (
+                          <p className="text-[11px] font-mono text-muted tabular-nums">{fmtPropia(unitG / tasaG, 'USD', { unitario: true })} USD</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted uppercase tracking-wide">Unidades</p>
+                        <p className="text-xl font-display font-bold text-primary tabular-nums leading-tight">
+                          {(parseInt(selectedContenedor.total_pacas_recibidas ?? selectedContenedor.total_pacas) || 0).toLocaleString('es-CO')}
+                        </p>
+                        {selectedContenedor.total_pacas_recibidas != null
+                          && parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
+                          <p className="text-[11px] text-muted">
+                            se pidieron {parseInt(selectedContenedor.total_pacas).toLocaleString('es-CO')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {difiere && (
+                      <p className="text-[11px] text-warning mt-2 pt-2 border-t border-border/40 leading-relaxed">
+                        El resumen de la derecha calcula <b className="font-mono">{formatCurrency(resumen.costoTotal)}</b> con
+                        las cantidades pedidas que ves abajo. La cifra que manda —y de la que sale el costo de cada paca— es
+                        la guardada.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── Dónde estamos del flujo ─────────────────────
                   En estimación (ámbar) y en el contenedor que VIENE de una
@@ -3403,6 +3542,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
               )}
 
+              {/* Un <fieldset disabled> apaga de una vez todos los controles que
+                  tiene dentro: es lo que permite reutilizar este formulario en
+                  modo lectura sin acordarse de poner readOnly campo por campo, y
+                  sin el agujero de que readOnly no existe para <select>.
+
+                  Abraza SOLO esta sección de captura, no la columna entera:
+                  apaga TODOS los botones que tenga debajo, y envolviéndolo todo
+                  se quedaban muertos los de la barra de acciones, el de exportar
+                  la reclamación y el selector de moneda del resumen móvil — que
+                  es lo único que sí hay que poder pulsar mirando. */}
+              <fieldset disabled={soloLectura} style={{ minInlineSize: 0 }}
+                        className="min-w-0 border-0 p-0 m-0">
               {/* [1] Información Básica */}
               <div className="rounded-2xl border border-border/60 overflow-hidden">
                 <div className="flex items-center gap-3 px-4 py-3 bg-primary/[0.03] border-b border-border/40">
@@ -3414,7 +3565,10 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <p className="text-[11px] text-muted mt-0.5">Identificación y datos generales del contenedor</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 px-4 pt-3">
+                {/* Cargar una plantilla sobre un contenedor que solo se está
+                    mirando no tiene sentido. Guardarlo COMO plantilla sí, y ese
+                    botón vive abajo, en la barra de acciones. */}
+                <div className={`flex items-center gap-2 px-4 pt-3 ${soloLectura ? 'hidden' : ''}`}>
                   <button type="button" onClick={() => setTemplateModalOpen(true)}
                     className="flex items-center gap-1.5 text-xs font-semibold text-secondary px-3 py-1.5 rounded-lg border border-secondary/30 hover:bg-secondary/8 transition-all">
                     <BookTemplate size={13} /> Cargar plantilla{templates.length > 0 && ` (${templates.length})`}
@@ -3614,7 +3768,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       </p>
                       {resumen.costoServiciosPorUnidad > 0 ? (
                         <p className="text-[10px] text-muted mt-0.5 leading-tight">
-                          Servicios suyos ({formatCurrency(resumen.costoServicios)}) ÷ {resumen.totalPacas || 0} unidades suyas.
+                          Servicios suyos ({fmtVista(resumen.costoServicios)}) ÷ {resumen.totalPacas || 0} unidades suyas.
                           {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && ' Contenedor compartido: ya es la parte proporcional.'}
                         </p>
                       ) : parseMonto(formData.gastos_unitarios) > 0 ? (
@@ -3663,6 +3817,124 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
               </div>
 
+              </fieldset>
+
+              {/* ── Estimado vs. lo que llegó ───────────────────
+                  Solo mirando: es una comparación entre lo guardado y lo que se
+                  creyó, y editando cambiaría bajo los pies mientras se escribe. */}
+              {soloLectura && selectedContenedor && (
+                <>
+                {/* ── Estimado vs. Real ──────────────────────────────
+                    Compara lo que se creyó que venía contra lo que se registró al
+                    convertirlo a contenedor normal.
+
+                    Mientras SIGUE siendo estimación no se pinta: no hay nada real
+                    con qué comparar y la tabla salía entera en ceros. Ese caso lo
+                    cubre el bloque "Mercancía estimada", más abajo. */}
+                {selectedContenedor.estado !== 'estimacion' && (() => {
+                  const provs = selectedContenedor.proveedores_mercancia || [];
+                  const conEstimacion = provs.filter(hayEstimadoProveedor);
+                  if (conEstimacion.length === 0) return null;
+
+                  const filas = conEstimacion.map(p => {
+                    const cantEst = parseInt(p.cantidad_estimada) || 0;
+                    const cantReal = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                    const factEst = parseFloat(p.factura_estimada) || (cantEst * (parseFloat(p.valor_unidad_estimado) || 0));
+                    const costoReal = (p.detalles || []).reduce(
+                      (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
+                    );
+                    return {
+                      nombre: p.proveedor_nombre, moneda: p.moneda || 'USD',
+                      cantEst, cantReal, diffCant: cantReal - cantEst,
+                      factEst, costoReal, diffCosto: costoReal - factEst,
+                      registrado: cantReal > 0,
+                    };
+                  });
+
+                  const totEst = filas.reduce((s, f) => s + f.cantEst, 0);
+                  const totReal = filas.reduce((s, f) => s + f.cantReal, 0);
+                  const sinRegistrar = filas.filter(f => !f.registrado).length;
+
+                  const num = (v) => v.toLocaleString('es-CO');
+                  const signo = (v) => (v > 0 ? '+' : '');
+                  const colorDiff = (v) => (v === 0 ? 'text-muted' : v > 0 ? 'text-success' : 'text-error');
+
+                  return (
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                      <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between flex-wrap gap-2">
+                        <p className="text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sparkles size={13} /> Estimado vs. lo que llegó
+                        </p>
+                        <span className="text-xs font-semibold tabular-nums">
+                          <span className="text-muted">{num(totEst)} estimadas</span>
+                          <span className="text-muted/50 mx-1.5">→</span>
+                          <span className="text-primary">{num(totReal)} registradas</span>
+                          {totEst > 0 && (
+                            <span className={`ml-2 ${colorDiff(totReal - totEst)}`}>
+                              ({signo(totReal - totEst)}{num(totReal - totEst)})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-surface/60 border-b border-amber-500/20">
+                              <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Proveedor</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. estimadas</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. reales</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Factura estimada</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Costo real</th>
+                              <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-amber-500/10">
+                            {filas.map((f, i) => (
+                              <tr key={i} className="hover:bg-surface/50">
+                                <td className="px-3 py-2 font-medium text-primary">
+                                  {f.nombre}
+                                  {!f.registrado && (
+                                    <span className="ml-2 text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
+                                      sin registrar
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">{f.cantEst ? num(f.cantEst) : '—'}</td>
+                                <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">{f.registrado ? num(f.cantReal) : '—'}</td>
+                                <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.registrado && f.cantEst ? colorDiff(f.diffCant) : 'text-muted'}`}>
+                                  {f.registrado && f.cantEst ? `${signo(f.diffCant)}${num(f.diffCant)}` : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">
+                                  {f.factEst ? `${f.moneda} ${num(Math.round(f.factEst))}` : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">
+                                  {f.costoReal ? `${f.moneda} ${num(Math.round(f.costoReal))}` : '—'}
+                                </td>
+                                <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.costoReal && f.factEst ? colorDiff(-f.diffCosto) : 'text-muted'}`}>
+                                  {f.costoReal && f.factEst ? `${signo(f.diffCosto)}${num(Math.round(f.diffCosto))}` : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {sinRegistrar > 0 && (
+                        <p className="px-4 py-2.5 text-xs text-amber-700 border-t border-amber-500/20 bg-amber-500/5">
+                          Faltan <b>{sinRegistrar}</b> proveedor{sinRegistrar !== 1 ? 'es' : ''} por registrar lo que realmente llegó.
+                          Puedes hacerlo de a uno desde <b>Editar</b>.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+                </>
+              )}
+
+              <fieldset disabled={soloLectura} style={{ minInlineSize: 0 }}
+                        className="min-w-0 border-0 p-0 m-0">
               {/* [2] Proveedores de Mercancía */}
               <div>
                 <div className="flex items-center gap-3 mb-3">
@@ -3705,7 +3977,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                               {(prov.moneda || 'USD') !== monedaBase ? 'excepción' : 'heredada'}
                             </p>
                           </div>
-                          {proveedores.length > 1 && (
+                          {!soloLectura && proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
                               title="Eliminar proveedor"
                               className="p-2 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
@@ -3882,7 +4154,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                       </span>
                                     )}
                                   </div>
-                                  {prov.detalles.length > 1 && (
+                                  {!soloLectura && prov.detalles.length > 1 && (
                                     <button type="button" onClick={() => removeDetalle(pi, di)}
                                       title="Eliminar línea"
                                       className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
@@ -3988,6 +4260,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             Router desmonta la pantalla y se pierde sin aviso todo lo
                             capturado (proveedores, líneas, servicios) — y se pulsa
                             justo cuando ya hay medio contenedor escrito. */}
+                        {!soloLectura && (
                         <p className="mt-2 text-[10px] text-muted">
                           ¿Falta una referencia?{' '}
                           <Link to="/tipos-paca" target="_blank" rel="noopener noreferrer"
@@ -4007,21 +4280,178 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             Ya la creé, actualizar lista
                           </button>
                         </p>
+                        )}
+                        {!soloLectura && (
                         <button type="button" onClick={() => addDetalle(pi)}
                           className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5 hover:border-secondary transition-all">
                           <Plus size={13} /> Agregar línea a {prov.proveedor_nombre || `Proveedor ${pi+1}`}
                         </button>
+                        )}
                       </div>
                       )}
                     </div>
                   ))}
                 </div>
+                {!soloLectura && (
                 <button type="button" onClick={addProveedor}
                   className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-secondary/40 text-secondary text-sm font-bold hover:bg-secondary/5 hover:border-secondary transition-all">
                   <Plus size={16} /> Agregar otro proveedor
                 </button>
+                )}
+                {soloLectura && proveedores.length === 0 && (
+                  <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+                    Este contenedor todavía no tiene proveedores registrados.
+                  </p>
+                )}
               </div>
 
+              </fieldset>
+
+              {/* ── Lo pedido contra lo contado, proveedor a proveedor ──
+                  Con su Excel de reclamación. Vive aquí, justo después de los
+                  proveedores, que es de lo que habla. */}
+              {soloLectura && selectedContenedor && (
+                <>
+                {/* Comparación detallada por proveedor — visible cuando hay revisión */}
+                {(selectedContenedor.estado === 'revision' || selectedContenedor.estado === 'finalizado') && selectedContenedor.total_pacas_recibidas != null && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <ClipboardCheck size={15} className="text-blue-600" />
+                        <p className="text-sm font-bold text-blue-700 uppercase tracking-wider">Comparación por Proveedor</p>
+                      </div>
+                      <button type="button" onClick={() => handleExportReclamacionExcel(selectedContenedor)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors">
+                        <Download size={13} /> Exportar reclamación
+                      </button>
+                    </div>
+
+                    {/* Totales globales */}
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div className="bg-white rounded-lg px-4 py-3 border border-border/40">
+                        <p className="text-[10px] text-muted uppercase font-semibold">Total Pedido</p>
+                        <p className="text-2xl font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-white rounded-lg px-4 py-3 border border-success/30">
+                        <p className="text-[10px] text-success uppercase font-semibold">Total Recibido (al inventario)</p>
+                        <p className="text-2xl font-mono font-bold text-success">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</p>
+                        {parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
+                          <p className="text-xs font-semibold mt-0.5 text-warning">
+                            {parseInt(selectedContenedor.total_pacas_recibidas) - parseInt(selectedContenedor.total_pacas)} vs. pedido
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Por proveedor */}
+                    {selectedContenedor.proveedores_mercancia.map((prov) => {
+                      const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                      const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
+                      const provDiff = provRec - provEnv;
+                      const hayDiscrepancias = prov.detalles.some(d =>
+                        (parseInt(d.cantidad_recibida) || 0) !== (parseInt(d.cantidad) || 0) ||
+                        d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida
+                      );
+                      return (
+                        <div key={prov.id} className="bg-white rounded-xl border border-border/60 overflow-hidden">
+                          <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-primary">{prov.proveedor_nombre}</p>
+                              {hayDiscrepancias && (
+                                <span className="text-[10px] font-bold bg-warning/15 text-warning px-2 py-0.5 rounded-full">
+                                  ⚠ Discrepancias
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-mono">
+                              <span className="text-muted">Pedido: <strong className="text-primary">{provEnv}</strong></span>
+                              <ArrowRight size={11} className="text-muted" />
+                              <span className="text-success">Recibido: <strong>{provRec}</strong></span>
+                              {provDiff !== 0 && (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
+                                  {provDiff > 0 ? '+' : ''}{provDiff}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-border/40 bg-primary/2">
+                                  <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Producto Pedido</th>
+                                  <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
+                                  <th scope="col" className="px-3 py-2 text-left font-semibold text-success uppercase tracking-wider">Producto Recibido</th>
+                                  <th scope="col" className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-20">Recibido</th>
+                                  <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border/30">
+                                {prov.detalles.map((det, i) => {
+                                  const enviado = parseInt(det.cantidad) || 0;
+                                  const recibido = parseInt(det.cantidad_recibida) || 0;
+                                  const diff = recibido - enviado;
+                                  const cambioTipo = det.clasificacion_recibida || det.referencia_recibida || det.calidad_recibida;
+                                  const clasRec = det.clasificacion_recibida || det.clasificacion;
+                                  const refRec  = det.referencia_recibida    || det.referencia;
+                                  const calRec  = det.calidad_recibida       || det.calidad || '';
+                                  return (
+                                    <tr key={i} className={diff !== 0 || cambioTipo ? 'bg-warning/5' : ''}>
+                                      <td className="px-3 py-2">
+                                        {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
+                                        <span className="capitalize font-medium text-primary">{det.clasificacion}</span>
+                                        <span className="text-muted"> / </span>
+                                        <span className="capitalize">{det.referencia}</span>
+                                        {det.calidad && <><span className="text-muted"> / </span><span className="capitalize text-muted">{det.calidad}</span></>}
+                                      </td>
+                                      <td className="px-3 py-2 text-center font-mono font-semibold">{enviado}</td>
+                                      <td className="px-3 py-2">
+                                        {recibido === 0 ? (
+                                          <span className="text-error italic font-medium">No llegó</span>
+                                        ) : cambioTipo ? (
+                                          <>
+                                            <span className="capitalize font-bold text-warning">{clasRec}</span>
+                                            <span className="text-warning"> / </span>
+                                            <span className="capitalize text-warning">{refRec}</span>
+                                            {calRec && <><span className="text-warning"> / </span><span className="capitalize text-warning">{calRec}</span></>}
+                                            <span className="block text-[10px] text-warning italic font-semibold mt-0.5">⚠ tipo distinto al pedido</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
+                                            <span className="capitalize font-medium text-success">{clasRec}</span>
+                                            <span className="text-muted"> / </span>
+                                            <span className="capitalize">{refRec}</span>
+                                            {calRec && <><span className="text-muted"> / </span><span className="capitalize text-muted">{calRec}</span></>}
+                                          </>
+                                        )}
+                                        {det.notas_revision && <p className="text-[10px] text-muted italic mt-0.5">📝 {det.notas_revision}</p>}
+                                      </td>
+                                      <td className="px-3 py-2 text-center font-mono font-bold text-success">{recibido}</td>
+                                      <td className="px-3 py-2 text-center font-mono text-xs">
+                                        {diff === 0 ? (
+                                          <span className="text-muted">—</span>
+                                        ) : (
+                                          <span className={`font-bold ${diff < 0 ? 'text-error' : 'text-warning'}`}>
+                                            {diff > 0 ? '+' : ''}{diff}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </>
+              )}
+
+              <fieldset disabled={soloLectura} style={{ minInlineSize: 0 }}
+                        className="min-w-0 border-0 p-0 m-0">
               {/* [3] Servicios */}
               <div>
                 <div className="flex items-center gap-3 mb-3">
@@ -4088,7 +4518,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                               onChange={(e) => updateServicio(si, 'propio', e.target.checked)} />
                             <span className="text-[11px] font-bold uppercase tracking-wide">Propio</span>
                           </label>
-                          {servicios.length > 1 && (
+                          {!soloLectura && servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
                               title="Eliminar servicio" aria-label={`Eliminar servicio ${si + 1}`}
                               className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
@@ -4216,14 +4646,22 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       </div>
                     ))}
                   </div>
+                  {!soloLectura ? (
                   <div className="px-4 py-3 border-t border-border/30 bg-cream/30">
                     <button type="button" onClick={addServicio}
                       className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-secondary transition-colors">
                       <Plus size={13} /> Agregar servicio
                     </button>
                   </div>
+                  ) : servicios.length === 0 && (
+                    <p className="px-4 py-6 text-center text-sm text-muted">
+                      Este contenedor no tiene servicios registrados.
+                    </p>
+                  )}
                 </div>
               </div>
+
+              </fieldset>
 
               {/* Mobile cost summary — visible below lg */}
               <div className="lg:hidden rounded-2xl border border-border/60 bg-surface p-4 space-y-2.5">
@@ -4291,7 +4729,12 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   }
                 </div>
 
-                {!modoEstimacion && resumen.avanceProveedores.length > 0 && !resumen.cantidadValida && (
+                {/* El avance del registro solo tiene sentido CAPTURANDO. Mirando,
+                    sus dos frases de cierre mienten: sobre un contenedor ya
+                    finalizado dice "está listo para revisión", y cuando algo no
+                    cuadra invita a "guardar así e ir completando" en una pantalla
+                    donde el botón de guardar ni existe. */}
+                {!soloLectura && !modoEstimacion && resumen.avanceProveedores.length > 0 && !resumen.cantidadValida && (
                   <div className="pt-2 border-t border-border/40 space-y-1">
                     {resumen.avanceProveedores.filter(a => !a.completo).map((a, i) => (
                       <div key={i} className="flex items-center justify-between text-[11px]">
@@ -4305,8 +4748,67 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 )}
               </div>
 
+              {/* ── Qué se puede hacer con este contenedor ──────
+                  Convertir, revisar, finalizar, exportar, guardar como
+                  plantilla. Estaba en el modal de detalle; al fusionarse las dos
+                  pantallas se viene con él. */}
+              {soloLectura && selectedContenedor && (
+              <div className="flex justify-between items-center pt-2 border-t border-border/40 gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => handleExportContenedorExcel(selectedContenedor)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                    <Download size={15} /> Exportar Excel
+                  </button>
+                  <button type="button" onClick={() => { setNombrePlantilla(''); setTemplateFromView(true); setSaveTemplateModalOpen(true); }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                    <Save size={15} /> Guardar como plantilla
+                  </button>
+                </div>
+                {/* El paso siguiente del flujo, donde se está mirando el
+                    contenedor: sin él había que cerrar el detalle y buscar un
+                    icono en la fila de la lista. */}
+                {canEdit && selectedContenedor.estado === 'estimacion' && (
+                  <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={editarLoQueSeEstaViendo}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                      <Edit2 size={15} /> Editar estimación
+                    </button>
+                    <button type="button" onClick={() => handleConvertirNormal(selectedContenedor)}
+                      title="Ya llegó: pasar a contenedor y registrar lo real"
+                      className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 active:scale-95 transition-all duration-150">
+                      <RefreshCw size={17} /> Ya llegó — convertir
+                    </button>
+                  </div>
+                )}
+                {isAdmin && selectedContenedor.estado === 'borrador' && (
+                  <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={editarLoQueSeEstaViendo}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                      <Edit2 size={15} /> Editar
+                    </button>
+                    <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
+                      className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-all duration-150">
+                      <ClipboardCheck size={17} /> Revisar Contenedor
+                    </button>
+                  </div>
+                )}
+                {isAdmin && selectedContenedor.estado === 'revision' && (
+                  <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-300 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors">
+                      <ClipboardCheck size={15} /> Editar Revisión
+                    </button>
+                    <button type="button" onClick={() => openFinalizarModal(selectedContenedor)}
+                      className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
+                      <CheckCircle size={17} /> Finalizar Contenedor
+                    </button>
+                  </div>
+                )}
+              </div>
+              )}
+
               {/* Mobile action row */}
-              <div className="flex lg:hidden gap-3 pt-1">
+              <div className={`lg:hidden gap-3 pt-1 ${soloLectura ? 'hidden' : 'flex'}`}>
                 <button type="button" onClick={cerrarFormulario}
                   className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
                   Cancelar
@@ -4494,7 +4996,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
 
                 {/* Avance proveedor por proveedor: se puede guardar a medias y
                     retomar después; aquí se ve exactamente a quién le falta. */}
-                {!modoEstimacion && resumen.avanceProveedores.length > 0 && (
+                {/* Misma razón que en la versión móvil de más arriba: es un panel
+                    para ir completando, no para consultar algo ya cerrado. */}
+                {!soloLectura && !modoEstimacion && resumen.avanceProveedores.length > 0 && (
                   <div className="rounded-2xl border border-border bg-surface p-4">
                     <div className="flex items-center justify-between mb-2.5">
                       <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Avance del registro</p>
@@ -4563,7 +5067,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     </p>
                   </div>
                 )}
-                <div className="space-y-2">
+                <div className={`space-y-2 ${soloLectura ? 'hidden' : ''}`}>
                   <button type="submit" disabled={submitting}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
                     {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
@@ -4581,602 +5085,13 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
       </Modal>
       )}
 
-      {/* ════════════════════════════════════════════════════════
-          VIEW DETAIL MODAL
-      ════════════════════════════════════════════════════════ */}
-      {selectedContenedor && (
-        <Modal isOpen={viewModalOpen} onClose={() => setViewModalOpen(false)} title={selectedContenedor.numero} size="xl">
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge estado={selectedContenedor.estado} />
-              {selectedContenedor.estado !== 'estimacion' && vieneDeEstimacion(selectedContenedor) && (
-                <SelloOrigenEstimacion convertidoEn={selectedContenedor.convertido_en} />
-              )}
-              {selectedContenedor.fecha_salida && (
-                <span className="text-xs text-muted">Salida: {formatDate(selectedContenedor.fecha_salida)}</span>
-              )}
-              {selectedContenedor.fecha_llegada && (
-                <span className="text-xs text-muted">Llegada: {formatDate(selectedContenedor.fecha_llegada)}</span>
-              )}
-              <span className="text-xs text-muted">{selectedContenedor.total_pacas} unidades</span>
-              {selectedContenedor.tasa_conversion && parseFloat(selectedContenedor.tasa_conversion) !== 1 && (
-                <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full">Tasa: {parseFloat(selectedContenedor.tasa_conversion).toLocaleString('es-CO')}</span>
-              )}
-              {selectedContenedor.moneda_base && (
-                <span className="text-xs bg-primary/8 text-muted px-2 py-0.5 rounded-full" title="Moneda en la que se capturó el contenedor">
-                  Moneda: {selectedContenedor.moneda_base}
-                </span>
-              )}
-              {selectedContenedor.lote_id && (
-                <span className="text-xs bg-secondary/10 text-secondary px-2 py-0.5 rounded-full font-semibold">Lote #{selectedContenedor.lote_id}</span>
-              )}
-              <RefLink to="/cuentas-pagar" param="contenedor" id={selectedContenedor.id} title="Ver cuentas por pagar de este contenedor"
-                className="text-xs bg-warning/10 px-2 py-0.5 rounded-full font-semibold">Cuentas por pagar</RefLink>
-            </div>
-
-            {/* ── En qué punto del camino está ────────────────────
-                El mismo dibujo que en el formulario. Solo tiene algo que contar
-                cuando el contenedor pasó (o está) por la etapa de estimación:
-                en uno creado directo, el badge de arriba ya lo dice todo. */}
-            {vieneDeEstimacion(selectedContenedor) && (
-              <div className="rounded-2xl border border-border/60 bg-primary/[0.02] px-4 py-3">
-                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Camino del contenedor</p>
-                <FlujoContenedor
-                  estado={selectedContenedor.estado}
-                  origen="estimacion"
-                  convertidoEn={selectedContenedor.convertido_en} />
-                <p className="text-[11px] text-muted mt-2 leading-relaxed">
-                  {selectedContenedor.estado === 'estimacion'
-                    ? <>Todo lo que se ve aquí es <b className="text-amber-600">lo que se cree que va a llegar</b>. Las cuentas por pagar ya existen para poder abonar; cuando llegue, conviértelo a contenedor normal y registra lo real.</>
-                    : <>Las cifras de este contenedor <b className="text-blue-600">empezaron siendo una estimación</b>. Mientras un proveedor no tenga líneas reales, su estimado es lo que sigue contando en el costo.</>}
-                </p>
-              </div>
-            )}
-
-            {/* ── Estimado vs. Real ──────────────────────────────
-                Compara lo que se creyó que venía contra lo que se registró al
-                convertirlo a contenedor normal.
-
-                Mientras SIGUE siendo estimación no se pinta: no hay nada real
-                con qué comparar y la tabla salía entera en ceros. Ese caso lo
-                cubre el bloque "Mercancía estimada", más abajo. */}
-            {selectedContenedor.estado !== 'estimacion' && (() => {
-              const provs = selectedContenedor.proveedores_mercancia || [];
-              const conEstimacion = provs.filter(hayEstimadoProveedor);
-              if (conEstimacion.length === 0) return null;
-
-              const filas = conEstimacion.map(p => {
-                const cantEst = parseInt(p.cantidad_estimada) || 0;
-                const cantReal = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
-                const factEst = parseFloat(p.factura_estimada) || (cantEst * (parseFloat(p.valor_unidad_estimado) || 0));
-                const costoReal = (p.detalles || []).reduce(
-                  (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0
-                );
-                return {
-                  nombre: p.proveedor_nombre, moneda: p.moneda || 'USD',
-                  cantEst, cantReal, diffCant: cantReal - cantEst,
-                  factEst, costoReal, diffCosto: costoReal - factEst,
-                  registrado: cantReal > 0,
-                };
-              });
-
-              const totEst = filas.reduce((s, f) => s + f.cantEst, 0);
-              const totReal = filas.reduce((s, f) => s + f.cantReal, 0);
-              const sinRegistrar = filas.filter(f => !f.registrado).length;
-
-              const num = (v) => v.toLocaleString('es-CO');
-              const signo = (v) => (v > 0 ? '+' : '');
-              const colorDiff = (v) => (v === 0 ? 'text-muted' : v > 0 ? 'text-success' : 'text-error');
-
-              return (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between flex-wrap gap-2">
-                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles size={13} /> Estimado vs. lo que llegó
-                    </p>
-                    <span className="text-xs font-semibold tabular-nums">
-                      <span className="text-muted">{num(totEst)} estimadas</span>
-                      <span className="text-muted/50 mx-1.5">→</span>
-                      <span className="text-primary">{num(totReal)} registradas</span>
-                      {totEst > 0 && (
-                        <span className={`ml-2 ${colorDiff(totReal - totEst)}`}>
-                          ({signo(totReal - totEst)}{num(totReal - totEst)})
-                        </span>
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-surface/60 border-b border-amber-500/20">
-                          <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Proveedor</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. estimadas</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Unid. reales</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Factura estimada</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Costo real</th>
-                          <th scope="col" className="px-3 py-2 text-right font-semibold text-muted uppercase tracking-wider">Dif.</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-amber-500/10">
-                        {filas.map((f, i) => (
-                          <tr key={i} className="hover:bg-surface/50">
-                            <td className="px-3 py-2 font-medium text-primary">
-                              {f.nombre}
-                              {!f.registrado && (
-                                <span className="ml-2 text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded">
-                                  sin registrar
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">{f.cantEst ? num(f.cantEst) : '—'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">{f.registrado ? num(f.cantReal) : '—'}</td>
-                            <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.registrado && f.cantEst ? colorDiff(f.diffCant) : 'text-muted'}`}>
-                              {f.registrado && f.cantEst ? `${signo(f.diffCant)}${num(f.diffCant)}` : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-muted tabular-nums">
-                              {f.factEst ? `${f.moneda} ${num(Math.round(f.factEst))}` : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-primary font-semibold tabular-nums">
-                              {f.costoReal ? `${f.moneda} ${num(Math.round(f.costoReal))}` : '—'}
-                            </td>
-                            <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${f.costoReal && f.factEst ? colorDiff(-f.diffCosto) : 'text-muted'}`}>
-                              {f.costoReal && f.factEst ? `${signo(f.diffCosto)}${num(Math.round(f.diffCosto))}` : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {sinRegistrar > 0 && (
-                    <p className="px-4 py-2.5 text-xs text-amber-700 border-t border-amber-500/20 bg-amber-500/5">
-                      Faltan <b>{sinRegistrar}</b> proveedor{sinRegistrar !== 1 ? 'es' : ''} por registrar lo que realmente llegó.
-                      Puedes hacerlo de a uno desde <b>Editar</b>.
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Desglose de costos por proveedor y servicio */}
-            <div className="rounded-2xl border border-border/60 overflow-hidden">
-              {/* Proveedores */}
-              {selectedContenedor.proveedores_mercancia.length > 0 && (
-                <div>
-                  <div className="px-4 py-2 bg-primary/3 border-b border-border/40">
-                    <p className="text-xs font-bold text-muted uppercase tracking-wider">Mercancía — por proveedor</p>
-                  </div>
-                  <div className="divide-y divide-border/30">
-                    {selectedContenedor.proveedores_mercancia.map((prov, i) => {
-                      const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-                      // Costo real de las líneas; si aún no hay, la estimación.
-                      // El último término es la factura estimada suelta, para
-                      // las estimaciones viejas: es exactamente lo que hace
-                      // `costoBaseProveedor` en el servidor, y sin él esta línea
-                      // enseñaba 0 mientras el total de abajo sí la contaba.
-                      const costoReal = (prov.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
-                      const costoEstimado = ((parseInt(prov.cantidad_estimada) || 0) * (parseFloat(prov.valor_unidad_estimado) || 0))
-                        || (parseFloat(prov.factura_estimada) || 0);
-                      const costoOriginal = costoReal > 0 ? costoReal : costoEstimado;
-                      const esEstimadoProv = costoReal === 0 && costoEstimado > 0;
-                      const costoCOP = prov.moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
-                      const costoPorUnidad = parseInt(selectedContenedor.total_pacas) > 0 ? costoCOP / parseInt(selectedContenedor.total_pacas) : 0;
-                      return (
-                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors">
-                          <div>
-                            <p className="text-sm font-semibold text-primary flex items-center gap-1.5">
-                              {prov.proveedor_nombre}
-                              {esEstimadoProv && <SelloEstimacion title="Sin líneas reales: cuenta lo estimado">estimado</SelloEstimacion>}
-                            </p>
-                            {prov.moneda === 'USD' && costoOriginal > 0 && (
-                              <p className="text-xs text-muted">USD {costoOriginal.toLocaleString('es-CO')} × {tasa.toLocaleString('es-CO')}</p>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <p className="font-mono text-secondary text-sm font-semibold">{formatCurrency(costoCOP)}</p>
-                            <p className="text-[10px] text-muted">{formatCurrency(costoPorUnidad)}/unidad</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Servicios */}
-              {selectedContenedor.servicios.length > 0 && (
-                <div>
-                  <div className="px-4 py-2 bg-primary/3 border-b border-border/40 border-t border-t-border/40">
-                    <p className="text-xs font-bold text-muted uppercase tracking-wider">Servicios</p>
-                  </div>
-                  <div className="divide-y divide-border/30">
-                    {selectedContenedor.servicios.map((srv, i) => {
-                      // Una estimación no tiene costo real: si aquí se leyera solo
-                      // `costo`, TODOS sus servicios saldrían en $0 mientras el total
-                      // de abajo sí los cuenta.
-                      const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-                      const monedaSrv = srv.moneda || 'COP';
-                      const costoServicio = costoServicioEfectivo(srv);      // en SU moneda
-                      const costoSrvCOP = monedaSrv === 'USD' ? costoServicio * tasa : costoServicio;
-                      const esEstimadoSrv = !(parseFloat(srv.costo) > 0) && costoServicio > 0;
-                      const propio = esServicioPropio(srv);
-                      // La misma cuenta que hace el servidor: un servicio propio
-                      // se carga entero a las unidades propias; uno compartido se
-                      // reparte entre TODO el contenedor y solo entra su parte.
-                      const propias = parseInt(selectedContenedor.total_pacas) || 0;
-                      const base = (parseInt(selectedContenedor.cantidad_total) || 0) > 0
-                        ? parseInt(selectedContenedor.cantidad_total) : propias;
-                      const asignadoCOP = costoServicioAsignado(costoSrvCOP, { propio, base, propias });
-                      const costoPorUnidad = propias > 0 ? asignadoCOP / propias : 0;
-                      return (
-                        <div key={i} className="flex items-center justify-between px-4 py-2.5 hover:bg-primary/3 transition-colors gap-3">
-                          <div className="flex items-center gap-2 flex-wrap min-w-0">
-                            <span className="capitalize text-xs font-semibold bg-primary/8 text-primary px-2 py-0.5 rounded-md">{srv.tipo_servicio}</span>
-                            <span className="text-sm text-muted truncate">{srv.proveedor_nombre}</span>
-                            <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
-                              propio ? 'text-secondary bg-secondary/10' : 'text-muted bg-primary/8'}`}
-                              title={propio
-                                ? 'Propio: el costo entero se carga a sus unidades'
-                                : 'Compartido: se reparte entre todas las unidades del contenedor'}>
-                              {propio ? 'propio' : 'compartido'}
-                            </span>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            {/* En la moneda del servicio, con su equivalente
-                                debajo: antes salía con símbolo de peso aunque
-                                estuviera facturado en dólares. */}
-                            <p className="font-mono text-secondary text-sm font-semibold">
-                              {fmtPropia(costoServicio, monedaSrv)} {monedaSrv}
-                              {esEstimadoSrv && (
-                                <span className="ml-1.5 text-[9px] font-sans font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">estimado</span>
-                              )}
-                            </p>
-                            <p className="text-[10px] text-muted">
-                              {monedaSrv === 'USD' && tasa > 1 && <>≈ {formatCurrency(costoSrvCOP)} · </>}
-                              {formatCurrency(costoPorUnidad)}/unidad
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Totales */}
-              <div className="px-4 py-3 bg-primary/5 border-t border-border/40">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-primary">Total COP</span>
-                  <span className="font-mono font-bold text-primary text-base tabular-nums">{formatCurrency(selectedContenedor.costo_total)}</span>
-                </div>
-                {parseFloat(selectedContenedor.tasa_conversion) > 1 && (
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-secondary">Total USD</span>
-                    <span className="font-mono font-bold text-secondary text-base tabular-nums">
-                      ${(parseFloat(selectedContenedor.costo_total) / parseFloat(selectedContenedor.tasa_conversion)).toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between pt-2 border-t border-border/30">
-                  <span className="text-xs text-muted">Por unidad</span>
-                  <div className="text-right">
-                    <span className="font-mono text-sm font-semibold text-primary tabular-nums">{formatCurrency(selectedContenedor.costo_unitario)}</span>
-                    {parseFloat(selectedContenedor.tasa_conversion) > 1 && (
-                      <span className="text-xs text-secondary font-mono ml-2">
-                        / ${(parseFloat(selectedContenedor.costo_unitario) / parseFloat(selectedContenedor.tasa_conversion)).toFixed(2)} USD
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* ── Mercancía estimada, por proveedor ───────────────
-                El bloque de abajo se arma con las LÍNEAS de distribución, y una
-                estimación no tiene ninguna: salía un recuadro por proveedor
-                completamente vacío. Aquí va lo que sí hay —valor por unidad ×
-                cantidad = factura, con su equivalente en pesos—, que es el
-                equivalente en formato estimación de esa misma distribución. */}
-            {selectedContenedor.estado === 'estimacion' && (() => {
-              const tasa = parseFloat(selectedContenedor.tasa_conversion) || 1;
-              const hayTasa = tasa > 1;
-              const provs = (selectedContenedor.proveedores_mercancia || []).filter(hayEstimadoProveedor);
-              if (provs.length === 0) return null;
-              return (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <p className="text-xs font-semibold text-muted uppercase tracking-wider">Mercancía estimada</p>
-                    <SelloEstimacion title="Todavía no hay líneas de distribución: esto es lo que se cree que llegará">
-                      no ha llegado
-                    </SelloEstimacion>
-                  </div>
-                  <div className="space-y-2">
-                    {provs.map((prov, i) => {
-                      const moneda = prov.moneda || 'USD';
-                      const cantEst = parseInt(prov.cantidad_estimada) || 0;
-                      const valorEst = parseFloat(prov.valor_unidad_estimado) || 0;
-                      const factEst = (cantEst * valorEst) || (parseFloat(prov.factura_estimada) || 0);
-                      return (
-                        <div key={i} className="rounded-xl border border-dashed border-amber-400/50 bg-amber-500/[0.04] overflow-hidden">
-                          <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-400/30 flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
-                              <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{moneda}</span>
-                            </div>
-                            <div className="text-right">
-                              {/* En la moneda del proveedor. Antes esta cifra
-                                  salía con formatCOP: un valor por unidad de
-                                  285,50 dólares se leía como 286 pesos. */}
-                              <p className="font-mono text-sm font-bold text-primary tabular-nums">
-                                {fmtPropia(factEst, moneda)} {moneda}
-                              </p>
-                              {moneda === 'USD' && hayTasa && (
-                                <p className="text-[10px] text-muted font-mono">≈ {formatCurrency(factEst * tasa)} COP</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="px-4 py-2.5 flex flex-wrap items-center gap-3 text-xs">
-                            <span className="text-muted">
-                              Cantidad estimada <b className="font-mono text-primary tabular-nums">{cantEst ? cantEst.toLocaleString('es-CO') : '—'}</b>
-                            </span>
-                            <span className="text-muted/40">×</span>
-                            <span className="text-muted">
-                              Valor por unidad <b className="font-mono text-primary tabular-nums">{valorEst ? fmtPropia(valorEst, moneda, { unitario: true }) : '—'}</b>
-                            </span>
-                            <span className="text-muted/40">=</span>
-                            <span className="text-muted">
-                              Factura estimada <b className="font-mono text-secondary tabular-nums">{fmtPropia(factEst, moneda)}</b>
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Distribución de unidades por proveedor.
-                Se oculta en una estimación: no hay líneas todavía y quedaba un
-                recuadro vacío por proveedor. Lo suyo lo enseña el bloque de
-                arriba, en formato estimación. */}
-            {selectedContenedor.estado !== 'estimacion' && (
-            <div>
-              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Distribución de Unidades</p>
-              <div className="space-y-2">
-                {selectedContenedor.proveedores_mercancia.map((prov, i) => (
-                  <div key={i} className="rounded-xl border border-border/60 bg-surface overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/40 bg-primary/3 flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-primary text-sm">{prov.proveedor_nombre}</p>
-                        {prov.moneda && <span className="text-[10px] bg-primary/8 text-muted px-1.5 py-0.5 rounded font-bold">{prov.moneda}</span>}
-                      </div>
-                      {/* Lo estimado sigue a la vista cuando el contenedor viene
-                          de una estimación: es contra lo que se compara lo que
-                          llegó, y en la moneda del proveedor, no en pesos. */}
-                      {vieneDeEstimacion(selectedContenedor) && hayEstimadoProveedor(prov) && (
-                        <div className="flex items-center gap-2 text-[10px] text-muted">
-                          <SelloEstimacion className="!text-[9px]">estimado</SelloEstimacion>
-                          {prov.cantidad_estimada != null && <span>Cant.: <strong className="text-primary">{prov.cantidad_estimada}</strong></span>}
-                          {prov.valor_unidad_estimado != null && <span>Val/u: <strong className="text-primary">{fmtPropia(prov.valor_unidad_estimado, prov.moneda, { unitario: true })}</strong></span>}
-                          {prov.factura_estimada && <span>Factura: <strong className="text-primary">{fmtPropia(prov.factura_estimada, prov.moneda)} {prov.moneda || 'USD'}</strong></span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="px-4 py-2.5 flex flex-wrap gap-2">
-                      {prov.detalles.length === 0 ? (
-                        <span className="text-xs text-warning">Sin líneas registradas todavía — su estimado es lo que cuenta en el costo.</span>
-                      ) : prov.detalles.map((det, di) => (
-                        <span key={di} className="inline-flex items-center gap-1.5 bg-primary/5 border border-border/50 rounded-lg px-2.5 py-1 text-xs">
-                          <span className="capitalize font-semibold text-secondary">{det.clasificacion}</span>
-                          <span className="text-muted">/</span>
-                          <span className="capitalize text-muted">{det.referencia}</span>
-                          {det.calidad && <><span className="text-muted">/</span><span className="capitalize text-muted">{det.calidad}</span></>}
-                          <span className="w-px h-3 bg-border/60" />
-                          <span className="font-bold text-primary tabular-nums">{det.cantidad}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            )}
-            {/* Comparación detallada por proveedor — visible cuando hay revisión */}
-            {(selectedContenedor.estado === 'revision' || selectedContenedor.estado === 'finalizado') && selectedContenedor.total_pacas_recibidas != null && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <ClipboardCheck size={15} className="text-blue-600" />
-                    <p className="text-sm font-bold text-blue-700 uppercase tracking-wider">Comparación por Proveedor</p>
-                  </div>
-                  <button onClick={() => handleExportReclamacionExcel(selectedContenedor)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors">
-                    <Download size={13} /> Exportar reclamación
-                  </button>
-                </div>
-
-                {/* Totales globales */}
-                <div className="grid grid-cols-2 gap-3 text-center">
-                  <div className="bg-white rounded-lg px-4 py-3 border border-border/40">
-                    <p className="text-[10px] text-muted uppercase font-semibold">Total Pedido</p>
-                    <p className="text-2xl font-mono font-bold text-primary">{parseInt(selectedContenedor.total_pacas).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-white rounded-lg px-4 py-3 border border-success/30">
-                    <p className="text-[10px] text-success uppercase font-semibold">Total Recibido (al inventario)</p>
-                    <p className="text-2xl font-mono font-bold text-success">{parseInt(selectedContenedor.total_pacas_recibidas).toLocaleString()}</p>
-                    {parseInt(selectedContenedor.total_pacas_recibidas) !== parseInt(selectedContenedor.total_pacas) && (
-                      <p className="text-xs font-semibold mt-0.5 text-warning">
-                        {parseInt(selectedContenedor.total_pacas_recibidas) - parseInt(selectedContenedor.total_pacas)} vs. pedido
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Por proveedor */}
-                {selectedContenedor.proveedores_mercancia.map((prov) => {
-                  const provEnv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
-                  const provRec = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad_recibida) || 0), 0);
-                  const provDiff = provRec - provEnv;
-                  const hayDiscrepancias = prov.detalles.some(d =>
-                    (parseInt(d.cantidad_recibida) || 0) !== (parseInt(d.cantidad) || 0) ||
-                    d.clasificacion_recibida || d.referencia_recibida || d.calidad_recibida
-                  );
-                  return (
-                    <div key={prov.id} className="bg-white rounded-xl border border-border/60 overflow-hidden">
-                      <div className="px-4 py-2.5 bg-primary/3 border-b border-border/40 flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-primary">{prov.proveedor_nombre}</p>
-                          {hayDiscrepancias && (
-                            <span className="text-[10px] font-bold bg-warning/15 text-warning px-2 py-0.5 rounded-full">
-                              ⚠ Discrepancias
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-mono">
-                          <span className="text-muted">Pedido: <strong className="text-primary">{provEnv}</strong></span>
-                          <ArrowRight size={11} className="text-muted" />
-                          <span className="text-success">Recibido: <strong>{provRec}</strong></span>
-                          {provDiff !== 0 && (
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${provDiff < 0 ? 'bg-error/10 text-error' : 'bg-warning/15 text-warning'}`}>
-                              {provDiff > 0 ? '+' : ''}{provDiff}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-border/40 bg-primary/2">
-                              <th scope="col" className="px-3 py-2 text-left font-semibold text-muted uppercase tracking-wider">Producto Pedido</th>
-                              <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Pedido</th>
-                              <th scope="col" className="px-3 py-2 text-left font-semibold text-success uppercase tracking-wider">Producto Recibido</th>
-                              <th scope="col" className="px-3 py-2 text-center font-semibold text-success uppercase tracking-wider w-20">Recibido</th>
-                              <th scope="col" className="px-3 py-2 text-center font-semibold text-muted uppercase tracking-wider w-16">Dif.</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/30">
-                            {prov.detalles.map((det, i) => {
-                              const enviado = parseInt(det.cantidad) || 0;
-                              const recibido = parseInt(det.cantidad_recibida) || 0;
-                              const diff = recibido - enviado;
-                              const cambioTipo = det.clasificacion_recibida || det.referencia_recibida || det.calidad_recibida;
-                              const clasRec = det.clasificacion_recibida || det.clasificacion;
-                              const refRec  = det.referencia_recibida    || det.referencia;
-                              const calRec  = det.calidad_recibida       || det.calidad || '';
-                              return (
-                                <tr key={i} className={diff !== 0 || cambioTipo ? 'bg-warning/5' : ''}>
-                                  <td className="px-3 py-2">
-                                    {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
-                                    <span className="capitalize font-medium text-primary">{det.clasificacion}</span>
-                                    <span className="text-muted"> / </span>
-                                    <span className="capitalize">{det.referencia}</span>
-                                    {det.calidad && <><span className="text-muted"> / </span><span className="capitalize text-muted">{det.calidad}</span></>}
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-mono font-semibold">{enviado}</td>
-                                  <td className="px-3 py-2">
-                                    {recibido === 0 ? (
-                                      <span className="text-error italic font-medium">No llegó</span>
-                                    ) : cambioTipo ? (
-                                      <>
-                                        <span className="capitalize font-bold text-warning">{clasRec}</span>
-                                        <span className="text-warning"> / </span>
-                                        <span className="capitalize text-warning">{refRec}</span>
-                                        {calRec && <><span className="text-warning"> / </span><span className="capitalize text-warning">{calRec}</span></>}
-                                        <span className="block text-[10px] text-warning italic font-semibold mt-0.5">⚠ tipo distinto al pedido</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        {det.categoria && <span className="text-[10px] text-muted">{det.categoria} · </span>}
-                                        <span className="capitalize font-medium text-success">{clasRec}</span>
-                                        <span className="text-muted"> / </span>
-                                        <span className="capitalize">{refRec}</span>
-                                        {calRec && <><span className="text-muted"> / </span><span className="capitalize text-muted">{calRec}</span></>}
-                                      </>
-                                    )}
-                                    {det.notas_revision && <p className="text-[10px] text-muted italic mt-0.5">📝 {det.notas_revision}</p>}
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-mono font-bold text-success">{recibido}</td>
-                                  <td className="px-3 py-2 text-center font-mono text-xs">
-                                    {diff === 0 ? (
-                                      <span className="text-muted">—</span>
-                                    ) : (
-                                      <span className={`font-bold ${diff < 0 ? 'text-error' : 'text-warning'}`}>
-                                        {diff > 0 ? '+' : ''}{diff}
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {selectedContenedor.notas && (
-              <p className="text-sm text-muted italic border-l-2 border-border pl-3">{selectedContenedor.notas}</p>
-            )}
-            <div className="flex justify-between items-center pt-2 border-t border-border/40 gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleExportContenedorExcel(selectedContenedor)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                  <Download size={15} /> Exportar Excel
-                </button>
-                <button onClick={() => { setNombrePlantilla(''); setTemplateFromView(true); setSaveTemplateModalOpen(true); }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                  <Save size={15} /> Guardar como plantilla
-                </button>
-              </div>
-              {/* El paso siguiente del flujo, donde se está mirando el
-                  contenedor: sin él había que cerrar el detalle y buscar un
-                  icono en la fila de la lista. */}
-              {canEdit && selectedContenedor.estado === 'estimacion' && (
-                <div className="flex gap-3 ml-auto">
-                  <button onClick={() => { setViewModalOpen(false); openEditModal(selectedContenedor); }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                    <Edit2 size={15} /> Editar estimación
-                  </button>
-                  <button onClick={() => handleConvertirNormal(selectedContenedor)}
-                    title="Ya llegó: pasar a contenedor y registrar lo real"
-                    className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 active:scale-95 transition-all duration-150">
-                    <RefreshCw size={17} /> Ya llegó — convertir
-                  </button>
-                </div>
-              )}
-              {isAdmin && selectedContenedor.estado === 'borrador' && (
-                <div className="flex gap-3 ml-auto">
-                  <button onClick={() => openEditModal(selectedContenedor)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
-                    <Edit2 size={15} /> Editar
-                  </button>
-                  <button onClick={() => openRevisionModal(selectedContenedor)}
-                    className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-all duration-150">
-                    <ClipboardCheck size={17} /> Revisar Contenedor
-                  </button>
-                </div>
-              )}
-              {isAdmin && selectedContenedor.estado === 'revision' && (
-                <div className="flex gap-3 ml-auto">
-                  <button onClick={() => openRevisionModal(selectedContenedor)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-300 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors">
-                    <ClipboardCheck size={15} /> Editar Revisión
-                  </button>
-                  <button onClick={() => openFinalizarModal(selectedContenedor)}
-                    className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
-                    <CheckCircle size={17} /> Finalizar Contenedor
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
+      {/* El modal de VER DETALLE ya no existe: ver un contenedor abre el
+          mismo formulario con el que se creó, apagado (`soloLectura`). Eran dos
+          pantallas para el mismo contenedor, con los datos en otro orden y con
+          otros nombres, y había que reaprender dónde está cada cosa según por
+          qué botón se hubiera entrado. Lo que solo tenía el detalle —la ficha,
+          el estimado contra lo que llegó, la comparación por proveedor y la
+          barra de acciones— está ahora dentro del formulario. */}
 
       {/* ════════════════════════════════════════════════════════
           FINALIZAR MODAL
