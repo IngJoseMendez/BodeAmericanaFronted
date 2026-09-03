@@ -2591,16 +2591,15 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
   // ── Convertir estimación → contenedor normal ───────────────────
   const handleConvertirNormal = async (contenedor) => {
     const ok = await confirm({
-      title: `¿"${contenedor.numero}" ya llegó?`,
+      title: `¿"${contenedor.numero}" esto es lo que se va a comprar?`,
       message:
-        `Estimación → Contenedor. A partir de aquí se registra lo que REALMENTE llegó: ` +
-        `líneas de distribución con sus cantidades y costos, revisión física y finalización.\n\n` +
-        `· Lo estimado NO se borra: se conserva para comparar y sigue contando en el costo ` +
-        `mientras un proveedor no tenga líneas reales.\n` +
+        `Estimación → Contenedor. A partir de aquí se registra esto es lo que se va a comprar:\n\n` +
+        `· Lo estimado NO se borra: se conserva para comparar y sigue contando en el costo mientras un proveedor no tenga líneas reales.\n` +
         `· Las Cuentas por Pagar y sus abonos se conservan.\n` +
         `· El contenedor queda marcado como "de estimación", así que después se sabrá de dónde vienen sus cifras.\n\n` +
         `No se puede deshacer desde la pantalla.`,
-      confirmText: 'Sí, ya llegó',
+      confirmText: 'Sí, convertir',
+      confirmColor: 'bg-amber-500 hover:bg-amber-600',
       cancelText: 'Todavía no',
       variant: 'info',
     });
@@ -3686,9 +3685,10 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
                     {parseMonto(formData.utilidad_unitaria) > 0 ? (
                       <p className="text-[10px] mt-0.5">
-                        <span className="text-muted">Total: </span>
-                        <b className="font-mono text-emerald-600">{formatCurrency(resumen.utilidadTotal)}</b>
-                        <span className="text-muted/70"> ({resumen.totalPacas} unidades {modoEstimacion ? 'estimadas' : 'suyas'})</span>
+                        <span className="text-muted">En dólares: </span>
+                        <b className="font-mono text-emerald-600">
+                          {tasaValida ? formatCurrency(parseMonto(formData.utilidad_unitaria) / parseFloat(formData.tasa_conversion), 'USD', { decimales: 2 }) : 'Requiere tasa'}
+                        </b>
                       </p>
                     ) : modoEstimacion && (
                       <p className="text-[10px] text-muted mt-0.5 leading-tight">
@@ -5348,9 +5348,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             ) : (
                               <>
                                 <span className={`block font-mono font-semibold tabular-nums ${sobreMinimo >= 0 ? 'text-success' : 'text-error'}`}
-                                      title="Lo que se gana POR ENCIMA del mínimo. Vendiendo justo al mínimo es 0, y aún así se gana la utilidad fijada.">
+                                      title="Lo que se gana POR ENCIMA del precio mínimo. Vendiendo justo al mínimo es 0, y aún así se gana la utilidad fijada.">
                                   {sobreMinimo >= 0 ? '+' : ''}{formatCurrency(sobreMinimo)}
-                                  <span className="text-[10px] font-normal text-muted"> sobre el mínimo</span>
+                                  <span className="text-[10px] font-normal text-muted"> sobre el precio mínimo</span>
                                 </span>
                                 <span className="block text-[10px] font-mono text-muted tabular-nums"
                                       title="Ganancia real por unidad: precio de venta menos lo que cuesta puesto en bodega (mercancía + servicios)">
@@ -5517,7 +5517,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
                           {/* Col 1: Enviado — solo lectura, salvo en los items agregados a mano */}
                           {row.es_nuevo ? (
-                            <div className="lg:col-span-2 flex flex-wrap items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
+                            <div className="lg:col-span-full flex flex-wrap items-center gap-2 bg-blue-100/50 border border-blue-200 rounded-lg p-2">
                               <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
                               {/* La CATEGORÍA se pedía en el alta pero no aquí, y estos
                                   productos acaban siendo pacas igual que los demás: sin
