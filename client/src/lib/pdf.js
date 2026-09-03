@@ -16,7 +16,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
   };
 
   if (sel.includes('DESPACHO(BODEGA)')) {
-    addTitle(DESPACHOS (EN PROCESO) - Vienen: \ / Salen: \ / Quedan: \);
+    addTitle(`DESPACHOS (EN PROCESO) - Vienen: ${totales.vienen} / Salen: ${totales.salen} / Quedan: ${totales.quedan}`);
     const rows = [];
     for (const d of data.despachos) {
       let first = true;
@@ -41,7 +41,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
   }
 
   if (sel.includes('SEPARADAS(BODEGA)')) {
-    addTitle(MERCANCIA SEPARADA);
+    addTitle(`MERCANCIA SEPARADA`);
     const rows = [];
     for (const c of data.separadas) {
       let first = true;
@@ -64,7 +64,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
   }
 
   if (sel.includes('INVENTARIO(BODEGA)')) {
-    addTitle(INVENTARIO (BODEGA));
+    addTitle(`INVENTARIO (BODEGA)`);
     const rows = data.inventario.map(f => [
       f.categoria, f.clasificacion, f.referencia, f.calidad,
       f.fisico, f.separadas, f.disponibles
@@ -83,12 +83,13 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
     doc.text("No data selected", 40, 40);
   }
 
-  doc.save(\.pdf);
+  doc.save(`${fileName}.pdf`);
 }
 
 export async function exportarPDFInternos(sel, data, fileName) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
   let pageAdded = false;
+
 
   const addTitle = (title) => {
     if (pageAdded) doc.addPage();
@@ -98,7 +99,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
   };
 
   if (sel.includes('INVENTARIO(INTERNO)')) {
-    addTitle(INVENTARIO (INTERNO));
+    addTitle(`INVENTARIO (INTERNO)`);
     const rows = data.inventario.map(f => [
       f.categoria, f.clasificacion, f.referencia, f.calidad,
       formatCOP(parseFloat(f.precio_minimo) || parseFloat(f.costo_unitario)), formatCOP(f.precio_unitario),
@@ -115,7 +116,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
   }
 
   if (sel.includes('CARTERA(INTERNA)')) {
-    addTitle(CARTERA (INTERNA));
+    addTitle(`CARTERA (INTERNA)`);
     const rows = data.cartera.map(c => [
       c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo), formatCOP(c.vencido)
     ]);
@@ -133,5 +134,5 @@ export async function exportarPDFInternos(sel, data, fileName) {
     doc.text("No data selected or missing PDF mapping for selected pages", 40, 40);
   }
 
-  doc.save(\.pdf);
+  doc.save(`${fileName}.pdf`);
 }
