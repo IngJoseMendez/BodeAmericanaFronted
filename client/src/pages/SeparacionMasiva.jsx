@@ -1173,7 +1173,7 @@ export default function SeparacionMasiva() {
 
   return (
     <Layout
-      title="Separación masiva"
+      title="Matrix"
       subtitle="Aparta pacas para varios clientes a la vez. Cada cliente se guarda como una cotización normal."
     >
       <div className="space-y-4 pb-4">

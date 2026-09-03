@@ -67,7 +67,7 @@ function contadores(ws, fila, pares, colInicio = 8) {
 
 // ── BODEGA ────────────────────────────────────────────────────────
 
-const COLS_BODEGA = ['CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'CAN', 'NOMBRE', 'CIUDAD', 'DIRECCION', 'CELULAR', 'TRANSP.'];
+const COLS_BODEGA = ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'CAN', 'NOMBRE', 'CIUDAD', 'DIRECCION', 'CELULAR', 'TRANSP.'];
 const ANCHOS_BODEGA = [18, 16, 24, 14, 7, 26, 16, 32, 14, 12];
 
 /**
@@ -101,7 +101,7 @@ export function hojaDespachoBodega(wb, despachos, { totales } = {}) {
     for (const g of d.grupos) {
       const r = ws.getRow(fila);
       r.height = 18;
-      [g.clasificacion, g.categoria, g.referencia, g.calidad, g.cantidad,
+      [g.categoria, g.clasificacion, g.referencia, g.calidad, g.cantidad,
        d.nombre, d.ciudad, d.direccion, d.celular, d.transporte].forEach((v, i) => {
         const c = r.getCell(i + 1);
         c.value = v ?? '';
@@ -150,7 +150,7 @@ export function hojaSeparadasBodega(wb, clientes) {
     for (const g of c.grupos) {
       const r = ws.getRow(fila);
       r.height = 18;
-      [g.clasificacion, g.categoria, g.referencia, g.calidad, g.cantidad,
+      [g.categoria, g.clasificacion, g.referencia, g.calidad, g.cantidad,
        c.nombre, c.ciudad, c.direccion, c.celular, c.transporte].forEach((v, i) => {
         const cell = r.getCell(i + 1);
         cell.value = v ?? '';
@@ -196,12 +196,12 @@ export function hojaInventarioBodega(wb, filas) {
 
   let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 7);
   // SEPARADA va entre FÍSICO y DISP: es la resta que explica la diferencia.
-  fila = cabecera(ws, fila, ['CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP']);
+  fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP']);
 
   let fisico = 0, sep = 0, disp = 0;
   for (const f of filas) {
     const r = ws.getRow(fila);
-    [f.clasificacion, f.categoria, f.referencia, f.calidad,
+    [f.categoria, f.clasificacion, f.referencia, f.calidad,
      int(f.fisico), int(f.separadas), int(f.disponibles)].forEach((v, i) => {
       const c = r.getCell(i + 1);
       c.value = v ?? '';
@@ -685,13 +685,13 @@ export function hojaListaDisponiblesInterna(wb, filas) {
   ws.getCell('B1').value = totalDisp;
   ws.getCell('B1').font = { bold: true, size: 12, color: { argb: ACCENT } };
 
-  let fila = cabecera(ws, 2, ['DISP', 'CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'PRECIO', 'PROMO']);
+  let fila = cabecera(ws, 2, ['DISP', 'CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'PRECIO', 'PROMO']);
 
   for (const f of filas) {
     const r = ws.getRow(fila);
     r.getCell(1).value = int(f.disponibles);
-    r.getCell(2).value = f.clasificacion || '';
-    r.getCell(3).value = f.categoria || '';
+    r.getCell(2).value = f.categoria || '';
+    r.getCell(3).value = f.clasificacion || '';
     r.getCell(4).value = f.referencia || '';
     r.getCell(5).value = f.calidad || '';
     r.getCell(6).value = num(f.precio);
@@ -711,15 +711,15 @@ export function hojaInventarioInterno(wb, filas) {
   [18, 16, 24, 14, 14, 14, 8, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 9);
-  fila = cabecera(ws, fila, ['CLASIFICACION', 'CATEGORIA', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
+  fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
 
   let ct = 0, pt = 0, disp = 0;
   for (const f of filas) {
     const d = int(f.disponibles);
-    const costo = num(f.costo_unitario);
+    const costo = num(f.precio_minimo) || num(f.costo_unitario);
     const precio = num(f.precio_unitario);
     const r = ws.getRow(fila);
-    [f.clasificacion, f.categoria, f.referencia, f.calidad, costo, precio, d, costo * d, precio * d]
+    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo, precio, d, costo * d, precio * d]
       .forEach((v, i) => {
         const c = r.getCell(i + 1);
         c.value = v ?? '';

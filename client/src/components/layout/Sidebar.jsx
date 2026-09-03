@@ -77,7 +77,7 @@ const adminNavItems = [
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',    key: null },
   // Va pegada a Cotizaciones porque cada fila de la matriz termina siendo una
   // cotización normal: es la misma tarea, hecha para muchos clientes de una vez.
-  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Separación masiva', key: null },
+  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matrix', key: null },
   { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },

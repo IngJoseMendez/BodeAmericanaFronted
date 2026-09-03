@@ -160,9 +160,8 @@ const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wi
 // Se declara aquí fuera a propósito: definido dentro de la pantalla, React lo
 // vería como un tipo nuevo en cada render y lo desmontaría en cada tecla.
 const VISTAS_MONEDA = [
-  { v: 'AMBAS', label: 'Ambas', ayuda: 'Ver cada cifra en dólares y en pesos' },
-  { v: 'USD',   label: 'USD',   ayuda: 'Ver el resumen solo en dólares' },
-  { v: 'COP',   label: 'COP',   ayuda: 'Ver el resumen solo en pesos' },
+  { v: 'USD',   label: 'USD',   ayuda: 'Ver el resumen principal en dólares y secundario en pesos' },
+  { v: 'COP',   label: 'COP',   ayuda: 'Ver el resumen principal en pesos y secundario en dólares' },
 ];
 function ToggleMoneda({ valor, onChange, deshabilitado = false, id }) {
   return (
@@ -240,7 +239,7 @@ function SelloOrigenEstimacion({ convertidoEn, className = '' }) {
 // contenedor o un paso que nunca existió (uno creado directo en borrador).
 const PASOS_CONTENEDOR = [
   { estado: 'estimacion', label: 'Estimación', ayuda: 'Lo que se cree que va a llegar. Genera cuentas por pagar para abonar antes.' },
-  { estado: 'borrador',   label: 'Contenedor', ayuda: 'Lo que de verdad llegó: líneas de distribución con cantidades y costos.' },
+  { estado: 'borrador',   label: 'Contenedor', ayuda: 'Esto es lo que se va a comprar: líneas de distribución con cantidades y costos.' },
   { estado: 'revision',   label: 'Revisión',   ayuda: 'Conteo físico contra lo facturado.' },
   { estado: 'finalizado', label: 'Finalizado', ayuda: 'Las pacas entran al inventario con su costo. Ya no se puede editar.' },
 ];
@@ -776,10 +775,12 @@ export default function Contenedores() {
   const [servicios, setServicios]     = useState([emptyServicio()]);
   const monedaBase = formData.moneda_base === 'COP' ? 'COP' : 'USD';
 
-  // Moneda en la que se LEE el resumen de costos: 'AMBAS' | 'USD' | 'COP'.
-  // Arranca en AMBAS porque el contenedor se compra en dólares y se paga en
-  // pesos: las dos cifras hacen falta. No afecta a lo que se guarda.
-  const [monedaResumen, setMonedaResumen] = useState('AMBAS');
+  // Moneda en la que se LEE el resumen de costos: 'USD' | 'COP'.
+  // Se guarda en localStorage para recordar la preferencia.
+  const [monedaResumen, setMonedaResumen] = useState(() => localStorage.getItem('bodega_monedaVista') || 'USD');
+  useEffect(() => {
+    localStorage.setItem('bodega_monedaVista', monedaResumen);
+  }, [monedaResumen]);
 
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
@@ -1600,7 +1601,7 @@ export default function Contenedores() {
       // decir y una fila en $0 se lee como "no se gana nada".
       ...(parseFloat(full.utilidad_unitaria) > 0 ? [
         ['Utilidad por unidad', fmtCOP(full.utilidad_unitaria)],
-        ['Utilidad total', fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas)],
+        ['Utilidad total estimada', fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas)],
         [esEstimacionExcel ? 'Inversión total (estimada)' : 'Inversión total',
          fmtCOP((parseFloat(full.costo_total) || 0) + parseFloat(full.utilidad_unitaria) * totalPacas)],
       ] : []),
@@ -2980,8 +2981,8 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
     // Escape cierran sin hacer nada, y solo "Separar ahora" va destacado.
     const irASeparar = await confirm({
       title: 'Mercancía lista para apartar',
-      message: `Entraron ${formatNumero(unidades)} unidades al inventario con el lote "${finalizado.lote_numero}".\n\n¿Quieres repartirlas ahora entre los clientes? Eliges referencia, calidad y cantidad de cada uno, y al guardar quedan sus pacas separadas con su cotización.`,
-      confirmText: 'Separar ahora',
+      message: `Entraron ${formatNumero(unidades)} unidades al inventario con el lote "${finalizado.lote_numero}".\n\n¿Quieres repartirlas ahora entre los clientes en Matrix? Eliges referencia, calidad y cantidad de cada uno, y al guardar quedan sus pacas separadas con su cotización.`,
+      confirmText: 'Ir a Matrix',
       cancelText: 'Después',
       variant: 'success',
     });
@@ -3057,15 +3058,12 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
   const tasaVista   = parseFloat(formData.tasa_conversion) || 0;
   const tasaValida  = tasaVista > 1;
   // 'AMBAS' | 'USD' | 'COP'. Sin tasa solo se puede pesos.
-  const vistaMoneda   = tasaValida ? monedaResumen : 'COP';
-  const verAmbas      = vistaMoneda === 'AMBAS';
-  // Cuando se piden las dos, la grande es la moneda del contenedor y la pequeña
-  // la otra: se lee primero en la moneda en la que se está pensando la compra.
-  const monedaVista   = verAmbas ? monedaBase : vistaMoneda;
+  const vistaMoneda   = tasaValida ? (monedaResumen === 'AMBAS' ? 'USD' : monedaResumen) : 'COP';
+  // La moneda principal es la seleccionada, la alterna es la otra.
+  const monedaVista   = vistaMoneda;
   const monedaAlterna = monedaVista === 'USD' ? 'COP' : 'USD';
-  // ¿Hay que pintar la segunda línea de contraste? Solo si se pidieron las dos
-  // y además hay tasa con la que convertir.
-  const mostrarAlterna = verAmbas && tasaValida;
+  // ¿Hay que pintar la segunda línea de contraste? Siempre, si hay tasa con la que convertir.
+  const mostrarAlterna = tasaValida;
 
   // Un importe en pesos, expresado en la moneda pedida.
   const enMoneda = (cop, moneda) =>
@@ -3603,7 +3601,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       cobran por el contenedor entero, así que se prorratean
                       sobre esta cantidad cuando va compartido con otros. */}
                   <div>
-                    <label htmlFor="cont-cantidad-total" className={lbl}>Cantidad total del contenedor</label>
+                    <label htmlFor="cont-cantidad-total" className={lbl}>Cantidad total</label>
                     <input id="cont-cantidad-total" type="number" min="0" className={inp} placeholder="ej. 312"
                       value={formData.cantidad_total}
                       onChange={(e) => editarForm('cantidad_total', e.target.value)}
@@ -3730,7 +3728,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       // las dos tienen origen visible. Ocultarlas dejaba la
                       // estimación sin la cifra que de verdad se necesita antes
                       // de comprar: cuánta plata hay que poner.
-                      { l: 'Utilidad total', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
+                      { l: 'Utilidad total estimada', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
                       { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
                       { l: 'Total servicios', v: resumen.costoServicios, ayuda: 'Solo servicios, sin proveedores de mercancía' },
                     ].map((c, i) => (
@@ -5249,7 +5247,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   vez, no repetidos en cada fila: lo único que cambia de un
                   producto a otro es la mercancía. */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted px-1">
-                <span className="font-semibold text-primary">Mínimo a cobrar</span>
+                <span className="font-semibold text-primary">Precio mínimo</span>
                 <span>= mercancía del producto</span>
                 <span className="text-muted/50">+</span>
                 <span>servicios <b className="font-mono text-primary">{formatCurrency(serviciosUnidad)}</b>/u
@@ -5279,7 +5277,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-center px-2 py-2 w-[64px]">Pacas</th>
                       <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[130px]"
                           title="Mercancía de este producto + servicios por unidad + utilidad por unidad">
-                        Mínimo a cobrar
+                        Precio mínimo
                       </th>
                       <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[130px]">Precio venta (COP)</th>
                       <th style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right  px-2 py-2 w-[150px]">Ganancia</th>
@@ -5519,7 +5517,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
                           {/* Col 1: Enviado — solo lectura, salvo en los items agregados a mano */}
                           {row.es_nuevo ? (
-                            <div className="flex flex-wrap items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
+                            <div className="lg:col-span-2 flex flex-wrap items-center gap-1 bg-blue-100/50 border border-blue-200 rounded-lg p-1">
                               <span className="text-[9px] font-bold text-blue-700 uppercase px-1 flex-shrink-0">Extra</span>
                               {/* La CATEGORÍA se pedía en el alta pero no aquí, y estos
                                   productos acaban siendo pacas igual que los demás: sin
@@ -5586,11 +5584,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
 
                           {/* Col 2: Tipo recibido — en los items extra no aplica:
                               lo que se escribe a la izquierda ya es lo que llegó. */}
-                          {row.es_nuevo ? (
-                            <p className="text-[11px] text-blue-700 italic px-2">
-                              Producto que llegó sin estar facturado.
-                            </p>
-                          ) : (
+                          {!row.es_nuevo && (
                           /* Lo que se corrige aquí es lo que acaba en la paca, así que
                              también tiene que salir del catálogo: si se teclea, la
                              paca nace sin familia y sin precio. Dejar el campo vacío
