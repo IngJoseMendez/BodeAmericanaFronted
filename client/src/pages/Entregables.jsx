@@ -16,6 +16,7 @@ import {
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
   hojaPreciosInternos, hojaUtilidadContenedor,
 } from '../lib/entregables';
+import { exportarPDFBodega, exportarPDFInternos } from '../lib/pdf';
 
 const norm = (s) => String(s ?? '').trim();
 
@@ -45,6 +46,21 @@ export default function Entregables() {
   // vendedor podía descargarlos igual. Ahora sólo los ve un administrador.
   const { tieneRol } = useAuth();
   const esAdmin = tieneRol('admin');
+
+  const [hojasSel, setHojasSel] = useState({
+    bodega: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ'],
+    internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT']
+  });
+
+  const toggleHoja = (grupoId, hoja) => {
+    setHojasSel(prev => {
+      const sel = prev[grupoId] || [];
+      return {
+        ...prev,
+        [grupoId]: sel.includes(hoja) ? sel.filter(h => h !== hoja) : [...sel, hoja]
+      };
+    });
+  };
 
   useEffect(() => {
     (async () => {
@@ -274,11 +290,36 @@ export default function Entregables() {
     },
   ].filter(g => !g.soloAdmin || esAdmin);
 
-  const descargarGrupo = (g) => conCarga(g.id, async () => {
-    const wb = nuevoLibro();
-    await g.gen(wb);
-    await descargar(wb, g.archivo);
-    addToast(`${g.titulo}: ${wb.worksheets.length} hoja(s) descargadas`, 'success');
+  const descargarGrupo = (g, isPdf = false) => conCarga(g.id + (isPdf ? '_pdf' : '_excel'), async () => {
+    const sel = (g.id === 'bodega' || g.id === 'internos') ? (hojasSel[g.id] || []) : g.hojas;
+    if (sel.length === 0) {
+      addToast('No seleccionaste ninguna hoja', 'warning');
+      return;
+    }
+
+    if (isPdf) {
+      const totales = g.id === 'bodega' ? totalesBodega() : null;
+      if (g.id === 'bodega') {
+        await exportarPDFBodega(sel, { despachos: await armarDespachos(), separadas: armarSeparadas(), inventario: datos.inventario || [] }, totales, g.archivo);
+      } else if (g.id === 'internos') {
+        await exportarPDFInternos(sel, { inventario: datos.inventario || [], cartera: datos.cartera || [] }, g.archivo);
+      }
+      addToast(`${g.titulo}: PDF descargado`, 'success');
+    } else {
+      const wb = nuevoLibro();
+      await g.gen(wb, sel);
+      // Remove unselected sheets (handle dynamic names for internos)
+      wb.worksheets.slice().forEach(ws => {
+        const keep = sel.includes(ws.name) || 
+                     (sel.includes('PRECIOSINTERNOS') && ws.name.startsWith('PRECIOS')) ||
+                     (sel.includes('UTILIDADCONT') && ws.name.startsWith('UTILIDAD'));
+        if (!keep) {
+          wb.removeWorksheet(ws.id);
+        }
+      });
+      await descargar(wb, g.archivo);
+      addToast(`${g.titulo}: ${wb.worksheets.length} hoja(s) descargadas`, 'success');
+    }
   });
 
   const descargarCliente = conCarga('cliente', async () => {
@@ -330,12 +371,25 @@ export default function Entregables() {
                 <p className="text-xs text-muted mb-3">{g.desc}</p>
 
                 <ul className="space-y-1 mb-3">
-                  {g.hojas.map(h => (
-                    <li key={h} className="text-xs font-mono text-muted flex items-center gap-1.5">
-                      <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
-                      {h}
-                    </li>
-                  ))}
+                  {g.hojas.map(h => {
+                    const esSeleccionable = g.id === 'bodega' || g.id === 'internos';
+                    const sel = esSeleccionable ? (hojasSel[g.id] || []).includes(h) : true;
+                    return (
+                      <li key={h} className="text-xs font-mono text-muted flex items-center gap-2">
+                        {esSeleccionable ? (
+                          <input 
+                            type="checkbox" 
+                            checked={sel} 
+                            onChange={() => toggleHoja(g.id, h)}
+                            className="rounded border-border text-secondary focus:ring-secondary/30" 
+                          />
+                        ) : (
+                          <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
+                        )}
+                        <span className={sel ? 'opacity-100' : 'opacity-50'}>{h}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
 
                 <div className="flex-1">
@@ -402,12 +456,22 @@ export default function Entregables() {
                   </div>
                 )}
 
-                <Button variant="outline" onClick={descargarGrupo(g)} disabled={cargando || generando}
-                        className="w-full">
-                  {generando === g.id
-                    ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
-                    : <><Download size={15} className="mr-1" /> Descargar</>}
-                </Button>
+                <div className="flex flex-col xl:flex-row gap-2 w-full">
+                  <Button variant="outline" onClick={() => descargarGrupo(g, false)} disabled={cargando || generando}
+                          className="flex-1 px-3">
+                    {generando === g.id + '_excel'
+                      ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
+                      : <><Download size={15} className="mr-1" /> Excel</>}
+                  </Button>
+                  {(g.id === 'bodega' || g.id === 'internos') && (
+                    <Button variant="outline" onClick={() => descargarGrupo(g, true)} disabled={cargando || generando}
+                            className="flex-1 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                      {generando === g.id + '_pdf'
+                        ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
+                        : <><Download size={15} className="mr-1" /> PDF</>}
+                    </Button>
+                  )}
+                </div>
 
                 {/* La MATRIZ es la hoja de este grupo: aquí se baja como está y
                     desde aquí mismo se va a llenarla, que es lo que la dueña
