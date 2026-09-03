@@ -3182,6 +3182,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           </button>
         </div>
 
+        {/* Toggle Moneda Listado */}
+        <ToggleMoneda valor={vistaMoneda} onChange={setMonedaResumen} deshabilitado={false} id="lista-moneda" />
+
         {/* Comparar — only when ≥2 finalized */}
         {finalizados >= 2 && (
           <button
@@ -3300,11 +3303,36 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
-                      {isAdmin
-                        ? <span className="text-secondary font-semibold">{formatCurrency(cont.costo_unitario)}</span>
-                        : <span className="text-muted text-xs">—</span>}
+                      {isAdmin ? (() => {
+                        const tasa = parseFloat(cont.tasa_conversion) || 0;
+                        const usd = vistaMoneda === 'USD' && tasa > 0;
+                        return (
+                          <div className="flex flex-col">
+                            <span className="text-secondary font-semibold">
+                              {formatMoneda(usd ? cont.costo_unitario / tasa : cont.costo_unitario, usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 })}
+                            </span>
+                            {usd && <span className="text-[10px] text-muted">{formatCurrency(cont.costo_unitario)}</span>}
+                            {vistaMoneda === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(cont.costo_unitario / tasa, 'USD', { decimales: 2 })}</span>}
+                            {!usd && vistaMoneda === 'USD' && <span className="text-[10px] text-warning" title="Sin tasa de conversión">Falta tasa</span>}
+                          </div>
+                        );
+                      })() : <span className="text-muted text-xs">—</span>}
                     </td>
-                    <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">{formatCurrency(cont.costo_total)}</td>
+                    <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">
+                      {(() => {
+                        const tasa = parseFloat(cont.tasa_conversion) || 0;
+                        const usd = vistaMoneda === 'USD' && tasa > 0;
+                        return (
+                          <div className="flex flex-col">
+                            <span>
+                              {formatMoneda(usd ? cont.costo_total / tasa : cont.costo_total, usd ? 'USD' : 'COP', { decimales: 0 })}
+                            </span>
+                            {usd && <span className="text-[10px] text-muted font-normal">{formatCurrency(cont.costo_total)}</span>}
+                            {vistaMoneda === 'COP' && tasa > 0 && <span className="text-[10px] text-muted font-normal">{formatMoneda(cont.costo_total / tasa, 'USD', { decimales: 0 })}</span>}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/8 text-primary text-xs font-bold">
                         {cont.num_servicios}
