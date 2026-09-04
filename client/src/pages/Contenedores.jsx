@@ -3190,7 +3190,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
         </div>
 
         {/* Toggle Moneda Listado */}
-        <ToggleMoneda valor={vistaMoneda} onChange={setMonedaResumen} deshabilitado={false} id="lista-moneda" />
+        <ToggleMoneda valor={monedaResumen} onChange={setMonedaResumen} deshabilitado={false} id="lista-moneda" />
 
         {/* Comparar — only when ≥2 finalized */}
         {finalizados >= 2 && (
@@ -3312,15 +3312,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <td className="px-4 py-3 font-mono whitespace-nowrap">
                       {isAdmin ? (() => {
                         const tasa = parseFloat(cont.tasa_conversion) || 0;
-                        const usd = vistaMoneda === 'USD' && tasa > 0;
+                        const usd = monedaResumen === 'USD' && tasa > 0;
                         return (
                           <div className="flex flex-col">
                             <span className="text-secondary font-semibold">
                               {formatMoneda(usd ? cont.costo_unitario / tasa : cont.costo_unitario, usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 })}
                             </span>
                             {usd && <span className="text-[10px] text-muted">{formatCurrency(cont.costo_unitario)}</span>}
-                            {vistaMoneda === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(cont.costo_unitario / tasa, 'USD', { decimales: 2 })}</span>}
-                            {!usd && vistaMoneda === 'USD' && <span className="text-[10px] text-warning" title="Sin tasa de conversión">Falta tasa</span>}
+                            {monedaResumen === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(cont.costo_unitario / tasa, 'USD', { decimales: 2 })}</span>}
+                            {!usd && monedaResumen === 'USD' && <span className="text-[10px] text-warning" title="Sin tasa de conversión">Falta tasa</span>}
                           </div>
                         );
                       })() : <span className="text-muted text-xs">—</span>}
@@ -3328,14 +3328,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <td className="px-4 py-3 font-mono whitespace-nowrap text-primary">
                       {(() => {
                         const tasa = parseFloat(cont.tasa_conversion) || 0;
-                        const usd = vistaMoneda === 'USD' && tasa > 0;
+                        const usd = monedaResumen === 'USD' && tasa > 0;
                         return (
                           <div className="flex flex-col">
                             <span>
                               {formatMoneda(usd ? cont.costo_total / tasa : cont.costo_total, usd ? 'USD' : 'COP', { decimales: 0 })}
                             </span>
                             {usd && <span className="text-[10px] text-muted font-normal">{formatCurrency(cont.costo_total)}</span>}
-                            {vistaMoneda === 'COP' && tasa > 0 && <span className="text-[10px] text-muted font-normal">{formatMoneda(cont.costo_total / tasa, 'USD', { decimales: 0 })}</span>}
+                            {monedaResumen === 'COP' && tasa > 0 && <span className="text-[10px] text-muted font-normal">{formatMoneda(cont.costo_total / tasa, 'USD', { decimales: 0 })}</span>}
                           </div>
                         );
                       })()}
