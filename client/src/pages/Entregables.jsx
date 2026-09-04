@@ -457,14 +457,14 @@ export default function Entregables() {
                 )}
 
                 <div className="flex flex-col xl:flex-row gap-2 w-full">
-                  <Button variant="outline" onClick={() => descargarGrupo(g, false)} disabled={cargando || generando}
+                  <Button variant="outline" onClick={descargarGrupo(g, false)} disabled={cargando || generando}
                           className="flex-1 px-3">
                     {generando === g.id + '_excel'
                       ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
                       : <><Download size={15} className="mr-1" /> Excel</>}
                   </Button>
                   {(g.id === 'bodega' || g.id === 'internos') && (
-                    <Button variant="outline" onClick={() => descargarGrupo(g, true)} disabled={cargando || generando}
+                    <Button variant="outline" onClick={descargarGrupo(g, true)} disabled={cargando || generando}
                             className="flex-1 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
                       {generando === g.id + '_pdf'
                         ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
