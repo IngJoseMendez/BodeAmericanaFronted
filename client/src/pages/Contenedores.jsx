@@ -2945,7 +2945,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
     // debe dejar la pantalla congelada mientras tanto.
     let finalizado = null;
     try {
-      const precios = combsFinalizacion.map((c) => ({ categoria: c.categoria || null, clasificacion: c.clasificacion, referencia: c.referencia, calidad: c.calidad, precio_venta: parseFloat(preciosVenta[c.key]) }));
+      const precios = combsFinalizacion.map((c) => ({
+        categoria: c.categoria || null,
+        clasificacion: c.clasificacion,
+        referencia: c.referencia,
+        calidad: c.calidad,
+        precio_minimo: c.minimo || 0,
+        precio_venta: parseFloat(preciosVenta[c.key])
+      }));
       const result = await contenedoresApi.finalizar(selectedContenedor.id, { precios });
       finalizado = result;
       addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} unidades al inventario`, 'success');
