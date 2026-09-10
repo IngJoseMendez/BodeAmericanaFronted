@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, CardTitle, CardDescription, Button, EmptyState } from '../components/common';
-import { dashboardApi, analyticsApi } from '../services/api';
+import { dashboardApi, analyticsApi, matrizApi } from '../services/api';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, CartesianGrid, XAxis, YAxis, LineChart, Line, AreaChart, Area
@@ -11,9 +11,9 @@ import {
   Package, Users, ShoppingCart, Wallet,
   TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight,
   Receipt, FileSignature, Brain, TrendingDown,
-  AlertTriangle, RefreshCw, Inbox
+  AlertTriangle, RefreshCw, Inbox, PackageOpen
 } from 'lucide-react';
-import { formatCOP } from '../lib/money';
+import { formatCOP, formatNumero } from '../lib/money';
 
 const CHART_COLORS = {
   primary: '#6366f1',
@@ -282,6 +282,38 @@ function ErrorState({ mensaje, onReintentar }) {
   );
 }
 
+// ── PACAS FALTANDO ───────────────────────────────────────────────────────────
+//
+// Reduce la respuesta de GET /matriz/faltantes a las dos cifras que caben en un
+// tablero: cuántas pacas quedaron faltando y a cuántos clientes. Devuelve null
+// —y entonces el recuadro NO se pinta— si la respuesta no tiene la forma que
+// promete el contrato.
+//
+// Se recuentan las dos cifras aquí en vez de leer los `total_unidades` y
+// `total_clientes` que ya trae la respuesta, y es deliberado: esta pantalla pide
+// los faltantes con estado 'abierto', así que lo único que puede garantizar que
+// la cifra del tablero cuadra con la de la tarjeta de Clientes y con la del
+// detalle de Cartera es que las tres se saquen de la MISMA lista con el MISMO
+// criterio. Un tablero que dice 19 y una tarjeta que dice 17 no se debate: se
+// deja de creer entero, y con él todo el módulo.
+function resumirFaltantes(respuesta) {
+  const lista = respuesta && Array.isArray(respuesta.faltantes) ? respuesta.faltantes : null;
+  if (!lista) return null;
+  let unidades = 0;
+  const clientes = new Set();
+  for (const f of lista) {
+    // Sólo cuenta lo que sigue abierto. Un faltante completado o anulado tiene
+    // cantidad_abierta 0 y ya no le falta a nadie: sumarlo sería cobrar dos
+    // veces una promesa que ya se cumplió.
+    const n = Number(f?.cantidad_abierta) || 0;
+    if (n <= 0) continue;
+    unidades += n;
+    const id = Number(f?.cliente_id);
+    if (Number.isFinite(id) && id > 0) clientes.add(id);
+  }
+  return { unidades, clientes: clientes.size };
+}
+
 // Versión compacta para una sola gráfica: el resto del tablero sigue siendo válido.
 function ChartError({ mensaje, onReintentar, height = 'h-[250px]' }) {
   return (
@@ -306,6 +338,9 @@ export default function Dashboard() {
   // mentira taparla con "No se pudo consultar" (y al revés).
   const [errorDiarias, setErrorDiarias] = useState(null);
   const [errorMensuales, setErrorMensuales] = useState(null);
+  // { unidades, clientes } o null. El null no es «cero pacas faltando»: es «no
+  // lo pude consultar», y por eso apaga el recuadro en vez de pintarlo con un 0.
+  const [faltantes, setFaltantes] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -316,14 +351,24 @@ export default function Dashboard() {
     setError(null);
     setErrorDiarias(null);
     setErrorMensuales(null);
+    setFaltantes(null);
     try {
       // allSettled y no all: las gráficas son secundarias, si fallan ellas el
       // resto del tablero sigue siendo información buena. Lo que no se puede
       // hacer es tapar el fallo con arrays vacíos, que se pintan como "0".
-      const [metricasRes, ventasDiariasRes, ventasMensRes] = await Promise.allSettled([
+      //
+      // Los faltantes entran aquí como una promesa más y no como una llamada
+      // aparte por la misma razón: son un dato de adorno para esta pantalla y no
+      // pueden retrasar ni tumbar el tablero. Se pide con estado 'abierto'
+      // explícito y no confiando en el valor por omisión del servidor, porque si
+      // ese valor fuera «todos» el recuadro estaría contando también lo que ya
+      // se entregó y lo que se anuló, y diría una cifra mucho más grande que la
+      // real justo en el sitio donde ella mira para hacerse una idea rápida.
+      const [metricasRes, ventasDiariasRes, ventasMensRes, faltantesRes] = await Promise.allSettled([
         dashboardApi.getMetricas(),
         dashboardApi.getVentasDiarias(30),
-        dashboardApi.getVentasMensuales()
+        dashboardApi.getVentasMensuales(),
+        matrizApi.getFaltantes({ estado: 'abierto' })
       ]);
 
       if (metricasRes.status === 'rejected') throw metricasRes.reason;
@@ -344,11 +389,21 @@ export default function Dashboard() {
         setVentasMensuales([]);
         setErrorMensuales(ventasMensRes.reason?.message || 'No se pudieron consultar las ventas por mes.');
       }
+
+      // Aquí no hay estado de error que enseñar, y es una decisión y no un
+      // olvido: si esto falla el recuadro desaparece y el tablero queda tal como
+      // estaba antes de que existiera el módulo. Un «—» donde debería ir la
+      // cifra obligaría a explicar en el tablero principal por qué un módulo
+      // secundario no contesta, y —lo que de verdad importa— este endpoint puede
+      // no estar desplegado todavía: el día que se suba el frontend antes que el
+      // backend, el tablero tiene que seguir siendo el mismo tablero.
+      setFaltantes(faltantesRes.status === 'fulfilled' ? resumirFaltantes(faltantesRes.value) : null);
     } catch (err) {
       setError(err?.message || 'No hay conexión con el servidor.');
       setMetricas(null);
       setVentasData([]);
       setVentasMensuales([]);
+      setFaltantes(null);
     } finally {
       setLoading(false);
     }
@@ -445,6 +500,68 @@ export default function Dashboard() {
               color="accent"
               delay={225}
             />
+
+            {/* PACAS FALTANDO — el quinto recuadro, y el único que puede no estar.
+                Este es el sitio donde ella mira el estado global del negocio, así
+                que es donde tiene que enterarse de que hay mercancía prometida
+                sin entregar. Sustituye al contador que se pensó para el menú
+                lateral: aquel obligaba a tocar las métricas del servidor, el
+                fichero de contadores y el vaciado de sesión para un número que
+                no cambia en todo el día, y un badge que casi nunca cambia se
+                vuelve invisible en una semana y miente cuando se queda rancio.
+
+                NO se pinta si la consulta falló (faltantes es null) NI si no le
+                falta nada a nadie (unidades en 0). Lo segundo es tan deliberado
+                como lo primero: cuando el negocio va bien este módulo tiene que
+                poder no existir, y un recuadro clavado en «0 pacas faltando»
+                todos los días acaba siendo un adorno que nadie lee, justo el
+                mismo defecto por el que se descartó el contador del menú.
+
+                Va a lo ancho de la fila en lugar de estrechar los cuatro de
+                arriba a cinco columnas: con cinco, «$12.345.678» de Cartera se
+                corta con puntos suspensivos en un portátil normal, y un tablero
+                que trunca la cifra de la cartera para hacerle sitio a un dato
+                secundario ha invertido las prioridades. Y el borde se marca con
+                `ring` y no con `border`, porque la clase base de Card ya trae un
+                `border-border/50` y en este repo no hay tailwind-merge: quién
+                gana lo decide el orden de la hoja generada, no el orden en que
+                se escriban las clases. */}
+            {faltantes && faltantes.unidades > 0 && (
+              <Card
+                hover
+                className="md:col-span-2 lg:col-span-4 animate-fade-in-up ring-1 ring-warning/30"
+                style={{ animationDelay: '300ms' }}
+              >
+                <CardBody className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                  <div className="p-3 rounded-2xl bg-warning/15 text-warning flex-shrink-0">
+                    <PackageOpen className="w-5 h-5" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted uppercase tracking-wide">Pacas faltando</p>
+                    <p className="text-2xl font-display text-warning mt-0.5 tabular-nums">
+                      {formatNumero(faltantes.unidades)}
+                    </p>
+                  </div>
+                  {/* La frase que separa las dos gramáticas. Justo encima, en la
+                      misma rejilla, hay una tarjeta de cartera con una cifra en
+                      pesos; si esta no dijera en voz alta que son PACAS y no
+                      plata, el tablero estaría poniendo dos unidades distintas
+                      una al lado de la otra sin avisar de que no se suman. */}
+                  <p className="text-sm text-muted flex-1 min-w-[220px]">
+                    {faltantes.clientes === 1
+                      ? 'A 1 cliente, de repartos anteriores.'
+                      : `A ${formatNumero(faltantes.clientes)} clientes, de repartos anteriores.`}{' '}
+                    Son pacas de mercancía, no dinero: esto no entra en la cartera.
+                  </p>
+                  <Link
+                    to="/faltantes"
+                    className="text-xs font-semibold text-secondary hover:underline flex-shrink-0"
+                  >
+                    Ver los faltantes →
+                  </Link>
+                </CardBody>
+              </Card>
+            )}
           </div>
         </section>
 

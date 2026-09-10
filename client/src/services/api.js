@@ -684,3 +684,133 @@ export const preciosPromocionApi = {
   update(id, data) { return api.put(`/precios-promocion/${id}`, data); },
   delete(id) { return api.delete(`/precios-promocion/${id}`); },
 };
+
+// ── Matriz en dos fases: los pedidos, el reparto y el libro de faltantes ─────
+// La Matriz dejó de ser una pantalla que crea cotizaciones de un golpe. Ahora es
+// una sesión de trabajo con dos fases —primero se anota lo que pidió cada
+// cliente AUNQUE NO ALCANCE, y después se reparte a dedo lo que de verdad hay—
+// y por eso necesita su propio cliente de API. Lo que aquí se llama "reparto" NO
+// es todavía una cotización: es el borrador que la usuaria está tecleando, que
+// se autoguarda cliente por cliente y que sólo al final, en un único envío, se
+// convierte en documentos y en pacas apartadas. Mezclarlo con cotizacionesApi
+// habría escondido justo esa diferencia, que es la que hace que volver de la
+// fase 2 a la fase 1 sea gratis y no destruya nada.
+//
+// getFaltantes DEVUELVE UN OBJETO Y NO UN ARREGLO. Es la única excepción a la
+// convención del resto de este archivo y está puesta a propósito: un `[]` no
+// distingue «hoy no le falta nada a nadie» de «la consulta se cayó y no tengo ni
+// idea», y las dos cosas se pintarían igual —un cero tranquilizador al lado del
+// nombre de un cliente al que sí se le quedó debiendo mercancía—. Con un objeto
+// la pantalla recibe `generado_en` como prueba positiva de que la respuesta es
+// real, y si la llamada revienta el catch NO pinta ceros: no pinta nada y saca
+// el aviso de que no pudo leerlo. Es la misma regla de oro que ya cumplen
+// Cartera y el panel del cliente cuando hablan de plata; aquí se hereda porque
+// lo que se le quedó faltando a alguien pesa tanto como lo que se le va a cobrar.
+//
+// Y es UNA SOLA llamada agregada para TODOS los clientes, jamás una por cliente:
+// la Matriz pinta cientos de <tbody> y una petición por fila la dejaría de
+// rodillas mientras la usuaria escribe.
+export const matrizApi = {
+  // Los filtros (cliente_id, estado, referencia…) viajan por qs() y no por
+  // `new URLSearchParams` a secas: un filtro sin definir se serializaría como
+  // "estado=undefined", el servidor filtraría por esa palabra y devolvería cero
+  // faltantes. Aquí eso no es una tabla vacía cualquiera: es decirle que no le
+  // debe nada a nadie, que es exactamente la mentira que este módulo existe para
+  // impedir.
+  getFaltantes(params = {}) {
+    return api.get(`/matriz/faltantes${qs(params)}`);
+  },
+
+  // Sólo puede haber UN reparto abierto a la vez, así que la pantalla pregunta
+  // por él al entrar en lugar de crear uno a ciegas: si la usuaria cerró la
+  // pestaña a media captura, esto es lo que le devuelve su matriz tal como la
+  // dejó. Responde { reparto: null } cuando no hay ninguno, y ese null es un
+  // estado normal, no un error que haya que pintar en rojo.
+  getRepartoAbierto() {
+    return api.get('/matriz/repartos/abierto');
+  },
+  // Si ya había uno abierto el servidor NO crea otro: devuelve el que estaba con
+  // `reutilizado: true`. La pantalla tiene que mirar esa bandera antes de decir
+  // «reparto nuevo», porque anunciar uno nuevo sobre el borrador de ayer es cómo
+  // se pierde media hora de trabajo sin darse cuenta.
+  crearReparto(data) {
+    return api.post('/matriz/repartos', data);
+  },
+
+  // Autoguardado de la fase 1, cliente por cliente. Reemplaza (borra e inserta)
+  // las líneas de ESE cliente en ESE reparto, así que el cuerpo es diminuto y se
+  // puede llamar tan seguido como haga falta. Va por cliente y no con la matriz
+  // entera a propósito: mandar cientos de clientes en cada pulsación sería
+  // insostenible, y además un fallo de red sólo compromete la fila que se estaba
+  // tocando en vez de toda la sesión.
+  guardarCliente(id, clienteId, data) {
+    return api.put(`/matriz/repartos/${id}/cliente/${clienteId}`, data);
+  },
+
+  // El paso de la fase 1 a la fase 2. Guarda todas las líneas, sube el reparto a
+  // estado 'reparto', RELEE el inventario y devuelve la matriz ya pivotada por
+  // producto. Que la relectura y la respuesta viajen juntas elimina una carrera
+  // entera: entre capturar y repartir pasan minutos o media hora, y repartir a
+  // dedo pacas que otra persona ya apartó es la peor forma posible de fallar.
+  cerrarPedidos(id, data) {
+    return api.post(`/matriz/repartos/${id}/cerrar-pedidos`, data);
+  },
+  // El punto de no retorno: aquí se apartan las pacas, se crean las cotizaciones
+  // y se escribe el libro de faltantes, todo en una sola transacción del
+  // servidor. Si el estado ya no es 'reparto' responde 409 y no escribe nada, que
+  // es lo que mata el doble clic y el reintento después de un timeout de red.
+  // Ante un problema de stock el error trae `datos.problemas` con una entrada por
+  // cliente para pintarla EN su fila, no en un toast donde hay que adivinar.
+  repartir(id, data) {
+    return api.post(`/matriz/repartos/${id}/repartir`, data);
+  },
+  // Volver a los pedidos no destruye nada, por eso no lleva confirmación en la
+  // pantalla. Se manda `{}` explícito y no nada: sin cuerpo, JSON.stringify
+  // devuelve undefined y saldría una petición que dice ser application/json sin
+  // serlo. Un objeto vacío es un JSON legítimo y el servidor no tiene que
+  // adivinar.
+  volver(id) {
+    return api.post(`/matriz/repartos/${id}/volver`, {});
+  },
+  // Tirar a la basura un reparto que no llegó a repartirse. El motivo es
+  // opcional y viaja en el cuerpo para que quede rastro de por qué se descartó;
+  // el registro no se borra, se marca.
+  descartar(id, data) {
+    return api.post(`/matriz/repartos/${id}/descartar`, data);
+  },
+
+  // Cerrar un faltante porque la mercancía ya se le entregó (a veces por fuera
+  // del sistema) o porque el dato quedó mal. Admite cantidad parcial: entregar 1
+  // de 3 deja el faltante abierto por 2, y esa diferencia es todo el valor del
+  // libro. Ojo: esto NO crea cotización ni despacho, sólo cierra lo que quedó
+  // faltando, y la pantalla tiene que decirlo con esas palabras.
+  completarFaltante(id, data) {
+    return api.post(`/matriz/faltantes/${id}/completar`, data);
+  },
+  // Anular es dar de baja una promesa hecha a un cliente, así que exige rol de
+  // administrador Y SE VALIDA EN EL SERVIDOR, nunca sólo escondiendo el botón:
+  // toda la gracia del módulo es que esta memoria no se pueda limpiar sola. A la
+  // vendedora el servidor le responde 403 —y no 401—, que es la diferencia entre
+  // «no puedes hacer esto» y quedarse sin sesión: handleResponse manda a /login
+  // ante cualquier 401 fuera del login, y eso le borraría la matriz entera que
+  // estaba tecleando. Va por PATCH porque toca un par de columnas de un registro
+  // vivo, no lo reemplaza.
+  anularFaltante(id, data) {
+    return api.patch(`/matriz/faltantes/${id}/anular`, data);
+  },
+
+  // Historial de repartos. Los rangos de fecha (desde, hasta) van por qs() para
+  // que un filtro vacío no viaje como "desde=undefined" y devuelva la lista
+  // vacía haciendo creer que nunca se repartió nada.
+  getRepartos(params = {}) {
+    return api.get(`/matriz/repartos${qs(params)}`);
+  },
+  // La foto de un reparto concreto: qué pidió cada cliente, qué recibió y qué le
+  // quedó faltando. Es lo que se abre desde el banner de éxito y desde
+  // /faltantes?reparto=…, y es literalmente la pregunta que la dueña hace cuando
+  // un cliente llama: «en esa entrega, ¿cuántas se le dieron y cuántas quedaron
+  // faltando?».
+  getReparto(id) {
+    return api.get(`/matriz/repartos/${id}`);
+  },
+};

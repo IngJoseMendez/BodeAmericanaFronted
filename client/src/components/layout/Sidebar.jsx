@@ -31,7 +31,8 @@ import {
   Coins,
   TrendingUp,
   FileSpreadsheet,
-  LayoutGrid
+  LayoutGrid,
+  PackageX
 } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { dashboardApi } from '../../services/api';
@@ -77,7 +78,22 @@ const adminNavItems = [
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',    key: null },
   // Va pegada a Cotizaciones porque cada fila de la matriz termina siendo una
   // cotización normal: es la misma tarea, hecha para muchos clientes de una vez.
-  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matrix', key: null },
+  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matriz',          key: null },
+  // Y Faltantes va pegada a la Matriz porque son la misma tarea en dos momentos.
+  // La Matriz es la sesión de trabajo del día de reparto y se vacía al terminar;
+  // esta pantalla es lo que quedó faltando de ese reparto, que se consulta
+  // después y casi siempre porque el cliente llamó preguntando. Quien reparte por
+  // la mañana es quien contesta el teléfono por la tarde, así que el menú tiene
+  // que llevarla del reparto al seguimiento con un solo salto de ojo, sin
+  // obligarla a buscar la pantalla en otro bloque del menú.
+  // `key: null` no es un olvido: aquí NO va contador. `key` solo admite
+  // 'pacas' | 'clientes' | 'ventas' (sale de dashboardApi.getMetricas), así que un
+  // número aquí obligaría a tocar esa consulta, contadores.js y el vaciado al
+  // cerrar sesión, para un dato que no cambia en todo el día salvo cuando ella
+  // misma reparte — y en ese momento ya lo tiene delante en la Matriz. Un badge
+  // que casi nunca cambia se vuelve invisible en una semana, y cuando se queda
+  // rancio, miente.
+  { path: '/faltantes',            icon: PackageX,        label: 'Faltantes',       key: null },
   { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
   { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
   { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },

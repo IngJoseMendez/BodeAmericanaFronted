@@ -18,6 +18,22 @@ const ROUTE_NAMES = {
   '/ventas':               'Ventas',
   '/gestionar-pedidos':    'Pedidos',
   '/cotizaciones':         'Cotizaciones',
+  // La Matriz llevaba aquí un hueco desde que nació. Sin su ruta en este mapa
+  // `Breadcrumbs` devuelve null y la barra superior se queda sin la miga
+  // «Inicio › Matriz», y el respaldo de título tampoco tiene de dónde tirar. Hoy
+  // el hueco está tapado a medias porque la pantalla pasa `title` y `subtitle` a
+  // mano —y con subtítulo la miga ni se intenta—, pero eso es suerte, no diseño:
+  // basta con que deje de pasarlos para que la cabecera quede anónima. Este mapa
+  // es la red de seguridad, así que se rellena para TODA ruta registrada en
+  // App.jsx, la pase o no la pantalla por su cuenta.
+  '/separacion-masiva':    'Matriz',
+  // Faltantes va justo debajo por lo mismo que en el menú: es la Matriz mirada
+  // tres días después, cuando el cliente llama a preguntar por lo que no le
+  // llegó. El nombre es «Faltantes» y no «Pendientes», «Saldos» ni «Por
+  // entregar»: esas tres palabras ya significan otras cosas aquí (pedido del
+  // portal, plata en Cartera y lo vendido esperando camión), y la barra superior
+  // es justo el sitio donde una palabra prestada se lee como la otra.
+  '/faltantes':            'Faltantes',
   '/despachos':            'Despachos',
   '/cuentas-pagar':        'Cuentas por Pagar',
   '/cartera':              'Cartera',

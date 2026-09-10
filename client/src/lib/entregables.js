@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { hoy } from './fecha.js';
+import { hoy, aFecha } from './fecha.js';
 import { descargarExcel } from './descargar.js';
 
 // Hojas replicadas del Excel que ya usa la operación ("Comercio Global
@@ -382,6 +382,292 @@ export function hojaMatrizClientes(wb, filas, separadas) {
   // La cabecera se congela: con cien productos y veinte clientes, desplazarse
   // sin ver los encabezados vuelve la hoja inservible.
   ws.views = [{ state: 'frozen', xSplit: 4, ySplit: filaCab }];
+
+  return ws;
+}
+
+// ── FALTANTES ─────────────────────────────────────────────────────
+
+// Lo que quedó faltando después de repartir, cliente por cliente. Esta hoja
+// existe por una razón muy concreta: la dueña llama a los clientes con un papel
+// al lado. La pantalla /faltantes le sirve para consultar y para dar de baja lo
+// que ya entregó, pero cuando se sienta a llamar necesita el nombre, la ciudad,
+// la cifra y la antigüedad en una hoja que pueda ordenar, filtrar e imprimir
+// como filtra todas las suyas.
+//
+// Va en el grupo de BODEGA y NO en el de internos, y la diferencia no es de
+// gusto: aquí van precios de VENTA —los que el cliente ya conoce porque pidió a
+// ese precio— y no hay ni un costo ni un margen. Un entregable con costos no
+// puede salir de la oficina; éste sí, y de hecho tiene que salir.
+//
+// Las tres columnas de cantidad se leen en fila y dicen tres cosas distintas:
+//   PIDIO   = todo lo que se le llegó a anotar como faltante de ese producto.
+//             Crece si en un reparto posterior se le vuelve a quedar debiendo lo
+//             mismo, porque el libro consolida UNA sola fila por cliente +
+//             referencia + calidad en vez de acumular fila tras fila.
+//   RECIBIO = lo que ya se le entregó después y se abonó contra ese faltante.
+//   FALTA   = lo que todavía se le queda debiendo hoy. Es la columna del papel.
+// OJO: PIDIO − RECIBIO no siempre da FALTA, porque una parte puede haberse dado
+// por cerrada sin entregarla (anulada, con su motivo). Cuando eso ocurre la hoja
+// lo dice al pie en lugar de callarlo: una resta que no cuadra y que nadie
+// explica es exactamente cómo se pierde la confianza en un informe entero.
+// CELULAR va pegado a CLIENTE y CIUDAD, no al final de la hoja, y eso no es
+// maquetación: esas tres columnas son el bloque «a quién llamo y desde dónde le
+// hablo», y se leen juntas de un vistazo antes de marcar. Colgada al final
+// habría que recorrer trece columnas con el dedo en cada llamada, que es justo
+// el trabajo que esta hoja existe para ahorrar. Es además el orden que pide el
+// diseño (CLIENTE, CIUDAD, CELULAR, REFERENCIA, …) y el mismo bloque
+// NOMBRE/CIUDAD/DIRECCION/CELULAR que ya usan DESPACHO(BODEGA) y
+// SEPARADAS(BODEGA), así que la operación no tiene que aprender un orden nuevo.
+const COLS_FALTANTES = ['CLIENTE', 'CIUDAD', 'CELULAR', 'REFERENCIA', 'CALIDAD', 'PIDIO', 'RECIBIO',
+                        'FALTA', 'PRECIO', 'VALOR', 'DESDE', 'DIAS', 'REPARTOS'];
+// El 14 de CELULAR es el mismo ancho que la columna CELULAR de ANCHOS_BODEGA:
+// entra un número colombiano de diez dígitos sin que Excel lo corte.
+const ANCHOS_FALTANTES = [26, 16, 14, 24, 14, 8, 9, 8, 14, 16, 12, 7, 10];
+
+// Posición de cada columna, en base 0 (el índice del forEach que pinta la fila);
+// ExcelJS numera las celdas desde 1, de ahí el +1 en cada getCell.
+//
+// Esto NO es adorno y hay que dejarlo escrito para que nadie lo revierta: los
+// números de columna estaban a mano (getCell(7), i === 9, mergeCells(…, 6)) y al
+// meter CELULAR entre CIUDAD y REFERENCIA todas las columnas de la derecha se
+// corrieron un puesto. Con los números a mano el subtotal de FALTA habría caído
+// sobre RECIBIO, el formato de moneda sobre la cifra equivocada y el de fecha
+// sobre el precio. Nada de eso lanza: la hoja sale, cuadra consigo misma y
+// miente, y quien la lea por teléfono le dice a un cliente una cifra que no es.
+// Derivándolas del arreglo de cabeceras, añadir o mover una columna vuelve a
+// colocarlo todo solo.
+const IX = Object.fromEntries(COLS_FALTANTES.map((c, i) => [c, i]));
+
+// Ámbar de la casa: es el color del faltante en toda la aplicación (el token
+// --color-warning). Aquí se escribe a mano porque el Excel no conoce los tokens,
+// pero es el mismo que ya usan la promoción de la lista de precios y la columna
+// SEPARADA del inventario, así que la hoja y la pantalla no se contradicen.
+const AMBAR = 'd97706';
+const GRIS = '94a3b8';
+
+/**
+ * FALTANTES(BODEGA) — una fila por faltante, agrupada por cliente y, dentro de
+ * cada cliente, de lo más viejo a lo más nuevo.
+ *
+ * @param wb         libro de nuevoLibro()
+ * @param faltantes  el ARREGLO que viene dentro de la respuesta de
+ *                   GET /api/matriz/faltantes (o sea `respuesta.faltantes`, no
+ *                   la respuesta entera: ese endpoint devuelve un objeto a
+ *                   propósito para que un fallo no se confunda con un cero).
+ */
+export function hojaFaltantes(wb, faltantes) {
+  const ws = wb.addWorksheet('FALTANTES(BODEGA)');
+  ANCHOS_FALTANTES.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  const N = COLS_FALTANTES.length;
+
+  // Si llega cualquier cosa que no sea un arreglo se trata como hoja vacía en
+  // vez de reventar. Un error aquí no se lleva por delante esta hoja sola: se
+  // lleva el libro entero, y con él las tres hojas de bodega que sí estaban
+  // bien. Quién decide si la consulta era fiable es quien llama —Entregables.jsx
+  // no genera esta hoja si GET /matriz/faltantes falló—, así que un arreglo
+  // vacío que llega hasta aquí significa de verdad que no se le queda debiendo
+  // nada a nadie, y eso sí se puede escribir.
+  const esArreglo = Array.isArray(faltantes);
+  const filas = esArreglo ? [...faltantes] : [];
+
+  let fila = titulo(ws, `LO QUE QUEDÓ FALTANDO — ${hoyStr()}`, N);
+
+  // Este renglón no es decoración. El precio de un faltante es el de CUANDO se
+  // pidió y no se actualiza nunca —fue una decisión de producto explícita—, así
+  // que el VALOR de esta hoja no es lo que costaría reponerlo hoy. Sin la
+  // advertencia, alguien compara este total contra la lista de precios vigente,
+  // ve que no cuadra y decide que la hoja está mal.
+  ws.mergeCells(fila, 1, fila, N);
+  ws.getCell(fila, 1).value =
+    'PRECIO y VALOR van al precio de cuando se pidió, no al de hoy. FALTA es lo que todavía se le queda debiendo.';
+  ws.getCell(fila, 1).font = { size: 10, italic: true, color: { argb: '64748b' } };
+  ws.getCell(fila, 1).alignment = { horizontal: 'center' };
+  fila++;
+
+  const filaCab = fila;
+  fila = cabecera(ws, fila, COLS_FALTANTES);
+
+  // Orden: por cliente y, dentro del cliente, lo más viejo primero. Es el orden
+  // en el que se llama por teléfono —se abre por el cliente y se empieza por lo
+  // que lleva más tiempo esperando— y es el mismo criterio de antigüedad de la
+  // pantalla de seguimiento, para que las dos cuenten la misma historia.
+  // El desempate por cliente_id existe porque dos clientes pueden llamarse
+  // exactamente igual: sin él sus filas se intercalarían y acabarían sumadas en
+  // el mismo pie, que es un error que nadie detectaría leyendo la hoja.
+  const tiempo = (f) => { const d = aFecha(f.created_at); return d ? d.getTime() : 0; };
+  filas.sort((a, b) =>
+    norm(a.cliente_nombre).localeCompare(norm(b.cliente_nombre), 'es')
+    || int(a.cliente_id) - int(b.cliente_id)
+    || tiempo(a) - tiempo(b)
+    || int(a.id) - int(b.id));
+
+  let grupo = null;          // { clave, nombre } del cliente que se está pintando
+  let subUds = 0, subValor = 0;
+  let totUds = 0, totValor = 0, totAnuladas = 0, totCerradas = 0;
+
+  // Pie de cliente: «Total MARIA · 7 · $12.100.000». Es la línea que se lee en
+  // voz alta al llamar, y la que dice si vale la pena mover un despacho por ese
+  // cliente o esperar al siguiente contenedor.
+  const pieCliente = () => {
+    if (!grupo) return;
+    const r = ws.getRow(fila);
+    r.height = 20;
+    // Se fusiona todo lo que hay a la IZQUIERDA de FALTA, sea cual sea el número
+    // de columnas: así el subtotal siempre cae debajo de su propia cabecera.
+    ws.mergeCells(fila, 1, fila, IX.FALTA);
+    r.getCell(1).value = `Total ${grupo.nombre}`;
+    r.getCell(1).alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
+    r.getCell(IX.FALTA + 1).value = subUds;
+    r.getCell(IX.FALTA + 1).alignment = { horizontal: 'center', vertical: 'middle' };
+    r.getCell(IX.VALOR + 1).value = subValor;
+    r.getCell(IX.VALOR + 1).numFmt = '$#,##0';
+    r.getCell(IX.VALOR + 1).alignment = { horizontal: 'right', vertical: 'middle' };
+    for (let i = 1; i <= N; i++) {
+      r.getCell(i).font = { bold: true, size: 10, color: { argb: ACCENT } };
+      r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'eef0fe' } };
+    }
+    fila++;
+    subUds = 0; subValor = 0;
+  };
+
+  for (const f of filas) {
+    const clave = `${int(f.cliente_id)}|${norm(f.cliente_nombre).toLowerCase()}`;
+    if (!grupo || grupo.clave !== clave) {
+      pieCliente();
+      grupo = { clave, nombre: norm(f.cliente_nombre) || 'Sin cliente' };
+    }
+
+    const pidio = int(f.cantidad_original);
+    const recibio = int(f.cantidad_saldada);
+    const anulada = int(f.cantidad_anulada);
+    const falta = int(f.cantidad_abierta);
+    const precio = num(f.precio_unitario_origen);
+    const valor = falta * precio;
+    const espera = int(f.veces_aplazado);
+    // El endpoint devuelve la ciudad como `cliente_ciudad`, que es como sale del
+    // JOIN con clientes. Se acepta también `ciudad` por si algún día la
+    // respuesta se aplana: la hoja no puede quedarse sin la columna con la que
+    // se decide a quién se le despacha junto con quién.
+    const ciudad = norm(f.cliente_ciudad ?? f.ciudad);
+    // El celular llega como `cliente_telefono`, el nombre exacto con el que
+    // GET /api/matriz/faltantes lo saca del JOIN con clientes (igual que
+    // `cliente_ciudad`), y se acepta `telefono` a secas por si la respuesta se
+    // aplana algún día. Va como TEXTO y no como número a propósito: un celular
+    // convertido a número pierde el cero de delante de los fijos con indicativo
+    // y, en cuanto pasa de doce dígitos, Excel lo pinta en notación científica.
+    // Un teléfono mal escrito en la hoja con la que se llama no es un detalle
+    // estético: es la llamada que no se hace.
+    const celular = norm(f.cliente_telefono ?? f.telefono);
+    // Por defecto se piden sólo los abiertos, pero la hoja tiene que aguantar
+    // que le pasen el libro entero con el filtro en "todos" sin mentir: lo ya
+    // completado o anulado se pinta en gris y se explica al pie.
+    const abierto = String(f.estado || 'abierto').trim().toLowerCase() === 'abierto';
+    // DESDE va como fecha de verdad y no como texto, para que se pueda ordenar y
+    // filtrar por ella en el propio Excel. Se construye con aFecha() y no con
+    // `new Date(...)` a secas por lo de siempre en este proyecto: una fecha de
+    // solo día se interpretaría como medianoche UTC y retrocedería un día al
+    // pintarla. Comprobado que la celda cae en el mismo día que el DIAS que
+    // calcula el servidor, que es lo que importa: si la hoja dijera «11/08» al
+    // lado de «29 días» contados desde el 12, la usuaria le daría una fecha
+    // equivocada al cliente por teléfono.
+    const desde = aFecha(f.created_at);
+
+    const r = ws.getRow(fila);
+    r.height = 18;
+    // El orden de este arreglo tiene que ser el de COLS_FALTANTES, celda a celda.
+    [grupo.nombre, ciudad, celular, norm(f.referencia), norm(f.calidad),
+     pidio, recibio, falta, precio, valor,
+     desde || '', int(f.dias_abierto), espera].forEach((v, i) => {
+      const c = r.getCell(i + 1);
+      c.value = v ?? '';
+      c.font = { size: 10, italic: !abierto, color: { argb: abierto ? INK : GRIS } };
+      c.alignment = {
+        horizontal: i <= IX.CALIDAD ? 'left' : (i === IX.PRECIO || i === IX.VALOR ? 'right' : 'center'),
+        vertical: 'middle',
+      };
+      if (i === IX.PRECIO || i === IX.VALOR) c.numFmt = '$#,##0';
+      if (i === IX.DESDE) c.numFmt = 'dd/mm/yyyy';
+    });
+
+    // FALTA en ámbar y en negrita: es la única columna que se busca con el dedo
+    // al barrer la hoja, y pintarla igual que el resto obliga a leer las trece.
+    // En rojo no: quedar faltando no es un fallo, es el hecho que se está
+    // registrando, y el rojo de esta aplicación significa «esto salió mal».
+    if (abierto && falta > 0) r.getCell(IX.FALTA + 1).font = { size: 10, bold: true, color: { argb: AMBAR } };
+    // Tres repartos o más esperando es la escalada que la pantalla marca con un
+    // triángulo. Aquí no hay iconos, así que la cifra de REPARTOS se pinta en
+    // ámbar: es lo que convierte «se le debe algo» en «hay que llamarle ya».
+    if (abierto && espera >= 3) r.getCell(IX.REPARTOS + 1).font = { size: 10, bold: true, color: { argb: AMBAR } };
+
+    zebra(ws, fila, N);
+    fila++;
+
+    subUds += falta; subValor += valor;
+    totUds += falta; totValor += valor;
+    totAnuladas += anulada;
+    if (!abierto) totCerradas++;
+  }
+  pieCliente();
+
+  // Total general. Va con el mismo bloque oscuro que cierra todas las demás
+  // hojas del libro, para que se lea como el mismo documento.
+  const t = ws.getRow(fila);
+  t.height = 22;
+  ws.mergeCells(fila, 1, fila, IX.FALTA);
+  t.getCell(1).value = 'TOTAL FALTANDO';
+  t.getCell(IX.FALTA + 1).value = totUds;
+  t.getCell(IX.VALOR + 1).value = totValor;
+  t.getCell(IX.VALOR + 1).numFmt = '$#,##0';
+  for (let i = 1; i <= N; i++) {
+    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    // Aquí `i` es base 1 (lo pide getCell), de ahí el +1 sobre el índice de IX.
+    t.getCell(i).alignment = { horizontal: i === IX.FALTA + 1 ? 'center' : 'right', vertical: 'middle' };
+  }
+  fila += 2;
+
+  const nota = (texto, color) => {
+    ws.mergeCells(fila, 1, fila, N);
+    ws.getCell(fila, 1).value = texto;
+    ws.getCell(fila, 1).font = { size: 10, italic: true, color: { argb: color } };
+    fila++;
+  };
+
+  if (esArreglo && filas.length === 0) {
+    // Este cero SÍ se puede escribir: la hoja sólo se genera cuando la consulta
+    // respondió de verdad, y un arreglo vacío es un dato bueno. La frase va en
+    // palabras y no en un total en blanco porque una hoja vacía sin explicación
+    // se lee como «esto no cargó».
+    nota('No se le está quedando debiendo mercancía a nadie.', '16a34a');
+  }
+  if (!esArreglo) {
+    // La única forma de llegar aquí es que alguien pase la RESPUESTA entera de
+    // GET /matriz/faltantes en vez del arreglo de dentro. Es un error muy fácil
+    // de cometer —el endpoint devuelve un objeto a propósito— y si esta hoja se
+    // callara imprimiría la frase verde de arriba: un papel firmado diciendo que
+    // no se le debe nada a nadie, construido sobre un dato que nunca se leyó.
+    // Antes que eso, la hoja se acusa a sí misma.
+    nota('NO SE PUDO LEER LO QUE QUEDÓ FALTANDO. Esta hoja está vacía porque no llegaron los datos, NO porque no se le quede debiendo nada a nadie.', 'ef4444');
+  }
+  if (totAnuladas > 0) {
+    nota(`Se dieron por cerradas ${totAnuladas} paca(s) sin entregarlas. Por eso hay filas donde PIDIO menos RECIBIO no da FALTA.`, AMBAR);
+  }
+  if (totCerradas > 0) {
+    nota(`Hay ${totCerradas} fila(s) en gris: ya están completadas o anuladas y de ésas no se le queda debiendo nada.`, GRIS);
+  }
+
+  // La cabecera se congela. Con cuarenta faltantes repartidos entre quince
+  // clientes, bajar y perder de vista cuál columna es FALTA y cuál RECIBIO es la
+  // forma más fácil de prometerle a alguien lo que ya se le entregó.
+  //
+  // Y con CELULAR la hoja pasó de doce columnas a trece, así que ahora se congela
+  // también en horizontal, igual que la MATRIZ: xSplit deja fijo el bloque
+  // CLIENTE · CIUDAD · CELULAR mientras se corre a la derecha hasta DIAS y
+  // REPARTOS. Sin eso, el dato con el que se marca el teléfono se sale de la
+  // pantalla justo al mirar la antigüedad, que es la pareja de columnas que se
+  // consultan a la vez para decidir a quién se llama primero.
+  ws.views = [{ state: 'frozen', xSplit: IX.CELULAR + 1, ySplit: filaCab }];
 
   return ws;
 }

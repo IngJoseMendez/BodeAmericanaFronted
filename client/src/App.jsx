@@ -36,6 +36,7 @@ const Gastos = lazy(() => import('./pages/Gastos'));
 const Utilidad = lazy(() => import('./pages/Utilidad'));
 const Entregables = lazy(() => import('./pages/Entregables'));
 const SeparacionMasiva = lazy(() => import('./pages/SeparacionMasiva'));
+const Faltantes = lazy(() => import('./pages/Faltantes'));
 
 // Pantalla de espera mientras se descarga el código de la página solicitada.
 function CargandoPagina() {
@@ -83,6 +84,19 @@ function RutasAdmin() {
         {/* Separar y cotizar son la misma acción: un vendedor aparta mercancía
             todos los días, así que NO va envuelta en <SoloAdmin>. */}
         <Route path="/separacion-masiva" element={<SeparacionMasiva />} />
+        {/* La Matriz y los Faltantes son la misma tarea en dos momentos: la
+            Matriz es la sesión de trabajo del día de reparto, y esta pantalla es
+            lo que quedó faltando de ese reparto cuando el cliente llama a
+            preguntar tres días después. Por eso va aquí pegada y no como una
+            tercera pestaña dentro de la Matriz: obligar a abrir la pantalla de
+            captura —que es una sesión que se vacía al terminar— solo para
+            contestar el teléfono emborrona el concepto de dos fases.
+            Y va SIN <SoloAdmin> a propósito, exactamente igual que la Matriz:
+            quien reparte y quien atiende al cliente que reclama es la vendedora,
+            no la dueña. Anular un faltante sí es solo de admin, pero eso lo
+            decide el servidor en PATCH /matriz/faltantes/:id/anular, que es donde
+            la decisión no se puede saltar escribiendo una URL a mano. */}
+        <Route path="/faltantes" element={<Faltantes />} />
         <Route path="/despachos" element={<Despachos />} />
         <Route path="/cuentas-pagar" element={<CuentasPagar />} />
         <Route path="/tipos-paca" element={<TiposPaca />} />

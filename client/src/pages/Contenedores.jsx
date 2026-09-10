@@ -2987,8 +2987,8 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
     // Escape cierran sin hacer nada, y solo "Separar ahora" va destacado.
     const irASeparar = await confirm({
       title: 'Mercancía lista para apartar',
-      message: `Entraron ${formatNumero(unidades)} unidades al inventario con el lote "${finalizado.lote_numero}".\n\n¿Quieres repartirlas ahora entre los clientes en Matrix? Eliges referencia, calidad y cantidad de cada uno, y al guardar quedan sus pacas separadas con su cotización.`,
-      confirmText: 'Ir a Matrix',
+      message: `Entraron ${formatNumero(unidades)} unidades al inventario con el lote "${finalizado.lote_numero}".\n\n¿Quieres repartirlas ahora entre los clientes en Matriz? Eliges referencia, calidad y cantidad de cada uno, y al guardar quedan sus pacas separadas con su cotización.`,
+      confirmText: 'Ir a Matriz',
       cancelText: 'Después',
       variant: 'success',
     });

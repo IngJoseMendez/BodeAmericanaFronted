@@ -1,15 +1,53 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink } from '../components/common';
-import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi } from '../services/api';
+import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, matrizApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
-import { parseMonto, formatCOP } from '../lib/money';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen } from 'lucide-react';
+import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
+
+// ── PACAS QUE LE FALTAN, QUE NO SON PLATA ────────────────────────────────────
+//
+// Índice cliente_id → pacas que le quedaron faltando de repartos anteriores. Es
+// a propósito lo más pobre posible: aquí sólo hace falta LA CIFRA. El desglose
+// (qué referencia, desde cuándo, cuántos repartos lleva esperando) vive en
+// /faltantes y ahí se queda.
+//
+// Esa pobreza es la decisión de producto entera de esta pantalla. Cartera habla
+// de dinero de arriba abajo: todo lo que se lee aquí —lo que se le vendió, lo
+// que abonó, lo que le queda por pagar, el cupo, la mora— está en pesos, y en el
+// Excel de la dueña la columna que manda también está en pesos. Meter unidades
+// de mercancía en esa gramática fabrica exactamente el malentendido que todo el
+// vocabulario del módulo intenta evitar: que alguien lea «le faltan 7» y
+// entienda siete mil pesos, o peor, que lo sume mentalmente con las cifras de
+// arriba. Por eso NO hay columna en la lista, NO hay total agregado y NO hay
+// tarjeta: hay UN renglón, dentro del detalle de UN cliente, diciendo en voz
+// alta que son pacas.
+//
+// Y sigue estando porque cuando llama a cobrar, saber que además le debe
+// mercancía le cambia el tono a la llamada.
+function indexarFaltantesCartera(respuesta) {
+  // Misma lectura conservadora que en Clientes y en el tablero: si la respuesta
+  // no trae el arreglo que promete el contrato se trata como fallo, no como
+  // «no le falta nada a nadie». En una pantalla de cobro, decirle a alguien que
+  // no hay nada faltando cuando en realidad no se pudo consultar es la clase de
+  // error que se descubre con el cliente al teléfono.
+  const lista = respuesta && Array.isArray(respuesta.faltantes) ? respuesta.faltantes : null;
+  if (!lista) return null;
+  const indice = new Map();
+  for (const f of lista) {
+    const id = Number(f?.cliente_id);
+    const n = Number(f?.cantidad_abierta) || 0;
+    if (!Number.isFinite(id) || id <= 0 || n <= 0) continue;
+    indice.set(id, (indice.get(id) || 0) + n);
+  }
+  return indice;
+}
 
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
@@ -170,6 +208,9 @@ export default function Cartera() {
   const [fechaCorte, setFechaCorte] = useState(''); // '' = saldo de hoy; 'YYYY-MM-DD' = foto al pasado
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // Map<cliente_id, pacas faltando> o null (no consultado / falló). Sólo lo lee
+  // el detalle de un cliente; la lista de tarjetas no lo toca ni de lejos.
+  const [faltantesPorCliente, setFaltantesPorCliente] = useState(null);
 
   // Carga histórica (legacy)
   const [legacyModalOpen, setLegacyModalOpen] = useState(false);
@@ -184,6 +225,13 @@ export default function Cartera() {
   // si la primera (más lenta) contestaba de última, la pantalla quedaba con los
   // saldos de julio mientras el aviso decía otra fecha. Se descarta la tardía.
   const corteEnCursoRef = useRef('');
+  // Los faltantes se piden UNA sola vez por visita a esta pantalla, y sólo la
+  // primera vez que se abre el detalle de alguien. Ni al montar (quien entra a
+  // Cartera puede venir sólo a registrar un abono y no abrir a nadie: sería una
+  // petición regalada en cada visita) ni en cada apertura (abrir a diez clientes
+  // seguidos son diez peticiones para un dato que no se mueve mientras ella
+  // cobra). Este ref es lo que sostiene ese «una sola vez».
+  const faltantesPedidosRef = useRef(false);
   const { addToast } = useToast();
   const confirm = useConfirm();
 
@@ -277,7 +325,29 @@ export default function Cartera() {
     }
   };
 
+  // Pide los faltantes de TODOS los clientes de una vez y los guarda indexados.
+  // Una petición por cliente abierto sería el N+1 de siempre; una petición
+  // agregada, cacheada mientras dure la pantalla, cuesta lo mismo que abrir un
+  // cliente y sirve para todos los que abra después sin esperar nada.
+  //
+  // No es await ni bloquea el detalle: las cifras de cobro son lo que ella vino
+  // a ver y no pueden llegar más tarde por culpa de un dato secundario. El
+  // renglón de las pacas aparece cuando llegue, y si no llega, no aparece.
+  //
+  // Si falla, el ref se queda marcado y no se reintenta en toda la visita. Es
+  // deliberado: reintentar en cada apertura sería martillear un endpoint que ya
+  // dijo que no puede, y el precio de no reintentar es que falte un renglón de
+  // apoyo, no que se pierda ningún dato de cobro.
+  const cargarFaltantesUnaVez = () => {
+    if (faltantesPedidosRef.current) return;
+    faltantesPedidosRef.current = true;
+    matrizApi.getFaltantes({ estado: 'abierto' })
+      .then(res => setFaltantesPorCliente(indexarFaltantesCartera(res)))
+      .catch(() => setFaltantesPorCliente(null));
+  };
+
   const openDetalle = async (clienteId) => {
+    cargarFaltantesUnaVez();
     try {
       const data = await carteraApi.getOne(clienteId);
       setDetalleCliente(data);
@@ -1073,6 +1143,47 @@ export default function Cartera() {
                 <p className="text-lg font-display text-accent break-all">{formatCurrency(detalleCliente.saldo_pendiente)}</p>
               </div>
             </div>
+
+            {/* MERCANCÍA QUE LE FALTA — UN RENGLÓN, Y DELIBERADAMENTE FUERA DEL
+                RESUMEN DE ARRIBA. Va DESPUÉS del bloque gris de las cuatro
+                cifras y no dentro de él: ese bloque es una rejilla de importes y
+                un quinto recuadro con «7» se leería como siete pesos, o se
+                sumaría de cabeza con los otros cuatro. Aquí abajo, con su propio
+                fondo ámbar, su icono de mercancía y la frase diciendo que no es
+                plata, no hay forma de confundirlo.
+
+                Los colores van por tokens (warning) y no por la paleta cruda de
+                Tailwind que usa el resto de este archivo (amber-50/amber-800):
+                ámbar es EL color del faltante en todo el módulo, y los tokens
+                son además lo único que se ve bien en el tema oscuro, donde un
+                bg-amber-50 fijo se queda blanco.
+
+                Si no le falta nada, o si la consulta no llegó o falló, no se
+                pinta nada. Un «le faltan 0 pacas» en la pantalla del cobro es
+                peor que no decir nada: parece un dato consultado y confirmado. */}
+            {(() => {
+              const faltan = faltantesPorCliente?.get(Number(detalleCliente.cliente?.id)) || 0;
+              if (!faltan) return null;
+              return (
+                <div className="flex items-start gap-2 p-3 rounded-xl border border-warning/40 bg-warning/10 text-sm">
+                  <PackageOpen size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+                  <p className="text-warning">
+                    <strong className="font-semibold">
+                      A este cliente le {faltan === 1 ? 'falta 1 paca' : `faltan ${formatNumero(faltan)} pacas`} de
+                      mercancía
+                    </strong>{' '}
+                    de repartos anteriores. Son pacas, no plata: no entran en ninguna de las cifras de esta
+                    pantalla.{' '}
+                    <Link
+                      to={`/faltantes?cliente_id=${detalleCliente.cliente.id}`}
+                      className="font-semibold underline underline-offset-2 hover:no-underline"
+                    >
+                      Verlo en Faltantes
+                    </Link>
+                  </p>
+                </div>
+              );
+            })()}
 
             {/* Buscador universal del detalle (cotización, fecha, monto, método...) */}
             <div className="relative">

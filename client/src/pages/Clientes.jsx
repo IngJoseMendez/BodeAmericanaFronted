@@ -1,13 +1,109 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
-import { clientesApi } from '../services/api';
+import { clientesApi, matrizApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download, Truck } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import { hoy } from '../lib/fecha';
-import { formatCOP } from '../lib/money';
+import { hoy, formatFechaCorta } from '../lib/fecha';
+import { formatCOP, formatNumero } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
+
+// ── LO QUE LE QUEDÓ FALTANDO A CADA CLIENTE ──────────────────────────────────
+//
+// Esta pantalla es una rejilla de tarjetas y puede tener CIENTOS. La única forma
+// honesta de enseñar aquí el faltante es UNA sola petición agregada al montar,
+// que se indexa por cliente_id en un Map en memoria. Una petición por tarjeta
+// sería un N+1 que pone de rodillas al servidor cada vez que alguien abre
+// Clientes, y encima dejaría la rejilla parpadeando mientras llegan doscientas
+// respuestas sueltas. Por eso el endpoint se diseñó agregado y por eso aquí no
+// se pide nada dentro del map() de las tarjetas.
+//
+// Los dos textos que se pintan («Le faltaron 7 pacas» y el desglose del title)
+// se precalculan AQUÍ, una sola vez, y no en el render de la tarjeta. Si se
+// armaran al pintar, cada tecla del buscador volvería a recorrer y a formatear
+// las fechas de todos los faltantes de todos los clientes: es exactamente la
+// trampa silenciosa que la Matriz evita guardando sus textos ya hechos.
+//
+// Y la decisión de producto que manda sobre todas las demás: si la petición
+// falla, esto devuelve null y la tarjeta NO pinta absolutamente nada. Nunca un
+// cero. «Le faltaron 0» sobre una consulta que reventó le estaría diciendo a la
+// dueña que no le debe mercancía a nadie, que es justo la mentira que este
+// módulo entero existe para impedir. El silencio no miente; un cero sí.
+function indexarFaltantes(respuesta) {
+  // El endpoint devuelve un OBJETO { generado_en, total_clientes, total_unidades,
+  // faltantes: [...] } y no un arreglo pelado, rompiendo a propósito la
+  // convención del resto del repo: un [] no distingue «no le falta nada a nadie»
+  // de «me quedé sin datos». Si lo que llega no tiene esa forma se trata como
+  // fallo y no como lista vacía, que es la lectura conservadora y la correcta.
+  const lista = respuesta && Array.isArray(respuesta.faltantes) ? respuesta.faltantes : null;
+  if (!lista) return null;
+
+  // Primero se agrupa en crudo por cliente; los textos se arman después, cuando
+  // ya se sabe cuántas líneas y cuántas pacas tiene cada uno.
+  const porCliente = new Map();
+  for (const f of lista) {
+    const id = Number(f?.cliente_id);
+    const unidades = Number(f?.cantidad_abierta) || 0;
+    // Una fila sin cliente o sin unidades abiertas no es un faltante vivo: ya se
+    // completó o se anuló, y sumarla inflaría la cifra que ella usa para decidir
+    // a quién llama primero.
+    if (!Number.isFinite(id) || id <= 0 || unidades <= 0) continue;
+    if (!porCliente.has(id)) porCliente.set(id, { unidades: 0, lineas: [] });
+    const acc = porCliente.get(id);
+    acc.unidades += unidades;
+    acc.lineas.push({
+      unidades,
+      referencia: String(f?.referencia || '').trim() || 'Sin referencia',
+      calidad: String(f?.calidad || '').trim(),
+      desde: f?.created_at || null,
+      repartos: Number(f?.veces_aplazado) || 1,
+    });
+  }
+
+  const indice = new Map();
+  for (const [id, acc] of porCliente) {
+    // Se ordena por unidades descendente para que el desglose empiece por lo que
+    // más pesa; el empate lo rompe la fecha más vieja, porque una paca de hace
+    // tres meses hace más daño comercial que ocho de ayer.
+    acc.lineas.sort((a, b) => (b.unidades - a.unidades) || (new Date(a.desde || 0) - new Date(b.desde || 0)));
+
+    // El title se topa a seis líneas de detalle. Un tooltip de veinte renglones
+    // no se lee: se cierra. Lo que no cabe se anuncia y se manda a la pantalla
+    // que sí puede con ello, que es /faltantes.
+    const TOPE = 6;
+    const visibles = acc.lineas.slice(0, TOPE);
+    const sobran = acc.lineas.length - visibles.length;
+    const renglones = visibles.map(l => {
+      const producto = l.calidad ? `${l.referencia} / ${l.calidad}` : l.referencia;
+      const fecha = l.desde ? ` — desde el ${formatFechaCorta(l.desde)}` : '';
+      // «N repartos de espera» sólo cuando de verdad ha esperado más de uno: en
+      // el caso normal ese fragmento sería ruido repetido en cada renglón.
+      const espera = l.repartos > 1 ? `, ${l.repartos} repartos de espera` : '';
+      return `· ${formatNumero(l.unidades)} de ${producto}${fecha}${espera}`;
+    });
+    if (sobran > 0) renglones.push(`…y ${sobran} más. Míralo completo en Faltantes.`);
+
+    indice.set(id, {
+      unidades: acc.unidades,
+      // Singular y plural de verdad: «Le faltó 1 paca» y no «Le faltaron 1
+      // pacas». Es el tipo de detalle que hace que la frase se lea como algo
+      // escrito por una persona y no por una plantilla.
+      corto: acc.unidades === 1
+        ? 'Le faltó 1 paca'
+        : `Le faltaron ${formatNumero(acc.unidades)} pacas`,
+      detalle: [
+        'Le quedaron faltando, de repartos anteriores:',
+        ...renglones,
+        acc.unidades === 1
+          ? 'Es 1 paca. Pulsa para verla en Faltantes.'
+          : `Son ${formatNumero(acc.unidades)} pacas. Pulsa para verlas en Faltantes.`,
+      ].join('\n'),
+    });
+  }
+  return indice;
+}
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -36,14 +132,41 @@ export default function Clientes() {
     destino_nombre: '', destino_direccion: '', destino_ciudad: '', destino_celular: ''
   });
   const [error, setError] = useState('');
+  // Map<cliente_id, { unidades, corto, detalle }> — o null mientras no haya
+  // llegado o si la consulta falló. El null es significativo y no un detalle de
+  // implementación: es lo que apaga la línea entera en todas las tarjetas.
+  const [faltantesPorCliente, setFaltantesPorCliente] = useState(null);
   const { addToast } = useToast();
   const confirm = useConfirm();
-  
+
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
     loadClientes();
   }, [filtroTipo, filtroEstado, debouncedSearch]);
+
+  // Los faltantes se piden UNA vez al montar y NO se vuelven a pedir cuando
+  // cambian los filtros ni el buscador. Dos motivos, los dos de peso: lo que le
+  // quedó faltando a un cliente no depende de si la lista está filtrada por
+  // «activo» ni de lo que se esté tecleando, y colgarlo del mismo efecto que
+  // loadClientes lo convertiría en una petición por pulsación, que es el mismo
+  // N+1 que se está evitando pero por la puerta de atrás.
+  //
+  // Si falla NO se avisa por toast y NO se pinta nada. Aquí el faltante es
+  // información secundaria: la dueña entró a Clientes a buscar un teléfono o a
+  // corregir una dirección, y un error rojo por un dato de adorno la asusta sin
+  // darle nada que hacer. La pantalla que sí tiene que gritar cuando esto falla
+  // es /faltantes, que es donde se va a consultar a propósito.
+  useEffect(() => {
+    let vivo = true;
+    matrizApi.getFaltantes({ estado: 'abierto' })
+      .then(res => { if (vivo) setFaltantesPorCliente(indexarFaltantes(res)); })
+      .catch(() => { if (vivo) setFaltantesPorCliente(null); });
+    // El desmontaje corta el setState tardío: esta pantalla se abandona rápido
+    // (se entra, se busca un cliente y se sale) y una respuesta que llega con la
+    // pantalla ya cerrada dejaría un aviso de React en la consola.
+    return () => { vivo = false; };
+  }, []);
 
   const loadClientes = async () => {
     try {
@@ -327,6 +450,52 @@ export default function Clientes() {
                       <CreditCard className="w-4 h-4" />
                       <span>Límite: {formatCurrency(cliente.limite_credito)}</span>
                     </div>
+
+                    {/* EL FALTANTE — UNA LÍNEA, Y SÓLO SI LA HAY.
+                        Punto ámbar de 6px + texto ámbar semibold. El punto es lo
+                        que hace que se note al barrer doscientas tarjetas sin
+                        leer ninguna; el texto es lo que lo explica cuando ya se
+                        paró en una. Va aquí abajo, después del límite de crédito,
+                        porque teléfono, ciudad y límite son datos fijos del
+                        cliente y esto es un hecho de operación: mezclarlo entre
+                        ellos lo convertiría en una ficha más.
+
+                        Es un enlace y no un adorno: el gesto natural al leer «le
+                        faltaron 7» es querer saber QUÉ le faltó, y esa respuesta
+                        vive en /faltantes filtrado por este cliente.
+
+                        Sin faltante no se pinta NADA — ni un cero, ni un guion,
+                        ni un hueco reservado. Las tarjetas de los clientes a los
+                        que no se les debe nada tienen que quedar exactamente
+                        como estaban, o la línea deja de significar algo por
+                        aparecer en todas. */}
+                    {(() => {
+                      // Number() y no cliente.id a pelo: el índice se construye
+                      // con claves numéricas, y el día que este listado llegue
+                      // con los id en texto (pasa en cuanto alguien cambia el
+                      // driver o mete un JSON.parse por el medio) el Map fallaría
+                      // en TODAS las tarjetas a la vez y en silencio, que es la
+                      // peor forma de perder este dato: nadie ve un error, sólo
+                      // deja de haber faltantes.
+                      const faltante = faltantesPorCliente?.get(Number(cliente.id));
+                      if (!faltante) return null;
+                      return (
+                        <div>
+                          <Link
+                            to={`/faltantes?cliente_id=${cliente.id}`}
+                            title={faltante.detalle}
+                            className="inline-flex items-center gap-1.5 align-middle font-semibold text-warning hover:underline underline-offset-2"
+                          >
+                            {/* align-middle en el inline-flex: sin él la caja del
+                                punto empuja la altura de la línea y la tarjeta
+                                crece unos píxeles sólo para los clientes con
+                                faltante, que descuadra la rejilla. */}
+                            <span className="w-1.5 h-1.5 rounded-full bg-warning flex-shrink-0" aria-hidden="true" />
+                            {faltante.corto}
+                          </Link>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Botones de solo icono: sin aria-label el lector de pantalla

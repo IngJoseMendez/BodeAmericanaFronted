@@ -4,7 +4,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast } from '../components/common';
 import {
   despachosApi, pacasApi, clientesApi, carteraApi,
-  listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi,
+  listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi, matrizApi,
 } from '../services/api';
 import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2, LayoutGrid } from 'lucide-react';
 import { parseMonto } from '../lib/money';
@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   nuevoLibro, descargar, int,
   hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega, hojaMatrizClientes,
+  hojaFaltantes,
   hojaListaPreciosClientes, hojaCotizacionCliente, hojaCarteraCliente,
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
   hojaPreciosInternos, hojaUtilidadContenedor,
@@ -47,8 +48,12 @@ export default function Entregables() {
   const { tieneRol } = useAuth();
   const esAdmin = tieneRol('admin');
 
+  // Toda hoja nueva tiene que aparecer en DOS sitios: aquí, marcada de entrada, y
+  // en el `hojas` de su grupo. La descarga borra del libro las hojas cuyo nombre
+  // no esté en esta lista, así que una hoja que se genera pero no se registra se
+  // crea y se elimina acto seguido — sin error, sin aviso y sin hoja.
   const [hojasSel, setHojasSel] = useState({
-    bodega: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ'],
+    bodega: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
     internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT']
   });
 
@@ -64,7 +69,7 @@ export default function Entregables() {
 
   useEffect(() => {
     (async () => {
-      const [desp, inv, comp, cli, cart, lista, cont] = await Promise.allSettled([
+      const [desp, inv, comp, cli, cart, lista, cont, falt] = await Promise.allSettled([
         despachosApi.getAll(),
         pacasApi.getInventario(),
         pacasApi.getComprometidas({}),
@@ -72,11 +77,27 @@ export default function Entregables() {
         carteraApi.getAll(),
         listaPreciosApi.getAll(),
         contenedoresApi.getAll(),
+        // Los faltantes salen de UNA sola llamada agregada para todos los
+        // clientes; jamás una por cliente. Entra aquí, en el Promise.allSettled
+        // que ya existía, para que una caída de este endpoint no impida generar
+        // el resto de los entregables.
+        matrizApi.getFaltantes(),
       ]);
       const val = (r, def = []) => (r.status === 'fulfilled' && r.value != null ? r.value : def);
       setDatos({
         despachos: val(desp), inventario: val(inv), comprometidas: val(comp),
         clientes: val(cli), cartera: val(cart), lista: val(lista), contenedores: val(cont),
+        // OJO: este NO se lee con val(). GET /matriz/faltantes devuelve un
+        // OBJETO { generado_en, total_clientes, total_unidades, faltantes } y no
+        // un arreglo, precisamente para que «la consulta se cayó» no se pueda
+        // confundir con «no le falta nada a nadie». Aquí se conserva esa
+        // distinción: `null` significa que no se pudo leer, y con null la hoja
+        // NO se genera. Un arreglo vacío, en cambio, es un dato bueno y sí se
+        // escribe. Poner `def = []` habría borrado la diferencia de un plumazo
+        // y habría entregado una hoja en blanco con pinta de verdad.
+        faltantes: falt.status === 'fulfilled' && Array.isArray(falt.value?.faltantes)
+          ? falt.value
+          : null,
       });
       setCargando(false);
     })();
@@ -169,6 +190,20 @@ export default function Entregables() {
     hojaSeparadasBodega(wb, armarSeparadas());
     hojaInventarioBodega(wb, datos.inventario || []);
     hojaMatrizClientes(wb, datos.inventario || [], datos.comprometidas || []);
+
+    // FALTANTES(BODEGA) sólo se escribe si la consulta respondió de verdad.
+    // Ésta es la regla de oro del módulo entero llevada al Excel: si el endpoint
+    // se cayó, `datos.faltantes` es null y aquí NO se genera una hoja con las
+    // cabeceras puestas y cero filas. Esa hoja sería el peor entregable posible
+    // —un documento con el membrete de la casa diciendo que no se le queda
+    // debiendo nada a nadie— y encima quedaría impreso encima de la mesa cuando
+    // ella se siente a llamar. Mejor que falte la hoja y se avise, que tenerla y
+    // que mienta.
+    if (datos.faltantes) {
+      hojaFaltantes(wb, datos.faltantes.faltantes);
+    } else {
+      addToast('No pude leer lo que quedó faltando: el libro sale sin la hoja FALTANTES(BODEGA). Que no esté NO significa que no le debas mercancía a nadie.', 'warning');
+    }
   };
 
   // Lo que se manda a TODOS los clientes por igual. La cartera y las
@@ -268,8 +303,24 @@ export default function Entregables() {
     {
       id: 'bodega', titulo: 'Para la bodega', icon: Package2,
       color: 'text-emerald-600 bg-emerald-50',
-      desc: 'Lo que tienen que alistar y lo que está apartado. Sin precios.',
-      hojas: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ'],
+      // La frase decía «Sin precios», y ya no era cierta antes de esta hoja: la
+      // MATRIZ lleva COSTO y PRECIO desde que se replicó la plantilla de la
+      // operación. Se corrige ahora en vez de dejar que FALTANTES(BODEGA) —que
+      // sí lleva el precio al que se pidió— la convierta en una mentira más
+      // grande. Lo que se promete es lo que de verdad se cumple: aquí no hay
+      // márgenes ni utilidad, eso vive en el grupo de internos y tras rol admin.
+      desc: 'Lo que tienen que alistar, lo que está apartado y lo que quedó faltando.',
+      // FALTANTES(BODEGA) va AQUÍ y no en 'internos', y conviene dejar escrito el
+      // porqué porque a primera vista parece de oficina: lleva nombre de cliente
+      // y plata. La línea que separa los dos grupos no es «lleva plata», es «lleva
+      // COSTOS». 'internos' está tras rol admin porque enseña costo unitario,
+      // margen, utilidad del contenedor y la cartera de todos los clientes: eso no
+      // sale de la oficina. FALTANTES lleva el precio de VENTA al que el cliente
+      // pidió —un precio que el cliente ya conoce, porque es el suyo— y ni un solo
+      // costo ni margen. Meterla en 'internos' la escondería además de la
+      // vendedora, que es justo quien llama a los clientes; por la misma razón la
+      // pantalla /faltantes se registró sin <SoloAdmin>.
+      hojas: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
       gen: genBodega, archivo: 'Entregables_Bodega',
     },
     {
@@ -297,10 +348,35 @@ export default function Entregables() {
       return;
     }
 
+    // El PDF de bodega pinta las MISMAS hojas que el Excel de bodega, y eso hay
+    // que sostenerlo a mano: su generador va preguntando `sel.includes(...)`
+    // hoja por hoja, así que un nombre que no conoce lo ignora sin romper nada,
+    // sin avisar y sin dejar rastro. Mientras faltó el bloque de FALTANTES en
+    // lib/pdf.js había dos entregables llamados igual con contenido distinto
+    // según se pulsara Excel o PDF, y la casilla marcada aquí no hacía nada.
+    // Ya está añadido allí; si mañana se agrega otra hoja al grupo, hay que
+    // añadirle su bloque al PDF o volverá a pasar lo mismo.
+    //
+    // Excepción conocida y anterior a esto: MATRIZ se declara en el grupo y el
+    // PDF tampoco la conoce. Queda anotado para que no se lea como un olvido de
+    // este cambio.
+    //
+    // A `faltantes` se le pasa el ARREGLO de dentro de la respuesta, o null si
+    // la consulta se cayó. Ese null no es descuido: es lo que le permite al PDF
+    // escribir «no se pudo leer» en lugar de imprimir una tabla vacía que en
+    // papel se lee como «no le debes nada a nadie».
     if (isPdf) {
       const totales = g.id === 'bodega' ? totalesBodega() : null;
       if (g.id === 'bodega') {
-        await exportarPDFBodega(sel, { despachos: await armarDespachos(), separadas: armarSeparadas(), inventario: datos.inventario || [] }, totales, g.archivo);
+        if (sel.includes('FALTANTES(BODEGA)') && !datos.faltantes) {
+          addToast('No pude leer lo que quedó faltando: esa página del PDF sale diciéndolo. Que no esté NO significa que no le debas mercancía a nadie.', 'warning');
+        }
+        await exportarPDFBodega(sel, {
+          despachos: await armarDespachos(),
+          separadas: armarSeparadas(),
+          inventario: datos.inventario || [],
+          faltantes: datos.faltantes ? datos.faltantes.faltantes : null,
+        }, totales, g.archivo);
       } else if (g.id === 'internos') {
         await exportarPDFInternos(sel, { inventario: datos.inventario || [], cartera: datos.cartera || [] }, g.archivo);
       }
@@ -549,6 +625,12 @@ export default function Entregables() {
               <li><b className="text-primary">DESPACHO(BODEGA)</b> — despachos en proceso, agrupados por referencia y calidad, con destino, dirección, celular y transporte. Arriba los contadores de vienen / salen / quedan.</li>
               <li><b className="text-primary">SEPARADAS(BODEGA)</b> — lo apartado por cada cliente, con las mismas columnas.</li>
               <li><b className="text-primary">INVENTARIO(BODEGA)</b> — físico y disponible, sin costos ni precios.</li>
+              <li>
+                <b className="text-primary">FALTANTES(BODEGA)</b> — a quién se le quedó faltando qué, con la
+                ciudad, el <b>celular</b> para llamarle, la cifra, desde cuándo y cuántos repartos lleva
+                esperando. Un total por cliente al pie de su bloque. El precio es el de <b>cuando se
+                pidió</b>, no el de hoy. Sale igual en el Excel y en el PDF.
+              </li>
               <li><b className="text-primary">LISTADEPRECIOS(CLIENTES)</b> — referencia, calidad, precio y promoción. Es igual para todos, así que se puede difundir.</li>
               <li><b className="text-primary">Documentos de un cliente</b> — sus cotizaciones y su estado de cuenta, en un archivo que solo lleva lo suyo. Nunca se juntan varios clientes en el mismo libro.</li>
               <li><b className="text-primary">PRECIOSINTERNOS</b> — cómo se arma el precio: costo del contenedor + gastos unitarios + utilidad unitaria.</li>
