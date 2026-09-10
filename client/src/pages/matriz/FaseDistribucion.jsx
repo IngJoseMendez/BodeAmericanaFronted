@@ -356,10 +356,16 @@ const FaseDistribucion = memo(function FaseDistribucion({
           siempre, así que las dos existían a la vez y ninguna llegaba sola al
           final. Ahora la altura se reparte de arriba abajo —cabecera fija,
           tabla flexible, pie fijo— y sólo la tabla scrollea. */}
-      <div className={`flex flex-col flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
-        {/* ── Cabecera del reparto ────────────────────────────────────────── */}
-        <div className="flex-shrink-0 px-4 sm:px-6 lg:px-8 pt-3 pb-2 bg-cream border-b border-border/60">
-          <div className="flex flex-wrap items-center gap-3">
+      <div className={`flex flex-col 2xl:flex-row flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
+                {/* Los mandos y el resumen viven A UN LADO, no encima. Apilados arriba
+            se comian doscientos pixeles de alto —dos filas de controles mas la
+            cinta de clientes— y el reparto, que es lo unico que de verdad se
+            mira, quedaba encajonado en la mitad de abajo. De lado ocupan una
+            columna estrecha y la tabla se lleva la pantalla. Debajo de xl se
+            apilan como antes: en tableta estrecha una columna de 268px le
+            quitaria a la tabla el ancho que necesita. */}
+        <aside className="2xl:order-last 2xl:w-[268px] flex-shrink-0 flex flex-col min-h-0 gap-2 px-4 sm:px-6 2xl:px-4 pt-3 pb-2 bg-cream border-b 2xl:border-b-0 2xl:border-l border-border/60">
+          <div className="flex flex-wrap items-center gap-3 2xl:flex-col 2xl:items-stretch 2xl:gap-2 flex-shrink-0">
             {/* Sin confirmación: volver no destruye nada y pedirle permiso cada
                 vez la enseñaría a no leer los diálogos. Y no dice «Atrás»: tiene
                 que prometer que lo capturado sigue ahí. */}
@@ -367,7 +373,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
               Volver a los pedidos
             </Button>
 
-            <div className="flex-1 min-w-[200px] max-w-md">
+            <div className="flex-1 min-w-[200px] max-w-md 2xl:w-full 2xl:max-w-none">
               <label htmlFor="matriz-buscar-reparto" className="sr-only">Buscar producto o cliente</label>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
@@ -397,7 +403,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
             {/* EL SELLO DE LA LECTURA VA SIEMPRE, no sólo cuando falla. En el
                 caso normal —que es el peligroso— ella no tiene otra forma de
                 saber si su verdad es de hace un minuto o de hace una hora. */}
-            <div className="ml-auto flex items-center gap-2 text-[11px] text-muted">
+            <div className="ml-auto 2xl:ml-0 flex items-center gap-2 text-[11px] text-muted">
               <span>{hora ? `Inventario leído a las ${hora}` : 'Inventario sin sello de hora'}</span>
               <button
                 type="button"
@@ -414,7 +420,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
           {/* Fila 2: el contador. No hay tira de KPIs a propósito: la cinta de
               clientes ES la fila de indicadores y es más útil que cuatro
               tarjetas genéricas repitiendo lo que dice esta línea. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2" role="status">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 2xl:mt-1 flex-shrink-0" role="status">
             {porDecidir.length > 0 ? (
               <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-warning">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" />
@@ -461,13 +467,17 @@ const FaseDistribucion = memo(function FaseDistribucion({
           </div>
 
           <CintaClientes
+            vertical
             clientes={clientes}
             totales={totales.clientes}
             problemas={problemas}
             seleccionado={clienteResaltado}
             onSeleccionar={resaltar}
           />
-        </div>
+        </aside>
+
+        {/* La tabla se lleva todo lo que sobra, a lo ancho y a lo alto. */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
 
         {/* Los avisos van en su propia banda, fuera del scroll de la tabla: son
             cortos, se leen una vez y no tienen por qué empujar el reparto fuera
@@ -647,6 +657,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
             </div>
           </div>
         )}
+        </div>{/* fin de la columna de la tabla */}
       </div>
 
       {/* ── Pie del reparto ─────────────────────────────────────────────────
