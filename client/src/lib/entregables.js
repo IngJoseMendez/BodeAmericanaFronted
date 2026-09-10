@@ -14,6 +14,30 @@ const ACCENT = '6366f1';
 export const num = (v) => parseFloat(v) || 0;
 const norm = (v) => String(v ?? '').trim();
 export const int = (v) => parseInt(v) || 0;
+
+/**
+ * El costo que se enseña en una hoja PARTIDA POR LÍNEA (referencia + calidad).
+ *
+ * `costo_unitario` NO sirve ahí, y es un error fácil de cometer porque el nombre
+ * promete justo lo contrario: al finalizar un contenedor, TODAS sus pacas nacen
+ * con el mismo `costo_base` —el costo total del contenedor dividido entre las
+ * unidades propias, una sola cuenta para todo el contenedor (contenedores.js:151
+ * y el INSERT de :977)—. Por eso la columna salía con la misma cifra en las
+ * veinte filas: no era un fallo de la hoja, era el dato.
+ *
+ * El número que SÍ cambia de línea a línea es `precio_minimo`, que se captura
+ * por combinación al finalizar: mercancía de ESE producto ponderada entre
+ * proveedores, más servicios por unidad, más la utilidad fijada. Es lo mínimo a
+ * cobrar por esa línea sin perder, la misma cuenta que la hoja PRECIOSINTERNOS.
+ *
+ * Se cae a `costo_unitario` sólo para las pacas viejas, anteriores a que la
+ * columna existiera, donde `precio_minimo` es 0: ahí el promedio del contenedor
+ * es lo único que hay y es mejor que un cero.
+ *
+ * Vive aquí, y no copiada en cada hoja, porque este proyecto ya tuvo el bug de
+ * dos fórmulas de dinero que se separaron sin que nada fallara.
+ */
+export const costoDeLinea = (f) => num(f?.precio_minimo) || num(f?.costo_unitario);
 const hoyStr = () => new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 /** Encabezado de tabla con el estilo de la casa. */
@@ -271,6 +295,11 @@ export function hojaMatrizClientes(wb, filas, separadas) {
   }
   const cols = [...clientes].sort((a, b) => a.localeCompare(b, 'es'));
 
+  // El rótulo se queda en 'COSTO' porque es el de SU plantilla de Excel y hay una
+  // prueba que lo fija (tests/matriz-plantilla.test.mjs). Lo que cambia es el dato
+  // de debajo: ahora es el mínimo de ESA línea y no el prorrateo del contenedor,
+  // que salía idéntico en todas las filas. Ojo si algún día se renombra: ese
+  // número lleva servicios y utilidad dentro, no es el costo de mercancía pelado.
   const FIJAS = ['COD', 'PROVE', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PRECIO',
                  'INVENTARIO', 'FISICO', 'DESPACHOS', 'SEP', 'DISP'];
   const N = FIJAS.length;
@@ -325,7 +354,7 @@ export function hojaMatrizClientes(wb, filas, separadas) {
     // un vistazo qué está rebajado.
     const base = [
       f.contenedor || '', f.proveedor_nombre || '', f.referencia || '', f.calidad || '',
-      num(f.costo_unitario) || '',
+      costoDeLinea(f) || '',
       promo ? precio : '',
       promo ? '' : precio,
       int(f.cantidad), int(f.fisico), int(f.despachadas), int(f.separadas), int(f.disponibles),
@@ -997,12 +1026,13 @@ export function hojaInventarioInterno(wb, filas) {
   [18, 16, 24, 14, 14, 14, 8, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 9);
+  // Mismo rótulo que la hoja MATRIZ, y el mismo dato debajo: el mínimo por línea.
   fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
 
   let ct = 0, pt = 0, disp = 0;
   for (const f of filas) {
     const d = int(f.disponibles);
-    const costo = num(f.precio_minimo) || num(f.costo_unitario);
+    const costo = costoDeLinea(f);
     const precio = num(f.precio_unitario);
     const r = ws.getRow(fila);
     [f.categoria, f.clasificacion, f.referencia, f.calidad, costo, precio, d, costo * d, precio * d]

@@ -1,5 +1,9 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+// El costo por línea sale del mismo sitio que en las hojas de Excel: si el PDF
+// se lo calculara por su cuenta, el papel y el libro acabarían enseñando cifras
+// distintas del mismo inventario y nadie sabría cuál creer.
+import { costoDeLinea } from './entregables.js';
 
 const formatNum = (v) => (parseInt(v) || 0).toLocaleString('es-CO');
 const formatCOP = (v) => '$' + (parseFloat(v) || 0).toLocaleString('es-CO');
@@ -196,7 +200,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
     addTitle(`INVENTARIO (INTERNO)`);
     const rows = data.inventario.map(f => [
       f.categoria, f.clasificacion, f.referencia, f.calidad,
-      formatCOP(parseFloat(f.precio_minimo) || parseFloat(f.costo_unitario)), formatCOP(f.precio_unitario),
+      formatCOP(costoDeLinea(f)), formatCOP(f.precio_unitario),
       f.disponibles
     ]);
     doc.autoTable({

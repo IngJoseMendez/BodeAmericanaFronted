@@ -6,6 +6,10 @@ import { useCatalog } from '../context/CatalogContext';
 import { PACA_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
+// El mínimo por línea sale del mismo helper que las hojas de Excel y el PDF:
+// tres sitios calculándolo por su cuenta es como acaban enseñando cifras
+// distintas del mismo inventario.
+import { costoDeLinea } from '../lib/entregables';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { hoy } from '../lib/fecha';
@@ -443,7 +447,14 @@ export default function Pacas() {
         { header: 'Despachadas',    key: 'despachadas',    width: 12 },
         { header: 'Separadas',      key: 'separadas',      width: 11 },
         { header: 'Disponibles',    key: 'disponibles',    width: 12 },
+        // «Costo Unit.» es el prorrateo del contenedor y sale IGUAL en todas
+        // las filas del mismo contenedor por construcción: es correcto para
+        // valorar el inventario, pero no distingue una referencia de otra. Por
+        // eso al lado va «Mínimo Unit.», que sí cambia línea a línea. No se
+        // sustituye el costo por el mínimo: el mínimo lleva la utilidad dentro
+        // y usarlo para valorar el inventario lo inflaría.
         { header: 'Costo Unit.',    key: 'costo_unit',     width: 14 },
+        { header: 'Mínimo Unit.',   key: 'minimo_unit',    width: 14 },
         { header: 'Precio Unit.',   key: 'precio_unit',    width: 14 },
         { header: 'Costo Total',    key: 'costo_total',    width: 16 },
         { header: 'Precio Total',   key: 'precio_total',   width: 16 },
@@ -471,6 +482,7 @@ export default function Pacas() {
           separadas:     parseInt(row.separadas) || 0,
           disponibles:   parseInt(row.disponibles) || 0,
           costo_unit:    parseFloat(row.costo_unitario) || 0,
+          minimo_unit:   costoDeLinea(row),
           precio_unit:   parseFloat(row.precio_unitario) || 0,
           costo_total:   parseFloat(row.costo_total) || 0,
           precio_total:  parseFloat(row.precio_total) || 0,
@@ -499,6 +511,7 @@ export default function Pacas() {
       });
 
       wsAg.getColumn('costo_unit').numFmt   = '$#,##0.00';
+      wsAg.getColumn('minimo_unit').numFmt  = '$#,##0.00';
       wsAg.getColumn('precio_unit').numFmt  = '$#,##0.00';
       wsAg.getColumn('costo_total').numFmt  = '$#,##0.00';
       wsAg.getColumn('precio_total').numFmt = '$#,##0.00';

@@ -178,6 +178,78 @@ try {
   fallos.push('MATRIZ (contenido): ' + err.message);
 }
 
+// ── El costo de una hoja partida por línea tiene que CAMBIAR de línea a línea ──
+// Al finalizar un contenedor todas sus pacas nacen con el mismo `costo_base` —el
+// total del contenedor entre las unidades propias—, así que una hoja que lo
+// enseñe saca la misma cifra en las veinte filas y la columna no sirve de nada.
+// El número que sí se captura por combinación es `precio_minimo`. Esta prueba
+// existe para que nadie vuelva a cambiar `costoDeLinea` por `costo_unitario`
+// sin que salte nada.
+try {
+  const mismoContenedor = [
+    { contenedor: 'C226', proveedor_nombre: 'DIAS', categoria: 'DAMA', clasificacion: 'DAMA',
+      referencia: 'mixta invierno', calidad: 'premium',
+      cantidad: 40, fisico: 40, despachadas: 0, separadas: 0, disponibles: 40,
+      costo_unitario: 477750, precio_minimo: 1250000, precio_unitario: 1700000 },
+    { contenedor: 'C226', proveedor_nombre: 'JYM', categoria: 'DAMA', clasificacion: 'DAMA',
+      referencia: 'chaqueta', calidad: 'premium',
+      cantidad: 16, fisico: 16, despachadas: 0, separadas: 0, disponibles: 16,
+      costo_unitario: 477750, precio_minimo: 1410000, precio_unitario: 1700000 },
+    { contenedor: 'C226', proveedor_nombre: 'DIAS', categoria: 'HOMBRE', clasificacion: 'HOMBRE',
+      referencia: 'shorts', calidad: 'supreme',
+      cantidad: 50, fisico: 50, despachadas: 0, separadas: 0, disponibles: 50,
+      // Paca anterior a que existiera la columna: cae al prorrateo, que es lo único que hay.
+      costo_unitario: 477750, precio_minimo: 0, precio_unitario: 1900000 },
+  ];
+  const esperado = [1250000, 1410000, 477750];
+
+  const dados = mismoContenedor.map((f) => E.costoDeLinea(f));
+  if (JSON.stringify(dados) !== JSON.stringify(esperado)) {
+    fallos.push('costoDeLinea: ' + JSON.stringify(dados) + ' en vez de ' + JSON.stringify(esperado));
+  } else if (new Set(dados).size !== 3) {
+    fallos.push('costoDeLinea devuelve la misma cifra para lineas distintas');
+  } else {
+    ok.push('costoDeLinea: un costo por linea (' + dados.join(' / ') + ')');
+  }
+  if (E.costoDeLinea(null) !== 0 || E.costoDeLinea(undefined) !== 0) {
+    fallos.push('costoDeLinea revienta con basura');
+  } else {
+    ok.push('costoDeLinea aguanta null y undefined');
+  }
+
+  const libro = E.nuevoLibro();
+  E.hojaMatrizClientes(libro, mismoContenedor, []);
+  E.hojaInventarioInterno(libro, mismoContenedor);
+  const releido = new ExcelJS.Workbook();
+  await releido.xlsx.load(await libro.xlsx.writeBuffer());
+
+  const hojaM = releido.getWorksheet('MATRIZ');
+  const enMatriz = [5, 6, 7].map((f) => hojaM.getRow(f).getCell(5).value);
+  if (JSON.stringify(enMatriz) !== JSON.stringify(esperado)) {
+    fallos.push('MATRIZ columna 5: ' + JSON.stringify(enMatriz) + ' en vez de ' + JSON.stringify(esperado));
+  } else {
+    ok.push('MATRIZ: la columna del costo distingue las tres lineas');
+  }
+  if (hojaM.getRow(4).getCell(5).value !== 'COSTO') {
+    fallos.push('MATRIZ: el rotulo de la columna 5 dejo de ser COSTO');
+  } else {
+    ok.push('MATRIZ: el rotulo sigue siendo el de su plantilla');
+  }
+
+  const hojaI = releido.getWorksheet('INVENTARIO(INTERNO)');
+  let cab = null;
+  hojaI.eachRow((row, n) => { if (row.getCell(1).value === 'CATEGORIA') cab = n; });
+  const enInterno = [1, 2, 3].map((i) => hojaI.getRow(cab + i).getCell(5).value);
+  if (JSON.stringify(enInterno) !== JSON.stringify(enMatriz)) {
+    fallos.push('INVENTARIO(INTERNO) no coincide con MATRIZ: ' + JSON.stringify(enInterno));
+  } else {
+    ok.push('INVENTARIO(INTERNO) y MATRIZ ensenan el mismo costo por linea');
+  }
+} catch (err) {
+  fallos.push('costo por linea: ' + err.message);
+}
+
+
 console.log('\n═══ HOJAS GENERADAS ═══');
 for (const x of ok) console.log('  ✓ ' + x);
 if (fallos.length) {
