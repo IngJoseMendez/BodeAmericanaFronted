@@ -348,9 +348,17 @@ const FaseDistribucion = memo(function FaseDistribucion({
 
   return (
     <>
-      <div className={`space-y-4 pb-4 ${oculto ? 'hidden' : ''}`}>
-        {/* ── Barra pegajosa de la Fase 2 ─────────────────────────────────── */}
-        <div className="sticky top-[64px] z-10 -mx-1 px-1 py-3 bg-cream/95 backdrop-blur-sm border-b border-border/60">
+      {/* EL REPARTO ES UNA SOLA PANTALLA, NO UN DOCUMENTO.
+          Antes esto era una columna que fluía con la página, y para llegar a un
+          producto había que rodar dos ruedas distintas: la de la página y la de
+          la tabla. Con la barra pegada a 64px y la tabla limitada a
+          calc(100vh-330px), la suma de las dos pasaba del alto de la ventana
+          siempre, así que las dos existían a la vez y ninguna llegaba sola al
+          final. Ahora la altura se reparte de arriba abajo —cabecera fija,
+          tabla flexible, pie fijo— y sólo la tabla scrollea. */}
+      <div className={`flex flex-col flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
+        {/* ── Cabecera del reparto ────────────────────────────────────────── */}
+        <div className="flex-shrink-0 px-4 sm:px-6 lg:px-8 pt-3 pb-2 bg-cream border-b border-border/60">
           <div className="flex flex-wrap items-center gap-3">
             {/* Sin confirmación: volver no destruye nada y pedirle permiso cada
                 vez la enseñaría a no leer los diálogos. Y no dice «Atrás»: tiene
@@ -461,6 +469,11 @@ const FaseDistribucion = memo(function FaseDistribucion({
           />
         </div>
 
+        {/* Los avisos van en su propia banda, fuera del scroll de la tabla: son
+            cortos, se leen una vez y no tienen por qué empujar el reparto fuera
+            de la pantalla. Si no hay ninguno, la banda desaparece. */}
+        <div className="flex-shrink-0 px-4 sm:px-6 lg:px-8 pt-2 space-y-2 empty:hidden">
+
         {/* ── EL LIBRO DE FALTANTES NO SE PUDO LEER ──────────────────────────
             La bandera llegaba hasta `GrupoProducto` y pintaba el «—» con su
             title en la columna «Le faltaba», pero la Fase 2 no lo decía en
@@ -536,21 +549,25 @@ const FaseDistribucion = memo(function FaseDistribucion({
           </div>
         )}
 
+        </div>
+
         {/* ── La tabla del reparto ────────────────────────────────────────── */}
         {productos.length === 0 ? (
-          <Card>
-            <CardBody>
-              <EmptyState
-                icon={PackageOpen}
-                title="No hay nada que repartir"
-                description="Vuelve a los pedidos y anota lo que pidió cada cliente. Aquí sólo aparecen los productos que alguien pidió."
-              />
-            </CardBody>
-          </Card>
+          <div className="flex-1 min-h-0 overflow-auto px-4 sm:px-6 lg:px-8 py-3">
+            <Card>
+              <CardBody>
+                <EmptyState
+                  icon={PackageOpen}
+                  title="No hay nada que repartir"
+                  description="Vuelve a los pedidos y anota lo que pidió cada cliente. Aquí sólo aparecen los productos que alguien pidió."
+                />
+              </CardBody>
+            </Card>
+          </div>
         ) : (
-          <div className="space-y-2">
+          <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-6 lg:px-8 pt-2 pb-3">
             {ocultasPorDecidir > 0 && (
-              <p className="text-xs text-warning">
+              <p className="text-xs text-warning flex-shrink-0 mb-2">
                 {/* «decisión(es) de reparto»: aquí había una palabra prohibida
                     en todo el módulo, la que en esta misma aplicación ya
                     significa otras tres cosas (pedido del portal, cotización y
@@ -569,8 +586,19 @@ const FaseDistribucion = memo(function FaseDistribucion({
               </p>
             )}
 
-            <div className="overflow-x-auto max-h-[calc(100vh-330px)] rounded-2xl border border-border/60 bg-surface">
-              <table className="w-full min-w-[980px] text-sm">
+            {/* EL ÚNICO SITIO QUE SCROLLEA DE TODA LA FASE 2.
+                `flex-1 min-h-0` en vez de un max-h con un número: el alto sale
+                de lo que sobra después de la cabecera y el pie, así que crecer
+                un aviso o plegar la cinta reparte el hueco solo, sin recalcular
+                ninguna constante. El min-h-0 no es decorativo: sin él el hijo
+                se niega a encogerse por debajo de su contenido y el scroll se
+                escapa hacia arriba, al <main>. */}
+            <div className="flex-1 min-h-0 overflow-auto rounded-2xl border border-border/60 bg-surface">
+              {/* 880 y no 980: con ocho columnas y los nombres partidos en dos
+                  líneas en vez de cortados, la tabla entra entera en un portátil
+                  de 1280 con el menú desplegado. El mínimo sigue existiendo para
+                  que en tableta estrecha ruede de lado en vez de aplastarse. */}
+              <table className="w-full min-w-[880px] text-sm">
                 <caption className="sr-only">
                   Reparto por producto: dentro de cada producto, una fila por cada cliente que lo pidió
                   y la cantidad que se le entrega.
@@ -580,11 +608,11 @@ const FaseDistribucion = memo(function FaseDistribucion({
                     <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-3 py-2 w-[22%] min-w-[200px]">Producto</th>
                     <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-2 py-2 min-w-[170px]">Cliente</th>
                     <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[64px]">Pidió</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[88px]">Le faltaba</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[76px]">Le faltaba</th>
                     <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[108px]">Le doy</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[96px]">Queda faltando</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[110px]">Precio</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[124px]">Valor</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[88px]">Queda faltando</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[96px]">Precio</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[112px]">Valor</th>
                   </tr>
                 </thead>
 
@@ -621,8 +649,12 @@ const FaseDistribucion = memo(function FaseDistribucion({
         )}
       </div>
 
-      {/* ── Pie pegajoso de la Fase 2 ───────────────────────────────────── */}
-      <div className={`sticky bottom-4 z-10 ${oculto ? 'hidden' : ''}`}>
+      {/* ── Pie del reparto ─────────────────────────────────────────────────
+          Ya no es pegajoso: en una pantalla que no scrollea, «pegajoso» y
+          «abajo del todo» son el mismo sitio, y sticky sobre un contenedor sin
+          scroll es una promesa que no se cumple. Ahora es una banda fija que
+          se lleva el alto que necesita antes de que la tabla reparta el resto. */}
+      <div className={`flex-shrink-0 px-4 sm:px-6 lg:px-8 pb-3 ${oculto ? 'hidden' : ''}`}>
         <Card className="border-secondary/40 shadow-lg">
           <CardBody>
             <div className="flex flex-wrap items-center justify-between gap-3">

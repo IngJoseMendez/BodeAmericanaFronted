@@ -228,7 +228,7 @@ const GrupoProducto = memo(function GrupoProducto({
           <td colSpan={8} className="px-3 py-2">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Check size={13} className="text-success flex-shrink-0" aria-hidden="true" />
-              <span className="font-medium text-primary truncate">
+              <span className="font-medium text-primary">
                 {producto.referencia} <span className="text-muted">· {producto.calidad || 'sin calidad'}</span>
               </span>
               <span className="text-[11px] text-muted tabular-nums">
@@ -295,10 +295,16 @@ const GrupoProducto = memo(function GrupoProducto({
             {/* ── #1 EL PRODUCTO, una vez y cubriendo todas sus filas ─────── */}
             {i === 0 && (
               <td rowSpan={clientes.length + 1} className="px-3 py-2 align-top border-r border-border/40 w-[22%] min-w-[200px]">
-                <p className="font-medium text-primary truncate leading-tight" title={producto.referencia}>
+                {/* Se parte en dos líneas, no se corta. Una referencia como
+                    «mixta invierno dama» cortada a «mixta invier…» obliga a
+                    parar el ojo y a pasar el ratón por encima para saber qué
+                    está repartiendo, y en tableta no hay ratón que lo saque.
+                    El alto de fila lo manda el producto, que es el que más
+                    texto tiene, así que dejarlo envolver no descuadra nada. */}
+                <p className="font-medium text-primary leading-tight break-words">
                   {producto.referencia}
                 </p>
-                <p className="text-[11px] text-muted truncate leading-tight">{producto.calidad || 'sin calidad'}</p>
+                <p className="text-[11px] text-muted leading-tight break-words">{producto.calidad || 'sin calidad'}</p>
 
                 <div className="flex flex-wrap items-center gap-1 mt-1">
                   {/* El chip de escasez dice el hecho completo en cuatro
@@ -457,10 +463,13 @@ const GrupoProducto = memo(function GrupoProducto({
 
             {/* ── #2 CLIENTE ──────────────────────────────────────────────── */}
             <td className="px-2 py-1.5 align-top min-w-[170px]">
-              <p className="font-medium text-primary truncate leading-tight" title={c.cliente_nombre}>
+              {/* El nombre del cliente NO se corta: es a quién le está dando
+                  mercancía, y «COMERCIALIZADORA LA…» no distingue a dos
+                  comercializadoras. Envuelve en dos líneas y ya. */}
+              <p className="font-medium text-primary leading-tight break-words">
                 {c.cliente_nombre}
               </p>
-              <p className="text-[11px] text-muted truncate leading-tight">{c.ciudad || 'Sin ciudad'}</p>
+              <p className="text-[11px] text-muted leading-tight break-words">{c.ciudad || 'Sin ciudad'}</p>
             </td>
 
             {/* ── #3 PIDIÓ ────────────────────────────────────────────────── */}

@@ -72,7 +72,18 @@ function Breadcrumbs({ location }) {
   );
 }
 
-export function Layout({ children, title, subtitle, actions }) {
+/**
+ * `pantallaCompleta` convierte el marco en una aplicación de una sola pantalla:
+ * nada scrollea salvo lo que la propia página decida. Es para las tablas densas
+ * de trabajo —el reparto de la Matriz—, donde tener a la vez el scroll de la
+ * página y el de la tabla obliga a rodar dos ruedas distintas para llegar al
+ * mismo sitio y la cabecera se queda a medio camino. Va como opción y no como
+ * norma: las demás pantallas son documentos y se leen de arriba abajo.
+ *
+ * Quien la pida se hace cargo de su propio padding y de repartir el alto: el
+ * <main> deja de tenerlo y pasa a ser una columna flexible.
+ */
+export function Layout({ children, title, subtitle, actions, pantallaCompleta = false }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Con el almacenamiento del sitio bloqueado, tocar localStorage lanza
   // SecurityError; al ocurrir dentro del inicializador de useState reventaba el
@@ -109,8 +120,13 @@ export function Layout({ children, title, subtitle, actions }) {
     logout();
   };
 
+  // 100dvh y no 100vh: en tableta la barra del navegador se recoge al bajar y
+  // con vh la pantalla «completa» se pasaba de largo justo esa altura, dejando
+  // un scroll de página de 60 px que es peor que no tenerlo.
   return (
-    <div className="flex min-h-screen bg-cream bg-pattern">
+    <div className={`flex bg-cream bg-pattern ${
+      pantallaCompleta ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
+    }`}>
       {/* El menú lateral pone dos docenas de enlaces por delante del contenido:
           con teclado había que tabularlos todos en CADA página. El main de abajo
           ya tenía el id y el tabIndex preparados como destino; faltaba el enlace. */}
@@ -206,9 +222,15 @@ export function Layout({ children, title, subtitle, actions }) {
         </header>
 
         {/* ── MAIN CONTENT ────────────────────────── */}
+        {/* min-h-0 es obligatorio en el modo completo: sin él, un hijo flexible
+            con contenido largo empuja el alto del <main> por encima del hueco
+            que le queda y vuelve a aparecer el scroll de la página, que es
+            justo lo que se estaba quitando. */}
         <main
           id="main-content"
-          className="flex-1 p-4 sm:p-6 lg:p-8"
+          className={pantallaCompleta
+            ? 'flex-1 min-h-0 flex flex-col'
+            : 'flex-1 p-4 sm:p-6 lg:p-8'}
           tabIndex={-1}
         >
           {children}

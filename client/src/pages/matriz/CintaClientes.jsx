@@ -105,7 +105,7 @@ const CintaClientes = memo(function CintaClientes({
                       + ` sobre ${formatCOP(t.total || 0)}. Revisa si vale la pena despacharle.`
                     : '')
                 }
-                className={`flex-shrink-0 w-[136px] text-left rounded-xl border px-2 py-1.5 transition-colors ${
+                className={`flex-shrink-0 min-w-[128px] max-w-[196px] text-left rounded-xl border px-2 py-1.5 transition-colors ${
                   conProblema
                     ? 'border-error/50 bg-error/10'
                     : elegido
@@ -113,7 +113,12 @@ const CintaClientes = memo(function CintaClientes({
                       : 'border-border/70 bg-surface hover:bg-primary/[0.03]'
                 } ${sinNada ? 'opacity-60' : ''}`}
               >
-                <p className="text-[11px] font-semibold text-primary truncate leading-tight">{c.nombre}</p>
+                {/* Ancho elástico entre 128 y 196 en vez de fijo a 136, y el
+                    nombre en dos líneas como mucho en vez de cortado: con el
+                    ancho clavado, «DISTRIBUIDORA…» y «DISTRIBUCIONES…» se veían
+                    igual, y son dos clientes distintos a los que se les está
+                    repartiendo mercancía distinta. */}
+                <p className="text-[11px] font-semibold text-primary leading-tight line-clamp-2">{c.nombre}</p>
                 <p className="text-[11px] text-muted tabular-nums leading-tight">
                   <span className="font-semibold text-primary">{repartidas}</span>/{pedidas}
                   {faltando > 0 && (
@@ -123,7 +128,7 @@ const CintaClientes = memo(function CintaClientes({
                     </span>
                   )}
                 </p>
-                <p className="text-[11px] font-semibold text-primary tabular-nums truncate leading-tight">
+                <p className="text-[11px] font-semibold text-primary tabular-nums leading-tight">
                   {formatCOP(t.total || 0)}
                 </p>
                 {sinNada && (
