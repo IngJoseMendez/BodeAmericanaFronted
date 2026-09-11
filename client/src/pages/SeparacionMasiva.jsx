@@ -2033,12 +2033,14 @@ export default function SeparacionMasiva() {
           ? 'Fase 2 de 2 — reparte lo que hay. Lo que no alcance queda como faltante del cliente.'
           : 'Fase 1 de 2 — anota lo que pidió cada cliente, aunque no alcance. Lo repartes en el paso 2.'
       }
-      /* El reparto pide pantalla completa; los pedidos no. Repartir es teclear
-         de arriba abajo mirando una cabecera que no se puede ir, y con el
-         scroll de la página encima había que rodar dos ruedas para llegar al
-         mismo producto. La captura, en cambio, es una lista larga que se lee
-         como cualquier otra pantalla de la aplicación. */
-      pantallaCompleta={fase === 'reparto'}
+      /* LAS DOS FASES son pantalla completa. Al principio sólo lo era el
+         reparto, pensando que la captura «es una lista larga que se lee como
+         cualquier otra pantalla». Era falso: con la página scrolleando, el pie
+         pegajoso de la Fase 1 se montaba encima de las últimas filas justo
+         cuando se bajaba a mirarlas. Repartiendo el alto —banda arriba, tabla
+         en medio, pie abajo— el pie es una barra de verdad y no puede tapar
+         nada. */
+      pantallaCompleta
     >
       {/* LAS DOS FASES SE MONTAN A LA VEZ. La que no está activa se oculta con
           `hidden`, NO se desmonta: desmontar y remontar cientos de <tbody> con

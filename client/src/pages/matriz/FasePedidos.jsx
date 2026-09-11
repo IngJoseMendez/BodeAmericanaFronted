@@ -728,9 +728,9 @@ const FasePedidos = memo(function FasePedidos({
 
   return (
     <>
-      <div className={`space-y-4 pb-4 ${oculto ? 'hidden' : ''}`}>
+      <div className={`flex flex-col flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
         {/* ── Barra pegajosa: lo que vale para TODAS las filas ────────────── */}
-        <div className="sticky top-[64px] z-10 -mx-1 px-1 py-3 bg-cream/95 backdrop-blur-sm border-b border-border/60">
+        <div className="flex-shrink-0 px-4 sm:px-6 py-3 bg-cream border-b border-border/60">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-32">
               <label htmlFor={idTasa} className="block text-xs font-medium text-muted mb-1">
@@ -844,6 +844,10 @@ const FasePedidos = memo(function FasePedidos({
             {estadoGuardado ? ` · ${estadoGuardado}` : ''}
           </p>
         </div>
+
+        {/* Los avisos, en su propia banda fija. No entran en el scroll de la
+            tabla ni le roban alto: se leen una vez y se quedan quietos. */}
+        <div className="flex-shrink-0 px-4 sm:px-6 pt-2 space-y-2 empty:hidden">
 
         {avisoCarga && (
           <div className="flex items-start gap-2 p-3 rounded-xl border border-warning/40 bg-warning/10 text-xs text-warning">
@@ -963,12 +967,13 @@ const FasePedidos = memo(function FasePedidos({
           </div>
         )}
 
+        </div>
         {/* ── Matriz de clientes ──────────────────────────────────────────── */}
         {cargando ? (
           // El esqueleto imita la tabla, no las tarjetas de antes: si al cargar
           // se ven seis bloques altos y luego aparecen quince filas finas, la
           // pantalla parece haber cambiado de sitio todo.
-          <div className="rounded-2xl border border-border/60 bg-surface divide-y divide-border/50">
+          <div className="flex-1 min-h-0 overflow-auto bg-surface divide-y divide-border/50">
             {Array.from({ length: 10 }).map((_, i) => (
               <div key={i} className="h-10 animate-pulse bg-primary/[0.03]" />
             ))}
@@ -992,8 +997,8 @@ const FasePedidos = memo(function FasePedidos({
             </CardBody>
           </Card>
         ) : (
-          <div className="space-y-2">
-            <p className="text-xs text-muted">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <p className="flex-shrink-0 px-4 sm:px-6 pb-1 text-xs text-muted">
               Mostrando {clientesVisibles.length} de {clientes.length} cliente(s) activos
               {resumen.numClientes > 0 ? ` · ${resumen.numClientes} con ítems listos` : ''}
               {' · '}la entrega usa el destino registrado del cliente y, si no tiene, sus propios datos
@@ -1003,7 +1008,11 @@ const FasePedidos = memo(function FasePedidos({
                 Ojo con el max-h: un contenedor con overflow-x sólo se comporta
                 como zona desplazable si tiene un alto que respetar, y sin él la
                 cabecera `sticky top-0` no tendría contra qué pegarse. */}
-            <div className="overflow-x-auto max-h-[70vh] rounded-2xl border border-border/60 bg-surface">
+            {/* SIN CAJA. Antes iba dentro de una tarjeta redondeada con borde y
+                margen a los lados: la tabla quedaba encerrada en un rectángulo
+                más pequeño que la pantalla y con el aire desperdiciado alrededor.
+                Ahora la pantalla ES la caja y la tabla llega hasta el borde. */}
+            <div className="flex-1 min-h-0 overflow-auto border-t border-border/60 bg-surface">
               <table className="w-full min-w-[920px] text-sm">
                 <caption className="sr-only">
                   Pedidos por cliente: dentro de cada cliente, una fila por cada producto que pidió.
@@ -1071,10 +1080,15 @@ const FasePedidos = memo(function FasePedidos({
         )}
       </div>
 
-      {/* ── Pie pegajoso: el resumen siempre a la vista ─────────────────── */}
-      <div className={`sticky bottom-4 z-10 ${oculto ? 'hidden' : ''}`}>
-        <Card className="border-secondary/40 shadow-lg">
-          <CardBody>
+      {/* ── Pie: el resumen siempre a la vista ───────────────────────────
+          Ya NO es pegajoso. Flotando sobre la página se montaba encima de las
+          últimas filas justo cuando ella bajaba a mirarlas, y el `bottom-4` le
+          dejaba además una rendija por la que se veía pasar el contenido por
+          debajo. Ahora es una barra de verdad: se lleva su alto antes de que la
+          tabla reparta el resto, así que no puede tapar nada. */}
+      <div className={`flex-shrink-0 border-t border-border/60 bg-surface ${oculto ? 'hidden' : ''}`}>
+        <div>
+          <div className="px-4 sm:px-6 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm" role="status">
@@ -1131,8 +1145,8 @@ const FasePedidos = memo(function FasePedidos({
                 )}
               </div>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </div>
       </div>
     </>
   );

@@ -356,7 +356,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
           siempre, así que las dos existían a la vez y ninguna llegaba sola al
           final. Ahora la altura se reparte de arriba abajo —cabecera fija,
           tabla flexible, pie fijo— y sólo la tabla scrollea. */}
-      <div className={`flex flex-col 2xl:flex-row flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
+      <div className={`flex flex-col xl:flex-row flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
                 {/* Los mandos y el resumen viven A UN LADO, no encima. Apilados arriba
             se comian doscientos pixeles de alto —dos filas de controles mas la
             cinta de clientes— y el reparto, que es lo unico que de verdad se
@@ -364,8 +364,8 @@ const FaseDistribucion = memo(function FaseDistribucion({
             columna estrecha y la tabla se lleva la pantalla. Debajo de xl se
             apilan como antes: en tableta estrecha una columna de 268px le
             quitaria a la tabla el ancho que necesita. */}
-        <aside className="2xl:order-last 2xl:w-[268px] flex-shrink-0 flex flex-col min-h-0 gap-2 px-4 sm:px-6 2xl:px-4 pt-3 pb-2 bg-cream border-b 2xl:border-b-0 2xl:border-l border-border/60">
-          <div className="flex flex-wrap items-center gap-3 2xl:flex-col 2xl:items-stretch 2xl:gap-2 flex-shrink-0">
+        <aside className="xl:order-last xl:w-[216px] flex-shrink-0 flex flex-col min-h-0 gap-2 px-4 sm:px-6 xl:px-3 pt-3 pb-2 bg-cream border-b xl:border-b-0 xl:border-l border-border/60">
+          <div className="flex flex-wrap items-center gap-3 xl:flex-col xl:items-stretch xl:gap-2 flex-shrink-0">
             {/* Sin confirmación: volver no destruye nada y pedirle permiso cada
                 vez la enseñaría a no leer los diálogos. Y no dice «Atrás»: tiene
                 que prometer que lo capturado sigue ahí. */}
@@ -373,7 +373,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
               Volver a los pedidos
             </Button>
 
-            <div className="flex-1 min-w-[200px] max-w-md 2xl:w-full 2xl:max-w-none">
+            <div className="flex-1 min-w-[200px] max-w-md xl:w-full xl:max-w-none">
               <label htmlFor="matriz-buscar-reparto" className="sr-only">Buscar producto o cliente</label>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
@@ -403,7 +403,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
             {/* EL SELLO DE LA LECTURA VA SIEMPRE, no sólo cuando falla. En el
                 caso normal —que es el peligroso— ella no tiene otra forma de
                 saber si su verdad es de hace un minuto o de hace una hora. */}
-            <div className="ml-auto 2xl:ml-0 flex items-center gap-2 text-[11px] text-muted">
+            <div className="ml-auto xl:ml-0 flex items-center gap-2 text-[11px] text-muted">
               <span>{hora ? `Inventario leído a las ${hora}` : 'Inventario sin sello de hora'}</span>
               <button
                 type="button"
@@ -420,7 +420,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
           {/* Fila 2: el contador. No hay tira de KPIs a propósito: la cinta de
               clientes ES la fila de indicadores y es más útil que cuatro
               tarjetas genéricas repitiendo lo que dice esta línea. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 2xl:mt-1 flex-shrink-0" role="status">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 xl:mt-1 flex-shrink-0" role="status">
             {porDecidir.length > 0 ? (
               <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-warning">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" />
@@ -482,7 +482,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
         {/* Los avisos van en su propia banda, fuera del scroll de la tabla: son
             cortos, se leen una vez y no tienen por qué empujar el reparto fuera
             de la pantalla. Si no hay ninguno, la banda desaparece. */}
-        <div className="flex-shrink-0 px-4 sm:px-6 lg:px-8 pt-2 space-y-2 empty:hidden">
+        <div className="flex-shrink-0 px-4 sm:px-6 lg:px-8 xl:px-3 pt-2 space-y-2 empty:hidden">
 
         {/* ── EL LIBRO DE FALTANTES NO SE PUDO LEER ──────────────────────────
             La bandera llegaba hasta `GrupoProducto` y pintaba el «—» con su
@@ -575,7 +575,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
             </Card>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 flex flex-col px-4 sm:px-6 lg:px-8 pt-2 pb-3">
+          <div className="flex-1 min-h-0 flex flex-col">
             {ocultasPorDecidir > 0 && (
               <p className="text-xs text-warning flex-shrink-0 mb-2">
                 {/* «decisión(es) de reparto»: aquí había una palabra prohibida
@@ -603,26 +603,29 @@ const FaseDistribucion = memo(function FaseDistribucion({
                 ninguna constante. El min-h-0 no es decorativo: sin él el hijo
                 se niega a encogerse por debajo de su contenido y el scroll se
                 escapa hacia arriba, al <main>. */}
-            <div className="flex-1 min-h-0 overflow-auto rounded-2xl border border-border/60 bg-surface">
+            {/* SIN CAJA: la pantalla es la caja. Encerrada en una tarjeta
+                redondeada con margen a los lados, la tabla quedaba en un
+                rectángulo más pequeño que la pantalla con el aire tirado
+                alrededor, que es justo lo que estorbaba al repartir. */}
+            <div className="flex-1 min-h-0 overflow-auto border-t border-border/60 bg-surface">
               {/* 880 y no 980: con ocho columnas y los nombres partidos en dos
                   líneas en vez de cortados, la tabla entra entera en un portátil
                   de 1280 con el menú desplegado. El mínimo sigue existiendo para
                   que en tableta estrecha ruede de lado en vez de aplastarse. */}
-              <table className="w-full min-w-[880px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <caption className="sr-only">
                   Reparto por producto: dentro de cada producto, una fila por cada cliente que lo pidió
                   y la cantidad que se le entrega.
                 </caption>
                 <thead className="sticky top-0 z-[1]">
                   <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-3 py-2 w-[22%] min-w-[200px]">Producto</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-2 py-2 min-w-[170px]">Cliente</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[64px]">Pidió</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[76px]">Le faltaba</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[108px]">Le doy</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[88px]">Queda faltando</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[96px]">Precio</th>
-                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[112px]">Valor</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-3 py-2 w-[20%] min-w-[168px]">Producto</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-left px-2 py-2 min-w-[142px]">Cliente</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[58px]">Pidió</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[70px]">Le faltaba</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-1 py-2 w-[104px]">Le doy</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[74px]">Queda faltando</th>
+                    <th scope="col" style={RAYA_CABECERA} className="sticky top-0 bg-surface text-right px-2 py-2 w-[118px]">Valor</th>
                   </tr>
                 </thead>
 
@@ -665,9 +668,9 @@ const FaseDistribucion = memo(function FaseDistribucion({
           «abajo del todo» son el mismo sitio, y sticky sobre un contenedor sin
           scroll es una promesa que no se cumple. Ahora es una banda fija que
           se lleva el alto que necesita antes de que la tabla reparta el resto. */}
-      <div className={`flex-shrink-0 px-4 sm:px-6 lg:px-8 pb-3 ${oculto ? 'hidden' : ''}`}>
-        <Card className="border-secondary/40 shadow-lg">
-          <CardBody>
+      <div className={`flex-shrink-0 border-t border-border/60 bg-surface ${oculto ? 'hidden' : ''}`}>
+        <div>
+          <div className="px-4 sm:px-6 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm" role="status">
@@ -734,8 +737,8 @@ const FaseDistribucion = memo(function FaseDistribucion({
                 )}
               </div>
             </div>
-          </CardBody>
-        </Card>
+          </div>
+        </div>
       </div>
     </>
   );

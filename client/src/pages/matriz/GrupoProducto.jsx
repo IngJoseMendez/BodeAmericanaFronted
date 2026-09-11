@@ -225,7 +225,7 @@ const GrupoProducto = memo(function GrupoProducto({
     return (
       <tbody id={`grupo-${clave}`} className="border-t border-border/70 bg-success/[0.05]">
         <tr>
-          <td colSpan={8} className="px-3 py-2">
+          <td colSpan={7} className="px-3 py-2">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Check size={13} className="text-success flex-shrink-0" aria-hidden="true" />
               <span className="font-medium text-primary">
@@ -294,7 +294,7 @@ const GrupoProducto = memo(function GrupoProducto({
           >
             {/* ── #1 EL PRODUCTO, una vez y cubriendo todas sus filas ─────── */}
             {i === 0 && (
-              <td rowSpan={clientes.length + 1} className="px-3 py-2 align-top border-r border-border/40 w-[22%] min-w-[200px]">
+              <td rowSpan={clientes.length + 1} className="px-3 py-2 align-top border-r border-border/40 w-[20%] min-w-[168px]">
                 {/* Se parte en dos líneas, no se corta. Una referencia como
                     «mixta invierno dama» cortada a «mixta invier…» obliga a
                     parar el ojo y a pasar el ratón por encima para saber qué
@@ -462,7 +462,7 @@ const GrupoProducto = memo(function GrupoProducto({
             )}
 
             {/* ── #2 CLIENTE ──────────────────────────────────────────────── */}
-            <td className="px-2 py-1.5 align-top min-w-[170px]">
+            <td className="px-2 py-1.5 align-top min-w-[142px]">
               {/* El nombre del cliente NO se corta: es a quién le está dando
                   mercancía, y «COMERCIALIZADORA LA…» no distingue a dos
                   comercializadoras. Envuelve en dos líneas y ya. */}
@@ -476,7 +476,7 @@ const GrupoProducto = memo(function GrupoProducto({
             <td className="px-1 py-1.5 align-top text-right tabular-nums w-[64px]">{pedida}</td>
 
             {/* ── #4 LE FALTABA ───────────────────────────────────────────── */}
-            <td className="px-1 py-1.5 align-top text-right w-[88px]">
+            <td className="px-1 py-1.5 align-top text-right w-[74px]">
               {faltantesFallo ? (
                 // Nunca un 0 cuando la consulta falló: un cero se lee como «a
                 // este no le debo nada», que es exactamente la mentira que este
@@ -590,9 +590,17 @@ const GrupoProducto = memo(function GrupoProducto({
               )}
             </td>
 
-            {/* ── #7 PRECIO (no editable: la plata se resolvió en la Fase 1) ─ */}
-            <td className="px-2 py-1.5 align-top text-right tabular-nums w-[110px] text-muted">
-              <span className={promo ? 'font-semibold text-warning' : ''}>{formatNumero(precio)}</span>
+            {/* ── #7 VALOR, con el precio debajo ──────────────────────────
+                Eran dos columnas y ahora son una. El precio no se edita aquí
+                —la plata se resuelve en la Fase 1— así que no necesita una
+                columna propia de 110px: cabe debajo del valor, en pequeño. Lo
+                que se gana con eso son los cien píxeles que le hacían falta a
+                la tabla para convivir con la franja lateral en un portátil. */}
+            <td className="px-2 py-1.5 align-top text-right tabular-nums w-[118px]">
+              <span className="font-semibold text-primary">{formatCOP(total)}</span>
+              <span className="block text-[10px] leading-tight text-muted">
+                <span className={promo ? 'font-semibold text-warning' : ''}>{formatNumero(precio)}</span> c/u
+              </span>
               {puedeRespetar && (
                 <span className="block text-[10px] leading-tight mt-0.5">
                   <span
@@ -603,11 +611,6 @@ const GrupoProducto = memo(function GrupoProducto({
                   </span>
                 </span>
               )}
-            </td>
-
-            {/* ── #8 VALOR ────────────────────────────────────────────────── */}
-            <td className="px-2 py-1.5 align-top text-right tabular-nums w-[124px] font-semibold text-primary">
-              {formatCOP(total)}
             </td>
           </tr>
         );
@@ -627,7 +630,6 @@ const GrupoProducto = memo(function GrupoProducto({
           {repartido}/{disponibles}
         </td>
         <td className="px-2 py-1.5 text-right tabular-nums">{faltandoTotal > 0 ? faltandoTotal : '—'}</td>
-        <td className="px-2 py-1.5" />
         <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-primary">{formatCOP(valorGrupo)}</td>
       </tr>
     </tbody>

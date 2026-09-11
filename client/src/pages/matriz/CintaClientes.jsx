@@ -63,7 +63,7 @@ const CintaClientes = memo(function CintaClientes({
   if (!enRonda.length) return null;
 
   return (
-    <div className={`border-t border-border/60 pt-2 ${vertical ? "2xl:flex 2xl:flex-col 2xl:min-h-0 2xl:flex-1 mt-2 2xl:mt-0" : "mt-2"}`}>
+    <div className={`border-t border-border/60 pt-2 ${vertical ? "xl:flex xl:flex-col xl:min-h-0 xl:flex-1 mt-2 xl:mt-0" : "mt-2"}`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
           Cómo va cada cliente
@@ -84,7 +84,7 @@ const CintaClientes = memo(function CintaClientes({
           className={vertical
             // La lista es lo único que rueda dentro de la franja, y sólo
             // cuando de verdad no caben: con ocho clientes no aparece scroll.
-            ? "flex gap-2 overflow-x-auto pb-1 mt-1 2xl:flex-col 2xl:gap-1.5 2xl:overflow-x-hidden 2xl:overflow-y-auto 2xl:min-h-0 2xl:flex-1 2xl:pb-0 2xl:pr-0.5"
+            ? "flex gap-2 overflow-x-auto pb-1 mt-1 xl:flex-col xl:gap-1.5 xl:overflow-x-hidden xl:overflow-y-auto xl:min-h-0 xl:flex-1 xl:pb-0 xl:pr-0.5"
             : "flex gap-2 overflow-x-auto pb-1 mt-1"}
           role="status"
         >
@@ -116,7 +116,7 @@ const CintaClientes = memo(function CintaClientes({
                       + ` sobre ${formatCOP(t.total || 0)}. Revisa si vale la pena despacharle.`
                     : '')
                 }
-                className={`flex-shrink-0 min-w-[128px] max-w-[196px]${vertical ? " 2xl:w-full 2xl:max-w-none 2xl:min-w-0" : ""} text-left rounded-xl border px-2 py-1.5 transition-colors ${
+                className={`flex-shrink-0 min-w-[128px] max-w-[196px]${vertical ? " xl:w-full xl:max-w-none xl:min-w-0" : ""} text-left rounded-xl border px-2 py-1.5 transition-colors ${
                   conProblema
                     ? 'border-error/50 bg-error/10'
                     : elegido
