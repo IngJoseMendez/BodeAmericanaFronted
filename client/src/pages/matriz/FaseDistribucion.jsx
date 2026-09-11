@@ -90,10 +90,19 @@ const FaseDistribucion = memo(function FaseDistribucion({
   onVolver, onReleer, onCantidad, onCriterio, onVaciar, onListo, onAbrir,
   onCuentaFaltante, onAceptarPropuestas, onCrear,
 }) {
+  // DOS FILTROS, no un buscador libre. La pregunta que ella hace aquí no es
+  // «dónde dice mixta» sino «enséñame SOLO mixta invierno premium y dime quién
+  // la pidió». Escribiendo a mano eso son ocho teclas y un acierto de ortografía
+  // por producto; con dos listas es un clic y no hay forma de escribirlo mal.
+  // El buscador libre se fue abajo, a la lista de clientes, que es donde sí se
+  // busca por un nombre que uno recuerda a medias.
   const [buscar, setBuscar] = useState('');
+  const [filtroRef, setFiltroRef] = useState('');
+  const [filtroCal, setFiltroCal] = useState('');
   const [soloNoAlcanzan, setSoloNoAlcanzan] = useState(false);
   const [clienteResaltado, setClienteResaltado] = useState(null);
   const buscarLento = useDebounce(buscar, 300);
+  const hayFiltro = Boolean(buscarLento || filtroRef || filtroCal || soloNoAlcanzan);
 
   // ── Las cantidades de cada grupo, con identidad estable ───────────────────
   // Mismo truco de firma que `cacheAvisos` en la Fase 1, y por el mismo motivo:
@@ -177,6 +186,32 @@ const FaseDistribucion = memo(function FaseDistribucion({
     [productos, cambiados],
   );
 
+  // Las opciones salen de LO QUE HAY EN LA RONDA, no del catálogo entero:
+  // ofrecer referencias que nadie pidió sólo sirve para escoger una y quedarse
+  // mirando una tabla vacía.
+  const opcionesRef = useMemo(() => {
+    const m = new Map();
+    for (const p of productos) if (p.referencia) m.set(normTxt(p.referencia), p.referencia);
+    return [...m.values()].sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  }, [productos]);
+
+  const opcionesCal = useMemo(() => {
+    const m = new Map();
+    for (const p of productos) {
+      if (filtroRef && normTxt(p.referencia) !== normTxt(filtroRef)) continue;
+      const cal = p.calidad || '';
+      if (cal) m.set(normTxt(cal), cal);
+    }
+    return [...m.values()].sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  }, [productos, filtroRef]);
+
+  // Al cambiar de referencia, la calidad elegida puede no existir en la nueva:
+  // se limpia en vez de dejar una combinación que no filtra nada y parece rota.
+  useEffect(() => {
+    if (!filtroCal) return;
+    if (!opcionesCal.some((c) => normTxt(c) === normTxt(filtroCal))) setFiltroCal('');
+  }, [opcionesCal, filtroCal]);
+
   // ── ORDEN, rígido y no configurable ───────────────────────────────────────
   // 1. Los que cambiaron (el inventario se movió o ella volvió a tocar pedidos).
   // 2. Los que no alcanzan, por faltante descendente; empate por pedido.
@@ -188,16 +223,23 @@ const FaseDistribucion = memo(function FaseDistribucion({
   // era. Un producto marcado «listo» tampoco baja: sólo cambia de aspecto.
   const ordenados = useMemo(() => {
     const q = normTxt(buscarLento);
+    const nRef = normTxt(filtroRef);
+    const nCal = normTxt(filtroCal);
     const lista = productos.filter((p) => {
       const clave = claveStock(p.referencia, p.calidad);
       const c = cuentas.get(clave);
       if (soloNoAlcanzan && c?.alcanza) return false;
-      if (!q) return true;
-      // El buscador filtra DE VERDAD. La regla heredada de la Fase 1 («nunca
+      // Los filtros esconden DE VERDAD. La regla heredada de la Fase 1 («nunca
       // esconder lo que ya tiene trabajo») protege allí trabajo YA HECHO; aquí
-      // protegería trabajo POR HACER, que no es lo mismo, y un buscador que
-      // sigue enseñando tres productos que no son «mixta» dejó de servir. Lo que
-      // se esconde se cuenta debajo del buscador.
+      // protegería trabajo POR HACER, que no es lo mismo, y un filtro que sigue
+      // enseñando tres productos que no son el elegido dejó de filtrar. Lo que
+      // se esconde se cuenta debajo, con su botón para quitarlo.
+      if (nRef && normTxt(p.referencia) !== nRef) return false;
+      if (nCal && normTxt(p.calidad) !== nCal) return false;
+      if (!q) return true;
+      // El texto libre busca ADEMÁS por cliente, que es lo que los desplegables
+      // no pueden hacer: «¿en qué productos me pidió algo Rosío?». Los tres
+      // filtros se acumulan, no se pisan.
       if (normTxt(p.referencia).includes(q) || normTxt(p.calidad).includes(q)) return true;
       return (p.clientes || []).some((cl) => normTxt(cl.cliente_nombre).includes(q));
     });
@@ -226,7 +268,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
     // pedido y lo disponible. Se deja fuera de las dependencias a propósito para
     // que la lista no se reordene bajo el dedo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productos, listos, cambiados, soloNoAlcanzan, buscarLento]);
+  }, [productos, listos, cambiados, soloNoAlcanzan, filtroRef, filtroCal, buscarLento]);
 
   // El primero de los reajustados TAL COMO SE VE en la tabla, que es a donde
   // tiene que saltar el chip. Los reajustados suben al principio del orden, así
@@ -300,6 +342,8 @@ const FaseDistribucion = memo(function FaseDistribucion({
     }
     saltoApuntado.current = clave;
     setBuscar('');
+    setFiltroRef('');
+    setFiltroCal('');
     setSoloNoAlcanzan(false);
   }, []);
 
@@ -315,8 +359,8 @@ const FaseDistribucion = memo(function FaseDistribucion({
     // Sin filtro puesto y sin fila: ese producto ya no está en la tabla. El
     // salto se olvida aquí mismo en vez de quedarse esperando y dispararse solo
     // dentro de diez minutos, cuando ella escriba cualquier cosa en el buscador.
-    if (!buscarLento && !soloNoAlcanzan) saltoApuntado.current = null;
-  }, [ordenados, buscarLento, soloNoAlcanzan]);
+    if (!hayFiltro) saltoApuntado.current = null;
+  }, [ordenados, hayFiltro]);
 
   // Pulsar una tarjeta de la cinta resalta las filas de ese cliente y lleva el
   // ojo a la primera. Nunca esconde nada: filtrar la tabla al cliente escogido
@@ -379,7 +423,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
                   clientes, más abajo, no toca la tabla. Por eso el rótulo dice
                   dónde actúa cada uno y no qué encuentra: los dos encuentran
                   clientes. */}
-              <label htmlFor="matriz-buscar-reparto" className="sr-only">Filtrar la tabla del reparto</label>
+              <label htmlFor="matriz-buscar-reparto" className="sr-only">Buscar un cliente en la tabla del reparto</label>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
                 <input
@@ -387,12 +431,48 @@ const FaseDistribucion = memo(function FaseDistribucion({
                   type="search"
                   value={buscar}
                   onChange={(e) => setBuscar(e.target.value)}
-                  placeholder="Filtrar la tabla…"
-                  title={'Esconde de la tabla los productos que no coincidan. Busca por referencia,'
-                    + ' por calidad o por el nombre de un cliente que lo haya pedido.'}
+                  placeholder="Buscar cliente en la tabla…"
+                  title={'Deja en la tabla sólo los productos que pidió ese cliente. También acepta'
+                    + ' referencia o calidad, aunque para eso están las dos listas de abajo, que no'
+                    + ' se pueden escribir mal. Se acumula con ellas.'}
                   className="w-full pl-9 pr-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 />
               </div>
+            </div>
+
+            {/* ── Filtrar por referencia y calidad ──────────────────────────
+                La pregunta que se hace aquí es «enséñame SOLO mixta invierno
+                premium y dime quién la pidió». A mano eran ocho teclas y un
+                acierto de ortografía por producto; con dos listas es un clic y
+                no hay forma de escribirlo mal. Las opciones salen de lo que hay
+                EN LA RONDA y no del catálogo entero: ofrecer referencias que
+                nadie pidió sólo sirve para escoger una y quedarse mirando una
+                tabla vacía. Se acumulan con el buscador de arriba. */}
+            <div className="flex items-center gap-2 xl:flex-col xl:items-stretch xl:gap-1.5 min-w-[200px]">
+              <label htmlFor="matriz-filtro-ref" className="sr-only">Ver sólo una referencia</label>
+              <select
+                id="matriz-filtro-ref"
+                value={filtroRef}
+                onChange={(e) => setFiltroRef(e.target.value)}
+                title="Deja en la tabla un solo producto, para ver de un vistazo quién lo pidió."
+                className="flex-1 xl:w-full h-9 px-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              >
+                <option value="">Todas las referencias</option>
+                {opcionesRef.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+
+              <label htmlFor="matriz-filtro-cal" className="sr-only">Ver sólo una calidad</label>
+              <select
+                id="matriz-filtro-cal"
+                value={filtroCal}
+                onChange={(e) => setFiltroCal(e.target.value)}
+                disabled={opcionesCal.length === 0}
+                title="Las calidades son las de la referencia elegida; sin referencia, todas las de la ronda."
+                className="flex-1 xl:w-full h-9 px-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-50"
+              >
+                <option value="">Todas las calidades</option>
+                {opcionesCal.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
             {/* «Sólo los que no alcanzan» no decía lo que hace: se leía como el
@@ -607,7 +687,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
                 {ocultasPorDecidir} decisión(es) de reparto ocultas por el filtro.{' '}
                 <button
                   type="button"
-                  onClick={() => { setBuscar(''); setSoloNoAlcanzan(false); }}
+                  onClick={() => { setBuscar(''); setFiltroRef(''); setFiltroCal(''); setSoloNoAlcanzan(false); }}
                   className="font-semibold underline underline-offset-2"
                 >
                   Quitar el filtro
