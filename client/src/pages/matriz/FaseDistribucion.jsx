@@ -23,7 +23,7 @@
 //     contador y en el confirm, que es donde se avisa lo que no se prohíbe.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, Button, EmptyState } from '../../components/common';
+import { Card, CardBody, Button, EmptyState, BuscadorLista } from '../../components/common';
 import { claveAsignacion, claveStock, normTxt } from '../../lib/matriz';
 import { formatCOP } from '../../lib/money';
 import { RAYA_CABECERA } from './comun';
@@ -448,31 +448,33 @@ const FaseDistribucion = memo(function FaseDistribucion({
                 EN LA RONDA y no del catálogo entero: ofrecer referencias que
                 nadie pidió sólo sirve para escoger una y quedarse mirando una
                 tabla vacía. Se acumulan con el buscador de arriba. */}
+            {/* Se escriben, no se bajan rodando. Una ronda grande trae decenas
+                de referencias y la lista se va quedando con lo que coincide
+                según se teclea; el mismo componente que usan los cuatro campos
+                de catálogo de Contenedores, por lo mismo. */}
             <div className="flex items-center gap-2 xl:flex-col xl:items-stretch xl:gap-1.5 min-w-[200px]">
               <label htmlFor="matriz-filtro-ref" className="sr-only">Ver sólo una referencia</label>
-              <select
+              <BuscadorLista
                 id="matriz-filtro-ref"
                 value={filtroRef}
-                onChange={(e) => setFiltroRef(e.target.value)}
+                onChange={setFiltroRef}
+                opciones={opcionesRef}
+                placeholder="Todas las referencias"
                 title="Deja en la tabla un solo producto, para ver de un vistazo quién lo pidió."
                 className="flex-1 xl:w-full h-9 px-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-              >
-                <option value="">Todas las referencias</option>
-                {opcionesRef.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
+              />
 
               <label htmlFor="matriz-filtro-cal" className="sr-only">Ver sólo una calidad</label>
-              <select
+              <BuscadorLista
                 id="matriz-filtro-cal"
                 value={filtroCal}
-                onChange={(e) => setFiltroCal(e.target.value)}
+                onChange={setFiltroCal}
+                opciones={opcionesCal}
                 disabled={opcionesCal.length === 0}
+                placeholder="Todas las calidades"
                 title="Las calidades son las de la referencia elegida; sin referencia, todas las de la ronda."
                 className="flex-1 xl:w-full h-9 px-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-50"
-              >
-                <option value="">Todas las calidades</option>
-                {opcionesCal.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              />
             </div>
 
             {/* «Sólo los que no alcanzan» no decía lo que hace: se leía como el

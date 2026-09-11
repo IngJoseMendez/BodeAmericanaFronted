@@ -9,7 +9,7 @@ import {
   ClipboardCheck, Sparkles, RefreshCw,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
-import { Modal, useToast, useConfirm, TableSkeleton, RefLink } from '../components/common';
+import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista } from '../components/common';
 // `api` suelto además de contenedoresApi: el consecutivo de número
 // (/contenedores/siguiente-numero) todavía no tiene método propio en el cliente
 // de la API, y ese archivo lo está tocando otra persona.
@@ -315,69 +315,29 @@ function SelectCatalogo({
   value = '', onChange, opciones = [], grupos = null,
   placeholder = 'Seleccionar…', className = inp, ...rest
 }) {
-  const actual = (value ?? '').trim();
-  // El envoltorio se memoriza porque de él cuelgan las opciones de abajo, que
-  // también se memorizan: si se recreara en cada render, la memoria no serviría
-  // de nada. `opciones` y `grupos` ya llegan estables desde la pantalla.
-  const listas = useMemo(() => grupos ?? [{ label: null, opciones }], [grupos, opciones]);
-
-  // El <select> casa sus opciones por texto EXACTO. Lo guardado puede diferir
-  // del catálogo solo en mayúsculas o espacios ("chaqueta" vs "Chaqueta"); en
-  // ese caso NO es un valor ajeno, así que se muestra la opción equivalente
-  // del catálogo en lugar de marcarlo como fuera de él.
-  let equivalente = '';
-  for (const g of listas) {
-    const hit = (g.opciones || []).find(
-      (o) => (o || '').trim().toLowerCase() === actual.toLowerCase()
-    );
-    if (hit) { equivalente = hit; break; }
-  }
-  // Conservar el valor es INNEGOCIABLE: si no está entre las opciones, el
-  // navegador vacía el campo y el dato se pierde al guardar.
-  const conservarValor = actual !== '' && equivalente === '';
-  // Señalarlo como ajeno al catálogo, en cambio, solo tiene sentido si hay
-  // catálogo con el que compararlo. Mientras se está cargando —o si la petición
-  // falló, que el contexto lo tolera y deja las listas vacías— NADA casaría y
-  // los campos de un contenedor perfectamente sano se llenarían de avisos
-  // falsos, invitando a "corregir" datos que están bien.
-  const hayCatalogo = listas.some(g => (g.opciones || []).length > 0);
-  const fueraDeCatalogo = conservarValor && hayCatalogo;
-
-  // Antes había UN <datalist> compartido por catálogo: pintar la lista entera
-  // era barato. Ahora cada select trae la suya, así que con 20 líneas × 4
-  // campos son miles de <option> que se recrearían en CADA tecleo del
-  // formulario. Memorizadas en un fragmento estable, React se salta el subárbol
-  // completo mientras el catálogo no cambie.
-  const opcionesRender = useMemo(() => (
-    <>
-      {listas.map((g, gi) =>
-        g.label ? (
-          <optgroup key={`${gi}-${g.label}`} label={g.label}>
-            {(g.opciones || []).map((o) => <option key={`${gi}-${o}`} value={o}>{o}</option>)}
-          </optgroup>
-        ) : (
-          (g.opciones || []).map((o) => <option key={`${gi}-${o}`} value={o}>{o}</option>)
-        )
-      )}
-    </>
-  ), [listas]);
-
+  // Era un <select>. Con doscientas referencias en el catálogo, encontrar la que
+  // es obligaba a bajar rodando la lista entera, y estos cuatro campos se
+  // rellenan veinte veces por contenedor. Ahora se escribe y la lista se queda
+  // con las coincidencias; el resto del comportamiento es el mismo, y eso
+  // importa: conserva un valor guardado que no esté en el catálogo en vez de
+  // vaciarlo —que es como se perdía el dato al guardar— y lo etiqueta para
+  // poder corregirlo, pero sólo cuando hay catálogo con el que compararlo. Con
+  // el catálogo aún cargando, o si su petición falló, NADA casaría y los campos
+  // de un contenedor sano se llenarían de avisos falsos invitando a «corregir»
+  // datos que están bien.
+  //
+  // El componente vive en components/common porque la Matriz necesitaba lo
+  // mismo para filtrar el reparto por referencia y calidad.
   return (
-    <select
+    <BuscadorLista
       {...rest}
+      value={value}
+      onChange={onChange}
+      opciones={opciones}
+      grupos={grupos}
+      placeholder={placeholder}
       className={className}
-      value={equivalente || actual}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{placeholder}</option>
-      {/* Valor escrito a mano que no está en el catálogo: se conserva tal cual
-          (mismo `value`) para no perderlo, y se etiqueta para corregirlo salvo
-          que el catálogo aún no haya llegado. */}
-      {conservarValor && (
-        <option value={actual}>{fueraDeCatalogo ? `${actual} (fuera del catálogo)` : actual}</option>
-      )}
-      {opcionesRender}
-    </select>
+    />
   );
 }
 
