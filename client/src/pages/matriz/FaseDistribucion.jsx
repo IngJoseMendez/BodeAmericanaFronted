@@ -374,7 +374,12 @@ const FaseDistribucion = memo(function FaseDistribucion({
             </Button>
 
             <div className="flex-1 min-w-[200px] max-w-md xl:w-full xl:max-w-none">
-              <label htmlFor="matriz-buscar-reparto" className="sr-only">Buscar producto o cliente</label>
+              {/* Son DOS buscadores en la misma franja y hay que poder distinguirlos
+                  de un vistazo. Éste esconde filas de LA TABLA; el de la lista de
+                  clientes, más abajo, no toca la tabla. Por eso el rótulo dice
+                  dónde actúa cada uno y no qué encuentra: los dos encuentran
+                  clientes. */}
+              <label htmlFor="matriz-buscar-reparto" className="sr-only">Filtrar la tabla del reparto</label>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
                 <input
@@ -382,13 +387,27 @@ const FaseDistribucion = memo(function FaseDistribucion({
                   type="search"
                   value={buscar}
                   onChange={(e) => setBuscar(e.target.value)}
-                  placeholder="Buscar producto o cliente…"
+                  placeholder="Filtrar la tabla…"
+                  title={'Esconde de la tabla los productos que no coincidan. Busca por referencia,'
+                    + ' por calidad o por el nombre de un cliente que lo haya pedido.'}
                   className="w-full pl-9 pr-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 />
               </div>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer select-none">
+            {/* «Sólo los que no alcanzan» no decía lo que hace: se leía como el
+                nombre de una categoría de producto. Lo que hace es esconder
+                aquellos en los que hay de sobra —donde no hay nada que pensar,
+                porque cada quien se lleva lo que pidió— y dejar a la vista los
+                que hay que repartir a dedo. El title lo explica entero, porque
+                la casilla es lo que convierte una ronda de veinte productos en
+                tres decisiones. */}
+            <label
+              className="flex items-center gap-2 cursor-pointer select-none"
+              title={'Esconde los productos que alcanzan para todos, donde cada cliente se lleva lo que pidió'
+                + ' y no hay nada que decidir. Deja sólo aquellos en los que se pidió más de lo que hay:'
+                + ' los que tocan repartir a dedo.'}
+            >
               <input
                 type="checkbox"
                 checked={soloNoAlcanzan}
@@ -396,7 +415,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
                 className="w-4 h-4 rounded border-border text-secondary focus:ring-2 focus:ring-secondary/30"
               />
               <span className="text-xs font-medium text-primary">
-                Sólo los que no alcanzan ({noAlcanzan.length})
+                Ver sólo lo que hay que repartir ({noAlcanzan.length})
               </span>
             </label>
 

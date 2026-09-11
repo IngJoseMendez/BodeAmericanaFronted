@@ -18,9 +18,10 @@
 // es justo contra lo que ella está decidiendo. Se resaltan sus filas y se lleva
 // el foco a la primera; el trabajo de los demás sigue ahí.
 
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useId, useState } from 'react';
 import { formatCOP } from '../../lib/money';
-import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { normTxt } from '../../lib/matriz';
+import { ChevronDown, ChevronUp, AlertTriangle, Search } from 'lucide-react';
 
 const CLAVE_PLEGADA = 'bodeamericana.matriz.cinta.plegada';
 
@@ -43,6 +44,12 @@ const CintaClientes = memo(function CintaClientes({
   clientes, totales, seleccionado, problemas, onSeleccionar, vertical = false,
 }) {
   const [plegada, setPlegada] = useState(leerPlegada);
+  // Buscador propio de la lista, aparte del de la tabla. Son dos preguntas
+  // distintas: el de arriba filtra QUÉ se reparte y éste sólo busca A QUIÉN
+  // mirar. Filtrar la tabla por cliente escondería el resto del reparto de ese
+  // producto, que es contra lo que ella está decidiendo.
+  const [buscarCliente, setBuscarCliente] = useState('');
+  const idBuscarCliente = useId();
 
   useEffect(() => {
     try {
@@ -59,6 +66,11 @@ const CintaClientes = memo(function CintaClientes({
     const t = totales.get(c.id) || totales.get(String(c.id));
     return t && (t.pedidas > 0 || t.repartidas > 0);
   });
+
+  const q = normTxt(buscarCliente);
+  const visibles = q
+    ? enRonda.filter((c) => normTxt(c.nombre).includes(q) || normTxt(c.ciudad).includes(q))
+    : enRonda;
 
   if (!enRonda.length) return null;
 
@@ -79,6 +91,30 @@ const CintaClientes = memo(function CintaClientes({
         </button>
       </div>
 
+      {!plegada && enRonda.length > 4 && (
+        <div className="relative mt-1">
+          <label htmlFor={idBuscarCliente} className="sr-only">Buscar un cliente en esta lista</label>
+          <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
+          <input
+            id={idBuscarCliente}
+            type="search"
+            value={buscarCliente}
+            onChange={(e) => setBuscarCliente(e.target.value)}
+            placeholder="Buscar en la lista…"
+            title="Sólo filtra esta lista de clientes. La tabla del reparto no se toca."
+            className="w-full h-7 pl-7 pr-2 rounded-lg border border-border bg-surface text-[11px] focus:outline-none focus:ring-2 focus:ring-secondary/30"
+          />
+        </div>
+      )}
+
+      {!plegada && q && (
+        <p className="text-[10px] text-muted mt-1" role="status">
+          {visibles.length === 0
+            ? 'Ningún cliente de esta ronda se llama así.'
+            : `${visibles.length} de ${enRonda.length} cliente(s)`}
+        </p>
+      )}
+
       {!plegada && (
         <div
           className={vertical
@@ -88,7 +124,7 @@ const CintaClientes = memo(function CintaClientes({
             : "flex gap-2 overflow-x-auto pb-1 mt-1"}
           role="status"
         >
-          {enRonda.map((c) => {
+          {visibles.map((c) => {
             const t = totales.get(c.id) || totales.get(String(c.id)) || {};
             const repartidas = t.repartidas || 0;
             const pedidas = t.pedidas || 0;
