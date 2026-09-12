@@ -7,11 +7,13 @@ const ESPERADO = ['COD','PROVE','REFERENCIA','CALIDAD','COSTO','PRECIO','PRECIO'
 
 const inventario = [
   { contenedor: 'CONT-19-08-2026-0001', proveedor_nombre: 'Guangzhou Textil',
-    referencia: 'CHAQ-001', calidad: 'PRIMERA', costo_unitario: 51234,
+    // costo_unitario es el prorrateo del contenedor y sale igual en las dos
+    // filas; precio_minimo es el de ESTE producto y es el que va en la columna.
+    referencia: 'CHAQ-001', calidad: 'PRIMERA', costo_unitario: 51234, precio_minimo: 68000,
     precio_unitario: 98000, tiene_promocion: false,
     cantidad: 40, fisico: 30, despachadas: 10, separadas: 12, disponibles: 18 },
   { contenedor: 'CONT-19-08-2026-0001', proveedor_nombre: 'Guangzhou Textil',
-    referencia: 'JEAN-002', calidad: 'SEGUNDA', costo_unitario: 22000,
+    referencia: 'JEAN-002', calidad: 'SEGUNDA', costo_unitario: 51234, precio_minimo: 31500,
     precio_unitario: 40000, tiene_promocion: true,
     cantidad: 25, fisico: 25, despachadas: 0, separadas: 5, disponibles: 20 },
 ];
@@ -48,7 +50,8 @@ console.log('\n── Los datos del producto ───────────�
 ok('COD es el contenedor', v(5,1), 'CONT-19-08-2026-0001');
 ok('PROVE', v(5,2), 'Guangzhou Textil');
 ok('REFERENCIA', v(5,3), 'CHAQ-001');
-ok('COSTO', v(5,5), 51234);
+ok('COSTO = el minimo del producto, no el prorrateo', v(5,5), 68000);
+ok('COSTO de la otra linea es distinto', v(6,5), 31500);
 ok('sin promo: PROMO vacío', v(5,6), '');
 ok('sin promo: ORIGINAL lleva el precio', v(5,7), 98000);
 ok('con promo: PROMO lleva el precio', v(6,6), 40000);

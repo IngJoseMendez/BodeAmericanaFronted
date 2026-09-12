@@ -482,7 +482,9 @@ export default function Pacas() {
           separadas:     parseInt(row.separadas) || 0,
           disponibles:   parseInt(row.disponibles) || 0,
           costo_unit:    parseFloat(row.costo_unitario) || 0,
-          minimo_unit:   costoDeLinea(row),
+          // Vacio, no cero, cuando esa paca no trae minimo guardado: un cero
+          // en una columna de dinero se lee como "vale cero".
+          minimo_unit:   costoDeLinea(row) || '',
           precio_unit:   parseFloat(row.precio_unitario) || 0,
           costo_total:   parseFloat(row.costo_total) || 0,
           precio_total:  parseFloat(row.precio_total) || 0,

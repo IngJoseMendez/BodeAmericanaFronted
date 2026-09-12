@@ -30,14 +30,21 @@ export const int = (v) => parseInt(v) || 0;
  * proveedores, más servicios por unidad, más la utilidad fijada. Es lo mínimo a
  * cobrar por esa línea sin perder, la misma cuenta que la hoja PRECIOSINTERNOS.
  *
- * Se cae a `costo_unitario` sólo para las pacas viejas, anteriores a que la
- * columna existiera, donde `precio_minimo` es 0: ahí el promedio del contenedor
- * es lo único que hay y es mejor que un cero.
+ * NO SE CAE A `costo_unitario` CUANDO NO HAY MÍNIMO, y aquí sí se caía. El
+ * argumento era que para una paca vieja sin mínimo guardado el promedio del
+ * contenedor es lo único que hay y es mejor que un cero. Es al revés: ese
+ * respaldo es precisamente lo que ponía el costo del contenedor debajo de un
+ * rótulo que dice COSTO cuando significa mínimo, sin avisar y en todas las
+ * filas a la vez. Una casilla vacía se ve y se pregunta; un número que no es
+ * el que dice ser se usa para poner precio.
+ *
+ * Si sale vacía: esas pacas se crearon antes de que se guardara el mínimo.
+ * `npm run rellenar-precio-minimo` en el servidor lo calcula y lo rellena.
  *
  * Vive aquí, y no copiada en cada hoja, porque este proyecto ya tuvo el bug de
  * dos fórmulas de dinero que se separaron sin que nada fallara.
  */
-export const costoDeLinea = (f) => num(f?.precio_minimo) || num(f?.costo_unitario);
+export const costoDeLinea = (f) => num(f?.precio_minimo);
 const hoyStr = () => new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 /** Encabezado de tabla con el estilo de la casa. */
@@ -1035,7 +1042,7 @@ export function hojaInventarioInterno(wb, filas) {
     const costo = costoDeLinea(f);
     const precio = num(f.precio_unitario);
     const r = ws.getRow(fila);
-    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo, precio, d, costo * d, precio * d]
+    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo || '', precio, d, costo * d || '', precio * d]
       .forEach((v, i) => {
         const c = r.getCell(i + 1);
         c.value = v ?? '';

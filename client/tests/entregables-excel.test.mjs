@@ -198,16 +198,19 @@ try {
     { contenedor: 'C226', proveedor_nombre: 'DIAS', categoria: 'HOMBRE', clasificacion: 'HOMBRE',
       referencia: 'shorts', calidad: 'supreme',
       cantidad: 50, fisico: 50, despachadas: 0, separadas: 0, disponibles: 50,
-      // Paca anterior a que existiera la columna: cae al prorrateo, que es lo único que hay.
+      // Paca sin minimo guardado. NO cae al prorrateo del contenedor: la
+      // casilla se queda vacia. Es el caso que tenia la base de produccion
+      // entera —120 pacas, precio_minimo 0, un unico costo_base de 477.750— y
+      // por el que la columna COSTO salia con la misma cifra en todas las filas.
       costo_unitario: 477750, precio_minimo: 0, precio_unitario: 1900000 },
   ];
-  const esperado = [1250000, 1410000, 477750];
+  const esperado = [1250000, 1410000, 0];
 
   const dados = mismoContenedor.map((f) => E.costoDeLinea(f));
   if (JSON.stringify(dados) !== JSON.stringify(esperado)) {
     fallos.push('costoDeLinea: ' + JSON.stringify(dados) + ' en vez de ' + JSON.stringify(esperado));
-  } else if (new Set(dados).size !== 3) {
-    fallos.push('costoDeLinea devuelve la misma cifra para lineas distintas');
+  } else if (dados.includes(477750)) {
+    fallos.push('costoDeLinea solto el costo del contenedor (477750) como si fuera minimo');
   } else {
     ok.push('costoDeLinea: un costo por linea (' + dados.join(' / ') + ')');
   }
@@ -224,11 +227,19 @@ try {
   await releido.xlsx.load(await libro.xlsx.writeBuffer());
 
   const hojaM = releido.getWorksheet('MATRIZ');
+  // La tercera sale vacia, no 0 y desde luego no 477750: un cero en una columna
+  // de dinero se lee como "vale cero" y el prorrateo se lee como un precio.
   const enMatriz = [5, 6, 7].map((f) => hojaM.getRow(f).getCell(5).value);
-  if (JSON.stringify(enMatriz) !== JSON.stringify(esperado)) {
-    fallos.push('MATRIZ columna 5: ' + JSON.stringify(enMatriz) + ' en vez de ' + JSON.stringify(esperado));
+  const esperadoHoja = [1250000, 1410000, ''];
+  if (JSON.stringify(enMatriz) !== JSON.stringify(esperadoHoja)) {
+    fallos.push('MATRIZ columna 5: ' + JSON.stringify(enMatriz) + ' en vez de ' + JSON.stringify(esperadoHoja));
   } else {
-    ok.push('MATRIZ: la columna del costo distingue las tres lineas');
+    ok.push('MATRIZ: la columna del costo distingue las lineas y deja vacia la que no tiene minimo');
+  }
+  if (enMatriz.includes(477750)) {
+    fallos.push('MATRIZ: el costo por unidad del contenedor se colo en la columna COSTO');
+  } else {
+    ok.push('MATRIZ: el costo del contenedor NO aparece bajo el rotulo COSTO');
   }
   if (hojaM.getRow(4).getCell(5).value !== 'COSTO') {
     fallos.push('MATRIZ: el rotulo de la columna 5 dejo de ser COSTO');
