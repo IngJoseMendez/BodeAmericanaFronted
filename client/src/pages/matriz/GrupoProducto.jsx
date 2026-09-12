@@ -390,7 +390,7 @@ const GrupoProducto = memo(function GrupoProducto({
                       title="En proporción a lo que pidió cada uno. Las sueltas van al que más pidió."
                       className="text-[11px] font-semibold px-2 h-8 rounded-lg border border-border hover:bg-primary/5 disabled:opacity-50"
                     >
-                      A prorrata
+                      Al azar
                     </button>
                     <button
                       type="button" tabIndex={-1} disabled={deshabilitado}

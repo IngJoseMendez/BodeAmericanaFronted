@@ -1225,7 +1225,7 @@ export default function SeparacionMasiva() {
       for (const p of porDecidir) next.add(claveStock(p.referencia, p.calidad));
       return next;
     });
-    addToast(`Repartí a prorrata ${porDecidir.length} producto(s). Revísalo antes de crear.`, 'info');
+    addToast(`Repartí al azar ${porDecidir.length} producto(s). Revísalo antes de crear.`, 'info');
   }, [listos, addToast]);
 
   // ── El paso entre fases ───────────────────────────────────────────────────

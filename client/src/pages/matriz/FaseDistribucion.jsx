@@ -562,7 +562,7 @@ const FaseDistribucion = memo(function FaseDistribucion({
               // SUYO sobre un botón que dice exactamente lo que hace y con las
               // cifras delante. Lo que no puede pasar es que nadie decida.
               <Button size="sm" variant="ghost" onClick={onAceptarPropuestas} disabled={enviando}>
-                Repartir a prorrata los {porDecidir.length} que faltan
+                Repartir al azar los {porDecidir.length} que faltan
               </Button>
             )}
           </div>
