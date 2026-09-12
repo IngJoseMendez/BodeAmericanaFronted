@@ -183,6 +183,15 @@ select {
   50%       { transform: translateY(-4px); }
 }
 
+/* Sacudida para un campo obligatorio que se intento saltar. Corta y lateral:
+   dice "aqui" sin marear. El bloque de prefers-reduced-motion de mas abajo la
+   deja en nada para quien pidio que no se mueva la pantalla. */
+@keyframes sacudir {
+  0%, 100%      { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-5px); }
+  30%, 60%, 90% { transform: translateX(5px); }
+}
+
 @keyframes gradient-shift {
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }

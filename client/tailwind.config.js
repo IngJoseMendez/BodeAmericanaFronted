@@ -53,6 +53,7 @@ export default {
         'fade-in-scale': 'fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'slide-in-left': 'slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'float': 'float 3s ease-in-out infinite',
+        'sacudir': 'sacudir 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97)',
       },
     },
   },

@@ -45,6 +45,26 @@ export const int = (v) => parseInt(v) || 0;
  * dos fórmulas de dinero que se separaron sin que nada fallara.
  */
 export const costoDeLinea = (f) => num(f?.precio_minimo);
+
+/**
+ * La tasa con la que se pasa de pesos a dólares, o 0 si no hay ninguna.
+ *
+ * UNO NO ES UNA TASA. La columna `tasa` de cotizaciones nace con DEFAULT 1, así
+ * que una cotización a la que nadie le escribió la tasa llega aquí con un 1
+ * perfectamente válido. Dividir por 1 no convierte nada: devuelve el mismo
+ * número en pesos y lo rotula «US$». En la base de producción las cinco
+ * cotizaciones estaban así, y la columna «Subtotal USD» del PDF salía idéntica
+ * a la de pesos —US$ 19.000.000 por unos shorts—.
+ *
+ * El filtro que había, `tasa > 0`, no lo atrapa: el 1 lo pasa. Por eso el corte
+ * es `> 1`. Ninguna tasa real COP/USD anda por ahí: son miles. Un 1 solo puede
+ * significar que la casilla se quedó sin llenar.
+ *
+ * Con 0 las hojas y el PDF esconden la columna de dólares o ponen una raya, que
+ * es lo honesto: mejor no decir nada que decir que un millón de pesos es un
+ * millón de dólares.
+ */
+export const tasaUsd = (v) => (num(v) > 1 ? num(v) : 0);
 const hoyStr = () => new Date().toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 /** Encabezado de tabla con el estilo de la casa. */
@@ -715,7 +735,7 @@ export function hojaListaPreciosClientes(wb, filas, tasa = 0) {
   const ws = wb.addWorksheet('LISTADEPRECIOS(CLIENTES)');
   // Con tasa se agregan las dos columnas en dólares, que es como negocian
   // algunos clientes; sin tasa la hoja queda igual que antes.
-  const enUSD = num(tasa) > 0;
+  const enUSD = tasaUsd(tasa) > 0;
   const nCols = enUSD ? 6 : 4;
   const anchos = enUSD ? [26, 16, 16, 16, 16, 16] : [26, 16, 16, 16];
   anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
@@ -724,7 +744,7 @@ export function hojaListaPreciosClientes(wb, filas, tasa = 0) {
 
   if (enUSD) {
     ws.mergeCells(fila, 1, fila, nCols);
-    ws.getCell(fila, 1).value = `Tasa aplicada: 1 US$ = ${num(tasa).toLocaleString('es-CO')} COP`;
+    ws.getCell(fila, 1).value = `Tasa aplicada: 1 US$ = ${tasaUsd(tasa).toLocaleString('es-CO')} COP`;
     ws.getCell(fila, 1).font = { size: 10, italic: true, color: { argb: '64748b' } };
     ws.getCell(fila, 1).alignment = { horizontal: 'center' };
     fila++;
@@ -750,9 +770,9 @@ export function hojaListaPreciosClientes(wb, filas, tasa = 0) {
     }
 
     if (enUSD) {
-      r.getCell(5).value = precio / num(tasa);
+      r.getCell(5).value = precio / tasaUsd(tasa);
       r.getCell(5).numFmt = '#,##0.00';
-      r.getCell(6).value = promo != null ? promo / num(tasa) : '';
+      r.getCell(6).value = promo != null ? promo / tasaUsd(tasa) : '';
       if (promo != null) {
         r.getCell(6).numFmt = '#,##0.00';
         r.getCell(6).font = { bold: true, color: { argb: 'd97706' } };
@@ -774,7 +794,7 @@ export function hojaCotizacionCliente(wb, cot, nombreHoja) {
   const ws = wb.addWorksheet(nombreHoja || 'COTIZACION(CLIENTES)');
   [26, 16, 16, 12, 18, 14].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  const tasa = num(cot.tasa_usd) || num(cot.tasa) || 0;
+  const tasa = tasaUsd(cot.tasa_usd) || tasaUsd(cot.tasa);
 
   ws.getCell('A1').value = cot.cliente_nombre || '';
   ws.getCell('A1').font = { bold: true, size: 13 };

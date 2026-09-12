@@ -118,6 +118,25 @@ export default function SeparacionMasiva() {
   const [transporteGlobal, setTransporteGlobal] = useState('');
   const [validezDias, setValidezDias] = useState('15');
 
+  // CAMPOS GLOBALES OBLIGATORIOS. La tasa y el transporte valen para TODA la
+  // ronda y de ellos salen los dolares y el flete de cada cotizacion. Dejarlos
+  // en blanco no daba error: el codigo los leia como 0 y la tasa acababa
+  // guardada como 1, que es lo que hacia que el PDF sacara el total en dolares
+  // igual que el total en pesos. Se piden escritos, aunque sea un cero: un cero
+  // tecleado es una decision, un vacio es un olvido, y hasta ahora se veian
+  // igual.
+  //
+  // `sacudida` es un contador y no un booleano a proposito: si se intenta pasar
+  // dos veces seguidas, subirlo vuelve a montar la animacion. Con un booleano
+  // la segunda vez no se movia nada y parecia que el boton se habia roto.
+  const [sacudida, setSacudida] = useState(0);
+  const datosGlobalesFaltan = useMemo(() => {
+    const faltan = [];
+    if (String(tasa).trim() === '') faltan.push('tasa');
+    if (String(transporteGlobal).trim() === '') faltan.push('transporte');
+    return faltan;
+  }, [tasa, transporteGlobal]);
+
   const [buscar, setBuscar] = useState('');
   const [soloConItems, setSoloConItems] = useState(false);
   const [soloConFaltante, setSoloConFaltante] = useState(false);
@@ -1389,6 +1408,24 @@ export default function SeparacionMasiva() {
     if (cruzando || enviando) return;
     if (impedimento) { addToast(impedimento, 'error'); return; }
 
+    // Aqui se corta, y no al crear las cotizaciones: en la Fase 2 ya no se ven
+    // estos campos y el aviso llegaria cuando no hay donde arreglarlo.
+    if (datosGlobalesFaltan.length) {
+      setSacudida((n) => n + 1);
+      addToast(
+        datosGlobalesFaltan.length === 2
+          ? 'Falta la tasa del dolar y el transporte por paca. Escribelos arriba, aunque sea en cero.'
+          : datosGlobalesFaltan[0] === 'tasa'
+            ? 'Falta la tasa del dolar. Escribela arriba, aunque sea en cero.'
+            : 'Falta el transporte por paca. Escribelo arriba, aunque sea en cero.',
+        'error',
+      );
+      document.getElementById(
+        datosGlobalesFaltan[0] === 'tasa' ? 'matriz-tasa' : 'matriz-transporte',
+      )?.focus();
+      return;
+    }
+
     // Las líneas a medias no bloquean, pero SÍ se avisan, y con los nombres:
     // un número sin nombre no es accionable y esa línea puede hacer desaparecer
     // un producto entero del reparto.
@@ -1478,7 +1515,7 @@ export default function SeparacionMasiva() {
   }, [
     cruzando, enviando, impedimento, addToast, confirm, resumen.lineasIncompletas,
     cargarStock, asegurarReparto, lineasDeCliente, enriquecer, productosLocales, prepararReparto,
-    tasa, transporteGlobalNum, validezDias,
+    tasa, transporteGlobalNum, validezDias, datosGlobalesFaltan,
   ]);
 
   const volverAPedidos = useCallback(async (clienteId) => {
@@ -1857,7 +1894,11 @@ export default function SeparacionMasiva() {
         }
 
         const r = await matrizApi.repartir(repartoRef.current.id, {
-          tasa: tasaNum > 0 ? tasaNum : 1,
+          // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
+          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
+          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
+          // cotizaciones que habia en produccion estaban asi.
+          tasa: tasaNum > 0 ? tasaNum : null,
           transporte_unitario: transporteNum,
           validez_dias: validez,
           asignaciones,
@@ -1894,7 +1935,11 @@ export default function SeparacionMasiva() {
             cliente_id: cliente.id,
             vendedor_id: usuario?.id ?? null,
             validez_dias: validez,
-            tasa: tasaNum > 0 ? tasaNum : 1,
+            // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
+          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
+          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
+          // cotizaciones que habia en produccion estaban asi.
+          tasa: tasaNum > 0 ? tasaNum : null,
             notas: null,
             descuento: m.cuentas.descuento,
             tipo_descuento: m.fila.tipo_descuento || 'valor_fijo',
@@ -1918,7 +1963,11 @@ export default function SeparacionMasiva() {
         const respuesta = await cotizacionesApi.crearMasiva({
           vendedor_id: usuario?.id ?? null,
           validez_dias: validez,
-          tasa: tasaNum > 0 ? tasaNum : 1,
+          // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
+          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
+          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
+          // cotizaciones que habia en produccion estaban asi.
+          tasa: tasaNum > 0 ? tasaNum : null,
           transporte_unitario: transporteNum,
           cotizaciones,
         });
@@ -2083,6 +2132,8 @@ export default function SeparacionMasiva() {
         buscar={buscar}
         soloConItems={soloConItems}
         soloConFaltante={soloConFaltante}
+        datosGlobalesFaltan={datosGlobalesFaltan}
+        sacudida={sacudida}
         onTasa={setTasa}
         onTransporte={setTransporteGlobal}
         onValidez={setValidezDias}

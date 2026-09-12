@@ -708,13 +708,17 @@ const FasePedidos = memo(function FasePedidos({
   enviando, cruzando, impedimento, resumen, conflictos, avisoCarga,
   borradorRecuperado, ultimoEnvio, generandoMatriz, estadoGuardado,
   tasa, transporteGlobal, validezDias, buscar, soloConItems, soloConFaltante,
+  datosGlobalesFaltan = [], sacudida = 0,
   onTasa, onTransporte, onValidez, onBuscar, onSoloConItems, onSoloConFaltante,
   onCampo, onItemCampo, onAgregarItem, onQuitarItem, onCatalogo,
   onCargarFaltante, onCargarTodoFaltante, onRespetarPrecio,
   onDescartarBorrador, onRepartir, onDescargarMatriz,
 }) {
-  const idTasa = useId();
-  const idTransporte = useId();
+  // Ids FIJOS y no useId: el orquestador enfoca el primero que falte con
+  // getElementById cuando se intenta pasar al reparto sin llenarlos, y para eso
+  // tiene que saber como se llaman.
+  const idTasa = 'matriz-tasa';
+  const idTransporte = 'matriz-transporte';
   const idValidez = useId();
   const idBuscar = useId();
   const idSoloConItems = useId();
@@ -726,15 +730,28 @@ const FasePedidos = memo(function FasePedidos({
   // faltantes o abonarlos después de repartir no repintaría ni un chip.
   void selloFaltantes;
 
+  // Un campo global sin llenar se pinta en rojo y, al intentar saltarselo, se
+  // sacude. La clave con `sacudida` remonta el nodo para que la animacion vuelva
+  // a correr en el segundo intento.
+  const faltaTasa = datosGlobalesFaltan.includes('tasa');
+  const faltaTransporte = datosGlobalesFaltan.includes('transporte');
+  const claseCampo = (falta) => [
+    'w-full px-3 py-2 rounded-xl border bg-surface text-sm tabular-nums',
+    'focus:outline-none focus:ring-2',
+    falta
+      ? 'border-error focus:ring-error/30'
+      : 'border-border focus:ring-secondary/30',
+  ].join(' ');
+
   return (
     <>
       <div className={`flex flex-col flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
         {/* ── Barra pegajosa: lo que vale para TODAS las filas ────────────── */}
         <div className="flex-shrink-0 px-4 sm:px-6 py-3 bg-cream border-b border-border/60">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="w-32">
+            <div className="w-32" key={`tasa-${sacudida}`}>
               <label htmlFor={idTasa} className="block text-xs font-medium text-muted mb-1">
-                Tasa del dólar
+                Tasa del dólar <span className="text-error" aria-hidden="true">*</span>
               </label>
               <input
                 id={idTasa}
@@ -743,13 +760,22 @@ const FasePedidos = memo(function FasePedidos({
                 value={tasa}
                 onChange={(e) => onTasa(e.target.value)}
                 placeholder="Ej: 4.000"
-                className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                required
+                aria-invalid={faltaTasa}
+                aria-describedby={faltaTasa ? `${idTasa}-falta` : undefined}
+                className={`${claseCampo(faltaTasa)} ${faltaTasa && sacudida ? 'animate-sacudir' : ''}`}
               />
+              {faltaTasa && (
+                <p id={`${idTasa}-falta`} className="mt-1 flex items-start gap-1 text-[11px] text-error leading-tight">
+                  <AlertCircle size={12} className="mt-px flex-shrink-0" aria-hidden="true" />
+                  Escríbela, aunque sea 0
+                </p>
+              )}
             </div>
 
-            <div className="w-40">
+            <div className="w-40" key={`transporte-${sacudida}`}>
               <label htmlFor={idTransporte} className="block text-xs font-medium text-muted mb-1">
-                Transporte por paca
+                Transporte por paca <span className="text-error" aria-hidden="true">*</span>
               </label>
               <input
                 id={idTransporte}
@@ -758,8 +784,17 @@ const FasePedidos = memo(function FasePedidos({
                 value={transporteGlobal}
                 onChange={(e) => onTransporte(e.target.value)}
                 placeholder="Ej: 2.000"
-                className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                required
+                aria-invalid={faltaTransporte}
+                aria-describedby={faltaTransporte ? `${idTransporte}-falta` : undefined}
+                className={`${claseCampo(faltaTransporte)} ${faltaTransporte && sacudida ? 'animate-sacudir' : ''}`}
               />
+              {faltaTransporte && (
+                <p id={`${idTransporte}-falta`} className="mt-1 flex items-start gap-1 text-[11px] text-error leading-tight">
+                  <AlertCircle size={12} className="mt-px flex-shrink-0" aria-hidden="true" />
+                  Escríbelo, aunque sea 0
+                </p>
+              )}
             </div>
 
             <div className="w-28">
@@ -839,7 +874,7 @@ const FasePedidos = memo(function FasePedidos({
           </div>
 
           <p className="text-[11px] text-muted mt-2">
-            La tasa y el transporte de arriba valen para todos. Cada cliente puede pisar el transporte en su fila.
+            La tasa y el transporte de arriba valen para todos y hay que escribirlos, aunque sea en cero. Cada cliente puede pisar el transporte en su fila.
             Los clientes que ya tienen ítems se siguen viendo aunque no coincidan con la búsqueda.
             {estadoGuardado ? ` · ${estadoGuardado}` : ''}
           </p>

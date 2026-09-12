@@ -11,6 +11,7 @@ import { FileText, Plus, Eye, Trash2, Download, Check, X, Clock, User, X as XIco
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
+import { tasaUsd } from '../lib/entregables';
 
 // Los nombres de referencia, categoría y calidad vienen de tablas distintas y
 // difieren en mayúsculas y acentos: se comparan normalizados.
@@ -105,7 +106,9 @@ function PriceInput({ value, onChange, placeholder = 'Precio', className = '' })
 const generarPDF = (cotizacion) => {
   // La cotización se emite en pesos, pero el cliente negocia en dólares: se
   // muestran las dos columnas usando la tasa guardada en la cotización.
-  const tasaPDF = parseFloat(cotizacion.tasa) || 0;
+  // tasaUsd y no parseFloat: la columna nace con DEFAULT 1 y un 1 pasaba el
+  // filtro de abajo, de modo que «Subtotal USD» salia igual que «Subtotal COP».
+  const tasaPDF = tasaUsd(cotizacion.tasa);
   const usd = (v) => (tasaPDF > 0
     ? 'US$ ' + (( parseFloat(v) || 0) / tasaPDF).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : '—');
@@ -644,7 +647,9 @@ export default function Cotizaciones() {
     const transporteUnit = parseFloat(formData.transporte_unitario) || 0;
     const transporteTotal = transporteUnit * totalCantidades;
 
-    const tasa = parseFloat(formData.tasa) || 1;
+    // Sin tasa escrita esto vale 0, no 1. Con 1 el total en dolares salia igual
+    // que el total en pesos.
+    const tasa = tasaUsd(formData.tasa);
     const total = subtotal - descuentoAmount + transporteTotal;
     const totalUsd = tasa > 0 ? total / tasa : 0;
 
@@ -700,7 +705,7 @@ export default function Cotizaciones() {
         direccion_entrega: formData.direccion_entrega?.trim() || null,
         ciudad_entrega:    formData.ciudad_entrega?.trim()    || null,
         celular:           formData.celular?.trim()           || null,
-        tasa: parseFloat(formData.tasa) || 1,
+        tasa: tasaUsd(formData.tasa) || null,
         detalles,
       });
       
