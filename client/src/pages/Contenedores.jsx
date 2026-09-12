@@ -729,7 +729,7 @@ export default function Contenedores() {
   // `moneda_base` es la moneda en la que se piensa el contenedor ENTERO: la
   // heredan las líneas nuevas y con ella se rotula todo. Arranca en USD porque
   // la mercancía se compra en dólares.
-  const FORM_VACIO = { numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '', moneda_base: MONEDA_BASE_POR_DEFECTO };
+  const FORM_VACIO = { numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '', moneda_base: MONEDA_BASE_POR_DEFECTO, utilidad_total_estimada: '' };
   const [formData, setFormData]       = useState(FORM_VACIO);
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
@@ -1561,7 +1561,17 @@ export default function Contenedores() {
       // decir y una fila en $0 se lee como "no se gana nada".
       ...(parseFloat(full.utilidad_unitaria) > 0 ? [
         ['Utilidad por unidad', fmtCOP(full.utilidad_unitaria)],
-        ['Utilidad total estimada', fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas)],
+        [esEstimacionExcel || !(parseFloat(full.utilidad_total_estimada) > 0)
+          ? 'Utilidad total estimada'
+          : 'Utilidad total real',
+         fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas)],
+        // La que se tecleó al estimar, y la distancia hasta la real. Solo si la
+        // hay y el contenedor ya llegó: mientras se estima no hay contra qué.
+        ...(!esEstimacionExcel && parseFloat(full.utilidad_total_estimada) > 0 ? [
+          ['Utilidad que se estimó al comprar', fmtCOP(full.utilidad_total_estimada)],
+          ['Diferencia contra lo estimado',
+           fmtCOP(parseFloat(full.utilidad_unitaria) * totalPacas - parseFloat(full.utilidad_total_estimada))],
+        ] : []),
         [esEstimacionExcel ? 'Inversión total (estimada)' : 'Inversión total',
          fmtCOP((parseFloat(full.costo_total) || 0) + parseFloat(full.utilidad_unitaria) * totalPacas)],
       ] : []),
@@ -2043,6 +2053,10 @@ export default function Contenedores() {
     // la hace menos conocida.
     const utilidadUnitaria = parseMonto(formData.utilidad_unitaria);
     const utilidadTotal = utilidadUnitaria * totalPacas;
+    // Lo que se tecleó como utilidad total al estimar, tal cual quedó guardado.
+    // NO se recalcula: ese es justo el punto. La de arriba se mueve con las
+    // cantidades que van llegando; esta se quedó quieta en lo que se creía.
+    const utilidadEstimadaGuardada = parseMonto(formData.utilidad_total_estimada);
     const inversionTotal = costoTotal + utilidadTotal;
     const costoServiciosPorUnidad = totalPacas > 0 ? costoServicios / totalPacas : 0;
     // Solo la MERCANCÍA por unidad, sin servicios. Es la base del precio de
@@ -2056,6 +2070,7 @@ export default function Contenedores() {
       avanceProveedores, avanceServicios, faltanUnidades, provsCompletos, svCompletos,
       cantidadTotal, baseProrrateo,
       utilidadTotal, inversionTotal, costoServiciosPorUnidad, costoMercanciaPorUnidad,
+      utilidadEstimadaGuardada,
     };
   };
 
@@ -2339,6 +2354,7 @@ export default function Contenedores() {
       cantidad_total: full.cantidad_total != null ? String(full.cantidad_total) : '',
       utilidad_unitaria: full.utilidad_unitaria != null ? String(full.utilidad_unitaria) : '',
       gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
+      utilidad_total_estimada: full.utilidad_total_estimada != null ? String(full.utilidad_total_estimada) : '',
       moneda_base: baseDelContenedor,
     });
     // Las filas en blanco son una comodidad para CAPTURAR: al editar, un
@@ -2443,6 +2459,14 @@ export default function Contenedores() {
         // casilla AUTO.
         utilidad_unitaria: formData.utilidad_unitaria === '' ? null : parseMonto(formData.utilidad_unitaria),
         gastos_unitarios:  formData.gastos_unitarios  === '' ? null : parseMonto(formData.gastos_unitarios),
+        // La utilidad que se CREE que va a dejar el contenedor, tecleada entera
+        // y no por unidad. Solo se manda desde la estimacion: fuera de ella el
+        // servidor la deja como estaba, para que editar un contenedor que ya
+        // llego no pise lo que se penso antes de comprarlo.
+        ...(modoEstimacion
+          ? { utilidad_total_estimada: formData.utilidad_total_estimada === ''
+              ? null : parseMonto(formData.utilidad_total_estimada) }
+          : {}),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
@@ -3691,6 +3715,51 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       </p>
                     )}
                   </div>
+
+                  {/* ── UTILIDAD TOTAL ESTIMADA, ESCRITA A MANO ──────────────
+                      Justo debajo hay una tarjeta con este mismo nombre que es
+                      AUTOMÁTICA: utilidad por unidad × unidades. Esa se recalcula
+                      sola, así que en cuanto el contenedor deja de ser estimación
+                      y entran las cantidades que de verdad llegaron, la cifra que
+                      se pensó antes de comprar desaparece sin dejar rastro.
+
+                      Esta se teclea, se guarda y no se vuelve a tocar. Es la
+                      única forma de contestar después «cuánto creíamos que iba a
+                      dejar y cuánto dejó». Solo se pregunta en la estimación: en
+                      un contenedor que ya llegó, escribir una estimación sería
+                      escribirla sabiendo el resultado. */}
+                  {modoEstimacion && (
+                    <div>
+                      <label htmlFor="cont-utilidad-total-est" className={lbl}>
+                        Utilidad total estimada (COP)
+                        <span className="ml-1.5 text-[9px] font-semibold normal-case text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">SE GUARDA</span>
+                      </label>
+                      <input id="cont-utilidad-total-est" type="text" inputMode="decimal" className={inp}
+                        placeholder={resumen.utilidadTotal > 0 ? `auto: ${fmtVista(resumen.utilidadTotal)}` : 'ej. 20.000.000'}
+                        value={formData.utilidad_total_estimada}
+                        onChange={(e) => editarForm('utilidad_total_estimada', e.target.value)} />
+                      {parseMonto(formData.utilidad_total_estimada) > 0 ? (
+                        <p className="text-[10px] mt-0.5 leading-tight">
+                          <span className="text-muted">Queda guardada para comparar con la real. </span>
+                          {resumen.utilidadTotal > 0 && (
+                            <b className={`font-mono ${
+                              Math.abs(parseMonto(formData.utilidad_total_estimada) - resumen.utilidadTotal) < 1
+                                ? 'text-muted' : 'text-amber-600'
+                            }`}>
+                              {Math.abs(parseMonto(formData.utilidad_total_estimada) - resumen.utilidadTotal) < 1
+                                ? 'Igual a la automática.'
+                                : `La automática dice ${fmtVista(resumen.utilidadTotal)}.`}
+                            </b>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-muted mt-0.5 leading-tight">
+                          Lo que crees que va a dejar el contenedor entero. Es la cifra
+                          contra la que se compara después.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {/* Aquí vivía la casilla "Gastos por unidad (COP)". Se retira:
                       enseñaba EXACTAMENTE la misma cifra que la tarjeta
                       "Servicios por unidad" de dos bloques más abajo —las dos
@@ -3723,7 +3792,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       // las dos tienen origen visible. Ocultarlas dejaba la
                       // estimación sin la cifra que de verdad se necesita antes
                       // de comprar: cuánta plata hay que poner.
-                      { l: 'Utilidad total estimada', v: resumen.utilidadTotal, color: 'text-emerald-600', ayuda: 'Utilidad por unidad × unidades propias' },
+                      // El rótulo cambia según haya o no una estimación guardada
+                      // contra la que comparar. Mientras se estima, esta cifra ES
+                      // la estimación automática; después es la de verdad, y
+                      // seguir llamándola «estimada» la confundiría con la que se
+                      // tecleó al comprar, que sale en la tarjeta de al lado.
+                      { l: modoEstimacion || !resumen.utilidadEstimadaGuardada ? 'Utilidad total estimada' : 'Utilidad total real',
+                        v: resumen.utilidadTotal, color: 'text-emerald-600',
+                        ayuda: 'Utilidad por unidad × unidades propias' },
                       { l: 'Inversión total', v: resumen.inversionTotal, color: 'text-secondary', ayuda: 'Total costo + utilidad total' },
                       { l: 'Total servicios', v: resumen.costoServicios, ayuda: 'Solo servicios, sin proveedores de mercancía' },
                     ].map((c, i) => (
@@ -3740,6 +3816,35 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         )}
                       </div>
                     ))}
+
+                    {/* LO QUE SE CREYÓ, AL LADO DE LO QUE SALIÓ.
+                        Solo aparece fuera de la estimación y solo si alguien la
+                        escribió: si no, no hay nada contra qué comparar y una
+                        tarjeta en blanco solo ocupa sitio. La diferencia va con
+                        signo y en color, que es lo que se mira de un vistazo. */}
+                    {!modoEstimacion && resumen.utilidadEstimadaGuardada > 0 && (
+                      <div className="rounded-xl bg-amber-500/5 border border-amber-500/30 px-3 py-2"
+                           title="Lo que se tecleó como utilidad total al estimar el contenedor, antes de comprarlo">
+                        <p className="text-[9px] font-bold text-muted uppercase tracking-wide flex items-center gap-1">
+                          Se estimó
+                          <span className="text-[8px] text-amber-600 bg-amber-500/10 px-1 rounded">AL COMPRAR</span>
+                        </p>
+                        <p className="text-sm font-mono font-bold tabular-nums text-amber-600">
+                          {fmtVista(resumen.utilidadEstimadaGuardada)}
+                        </p>
+                        {(() => {
+                          const dif = resumen.utilidadTotal - resumen.utilidadEstimadaGuardada;
+                          if (Math.abs(dif) < 1) {
+                            return <p className="text-[10px] text-muted leading-tight">Clavada.</p>;
+                          }
+                          return (
+                            <p className={`text-[10px] font-mono tabular-nums leading-tight ${dif > 0 ? 'text-emerald-600' : 'text-error'}`}>
+                              {dif > 0 ? '+' : '−'}{fmtVista(Math.abs(dif))} {dif > 0 ? 'de más' : 'de menos'}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    )}
                     {/* Esta tarjeta es la que sobrevive de las dos que enseñaban
                         la misma cifra, así que hereda lo que explicaba la otra:
                         de dónde sale, y el aviso de los contenedores viejos con
@@ -5188,6 +5293,44 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     Recalculado para {totalFinal} unidades — originalmente {formatCurrency(costoOriginal)} para {selectedContenedor.total_pacas}.
                   </p>
                 )}
+
+                {/* ══ LO QUE SE CREYÓ CONTRA LO QUE VA A DEJAR ══
+                    Esta es la pregunta que se hace al finalizar y que hasta
+                    ahora no se podía contestar: la utilidad total de la pantalla
+                    se recalcula con las unidades que de verdad llegaron, así que
+                    la cifra que se pensó antes de comprar ya no existía en
+                    ninguna parte. Ahora se guarda tecleada en la estimación y
+                    aquí se pone al lado.
+
+                    Solo sale si alguien la escribió: sin estimación no hay
+                    comparación que hacer. */}
+                {parseFloat(selectedContenedor.utilidad_total_estimada) > 0 && (() => {
+                  const estimada = parseFloat(selectedContenedor.utilidad_total_estimada);
+                  const real = (parseFloat(utilidadUnidad) || 0) * (totalFinal || 0);
+                  const dif = real - estimada;
+                  const clavada = Math.abs(dif) < 1;
+                  return (
+                    <div className="mt-2 pt-2 border-t border-primary/10 flex flex-wrap items-center gap-x-5 gap-y-1">
+                      <span className="text-[11px] text-muted">
+                        Se estimó{' '}
+                        <b className="font-mono text-amber-600 tabular-nums">{formatCurrency(estimada)}</b>
+                        {' '}de utilidad al comprar
+                      </span>
+                      <span className="text-[11px] text-muted">
+                        Va a dejar{' '}
+                        <b className="font-mono text-emerald-600 tabular-nums">{formatCurrency(real)}</b>
+                        {real > 0 && <span className="text-muted"> ({formatCurrency(utilidadUnidad)} × {totalFinal})</span>}
+                      </span>
+                      <span className={`text-[11px] font-semibold ${
+                        clavada ? 'text-muted' : dif > 0 ? 'text-emerald-600' : 'text-error'
+                      }`}>
+                        {clavada
+                          ? 'Clavada'
+                          : `${dif > 0 ? '+' : '−'}${formatCurrency(Math.abs(dif))} ${dif > 0 ? 'de más' : 'de menos'}`}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ══ Lo que falta, plegado ══
