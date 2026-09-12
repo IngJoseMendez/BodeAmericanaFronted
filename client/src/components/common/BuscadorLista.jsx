@@ -27,22 +27,11 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { ChevronDown, X } from 'lucide-react';
 
-const norm = (s) => String(s ?? '')
-  .normalize('NFD')
-  .replace(/[̀-ͯ]/g, '')
-  .trim()
-  .toLowerCase();
-
-/**
- * Coincide si TODAS las palabras escritas aparecen en la opción, en cualquier
- * orden. Escribir «invierno mixta» encuentra «mixta invierno», que es como se
- * busca de verdad cuando uno recuerda el producto pero no cómo se llamó. Un
- * `includes` de la frase entera fallaría ahí y obligaría a acertar el orden.
- */
-const coincide = (opcion, palabras) => {
-  const o = norm(opcion);
-  return palabras.every((p) => o.includes(p));
-};
+// La misma regla de búsqueda que usan los buscadores de la Matriz, importada y
+// no copiada: dos comparadores que se parecen son dos comparadores que algún día
+// dejarán de parecerse, y entonces el mismo texto encontraría cosas distintas
+// según en qué campo se escriba.
+import { coincideBusqueda, normTxt as norm } from '../../lib/matriz';
 
 export function BuscadorLista({
   value = '',
@@ -88,11 +77,10 @@ export function BuscadorLista({
   const hayCatalogo = planas.length > 0;
   const fueraDeCatalogo = actual !== '' && equivalente === '' && hayCatalogo;
 
-  const visibles = useMemo(() => {
-    const palabras = norm(texto).split(/\s+/).filter(Boolean);
-    if (!palabras.length) return planas;
-    return planas.filter((p) => coincide(p.valor, palabras));
-  }, [planas, texto]);
+  const visibles = useMemo(
+    () => (norm(texto) ? planas.filter((p) => coincideBusqueda(p.valor, texto)) : planas),
+    [planas, texto],
+  );
 
   // Recolocar la lista bajo el campo. Se recalcula al abrir y mientras esté
   // abierta, porque con position:fixed la lista NO viaja con el contenedor que

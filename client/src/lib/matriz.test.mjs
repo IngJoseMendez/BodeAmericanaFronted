@@ -14,7 +14,7 @@
 // que devuelva la implementación de hoy.
 
 import {
-  normTxt, claveStock, claveAsignacion,
+  normTxt, coincideBusqueda, claveStock, claveAsignacion,
   aProrrata, porOrden, cubrirFaltante,
   reconciliarReparto, proyectarFilas, totalesDeReparto,
 } from './matriz.js';
@@ -430,6 +430,29 @@ comprobar('los números del servidor en string NO se concatenan',
 comprobar('un movimiento negativo se lee como que no hubo movimiento',
   aplicarMovimiento({ cantidad_original: 5 }, { suma: -3 }).cantidad_original, 5);
 
+
+grupo('buscar sin acertar la frase entera');
+{
+  // El caso que lo motivó: un cliente guardado con dos nombres no salía si se
+  // buscaba por el primero y el apellido, porque `includes` exige que las
+  // palabras estén pegadas y en ese orden.
+  comprobar('«jose mendez» encuentra a «jose alberto mendez»',
+    coincideBusqueda('jose alberto mendez', 'jose mendez'), true);
+  comprobar('y en el orden que sea',
+    coincideBusqueda('jose alberto mendez', 'mendez jose'), true);
+  comprobar('sin acentos ni mayúsculas',
+    coincideBusqueda('José Alberto Méndez', 'JOSE MENDEZ'), true);
+  comprobar('«invierno mixta» encuentra el producto',
+    coincideBusqueda('mixta invierno dama importada', 'invierno mixta'), true);
+  comprobar('pero una palabra que no está NO cuela',
+    coincideBusqueda('jose alberto mendez', 'jose perez'), false);
+  comprobar('sobre varios campos juntos: nombre y ciudad',
+    coincideBusqueda(['Rosio perez', 'Santa Marta'].join(' '), 'rosio marta'), true);
+  comprobar('una búsqueda vacía no esconde nada',
+    coincideBusqueda('lo que sea', '   '), true);
+  comprobar('un texto nulo no lanza y no coincide',
+    coincideBusqueda(null, 'algo'), false);
+}
 
 console.log(malos ? `\n${malos} PRUEBA(S) FALLIDA(S)` : '\nEl reparto y el libro de faltantes cuadran');
 process.exit(malos ? 1 : 0);

@@ -48,7 +48,7 @@ import { nuevoLibro, descargar, hojaMatrizClientes } from '../lib/entregables';
 import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, entreFechas } from '../lib/fecha';
 import {
-  normTxt, claveStock, claveAsignacion, aProrrata, porOrden, cubrirFaltante,
+  normTxt, coincideBusqueda, claveStock, claveAsignacion, aProrrata, porOrden, cubrirFaltante,
   reconciliarReparto, proyectarFilas, totalesDeReparto,
 } from '../lib/matriz';
 import FasePedidos from './matriz/FasePedidos';
@@ -1009,7 +1009,7 @@ export default function SeparacionMasiva() {
       // El contador-filtro respeta esa misma regla y por eso va DESPUÉS.
       if (soloConFaltante && !faltantesRef.current.has(String(c.id))) return false;
       if (!q) return true;
-      return normTxt(c.nombre).includes(q) || normTxt(c.ciudad).includes(q);
+      return coincideBusqueda([c.nombre, c.ciudad].join(' '), buscar);
     });
   }, [clientes, buscar, soloConItems, soloConFaltante, filas, problemas, selloFaltantes]);
 

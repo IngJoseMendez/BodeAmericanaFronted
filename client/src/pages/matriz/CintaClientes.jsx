@@ -20,7 +20,7 @@
 
 import { memo, useEffect, useId, useState } from 'react';
 import { formatCOP } from '../../lib/money';
-import { normTxt } from '../../lib/matriz';
+import { coincideBusqueda, normTxt } from '../../lib/matriz';
 import { ChevronDown, ChevronUp, AlertTriangle, Search } from 'lucide-react';
 
 const CLAVE_PLEGADA = 'bodeamericana.matriz.cinta.plegada';
@@ -69,7 +69,7 @@ const CintaClientes = memo(function CintaClientes({
 
   const q = normTxt(buscarCliente);
   const visibles = q
-    ? enRonda.filter((c) => normTxt(c.nombre).includes(q) || normTxt(c.ciudad).includes(q))
+    ? enRonda.filter((c) => coincideBusqueda([c.nombre, c.ciudad].join(' '), buscarCliente))
     : enRonda;
 
   if (!enRonda.length) return null;

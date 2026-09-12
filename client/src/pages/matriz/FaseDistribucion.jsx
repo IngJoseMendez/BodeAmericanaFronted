@@ -24,7 +24,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Button, EmptyState, BuscadorLista } from '../../components/common';
-import { claveAsignacion, claveStock, normTxt } from '../../lib/matriz';
+import { claveAsignacion, claveStock, coincideBusqueda, normTxt } from '../../lib/matriz';
 import { formatCOP } from '../../lib/money';
 import { RAYA_CABECERA } from './comun';
 import GrupoProducto from './GrupoProducto';
@@ -240,8 +240,13 @@ const FaseDistribucion = memo(function FaseDistribucion({
       // El texto libre busca ADEMÁS por cliente, que es lo que los desplegables
       // no pueden hacer: «¿en qué productos me pidió algo Rosío?». Los tres
       // filtros se acumulan, no se pisan.
-      if (normTxt(p.referencia).includes(q) || normTxt(p.calidad).includes(q)) return true;
-      return (p.clientes || []).some((cl) => normTxt(cl.cliente_nombre).includes(q));
+      //
+      // Se busca sobre TODO lo de la fila junto —referencia, calidad y los
+      // nombres de sus clientes— y no campo por campo: así «mixta jose»
+      // encuentra el producto que jose pidió, que mirando cada campo por
+      // separado no casaba con ninguno.
+      const donde = [p.referencia, p.calidad, ...(p.clientes || []).map((cl) => cl.cliente_nombre)].join(' ');
+      return coincideBusqueda(donde, q);
     });
 
     const rango = (p) => {

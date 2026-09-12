@@ -46,6 +46,33 @@ import { cantidadDe, itemCompleto, totalesFila } from './cotizacion.js';
 // ser dos productos distintos y el reparto se parte en dos sin que nada falle.)
 export const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
+/**
+ * ¿Coincide este texto con lo que se está buscando?
+ *
+ * TODAS las palabras escritas tienen que aparecer, PERO EN CUALQUIER ORDEN y sin
+ * tener que estar seguidas. Es lo que hacía falta y no había: un cliente
+ * guardado como «jose alberto mendez» no salía buscando «jose mendez», porque
+ * un `includes` de la frase entera exige que las palabras estén pegadas y en
+ * ese mismo orden. Y así es justo como se busca a la gente: por el nombre y el
+ * apellido que uno recuerda, saltándose el segundo nombre que nunca se sabe.
+ *
+ * Lo mismo vale para los productos: «invierno mixta» encuentra «mixta invierno
+ * dama importada».
+ *
+ * Una consulta vacía coincide con todo, que es lo que hace que quitar el filtro
+ * devuelva la lista entera sin ningún caso especial en quien llama.
+ *
+ * (Vive en este archivo porque aquí está `normTxt` y las dos tienen que
+ * normalizar idéntico; el nombre del archivo es histórico, la función no es
+ * exclusiva de la Matriz y la usan también los campos de catálogo.)
+ */
+export function coincideBusqueda(texto, consulta) {
+  const palabras = normTxt(consulta).split(/\s+/).filter(Boolean);
+  if (!palabras.length) return true;
+  const donde = normTxt(texto);
+  return palabras.every((palabra) => donde.includes(palabra));
+}
+
 // La disponibilidad y lo pedido se cruzan por referencia + calidad, que es
 // exactamente por lo que el servidor busca las pacas al crear la cotización
 // (reservarPacas empareja SOLO por referencia+calidad; el payload de detalles
