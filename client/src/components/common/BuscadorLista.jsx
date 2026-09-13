@@ -33,11 +33,27 @@ import { ChevronDown, X } from 'lucide-react';
 // según en qué campo se escriba.
 import { coincideBusqueda, normTxt as norm } from '../../lib/matriz';
 
+// Las opciones llegan de dos formas y las dos son legítimas:
+//   ['Chaqueta', 'Jean']                      cuando lo que se escoge ES el texto
+//   [{ value: 7, label: 'MARIA' }, …]         cuando se escoge un id y se enseña un nombre
+// La segunda es la mitad de los desplegables del sistema —clientes, bancos,
+// cuentas, contenedores, temporadas—, y sin ella este buscador solo servía para
+// la otra mitad. Dentro se trabaja siempre con { valor, etiqueta }.
+const normalizarOpciones = (lista) => (lista || []).map((o) => (
+  o !== null && typeof o === 'object'
+    ? { valor: String(o.value ?? o.valor ?? ''), etiqueta: String(o.label ?? o.etiqueta ?? o.value ?? '') }
+    : { valor: String(o ?? ''), etiqueta: String(o ?? '') }
+));
+
 export function BuscadorLista({
   value = '',
   onChange,
   opciones = [],
   grupos = null,
+  // Texto de la opción vacía, la que en un <select> era <option value="">.
+  // Sin esto no habría forma de volver a «todos» desde la propia lista; la × de
+  // la derecha lo hace, pero un filtro necesita que «Todos» se pueda ESCOGER.
+  opcionVacia = null,
   placeholder = 'Seleccionar…',
   className = '',
   disabled = false,
@@ -63,22 +79,26 @@ export function BuscadorLista({
   // flechas de arriba abajo sin que los rótulos de grupo estorben.
   const planas = useMemo(() => {
     const out = [];
-    for (const g of listas) for (const o of (g.opciones || [])) out.push({ valor: o, grupo: g.label || null });
+    if (opcionVacia != null) out.push({ valor: '', etiqueta: opcionVacia, grupo: null });
+    for (const g of listas) {
+      for (const o of normalizarOpciones(g.opciones)) out.push({ ...o, grupo: g.label || null });
+    }
     return out;
-  }, [listas]);
+  }, [listas, opcionVacia]);
 
   // El valor guardado puede diferir del catálogo sólo en mayúsculas o espacios
   // («chaqueta» contra «Chaqueta»). En ese caso NO es un valor ajeno: se enseña
   // la versión del catálogo.
-  const equivalente = useMemo(
-    () => planas.find((p) => norm(p.valor) === norm(actual))?.valor || '',
+  const elegida = useMemo(
+    () => planas.find((p) => norm(p.valor) === norm(actual)) || null,
     [planas, actual],
   );
-  const hayCatalogo = planas.length > 0;
-  const fueraDeCatalogo = actual !== '' && equivalente === '' && hayCatalogo;
+  const equivalente = elegida?.etiqueta || '';
+  const hayCatalogo = planas.some((p) => p.valor !== '');
+  const fueraDeCatalogo = actual !== '' && !elegida && hayCatalogo;
 
   const visibles = useMemo(
-    () => (norm(texto) ? planas.filter((p) => coincideBusqueda(p.valor, texto)) : planas),
+    () => (norm(texto) ? planas.filter((p) => coincideBusqueda(p.etiqueta, texto)) : planas),
     [planas, texto],
   );
 
@@ -194,13 +214,13 @@ export function BuscadorLista({
           {texto ? `Nada que se parezca a «${texto}».` : 'No hay nada en esta lista todavía.'}
         </li>
       ) : visibles.map((p, i) => {
-        const elegida = norm(p.valor) === norm(actual);
+        const esLaElegida = norm(p.valor) === norm(actual);
         return (
           <li key={`${p.grupo || ''}-${p.valor}`} role="none">
             <button
               type="button"
               role="option"
-              aria-selected={elegida}
+              aria-selected={esLaElegida}
               data-marcada={i === marcada ? '1' : '0'}
               // mousedown y no click: el blur del campo llegaría antes que el
               // click y cerraría la lista bajo el dedo.
@@ -208,9 +228,9 @@ export function BuscadorLista({
               onMouseEnter={() => setMarcada(i)}
               className={`w-full text-left px-3 py-1.5 text-sm ${
                 i === marcada ? 'bg-secondary/10 text-primary' : 'text-primary'
-              } ${elegida ? 'font-semibold' : ''}`}
+              } ${esLaElegida ? 'font-semibold' : ''} ${p.valor === '' ? 'text-muted italic' : ''}`}
             >
-              {p.valor}
+              {p.etiqueta}
               {p.grupo && <span className="block text-[10px] text-muted leading-tight">{p.grupo}</span>}
             </button>
           </li>
@@ -249,7 +269,7 @@ export function BuscadorLista({
       />
 
       {/* Limpiar: es el equivalente de volver a la opción vacía del <select>. */}
-      {actual && !disabled && (
+      {actual && !disabled && opcionVacia == null && (
         <button
           type="button"
           tabIndex={-1}
@@ -260,7 +280,7 @@ export function BuscadorLista({
           <X size={12} aria-hidden="true" />
         </button>
       )}
-      {!actual && (
+      {(!actual || opcionVacia != null) && (
         <ChevronDown
           size={14}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"

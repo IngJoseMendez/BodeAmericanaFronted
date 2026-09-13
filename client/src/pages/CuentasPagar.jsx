@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
@@ -365,20 +365,28 @@ export default function CuentasPagar() {
               value={search} onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
           </div>
-          <select value={filtroContenedor} onChange={(e) => setFiltroContenedor(e.target.value)}
-            className="px-4 py-3 rounded-xl border border-border bg-surface">
-            <option value="">Todos los contenedores</option>
-            {contenedores.map(c => (
-              <option key={c.id} value={c.id}>{c.numero}</option>
-            ))}
-          </select>
-          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}
-            className="px-4 py-3 rounded-xl border border-border bg-surface">
-            <option value="">Todos los estados</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="parcial">Parcial</option>
-            <option value="pagada">Pagada</option>
-          </select>
+          <BuscadorLista
+            value={filtroContenedor}
+            onChange={(valorElegido) => setFiltroContenedor(valorElegido)}
+            opcionVacia="Todos los contenedores"
+            placeholder="Todos los contenedores"
+            opciones={[
+              ...contenedores.map((c) => ({ value: c.id, label: c.numero })),
+            ]}
+            className="px-4 py-3 rounded-xl border border-border bg-surface"
+          />
+          <BuscadorLista
+            value={filtroEstado}
+            onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+            opcionVacia="Todos los estados"
+            placeholder="Todos los estados"
+            opciones={[
+              { value: 'pendiente', label: 'Pendiente' },
+              { value: 'parcial', label: 'Parcial' },
+              { value: 'pagada', label: 'Pagada' },
+            ]}
+            className="px-4 py-3 rounded-xl border border-border bg-surface"
+          />
           <button onClick={exportarExcel}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
             <Download size={15} /> Excel
@@ -592,15 +600,18 @@ export default function CuentasPagar() {
 
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Moneda del pago</label>
-                                      <select className={inpSm}
+                                      <BuscadorLista
                                         value={inlineForm.moneda}
-                                        onChange={(e) => setInlineForm({
+                                        onChange={(valorElegido) => setInlineForm({
                                           ...inlineForm,
-                                          moneda: e.target.value,
-                                          tasa_cambio: e.target.value === (c.moneda || 'USD') ? '' : inlineForm.tasa_cambio,
-                                        })}>
-                                        {MONEDAS.map(m => <option key={m.value} value={m.value}>{m.value === 'OTRA' ? m.label : m.value}</option>)}
-                                      </select>
+                                          moneda: valorElegido,
+                                          tasa_cambio: valorElegido === (c.moneda || 'USD') ? '' : inlineForm.tasa_cambio,
+                                        })}
+                                        opciones={[
+                                          ...MONEDAS.map((m) => ({ value: m.value, label: m.value === 'OTRA' ? m.label : m.value })),
+                                        ]}
+                                        className={inpSm}
+                                      />
                                       {inlineForm.moneda === 'OTRA' && (
                                         <input type="text" maxLength={8}
                                           className={inpSm + ' mt-2 uppercase'}
@@ -626,27 +637,30 @@ export default function CuentasPagar() {
 
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Método</label>
-                                      <select className={inpSm}
+                                      <BuscadorLista
                                         value={inlineForm.metodo_pago}
-                                        onChange={(e) => setInlineForm({ ...inlineForm, metodo_pago: e.target.value })}>
-                                        <option value="efectivo">Efectivo</option>
-                                        <option value="transferencia">Transferencia</option>
-                                        <option value="cheque">Cheque</option>
-                                        <option value="otro">Otro</option>
-                                      </select>
+                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, metodo_pago: valorElegido })}
+                                        opciones={[
+                                          { value: 'efectivo', label: 'Efectivo' },
+                                          { value: 'transferencia', label: 'Transferencia' },
+                                          { value: 'cheque', label: 'Cheque' },
+                                          { value: 'otro', label: 'Otro' },
+                                        ]}
+                                        className={inpSm}
+                                      />
                                     </div>
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
-                                      <select className={inpSm}
+                                      <BuscadorLista
                                         value={inlineForm.cuenta_banco_id}
-                                        onChange={(e) => setInlineForm({ ...inlineForm, cuenta_banco_id: e.target.value })}>
-                                        <option value="">— Sin cuenta —</option>
-                                        {cuentasBanco.map((cu) => (
-                                          <option key={cu.id} value={cu.id}>
-                                            {cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre}
-                                          </option>
-                                        ))}
-                                      </select>
+                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, cuenta_banco_id: valorElegido })}
+                                        opcionVacia="— Sin cuenta —"
+                                        placeholder="— Sin cuenta —"
+                                        opciones={[
+                                          ...cuentasBanco.map((cu) => ({ value: cu.id, label: `${cu.banco ? `${cu.banco} — $${cu.nombre}` : cu.nombre}` })),
+                                        ]}
+                                        className={inpSm}
+                                      />
                                     </div>
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Fecha</label>
@@ -812,10 +826,15 @@ export default function CuentasPagar() {
             </div>
             <div>
               <label className={lbl}>Moneda</label>
-              <select className={inp} value={createForm.moneda} onChange={(e) => setCreateForm({ ...createForm, moneda: e.target.value })}>
-                <option value="USD">USD</option>
-                <option value="COP">COP</option>
-              </select>
+              <BuscadorLista
+                value={createForm.moneda}
+                onChange={(valorElegido) => setCreateForm({ ...createForm, moneda: valorElegido })}
+                opciones={[
+                  { value: 'USD', label: 'USD' },
+                  { value: 'COP', label: 'COP' },
+                ]}
+                className={inp}
+              />
             </div>
           </div>
           <div>

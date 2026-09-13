@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Card, CardBody, Button } from '../components/common';
+import { Card, CardBody, Button, BuscadorLista } from '../components/common';
 import { Sparkles, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function Registro() {
@@ -192,16 +192,16 @@ export default function Registro() {
                 <label htmlFor="registro-tipo-cliente" className="block text-sm font-medium text-primary mb-2">
                   Tipo de cliente
                 </label>
-                <select
-                  id="registro-tipo-cliente"
-                  name="tipo_cliente"
+                <BuscadorLista
                   value={formData.tipo_cliente}
-                  onChange={(e) => setFormData({ ...formData, tipo_cliente: e.target.value })}
+                  onChange={(valorElegido) => setFormData({ ...formData, tipo_cliente: valorElegido })}
+                  opciones={[
+                    { value: 'mayorista', label: 'Mayorista' },
+                    { value: 'minorista', label: 'Minorista' },
+                  ]}
+                  id="registro-tipo-cliente"
                   className={campo}
-                >
-                  <option value="mayorista">Mayorista</option>
-                  <option value="minorista">Minorista</option>
-                </select>
+                />
               </div>
 
               <Button type="submit" variant="secondary" className="w-full" loading={loading}>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge, Modal, EmptyState, useToast, RefLink } from '../components/common';
+import { Card, CardBody, Button, Badge, Modal, EmptyState, useToast, RefLink, BuscadorLista } from '../components/common';
 import { useAuth } from '../context/AuthContext';
 import { matrizApi, clientesApi, cotizacionesApi } from '../services/api';
 import { claveStock, normTxt } from '../lib/matriz';
@@ -1155,62 +1155,64 @@ export default function Faltantes() {
                 <label htmlFor={`${uid}-cliente`} className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">
                   Cliente
                 </label>
-                <select
+                <BuscadorLista
                   id={`${uid}-cliente`}
                   value={filtroCliente}
-                  onChange={(e) => setFiltroCliente(e.target.value)}
+                  onChange={setFiltroCliente}
+                  placeholder="Todos"
+                  opciones={[
+                    { value: 'todos', label: 'Todos' },
+                    ...opcionesCliente.map(([id, nombre]) => ({ value: id, label: nombre })),
+                  ]}
                   className="w-full h-8 px-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  <option value="todos">Todos</option>
-                  {opcionesCliente.map(([id, nombre]) => (
-                    <option key={id} value={id}>{nombre}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
                 <label htmlFor={`${uid}-referencia`} className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">
                   Referencia
                 </label>
-                <select
+                <BuscadorLista
                   id={`${uid}-referencia`}
                   value={filtroReferencia}
-                  onChange={(e) => setFiltroReferencia(e.target.value)}
+                  onChange={setFiltroReferencia}
+                  placeholder="Todas"
+                  opciones={[
+                    { value: 'todas', label: 'Todas' },
+                    ...opcionesReferencia.map(([clave, etiqueta]) => ({ value: clave, label: etiqueta })),
+                  ]}
                   className="w-full h-8 px-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  <option value="todas">Todas</option>
-                  {opcionesReferencia.map(([clave, etiqueta]) => (
-                    <option key={clave} value={clave}>{etiqueta}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
                 <label htmlFor={`${uid}-estado`} className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">
                   Estado
                 </label>
-                <select
-                  id={`${uid}-estado`}
+                <BuscadorLista
                   value={filtroEstado}
-                  onChange={(e) => setFiltroEstado(e.target.value)}
+                  onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+                  opciones={[
+                    ...OPCIONES_ESTADO.map((o) => ({ value: o.value, label: o.label })),
+                  ]}
+                  id={`${uid}-estado`}
                   className="w-full h-8 px-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  {OPCIONES_ESTADO.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                />
               </div>
 
               <div>
                 <label htmlFor={`${uid}-antiguedad`} className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">
                   Antigüedad
                 </label>
-                <select
-                  id={`${uid}-antiguedad`}
+                <BuscadorLista
                   value={filtroAntiguedad}
-                  onChange={(e) => setFiltroAntiguedad(e.target.value)}
+                  onChange={(valorElegido) => setFiltroAntiguedad(valorElegido)}
+                  opciones={[
+                    ...OPCIONES_ANTIGUEDAD.map((o) => ({ value: o.value, label: o.label })),
+                  ]}
+                  id={`${uid}-antiguedad`}
                   className="w-full h-8 px-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  {OPCIONES_ANTIGUEDAD.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                />
               </div>
             </div>
 

@@ -168,6 +168,37 @@ export function crudoDesdeTecleado(formateado) {
   return (negativo ? '-' : '') + cuerpo;
 }
 
+/** Solo lo que cuenta: digitos y la coma decimal. */
+export const utilesDe = (s) => String(s ?? '').replace(/[^0-9,]/g, '');
+
+/**
+ * RETROCESO SOBRE UN PUNTO DE MILES.
+ *
+ * Con el cursor justo detras del punto de "1.500", el retroceso borra el punto.
+ * Pero el punto lo pone el campo, asi que al reformatear vuelve a salir: el
+ * texto queda IGUAL y parece que la tecla no funciona. Hay que pulsar dos veces
+ * para borrar un digito, y eso se nota a la tercera cifra.
+ *
+ * Se detecta porque el texto se acorto pero los caracteres que cuentan son los
+ * mismos. Entonces se borra el digito de al lado, que es lo que la persona
+ * queria. Suprimir mira al otro lado, por eso hace falta saber que tecla vino.
+ *
+ * Devuelve { cadena, cuenta } ya corregidos; si no aplica, los deja igual.
+ */
+export function corregirBorradoDeSeparador(tecleado, previo, cuenta, tecla) {
+  let cadena = utilesDe(tecleado);
+  const seAcorto = String(tecleado ?? '').length < String(previo ?? '').length;
+  if (seAcorto && cadena === utilesDe(previo)) {
+    if (tecla === 'Backspace' && cuenta > 0) {
+      cadena = cadena.slice(0, cuenta - 1) + cadena.slice(cuenta);
+      cuenta -= 1;
+    } else if (tecla === 'Delete' && cuenta < cadena.length) {
+      cadena = cadena.slice(0, cuenta) + cadena.slice(cuenta + 1);
+    }
+  }
+  return { cadena, cuenta };
+}
+
 /** Cuantos caracteres que cuentan (digitos y coma) hay a la izquierda de `pos`. */
 export function cuentaUtiles(texto, pos) {
   const s = String(texto ?? '');

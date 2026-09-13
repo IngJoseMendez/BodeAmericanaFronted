@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto, BuscadorLista } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -824,17 +824,21 @@ export default function Cotizaciones() {
                 className="pl-9 pr-3 py-2.5 rounded-xl border border-border bg-surface text-sm w-60 focus:outline-none focus:ring-2 focus:ring-secondary/30"
               />
             </div>
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className="px-4 py-2.5 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todas</option>
-              <option value="pendiente">Pendientes</option>
-              <option value="aprobada">Aprobadas</option>
-              <option value="rechazada">Rechazadas</option>
-              <option value="vencida">Vencidas</option>
-            </select>
+            <div className="w-44">
+              <BuscadorLista
+                value={filtroEstado}
+                onChange={setFiltroEstado}
+                opcionVacia="Todas"
+                opciones={[
+                  { value: 'pendiente', label: 'Pendientes' },
+                  { value: 'aprobada',  label: 'Aprobadas' },
+                  { value: 'rechazada', label: 'Rechazadas' },
+                  { value: 'vencida',   label: 'Vencidas' },
+                ]}
+                placeholder="Todas"
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface"
+              />
+            </div>
             <span className="text-sm text-muted">
               {cotizacionesFiltradas.length} cotización(es)
             </span>
@@ -920,10 +924,9 @@ export default function Cotizaciones() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Cliente *</label>
-                <select
+                <BuscadorLista
                   value={formData.cliente_id}
-                  onChange={(e) => {
-                    const clienteId = e.target.value;
+                  onChange={(clienteId) => {
                     const cliente = clientes.find(c => String(c.id) === clienteId);
                     // Al cambiar de cliente la entrega se rellena sola: por
                     // defecto su destino registrado (es su sitio habitual de
@@ -952,24 +955,27 @@ export default function Cotizaciones() {
                   }}
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
                   required
-                >
-                  <option value="">Seleccionar cliente...</option>
-                  {clientes.map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}{c.descuento > 0 ? ` (-${formatCurrency(c.descuento)}/u)` : ''}</option>
-                  ))}
-                </select>
+                  placeholder="Escribe para buscar el cliente"
+                  opciones={clientes.map(c => ({
+                    value: c.id,
+                    label: `${c.nombre}${c.descuento > 0 ? ` (-${formatCurrency(c.descuento)}/u)` : ''}`,
+                  }))}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Descuento</label>
                 <div className="flex gap-2">
-                  <select
-                    value={formData.tipo_descuento}
-                    onChange={(e) => setFormData(f => ({ ...f, tipo_descuento: e.target.value, descuento: '' }))}
-                    className="px-3 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm bg-surface"
-                  >
-                    <option value="valor_fijo">$ Valor fijo</option>
-                    <option value="porcentaje">% Porcentaje</option>
-                  </select>
+                  <div className="w-32 flex-shrink-0">
+                    <BuscadorLista
+                      value={formData.tipo_descuento}
+                      onChange={(v) => setFormData(f => ({ ...f, tipo_descuento: v, descuento: '' }))}
+                      opciones={[
+                        { value: 'valor_fijo', label: '$ Valor fijo' },
+                        { value: 'porcentaje', label: '% Porcentaje' },
+                      ]}
+                      className="w-full px-3 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm bg-surface"
+                    />
+                  </div>
                   {/* El max=100 del porcentaje se fue con el type=number, pero no
                       protegia nada: era una pista del navegador que no impide
                       teclear. Lo que de verdad topa el descuento es el
@@ -1171,27 +1177,27 @@ export default function Cotizaciones() {
                   >
                     {/* Fila principal */}
                     <div className="grid grid-cols-[1fr_1fr_56px_116px_84px_32px] gap-2 items-center">
-                      <select
+                      <BuscadorLista
                         value={item.referencia}
-                        onChange={(e) => updateItem(index, 'referencia', e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 truncate"
-                      >
-                        <option value="">Referencia…</option>
-                        {optsReferencia.map(o => (
-                          <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
-                        ))}
-                      </select>
-
-                      <select
-                        value={item.calidad}
-                        onChange={(e) => updateItem(index, 'calidad', e.target.value)}
+                        onChange={(v) => updateItem(index, 'referencia', v)}
+                        placeholder="Referencia"
                         className="w-full px-2.5 py-1.5 rounded-lg border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                      >
-                        <option value="">Calidad…</option>
-                        {optsCalidad.map(o => (
-                          <option key={o.id} value={o.nombre}>{o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1)}</option>
-                        ))}
-                      </select>
+                        opciones={optsReferencia.map(o => ({
+                          value: o.nombre,
+                          label: o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1),
+                        }))}
+                      />
+
+                      <BuscadorLista
+                        value={item.calidad}
+                        onChange={(v) => updateItem(index, 'calidad', v)}
+                        placeholder="Calidad"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                        opciones={optsCalidad.map(o => ({
+                          value: o.nombre,
+                          label: o.nombre.charAt(0).toUpperCase() + o.nombre.slice(1),
+                        }))}
+                      />
 
                       <CampoMonto
                         decimales={0}
@@ -1500,25 +1506,26 @@ export default function Cotizaciones() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-primary mb-1">Método</label>
-              <select
+              <BuscadorLista
                 value={convertForm.metodo_pago}
-                onChange={(e) => setConvertForm({ ...convertForm, metodo_pago: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30">
-                <option value="efectivo">Efectivo</option>
-                <option value="transferencia">Transferencia</option>
-                <option value="cheque">Cheque</option>
-                <option value="otro">Otro</option>
-              </select>
+                onChange={(v) => setConvertForm({ ...convertForm, metodo_pago: v })}
+                opciones={[
+                  { value: 'efectivo',      label: 'Efectivo' },
+                  { value: 'transferencia', label: 'Transferencia' },
+                  { value: 'cheque',        label: 'Cheque' },
+                  { value: 'otro',          label: 'Otro' },
+                ]}
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
             </div>
             <div>
               <label className="block text-sm font-medium text-primary mb-1">Cuenta</label>
-              <select
+              <BuscadorLista
                 value={convertForm.cuenta_id}
-                onChange={(e) => setConvertForm({ ...convertForm, cuenta_id: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30">
-                <option value="">— Sin cuenta —</option>
-                {cuentasBanco.map((cu) => <option key={cu.id} value={cu.id}>{cu.nombre}</option>)}
-              </select>
+                onChange={(v) => setConvertForm({ ...convertForm, cuenta_id: v })}
+                opcionVacia="Sin cuenta"
+                opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.nombre }))}
+                placeholder="Sin cuenta"
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
             </div>
           </div>
 

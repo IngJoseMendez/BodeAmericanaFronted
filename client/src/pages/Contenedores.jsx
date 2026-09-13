@@ -3119,18 +3119,20 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
         </div>
 
         {/* Estado filter */}
-        <select
+        <BuscadorLista
           value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
+          onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+          opcionVacia="Todos los estados"
+          placeholder="Todos los estados"
+          opciones={[
+            { value: 'estimacion', label: 'Estimación' },
+            { value: 'borrador', label: 'Borrador' },
+            { value: 'revision', label: 'En Revisión' },
+            { value: 'finalizado', label: 'Finalizado' },
+          ]}
           aria-label="Filtrar contenedores por estado"
           className="px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 cursor-pointer"
-        >
-          <option value="">Todos los estados</option>
-          <option value="estimacion">Estimación</option>
-          <option value="borrador">Borrador</option>
-          <option value="revision">En Revisión</option>
-          <option value="finalizado">Finalizado</option>
-        </select>
+        />
 
         {/* View toggle */}
         {/* aria-pressed: sin él el lector de pantalla no dice cuál vista está activa */}
@@ -3646,13 +3648,17 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       escrito lo que ya hay. Por eso se dice. */}
                   <div>
                     <label htmlFor="cont-moneda-base" className={lbl}>Moneda del contenedor</label>
-                    <select id="cont-moneda-base" className={`${inp} font-semibold`}
+                    <BuscadorLista
                       value={monedaBase}
-                      onChange={(e) => cambiarMonedaBase(e.target.value)}
-                      title="Moneda en la que se piensa TODO el contenedor. Las líneas nuevas la heredan.">
-                      <option value="USD">USD — Dólares</option>
-                      <option value="COP">COP — Pesos</option>
-                    </select>
+                      onChange={(valorElegido) => cambiarMonedaBase(valorElegido)}
+                      opciones={[
+                        { value: 'USD', label: 'USD — Dólares' },
+                        { value: 'COP', label: 'COP — Pesos' },
+                      ]}
+                      id="cont-moneda-base"
+                      title="Moneda en la que se piensa TODO el contenedor. Las líneas nuevas la heredan."
+                      className={`${inp} font-semibold`}
+                    />
                     <p className="text-[10px] text-muted mt-0.5 leading-tight">
                       {excepcionesMoneda.total > 0
                         ? <span className="text-warning font-semibold">
@@ -4044,15 +4050,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                               antes un proveedor en dólares dentro de un
                               contenedor pensado en pesos no se distinguía. */}
                           <div className="flex-shrink-0">
-                            <select className={`${inpBase} w-20 font-semibold ${(prov.moneda || 'USD') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                            <BuscadorLista
                               value={prov.moneda || 'USD'}
-                              aria-label={`Moneda del proveedor ${pi + 1}`}
+                              onChange={(valorElegido) => updateProveedor(pi, 'moneda', valorElegido)}
+                              opciones={[
+                                ...MONEDAS_CONTENEDOR.map((m) => ({ value: m, label: m })),
+                              ]}
                               title={(prov.moneda || 'USD') !== monedaBase
                                 ? `Distinta de la moneda del contenedor (${monedaBase})`
                                 : `Heredada del contenedor (${monedaBase})`}
-                              onChange={(e) => updateProveedor(pi, 'moneda', e.target.value)}>
-                              {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
+                              aria-label={`Moneda del proveedor ${pi + 1}`}
+                              className={`${inpBase} w-20 font-semibold ${(prov.moneda || 'USD') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                            />
                             <p className={`text-[9px] text-center mt-0.5 font-semibold ${(prov.moneda || 'USD') !== monedaBase ? 'text-warning' : 'text-muted/60'}`}>
                               {(prov.moneda || 'USD') !== monedaBase ? 'excepción' : 'heredada'}
                             </p>
@@ -4546,12 +4555,17 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     {servicios.map((srv, si) => (
                       <div key={si} className="px-4 py-3 space-y-2">
                         <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
-                          <select className={`${inpBase} lg:w-36`} value={srv.tipo_servicio}
+                          <BuscadorLista
+                            value={srv.tipo_servicio}
+                            onChange={(valorElegido) => updateServicio(si, 'tipo_servicio', valorElegido)}
+                            opcionVacia="Tipo"
+                            placeholder="Tipo"
+                            opciones={[
+                              ...TIPOS_SERVICIO.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) })),
+                            ]}
                             aria-label={`Tipo del servicio ${si + 1}`}
-                            onChange={(e) => updateServicio(si, 'tipo_servicio', e.target.value)}>
-                            <option value="">Tipo</option>
-                            {TIPOS_SERVICIO.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                          </select>
+                            className={`${inpBase} lg:w-36`}
+                          />
                           <input type="text" className={`${inp} flex-1 min-w-0`} placeholder="Empresa o proveedor"
                             aria-label={`Empresa o proveedor del servicio ${si + 1}`}
                             value={srv.proveedor_nombre} onChange={(e) => updateServicio(si, 'proveedor_nombre', e.target.value)} />
@@ -4559,15 +4573,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                               única de "Costo estimado": aquí arriba solo queda
                               QUIÉN presta el servicio. */}
                           {!modoEstimacion && (<>
-                          <select className={`${inpBase} w-20 flex-shrink-0 ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                          <BuscadorLista
                             value={srv.moneda || 'COP'}
-                            aria-label={`Moneda del servicio ${si + 1}`}
+                            onChange={(valorElegido) => updateServicio(si, 'moneda', valorElegido)}
+                            opciones={[
+                              ...MONEDAS_CONTENEDOR.map((m) => ({ value: m, label: m })),
+                            ]}
                             title={(srv.moneda || 'COP') !== monedaBase
                               ? `Distinta de la moneda del contenedor (${monedaBase})`
                               : `Heredada del contenedor (${monedaBase})`}
-                            onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
-                            {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
+                            aria-label={`Moneda del servicio ${si + 1}`}
+                            className={`${inpBase} w-20 flex-shrink-0 ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                          />
                           <PriceInput className={`${inpBase} lg:w-32`} placeholder="Costo servicio"
                             title={`Lo que cobra el proveedor por ${esServicioPropio(srv) ? 'este servicio, que es solo suyo' : 'TODO el contenedor'}, en ${srv.moneda || 'COP'}`}
                             aria-label={`Costo del servicio ${si + 1}`}
@@ -4629,15 +4646,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                               aria-label={`Costo estimado del servicio ${si + 1}`}
                               value={costoEstimadoServicio(srv)}
                               onChange={(val) => setCostoEstimadoServicio(si, val)} />
-                            <select className={`${inpBase} w-20 flex-shrink-0 font-semibold ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                            <BuscadorLista
                               value={srv.moneda || 'COP'}
-                              aria-label={`Moneda del servicio ${si + 1}`}
+                              onChange={(valorElegido) => updateServicio(si, 'moneda', valorElegido)}
+                              opciones={[
+                                ...MONEDAS_CONTENEDOR.map((m) => ({ value: m, label: m })),
+                              ]}
                               title={(srv.moneda || 'COP') !== monedaBase
                                 ? `Distinta de la moneda del contenedor (${monedaBase})`
                                 : `Heredada del contenedor (${monedaBase})`}
-                              onChange={(e) => updateServicio(si, 'moneda', e.target.value)}>
-                              {MONEDAS_CONTENEDOR.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
+                              aria-label={`Moneda del servicio ${si + 1}`}
+                              className={`${inpBase} w-20 flex-shrink-0 font-semibold ${(srv.moneda || 'COP') !== monedaBase ? 'border-warning/60 text-warning' : ''}`}
+                            />
                           </div>
                         </div>
                         )}

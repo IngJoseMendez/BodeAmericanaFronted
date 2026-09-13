@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { cuentasApi, bancosApi } from '../services/api';
 import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X, RotateCcw } from 'lucide-react';
 
@@ -292,14 +292,15 @@ export default function Cuentas() {
             <label className="block text-sm font-medium text-primary mb-1" htmlFor="cuenta-tipo">
               Tipo de cuenta
             </label>
-            <select id="cuenta-tipo" value={form.tipo} className={selectCls}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
-              {tiposDisponibles.map(t => (
-                <option key={t} value={t}>
-                  {TIPOS_BASE.find(b => b.value === t)?.label || capitalizar(t)}
-                </option>
-              ))}
-            </select>
+            <BuscadorLista
+              value={form.tipo}
+              onChange={(valorElegido) => setForm({ ...form, tipo: valorElegido })}
+              opciones={[
+                ...tiposDisponibles.map((t) => ({ value: t, label: TIPOS_BASE.find(b => b.value === t)?.label || capitalizar(t) })),
+              ]}
+              id="cuenta-tipo"
+              className={selectCls}
+            />
           </div>
 
           {form.tipo === 'banco' && (
@@ -314,15 +315,17 @@ export default function Cuentas() {
                     ¿Falta uno? Agrégalo
                   </button>
                 </div>
-                <select id="cuenta-banco" value={form.banco_id} className={selectCls} required
-                  onChange={(e) => setForm({ ...form, banco_id: e.target.value })}>
-                  <option value="">Elige el banco…</option>
-                  {bancosSelect.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.nombre}{b.activo === false ? ' (fuera de la lista)' : ''}
-                    </option>
-                  ))}
-                </select>
+                <BuscadorLista
+                  value={form.banco_id}
+                  onChange={(valorElegido) => setForm({ ...form, banco_id: valorElegido })}
+                  opcionVacia="Elige el banco…"
+                  placeholder="Elige el banco…"
+                  opciones={[
+                    ...bancosSelect.map((b) => ({ value: b.id, label: `${b.nombre}${b.activo === false ? ' (fuera de la lista)' : ''}` })),
+                  ]}
+                  id="cuenta-banco"
+                  className={selectCls}
+                />
               </div>
 
               <Input label="Número de cuenta (opcional)" value={form.numero_cuenta}

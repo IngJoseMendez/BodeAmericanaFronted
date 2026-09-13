@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, useConfirm, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, useToast, useConfirm, CampoMonto, BuscadorLista } from '../components/common';
 import { preciosPromocionApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
@@ -251,34 +251,31 @@ export default function PreciosPromocion() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Filtrar por Categoría</label>
-                <select
+                <BuscadorLista
                   value={filtroCat}
-                  onChange={(e) => { setFiltroCat(e.target.value); setForm(f => ({ ...f, referencia: '' })); }}
+                  onChange={(valorElegido) => { setFiltroCat(valorElegido); setForm(f => ({ ...f, referencia: '' })); }}
+                  opcionVacia="Todas las categorías"
+                  placeholder="Todas las categorías"
+                  opciones={[
+                    ...temporadas.map((t) => ({ value: t.nombre, label: t.nombre.charAt(0).toUpperCase() + t.nombre.slice(1) })),
+                  ]}
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
-                >
-                  <option value="">Todas las categorías</option>
-                  {temporadas.map((t) => (
-                    <option key={t.id} value={t.nombre}>{t.nombre.charAt(0).toUpperCase() + t.nombre.slice(1)}</option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1" htmlFor="promo-referencia">Referencia *</label>
-                <select
-                  id="promo-referencia"
+                <BuscadorLista
                   value={form.referencia}
-                  onChange={(e) => setForm({ ...form, referencia: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-60"
-                  required
+                  onChange={(valorElegido) => setForm({ ...form, referencia: valorElegido })}
+                  opcionVacia={referencias.length === 0 ? 'No hay referencias cargadas' : 'Seleccionar...'}
+                  placeholder={referencias.length === 0 ? 'No hay referencias cargadas' : 'Seleccionar...'}
+                  opciones={[
+                    ...referenciasVisibles.map((r) => ({ value: r.nombre, label: r.nombre })),
+                  ]}
+                  id="promo-referencia"
                   disabled={referencias.length === 0}
-                >
-                  <option value="">
-                    {referencias.length === 0 ? 'No hay referencias cargadas' : 'Seleccionar...'}
-                  </option>
-                  {referenciasVisibles.map((r) => (
-                    <option key={r.id} value={r.nombre}>{r.nombre}</option>
-                  ))}
-                </select>
+                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-60"
+                />
 
                 {referencias.length === 0 && (
                   <p className="mt-1.5 text-xs text-amber-600 flex items-start gap-1.5">
@@ -295,33 +292,32 @@ export default function PreciosPromocion() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Calidad *</label>
-                <select
+                <BuscadorLista
                   value={form.calidad}
-                  onChange={(e) => setForm({ ...form, calidad: e.target.value })}
+                  onChange={(valorElegido) => setForm({ ...form, calidad: valorElegido })}
+                  opcionVacia="Seleccionar..."
+                  placeholder="Seleccionar..."
+                  opciones={[
+                    ...calidades.map((q) => ({ value: q.nombre, label: q.nombre })),
+                  ]}
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  required
-                >
-                  <option value="">Seleccionar...</option>
-                  {calidades.map((q) => (
-                    <option key={q.id} value={q.nombre}>{q.nombre}</option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1" htmlFor="promo-clasificacion">
                   Clasificación
                 </label>
-                <select
-                  id="promo-clasificacion"
+                <BuscadorLista
                   value={form.clasificacion}
-                  onChange={(e) => setForm({ ...form, clasificacion: e.target.value })}
+                  onChange={(valorElegido) => setForm({ ...form, clasificacion: valorElegido })}
+                  opcionVacia="Todas las clasificaciones"
+                  placeholder="Todas las clasificaciones"
+                  opciones={[
+                    ...clasificaciones.map((t) => ({ value: t.nombre, label: t.nombre })),
+                  ]}
+                  id="promo-clasificacion"
                   className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  <option value="">Todas las clasificaciones</option>
-                  {clasificaciones.map((t) => (
-                    <option key={t.id} value={t.nombre}>{t.nombre}</option>
-                  ))}
-                </select>
+                />
                 <p className="text-xs text-muted mt-1">
                   Déjalo en «Todas» para que aplique a hombre, mujer y niño por igual.
                   Si eliges una, la promoción solo aplica a esa y manda sobre la general.

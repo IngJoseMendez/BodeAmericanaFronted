@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { tiposPacaApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes } from 'lucide-react';
@@ -48,30 +48,30 @@ function PanelItem({ item, table, onDelete, edicion, temporadas, familias }) {
               autoFocus
             />
             {table === 'categorias' && (
-              <select
+              <BuscadorLista
                 value={editando.temporada_id || ''}
-                onChange={e => setEditando(prev => ({ ...prev, temporada_id: e.target.value }))}
+                onChange={(valorElegido) => setEditando(prev => ({ ...prev, temporada_id: valorElegido }))}
+                opcionVacia="Sin categoría"
+                placeholder="Sin categoría"
+                opciones={[
+                  ...temporadas.map((t) => ({ value: t.id, label: capitalize(t.nombre) })),
+                ]}
                 className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
-              >
-                <option value="">Sin categoría</option>
-                {temporadas.map(t => (
-                  <option key={t.id} value={t.id}>{capitalize(t.nombre)}</option>
-                ))}
-              </select>
+              />
             )}
             {/* La familia agrupa referencias parecidas: "Chaqueta deportiva" y
                 "Chaqueta mixta" bajo "Chaquetas". */}
             {table === 'categorias' && (
-              <select
+              <BuscadorLista
                 value={editando.familia_id || ''}
-                onChange={e => setEditando(prev => ({ ...prev, familia_id: e.target.value }))}
+                onChange={(valorElegido) => setEditando(prev => ({ ...prev, familia_id: valorElegido }))}
+                opcionVacia="Sin familia"
+                placeholder="Sin familia"
+                opciones={[
+                  ...familias.map((fa) => ({ value: fa.id, label: capitalize(fa.nombre) })),
+                ]}
                 className="w-full border border-secondary/60 rounded-lg px-2.5 py-1.5 text-sm text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/40"
-              >
-                <option value="">Sin familia</option>
-                {familias.map(fa => (
-                  <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
-                ))}
-              </select>
+              />
             )}
           </div>
         ) : (
@@ -472,28 +472,28 @@ export default function TiposPaca() {
             submitting={guardandoCat}
             placeholder="ej: chaqueta, shorts..."
             extraFormContent={
-              <select
+              <BuscadorLista
                 value={nuevaCategoria.temporada_id}
-                onChange={e => setNuevaCategoria(f => ({ ...f, temporada_id: e.target.value }))}
+                onChange={(valorElegido) => setNuevaCategoria(f => ({ ...f, temporada_id: valorElegido }))}
+                opcionVacia="Categoría (opcional)"
+                placeholder="Categoría (opcional)"
+                opciones={[
+                  ...temporadas.map((t) => ({ value: t.id, label: capitalize(t.nombre) })),
+                ]}
                 className="w-full px-3 py-2.5 rounded-xl border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-              >
-                <option value="">Categoría (opcional)</option>
-                {temporadas.map(t => (
-                  <option key={t.id} value={t.id}>{capitalize(t.nombre)}</option>
-                ))}
-              </select>
+              />
             }
             extraFormContent2={
-              <select
+              <BuscadorLista
                 value={nuevaCategoria.familia_id}
-                onChange={e => setNuevaCategoria(f => ({ ...f, familia_id: e.target.value }))}
+                onChange={(valorElegido) => setNuevaCategoria(f => ({ ...f, familia_id: valorElegido }))}
+                opcionVacia="Familia (opcional)"
+                placeholder="Familia (opcional)"
+                opciones={[
+                  ...familias.map((fa) => ({ value: fa.id, label: capitalize(fa.nombre) })),
+                ]}
                 className="w-full px-3 py-2.5 rounded-xl border border-border text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-              >
-                <option value="">Familia (opcional)</option>
-                {familias.map(fa => (
-                  <option key={fa.id} value={fa.id}>{capitalize(fa.nombre)}</option>
-                ))}
-              </select>
+              />
             }
           />
 

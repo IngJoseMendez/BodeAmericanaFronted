@@ -42,7 +42,7 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   parseMonto, formatearTecleado, textoDesdeValor, crudoDesdeTecleado,
-  cuentaUtiles, posTrasUtiles,
+  cuentaUtiles, posTrasUtiles, corregirBorradoDeSeparador,
 } from '../../lib/money';
 
 // Las cuentas de texto viven en lib/money.js y no aqui: son aritmetica pura y
@@ -51,7 +51,7 @@ import {
 const vacio = (v) => String(v ?? '').trim() === '';
 
 export const CampoMonto = forwardRef(function CampoMonto(
-  { value, onChange, decimales = 2, className = '', onBlur, onFocus, ...rest },
+  { value, onChange, decimales = 2, className = '', onBlur, onFocus, onKeyDown, ...rest },
   refFuera,
 ) {
   const refPropia = useRef(null);
@@ -62,6 +62,9 @@ export const CampoMonto = forwardRef(function CampoMonto(
   }, [refFuera]);
 
   const [texto, setTexto] = useState(() => textoDesdeValor(value, decimales));
+  // Qué tecla vino. Hace falta para el retroceso sobre un punto de miles: ver
+  // más abajo.
+  const ultimaTecla = useRef(null);
   // Dónde dejar el cursor en el próximo pintado. null = no tocarlo, que es lo
   // correcto cuando el cambio viene de fuera y no de una tecla.
   const cursorPendiente = useRef(null);
@@ -94,9 +97,15 @@ export const CampoMonto = forwardRef(function CampoMonto(
 
   const alTeclear = (e) => {
     const tecleado = e.target.value;
-    const utiles = cuentaUtiles(tecleado, e.target.selectionStart ?? tecleado.length);
-    const formateado = formatearTecleado(tecleado, decimales);
-    cursorPendiente.current = posTrasUtiles(formateado, utiles);
+    const cuentaCruda = cuentaUtiles(tecleado, e.target.selectionStart ?? tecleado.length);
+    // El retroceso sobre un punto de miles no borraria nada visible; la
+    // corrección vive en lib/money.js, con sus pruebas.
+    const { cadena, cuenta } = corregirBorradoDeSeparador(
+      tecleado, texto, cuentaCruda, ultimaTecla.current,
+    );
+
+    const formateado = formatearTecleado(cadena, decimales);
+    cursorPendiente.current = posTrasUtiles(formateado, cuenta);
     setTexto(formateado);
     emitir(formateado);
   };
@@ -121,6 +130,7 @@ export const CampoMonto = forwardRef(function CampoMonto(
       inputMode={decimales > 0 ? 'decimal' : 'numeric'}
       value={texto}
       onChange={alTeclear}
+      onKeyDown={(e) => { ultimaTecla.current = e.key; onKeyDown?.(e); }}
       onFocus={onFocus}
       onBlur={alSalir}
       className={className}

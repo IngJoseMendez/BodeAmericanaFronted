@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, matrizApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
@@ -1338,13 +1338,14 @@ export default function Cartera() {
                                 onChange={e => setEditandoAbono({ ...editandoAbono, fecha: e.target.value })}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
                               />
-                              <select
+                              <BuscadorLista
                                 value={editandoAbono.metodo_pago || 'efectivo'}
-                                onChange={e => setEditandoAbono({ ...editandoAbono, metodo_pago: e.target.value })}
+                                onChange={(valorElegido) => setEditandoAbono({ ...editandoAbono, metodo_pago: valorElegido })}
+                                opciones={[
+                                  ...METODOS_PAGO.map((mp) => ({ value: mp, label: mp })),
+                                ]}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
-                              >
-                                {METODOS_PAGO.map(mp => <option key={mp} value={mp}>{mp}</option>)}
-                              </select>
+                              />
                               <input
                                 type="text"
                                 value={editandoAbono.referencia || ''}

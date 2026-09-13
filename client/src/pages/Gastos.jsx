@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, useToast, useConfirm, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Input, useToast, useConfirm, CampoMonto, BuscadorLista } from '../components/common';
 import { gastosApi, cuentasApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { Coins, Plus, Trash2, Download } from 'lucide-react';
@@ -236,13 +236,14 @@ export default function Gastos() {
               />
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Moneda</label>
-                <select
+                <BuscadorLista
                   value={form.moneda}
-                  onChange={(e) => setForm({ ...form, moneda: e.target.value, tasa_cambio: e.target.value === 'COP' ? '' : form.tasa_cambio })}
+                  onChange={(valorElegido) => setForm({ ...form, moneda: valorElegido, tasa_cambio: valorElegido === 'COP' ? '' : form.tasa_cambio })}
+                  opciones={[
+                    ...MONEDAS.map((m) => ({ value: m.value, label: m.label })),
+                  ]}
                   className={selectCls}
-                >
-                  {MONEDAS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
+                />
                 {form.moneda === 'OTRA' && (
                   <input
                     type="text"
@@ -284,19 +285,31 @@ export default function Gastos() {
               />
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Método (opcional)</label>
-                <select value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })} className={selectCls}>
-                  <option value="">—</option>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="otro">Otro</option>
-                </select>
+                <BuscadorLista
+                  value={form.metodo_pago}
+                  onChange={(valorElegido) => setForm({ ...form, metodo_pago: valorElegido })}
+                  opcionVacia="—"
+                  placeholder="—"
+                  opciones={[
+                    { value: 'efectivo', label: 'Efectivo' },
+                    { value: 'transferencia', label: 'Transferencia' },
+                    { value: 'otro', label: 'Otro' },
+                  ]}
+                  className={selectCls}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Cuenta (opcional)</label>
-                <select value={form.cuenta_id} onChange={(e) => setForm({ ...form, cuenta_id: e.target.value })} className={selectCls}>
-                  <option value="">—</option>
-                  {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
+                <BuscadorLista
+                  value={form.cuenta_id}
+                  onChange={(valorElegido) => setForm({ ...form, cuenta_id: valorElegido })}
+                  opcionVacia="—"
+                  placeholder="—"
+                  opciones={[
+                    ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
+                  ]}
+                  className={selectCls}
+                />
               </div>
               <div className="flex items-end gap-3">
                 <label className="flex items-center gap-2 text-sm text-muted select-none cursor-pointer">
@@ -342,11 +355,17 @@ export default function Gastos() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Categoría</label>
-                <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} className={selectCls}>
-                  <option value="">Todas</option>
-                  {CATEGORIAS_FIJAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  <option value="otro">Otro</option>
-                </select>
+                <BuscadorLista
+                  value={filtroCategoria}
+                  onChange={(valorElegido) => setFiltroCategoria(valorElegido)}
+                  opcionVacia="Todas"
+                  placeholder="Todas"
+                  opciones={[
+                    ...CATEGORIAS_FIJAS.map((c) => ({ value: c.value, label: c.label })),
+                    { value: 'otro', label: 'Otro' },
+                  ]}
+                  className={selectCls}
+                />
               </div>
               {(filtroMes || filtroCategoria) && (
                 <Button variant="ghost" onClick={() => { setFiltroMes(''); setFiltroCategoria(''); }}>Limpiar</Button>

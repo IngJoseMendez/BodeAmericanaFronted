@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { authApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Edit2, UserX, UserCheck, User, Shield, Users, Eye, EyeOff } from 'lucide-react';
@@ -358,31 +358,33 @@ export default function GestionUsuarios() {
               nadie que lo deshiciera. */}
           <div>
             <label htmlFor="usuario-rol" className="block text-sm font-medium text-primary mb-1">Rol</label>
-            <select
-              id="usuario-rol"
+            <BuscadorLista
               value={formData.rol}
-              onChange={(e) => setFormData({...formData, rol: e.target.value})}
+              onChange={(valorElegido) => setFormData({...formData, rol: valorElegido})}
+              opciones={[
+                { value: 'vendedor', label: 'Vendedor' },
+                { value: 'admin', label: 'Admin' },
+              ]}
+              id="usuario-rol"
               disabled={esMiCuenta}
               className="w-full px-3 py-2 border border-border bg-surface text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="vendedor">Vendedor</option>
-              <option value="admin">Admin</option>
-            </select>
+            />
           </div>
 
           {editando && (
             <div>
               <label htmlFor="usuario-estado" className="block text-sm font-medium text-primary mb-1">Estado</label>
-              <select
-                id="usuario-estado"
+              <BuscadorLista
                 value={formData.estado || editando.estado}
-                onChange={(e) => setFormData({...formData, estado: e.target.value})}
+                onChange={(valorElegido) => setFormData({...formData, estado: valorElegido})}
+                opciones={[
+                  { value: 'activo', label: 'Activo' },
+                  { value: 'inactivo', label: 'Inactivo' },
+                ]}
+                id="usuario-estado"
                 disabled={esMiCuenta}
                 className="w-full px-3 py-2 border border-border bg-surface text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="activo">Activo</option>
-                <option value="inactivo">Inactivo</option>
-              </select>
+              />
             </div>
           )}
 

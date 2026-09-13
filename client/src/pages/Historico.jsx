@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { historicoApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
@@ -443,10 +443,13 @@ export default function Historico() {
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Año</label>
-                <select value={anio} onChange={(e) => setAnio(e.target.value)} className={selectCls}>
-                  {anios.length === 0 && <option value="">—</option>}
-                  {anios.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
+                <BuscadorLista
+                  value={anio}
+                  onChange={setAnio}
+                  placeholder={anios.length === 0 ? 'Sin años' : 'Año'}
+                  opciones={anios.map((a) => ({ value: a, label: String(a) }))}
+                  className={selectCls}
+                />
               </div>
               {reporte && <Button variant="secondary" onClick={exportarReporte}><Download size={16} /> Exportar reporte</Button>}
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto } from './common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto, BuscadorLista } from './common';
 import { inversionistasApi, contenedoresApi } from '../services/api';
 import { Users, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
@@ -217,13 +217,17 @@ export function Inversionistas() {
               <label className="block text-xs font-semibold text-muted mb-1" htmlFor="inv-cont">
                 Contenedor
               </label>
-              <select id="inv-cont" value={contSel} onChange={(e) => setContSel(e.target.value)}
-                      className={inp + ' w-full'}>
-                <option value="">Elige un contenedor…</option>
-                {contenedores.map(c => (
-                  <option key={c.id} value={c.id}>{c.numero} · {c.estado}</option>
-                ))}
-              </select>
+              <BuscadorLista
+                value={contSel}
+                onChange={(valorElegido) => setContSel(valorElegido)}
+                opcionVacia="Elige un contenedor…"
+                placeholder="Elige un contenedor…"
+                opciones={[
+                  ...contenedores.map((c) => ({ value: c.id, label: `${c.numero} · ${c.estado}` })),
+                ]}
+                id="inv-cont"
+                className={inp + ' w-full'}
+              />
             </div>
           </div>
 
@@ -359,11 +363,16 @@ export function Inversionistas() {
             <form onSubmit={guardarAporte} className="flex flex-wrap items-end gap-2 pt-1">
               <div className="flex-1 min-w-[12rem]">
                 <label className="block text-xs font-semibold text-muted mb-1">Inversionista</label>
-                <select value={aporteForm.inversionista_id} className={inp + ' w-full'}
-                  onChange={(e) => setAporteForm({ ...aporteForm, inversionista_id: e.target.value })}>
-                  <option value="">Elige…</option>
-                  {disponibles.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
-                </select>
+                <BuscadorLista
+                  value={aporteForm.inversionista_id}
+                  onChange={(valorElegido) => setAporteForm({ ...aporteForm, inversionista_id: valorElegido })}
+                  opcionVacia="Elige…"
+                  placeholder="Elige…"
+                  opciones={[
+                    ...disponibles.map((i) => ({ value: i.id, label: i.nombre })),
+                  ]}
+                  className={inp + ' w-full'}
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Aporte COP</label>

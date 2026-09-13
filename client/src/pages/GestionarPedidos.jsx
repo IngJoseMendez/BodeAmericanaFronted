@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Badge, Button, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Badge, Button, Modal, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { pedidosApi, clientesApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { Package, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, X, User, Download } from 'lucide-react';
@@ -325,18 +325,20 @@ export default function GestionarPedidos() {
               {/* Filtro Estado */}
               <div className="w-full lg:w-48">
                 <label htmlFor="filtro-estado" className="block text-sm font-medium text-primary mb-1">Estado</label>
-                <select
-                  id="filtro-estado"
+                <BuscadorLista
                   value={filtroEstado}
-                  onChange={(e) => setFiltroEstado(e.target.value)}
+                  onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+                  opcionVacia="Todos"
+                  placeholder="Todos"
+                  opciones={[
+                    { value: 'pendiente', label: 'Pendientes' },
+                    { value: 'aprobado', label: 'Aprobados' },
+                    { value: 'rechazado', label: 'Rechazados' },
+                    { value: 'convertido', label: 'Convertidos' },
+                  ]}
+                  id="filtro-estado"
                   className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
-                >
-                  <option value="">Todos</option>
-                  <option value="pendiente">Pendientes</option>
-                  <option value="aprobado">Aprobados</option>
-                  <option value="rechazado">Rechazados</option>
-                  <option value="convertido">Convertidos</option>
-                </select>
+                />
               </div>
 
               {/* Contador */}

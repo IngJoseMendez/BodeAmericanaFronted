@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, TableSkeleton, EmptyState, RefLink } from '../components/common';
+import { Card, CardBody, Button, TableSkeleton, EmptyState, RefLink, BuscadorLista } from '../components/common';
 import { auditoriaApi } from '../services/api';
 import { useToast } from '../components/common';
 import { useAuth } from '../context/AuthContext';
@@ -177,14 +177,26 @@ export default function Auditoria() {
 
         {/* Filtros */}
         <div className="flex flex-wrap items-center gap-3">
-          <select value={filtroEntidad} onChange={cambiarFiltro(setFiltroEntidad)} className={inp} aria-label="Filtrar por entidad">
-            <option value="">Todas las entidades</option>
-            {ENTIDADES.map(e => <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>)}
-          </select>
-          <select value={filtroAccion} onChange={cambiarFiltro(setFiltroAccion)} className={inp} aria-label="Filtrar por acción">
-            <option value="">Todas las acciones</option>
-            {ACCIONES.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          {/* cambiarFiltro devuelve un manejador que espera un evento; aqui
+              llega el valor ya elegido, asi que se le fabrica el evento. */}
+          <BuscadorLista
+            value={filtroEntidad}
+            onChange={(v) => cambiarFiltro(setFiltroEntidad)({ target: { value: v } })}
+            opcionVacia="Todas las entidades"
+            placeholder="Todas las entidades"
+            opciones={ENTIDADES.map((e) => ({ value: e, label: e.charAt(0).toUpperCase() + e.slice(1) }))}
+            aria-label="Filtrar por entidad"
+            className={inp}
+          />
+          <BuscadorLista
+            value={filtroAccion}
+            onChange={(v) => cambiarFiltro(setFiltroAccion)({ target: { value: v } })}
+            opcionVacia="Todas las acciones"
+            placeholder="Todas las acciones"
+            opciones={ACCIONES.map((a) => ({ value: a, label: a }))}
+            aria-label="Filtrar por acción"
+            className={inp}
+          />
           <input type="date" value={filtroDesde} onChange={cambiarFiltro(setFiltroDesde)} className={inp} aria-label="Desde" title="Desde" />
           <input type="date" value={filtroHasta} onChange={cambiarFiltro(setFiltroHasta)} className={inp} aria-label="Hasta" title="Hasta" />
           <Button

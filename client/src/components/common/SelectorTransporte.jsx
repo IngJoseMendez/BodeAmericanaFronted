@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { transportesApi } from '../../services/api';
 import { useToast } from './Toast';
+import { BuscadorLista } from './BuscadorLista';
 
 // Selector del catálogo de tipos de transporte, con creación en línea.
 //
@@ -66,7 +67,6 @@ export function SelectorTransporte({
   const [nombre, setNombre] = useState('');
   const [guardando, setGuardando] = useState(false);
   const campoRef = useRef(null);
-  const selectRef = useRef(null);
 
   useEffect(() => {
     if (controlado) return undefined;
@@ -137,7 +137,11 @@ export function SelectorTransporte({
   const cerrarCreacion = () => {
     setCreando(false);
     setNombre('');
-    selectRef.current?.focus();
+    // Por id y no por ref: el buscador es un <div> con el <input> dentro y el
+    // id viaja hasta ese <input>. El foco TIENE que volver aqui; si se queda en
+    // <body>, en el modal de Cotizaciones el siguiente Tab vuelve a empezar por
+    // el titulo y quien navega con teclado pierde el sitio.
+    document.getElementById(selectId)?.focus();
   };
 
   const alCambiar = (e) => {
@@ -224,22 +228,21 @@ export function SelectorTransporte({
 
   return (
     <div className="min-w-0">
-      <select
-        ref={selectRef}
+      {/* La opcion de crear va como una mas de la lista, igual que cuando esto
+          era un <select>: se reconoce por el centinela OPCION_CREAR y alCambiar
+          la intercepta antes de emitir nada hacia fuera. */}
+      <BuscadorLista
         id={selectId}
         value={value ?? ''}
         disabled={disabled}
         aria-label={ariaLabel}
         title={title}
-        onChange={alCambiar}
+        onChange={(v) => alCambiar({ target: { value: v } })}
+        opcionVacia={placeholder}
+        placeholder={placeholder}
+        opciones={[...opciones, { value: OPCION_CREAR, label: '+ Crear uno nuevo…' }]}
         className={className}
-      >
-        <option value="">{placeholder}</option>
-        {opciones.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-        <option value={OPCION_CREAR}>+ Crear uno nuevo…</option>
-      </select>
+      />
 
       {creando && (
         <div className="mt-1 flex items-center gap-1">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto, BuscadorLista } from '../components/common';
 import { preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
@@ -154,37 +154,33 @@ export default function Precios() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="precio-categoria" className="block text-sm font-medium text-primary mb-1">Categoría *</label>
-            <select
+            {/* La etiqueta dice "Categoría" y la opción vacía decía
+                "Seleccionar temporada...": mismo dato con dos nombres dentro
+                del mismo formulario. En Productos esta lista se llama
+                "Categorías", así que ese es el nombre que se usa. */}
+            <BuscadorLista
               id="precio-categoria"
               value={form.categoria}
-              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              onChange={(v) => setForm({ ...form, categoria: v })}
+              placeholder="Escribe para buscar la categoría"
+              opciones={temporadas.map((t) => ({ value: t.nombre, label: t.nombre }))}
               required
-            >
-              {/* La etiqueta dice "Categoría" y la opción vacía decía
-                  "Seleccionar temporada...": mismo dato con dos nombres dentro
-                  del mismo formulario. En Productos esta lista se llama
-                  "Categorías", así que ese es el nombre que se usa. */}
-              <option value="">Seleccionar categoría...</option>
-              {temporadas.map((t) => (
-                <option key={t.id} value={t.nombre}>{t.nombre}</option>
-              ))}
-            </select>
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
+            />
           </div>
           <div>
             <label htmlFor="precio-calidad" className="block text-sm font-medium text-primary mb-1">Calidad *</label>
-            <select
-              id="precio-calidad"
+            <BuscadorLista
               value={form.calidad}
-              onChange={(e) => setForm({ ...form, calidad: e.target.value })}
+              onChange={(valorElegido) => setForm({ ...form, calidad: valorElegido })}
+              opcionVacia="Seleccionar calidad..."
+              placeholder="Seleccionar calidad..."
+              opciones={[
+                ...calidades.map((q) => ({ value: q.nombre, label: q.nombre })),
+              ]}
+              id="precio-calidad"
               className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-              required
-            >
-              <option value="">Seleccionar calidad...</option>
-              {calidades.map((q) => (
-                <option key={q.id} value={q.nombre}>{q.nombre}</option>
-              ))}
-            </select>
+            />
           </div>
           <div>
             <label htmlFor="precio-valor" className="block text-sm font-medium text-primary mb-1">Precio *</label>

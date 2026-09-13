@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { clientesApi, matrizApi } from '../services/api';
 import { CLIENTE_TIPOS, CLIENTE_ESTADOS } from '../types';
 import { Plus, Search, Edit2, Trash2, Users, Phone, MapPin, CreditCard, Download, Truck } from 'lucide-react';
@@ -336,15 +336,17 @@ export default function Clientes() {
             />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <select
+            <BuscadorLista
               value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
+              onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+              opcionVacia="Todos los estados"
+              placeholder="Todos los estados"
+              opciones={[
+                ...CLIENTE_ESTADOS.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
+              ]}
               aria-label="Filtrar clientes por estado"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todos los estados</option>
-              {CLIENTE_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-            </select>
+            />
             <button type="button" onClick={exportarExcel}
               className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5 transition-colors">
               <Download size={15} aria-hidden="true" /> Excel

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge, useToast, TableSkeleton, EmptyState } from '../components/common';
+import { Card, CardBody, Button, Badge, useToast, TableSkeleton, EmptyState, BuscadorLista } from '../components/common';
 import { catalogoApi, pedidosApi } from '../services/api';
 import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { ShoppingCart, Package, Filter, Check } from 'lucide-react';
@@ -110,22 +110,26 @@ export default function Catalogo() {
             />
           </div>
           <div className="flex gap-2">
-            <select
+            <BuscadorLista
               value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
+              onChange={(valorElegido) => setFiltroTipo(valorElegido)}
+              opcionVacia="Todos los tipos"
+              placeholder="Todos los tipos"
+              opciones={[
+                ...PACA_TIPOS.map((t) => ({ value: t, label: t })),
+              ]}
               className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todos los tipos</option>
-              {PACA_TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select
+            />
+            <BuscadorLista
               value={filtroCategoria}
-              onChange={(e) => setFiltroCategoria(e.target.value)}
+              onChange={(valorElegido) => setFiltroCategoria(valorElegido)}
+              opcionVacia="Todas las categorías"
+              placeholder="Todas las categorías"
+              opciones={[
+                ...PACA_CATEGORIAS.map((c) => ({ value: c, label: c })),
+              ]}
               className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todas las categorías</option>
-              {PACA_CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            />
           </div>
         </div>
 

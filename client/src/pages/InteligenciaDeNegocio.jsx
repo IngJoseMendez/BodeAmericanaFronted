@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Badge, RefLink } from '../components/common';
+import { Card, CardBody, Button, Badge, RefLink, BuscadorLista } from '../components/common';
 import { analyticsApi } from '../services/api';
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1660,16 +1660,17 @@ export default function InteligenciaDeNegocio() {
         {activeTab === 'ventas' && (
           <div className="space-y-6">
             <div className="flex flex-wrap gap-2">
-              <select
+              <BuscadorLista
                 value={periodo}
-                onChange={(e) => cambiarPeriodo(e.target.value)}
+                onChange={(valorElegido) => cambiarPeriodo(valorElegido)}
+                opciones={[
+                  { value: 'dia', label: 'Diario' },
+                  { value: 'semana', label: 'Semanal' },
+                  { value: 'mes', label: 'Mensual' },
+                ]}
                 aria-label="Agrupar las ventas por periodo"
                 className="px-4 py-2 rounded-xl border border-border text-sm"
-              >
-                <option value="dia">Diario</option>
-                <option value="semana">Semanal</option>
-                <option value="mes">Mensual</option>
-              </select>
+              />
             </div>
 
             {errorVentas && (

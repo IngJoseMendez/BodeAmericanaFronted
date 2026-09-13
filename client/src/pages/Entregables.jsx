@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, useToast, CampoMonto, BuscadorLista } from '../components/common';
 import {
   despachosApi, pacasApi, clientesApi, carteraApi,
   listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi, matrizApi,
@@ -482,16 +482,17 @@ export default function Entregables() {
                     <label className="block text-xs font-semibold text-muted" htmlFor="periodo-int">
                       Período
                     </label>
-                    <select
-                      id="periodo-int"
+                    <BuscadorLista
                       value={periodo}
-                      onChange={(e) => setPeriodo(e.target.value)}
+                      onChange={(valorElegido) => setPeriodo(valorElegido)}
+                      opciones={[
+                        { value: 'todo', label: 'Último contenedor (como está hoy)' },
+                        { value: 'mes', label: 'Este mes' },
+                        { value: 'rango', label: 'Rango de fechas…' },
+                      ]}
+                      id="periodo-int"
                       className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                    >
-                      <option value="todo">Último contenedor (como está hoy)</option>
-                      <option value="mes">Este mes</option>
-                      <option value="rango">Rango de fechas…</option>
-                    </select>
+                    />
 
                     {periodo === 'rango' && (
                       <div className="grid grid-cols-2 gap-2">
@@ -587,17 +588,17 @@ export default function Entregables() {
                 <label className="block text-xs font-semibold text-muted mb-1" htmlFor="ent-cliente">
                   Cliente
                 </label>
-                <select
-                  id="ent-cliente"
+                <BuscadorLista
                   value={clienteSel}
-                  onChange={(e) => setClienteSel(e.target.value)}
+                  onChange={(valorElegido) => setClienteSel(valorElegido)}
+                  opcionVacia="Elige un cliente…"
+                  placeholder="Elige un cliente…"
+                  opciones={[
+                    ...(datos?.clientes || []).map((c) => ({ value: c.id, label: c.nombre })),
+                  ]}
+                  id="ent-cliente"
                   className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                >
-                  <option value="">Elige un cliente…</option>
-                  {(datos?.clientes || []).map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}</option>
-                  ))}
-                </select>
+                />
               </div>
               <Button variant="outline" disabled={!clienteSel || generando} onClick={descargarCliente}>
                 {generando === 'cliente'

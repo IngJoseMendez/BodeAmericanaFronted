@@ -10,7 +10,7 @@
 
 import {
   formatearTecleado, textoDesdeValor, crudoDesdeTecleado,
-  cuentaUtiles, posTrasUtiles, parseMonto, agruparMiles,
+  cuentaUtiles, posTrasUtiles, parseMonto, agruparMiles, corregirBorradoDeSeparador,
 } from '../src/lib/money.js';
 
 let malos = 0;
@@ -112,6 +112,34 @@ grupo('El cursor se queda donde estaba');
 comprobar('los puntos no cuentan', cuentaUtiles('1.500.000', 9), 7);
 comprobar('la coma sí cuenta',     cuentaUtiles('1.500,25', 8), 7);
 comprobar('cursor al inicio',      posTrasUtiles('1.500.000', 0), 0);
+
+grupo('Retroceso sobre un punto de miles');
+// Sin esto, con el cursor detras del punto de "1.500" el retroceso borra el
+// punto, el campo lo vuelve a poner y parece que la tecla no funciona.
+{
+  // "15.400.000" con el cursor en 3: se borro el punto -> llega "15400.000"
+  const r = corregirBorradoDeSeparador('15400.000', '15.400.000', 2, 'Backspace');
+  comprobar('borra el digito de delante (el 5)', r.cadena, '1400000');
+  comprobar('y el cursor retrocede uno', r.cuenta, 1);
+  comprobar('lo que se ve', formatearTecleado(r.cadena), '1.400.000');
+}
+{
+  // Suprimir mira al otro lado
+  const r = corregirBorradoDeSeparador('15400.000', '15.400.000', 2, 'Delete');
+  comprobar('suprimir borra el de despues', r.cadena, '1500000');
+  comprobar('y el cursor no se mueve', r.cuenta, 2);
+}
+{
+  // Un retroceso normal sobre un DIGITO no se toca
+  const r = corregirBorradoDeSeparador('1.500.00', '1.500.000', 7, 'Backspace');
+  comprobar('borrar un digito se respeta', r.cadena, '150000');
+  comprobar('y la cuenta tampoco cambia', r.cuenta, 7);
+}
+{
+  // Escribir no es borrar
+  const r = corregirBorradoDeSeparador('1.500.0009', '1.500.000', 8, 'ADD');
+  comprobar('teclear no dispara la correccion', r.cadena, '15000009');
+}
 
 grupo('agruparMiles por su cuenta');
 comprobar('vacío',      agruparMiles(''), '');

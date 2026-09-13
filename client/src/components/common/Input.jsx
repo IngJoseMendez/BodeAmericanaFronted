@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { CampoMonto } from './CampoMonto';
+import { BuscadorLista } from './BuscadorLista';
 
 // Todos los campos de la app salen de este archivo. Hasta ahora el <label> era un
 // simple hermano del control, sin htmlFor ni id: el lector de pantalla anunciaba
@@ -132,7 +133,17 @@ export const Input = ({ label, error, className = '', type, id, ...props }) => {
   );
 };
 
-export function Select({ label, error, options = [], className = '', placeholder, id, ...props }) {
+// El Select compartido sigue llamandose Select y recibiendo lo mismo
+// —options: [{ value, label }]—, pero por dentro ya no hay un <select>: hay un
+// buscador donde se escribe y la lista se va quedando con lo que coincide. Se
+// cambia AQUI y no en las dieciocho pantallas que lo usan, que es justo para lo
+// que estaba este archivo.
+//
+// La diferencia que se ve: onChange recibia un evento y el buscador entrega el
+// valor pelado, asi que se le vuelve a envolver en { target: { value } }. Las
+// pantallas siguen escribiendo onChange={(e) => setX(e.target.value)} y ninguna
+// se entera.
+export function Select({ label, error, options = [], className = '', placeholder, id, onChange, ...props }) {
   const autoId = useId();
   const selectId = id || autoId;
   const errorId = `${selectId}-error`;
@@ -142,34 +153,24 @@ export function Select({ label, error, options = [], className = '', placeholder
       {label && (
         <label htmlFor={selectId} className="block text-sm font-medium text-primary">{label}</label>
       )}
-      <div className="relative">
-        <select
-          id={selectId}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          className={`
-            w-full px-4 py-3 rounded-xl border bg-surface text-primary appearance-none
-            transition-all duration-300 ease-out
-            focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${error ? 'border-error focus:ring-error/30' : 'border-border'}
-            ${className}
-          `}
-          {...props}
-        >
-          {placeholder && <option value="">{placeholder}</option>}
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          <svg className="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </div>
+      <BuscadorLista
+        {...props}
+        id={selectId}
+        opciones={options}
+        opcionVacia={placeholder ?? null}
+        placeholder={placeholder ?? 'Seleccionar…'}
+        onChange={(valorElegido) => onChange?.({ target: { value: valorElegido } })}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        className={`
+          w-full px-4 py-3 rounded-xl border bg-surface text-primary
+          transition-all duration-300 ease-out
+          focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
+          disabled:opacity-50 disabled:cursor-not-allowed
+          ${error ? 'border-error focus:ring-error/30' : 'border-border'}
+          ${className}
+        `}
+      />
       {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
     </div>
   );

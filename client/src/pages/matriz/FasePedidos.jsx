@@ -26,7 +26,7 @@
 
 import { memo, useId } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardBody, Button, EmptyState, SelectorTransporte, CampoMonto } from '../../components/common';
+import { Card, CardBody, Button, EmptyState, SelectorTransporte, CampoMonto, BuscadorLista } from '../../components/common';
 import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../../lib/cotizacion';
 import { normTxt, claveStock } from '../../lib/matriz';
 import { parseMonto, formatCOP, formatNumero } from '../../lib/money';
@@ -336,46 +336,34 @@ const FilaCliente = memo(function FilaCliente({
 
                 <td className="px-2 py-1.5 align-top">
                   <label htmlFor={idRef} className="sr-only">Referencia del ítem {idx + 1}</label>
-                  <select
+                  {/* Dos grupos, y el segundo es el cambio que sostiene el
+                      encargo entero. Hasta hoy la lista solo ofrecia lo que
+                      tenia pacas, asi que el pedido de algo que se volo NO SE
+                      PODIA NI ANOTAR --y ese es exactamente el caso que motivo
+                      el rediseno--. Ahora lo agotado se elige igual, se queda
+                      registrado y se reparte (o se queda faltando) en el paso 2.
+                      El precio se resuelve con la cascada de siempre, que no
+                      depende del stock. */}
+                  <BuscadorLista
                     id={idRef}
                     value={item.referencia}
                     disabled={deshabilitado}
-                    aria-label={`Referencia del ítem ${idx + 1} de ${cliente.nombre}`}
-                    onChange={(e) => onItemCampo(cliente.id, idx, 'referencia', e.target.value)}
+                    aria-label={`Referencia del item ${idx + 1} de ${cliente.nombre}`}
+                    onChange={(v) => onItemCampo(cliente.id, idx, 'referencia', v)}
+                    placeholder="Elegir referencia"
+                    grupos={[
+                      ...(refHuerfana
+                        ? [{ label: null, opciones: [{ value: item.referencia, label: `${item.referencia} · sin existencias` }] }]
+                        : []),
+                      ...(opcionesReferencia.length > 0
+                        ? [{ label: 'Con existencias', opciones: opcionesReferencia.map((o) => ({ value: o.nombre, label: `${o.nombre} · ${o.disponibles} disp` })) }]
+                        : []),
+                      ...(opcionesSinStock.length > 0
+                        ? [{ label: 'Sin existencias', opciones: opcionesSinStock.map((o) => ({ value: o.nombre, label: `${o.nombre} · 0 disp` })) }]
+                        : []),
+                    ]}
                     className={campo(false, 'w-full px-2')}
-                  >
-                    <option value="">Elegir referencia…</option>
-                    {refHuerfana && (
-                      <option value={item.referencia}>{item.referencia} — sin existencias</option>
-                    )}
-                    {/* Dos grupos, y el segundo es el cambio que sostiene el
-                        encargo entero. Hasta hoy el <select> sólo ofrecía lo que
-                        tenía pacas, así que el pedido de algo que se voló NO SE
-                        PODÍA NI ANOTAR —y ese es exactamente el caso que motivó
-                        el rediseño—. Ahora lo agotado se elige igual, se queda
-                        registrado y se reparte (o se queda faltando) en el paso
-                        2. El precio se resuelve con la cascada de siempre, que
-                        no depende del stock: promoción → lista de precios →
-                        preestablecido. */}
-                    {opcionesReferencia.length > 0 && (
-                      <optgroup label="Con existencias">
-                        {opcionesReferencia.map((o) => (
-                          <option key={o.nombre} value={o.nombre}>
-                            {o.nombre} — {o.disponibles} disp
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {opcionesSinStock.length > 0 && (
-                      <optgroup label="Sin existencias">
-                        {opcionesSinStock.map((o) => (
-                          <option key={o.nombre} value={o.nombre}>
-                            {o.nombre} — 0 disp
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                  />
 
                   {/* Avisos del ítem, en corto y con el texto completo en el
                       title: en una tabla densa una frase larga por línea
@@ -498,21 +486,19 @@ const FilaCliente = memo(function FilaCliente({
 
                 <td className="px-2 py-1.5 align-top">
                   <label htmlFor={idCal} className="sr-only">Calidad del ítem {idx + 1}</label>
-                  <select
-                    id={idCal}
+                  <BuscadorLista
                     value={item.calidad}
+                    onChange={(valorElegido) => onItemCampo(cliente.id, idx, 'calidad', valorElegido)}
+                    opcionVacia={item.referencia && opcionesCal.length === 0 ? 'Sin calidades' : 'Calidad…'}
+                    placeholder={item.referencia && opcionesCal.length === 0 ? 'Sin calidades' : 'Calidad…'}
+                    opciones={[
+                      ...opcionesCal.map((c) => ({ value: c, label: c })),
+                    ]}
+                    id={idCal}
                     disabled={deshabilitado}
                     aria-label={`Calidad del ítem ${idx + 1} de ${cliente.nombre}`}
-                    onChange={(e) => onItemCampo(cliente.id, idx, 'calidad', e.target.value)}
                     className={campo(false, 'w-full px-2')}
-                  >
-                    <option value="">
-                      {item.referencia && opcionesCal.length === 0 ? 'Sin calidades' : 'Calidad…'}
-                    </option>
-                    {opcionesCal.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                  />
                 </td>
 
                 <td className="px-1 py-1.5 align-top">
@@ -588,16 +574,17 @@ const FilaCliente = memo(function FilaCliente({
 
                 <div className="flex items-center gap-1">
                   <label htmlFor={`${uid}-desc`} className="sr-only">Descuento por paca</label>
-                  <select
+                  <BuscadorLista
                     value={tipoDescuento}
+                    onChange={(valorElegido) => onCampo(cliente.id, 'tipo_descuento', valorElegido)}
+                    opciones={[
+                      { value: 'valor_fijo', label: '$' },
+                      { value: 'porcentaje', label: '%' },
+                    ]}
                     disabled={deshabilitado}
                     aria-label={`Tipo de descuento de ${cliente.nombre}`}
-                    onChange={(e) => onCampo(cliente.id, 'tipo_descuento', e.target.value)}
                     className={campo(false, 'w-14 px-2')}
-                  >
-                    <option value="valor_fijo">$</option>
-                    <option value="porcentaje">%</option>
-                  </select>
+                  />
                   <CampoMonto
                     id={`${uid}-desc`}
                     value={fila?.descuento || ''}

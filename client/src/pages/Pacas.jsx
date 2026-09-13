@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista } from '../components/common';
 import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { PACA_ESTADOS } from '../types';
@@ -953,25 +953,28 @@ export default function Pacas() {
                 <span className="hidden sm:inline">Lista</span>
               </button>
             </div>
-            <select
+            <BuscadorLista
               value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
+              onChange={(valorElegido) => setFiltroEstado(valorElegido)}
+              opcionVacia="Todos los estados"
+              placeholder="Todos los estados"
+              opciones={[
+                ...PACA_ESTADOS.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
+              ]}
               aria-label="Filtrar por estado"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todos los estados</option>
-              {PACA_ESTADOS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-            </select>
-            <select
+            />
+            <BuscadorLista
               value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
+              onChange={(valorElegido) => setFiltroTipo(valorElegido)}
+              opcionVacia="Todas las clasificaciones"
+              placeholder="Todas las clasificaciones"
+              opciones={[
+                ...tiposList.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) })),
+              ]}
               aria-label="Filtrar por clasificación"
               className="px-4 py-3 rounded-xl border border-border bg-surface"
-            >
-              <option value="">Todas las clasificaciones</option>
-              {tiposList.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-
-            </select>
+            />
             <Button onClick={exportarInventarioExcel} variant="outline" disabled={exporting}>
               <Download size={16} className="mr-1" /> Excel
             </Button>
@@ -1172,17 +1175,13 @@ export default function Pacas() {
           <div className="flex flex-col sm:flex-row justify-between items-center bg-surface p-4 rounded-xl border border-border mt-4 gap-4 shadow-sm">
             <div className="flex items-center gap-2">
               <label htmlFor="pacas-por-pagina" className="text-sm text-muted">Mostrar:</label>
-              <select
+              <BuscadorLista
                 id="pacas-por-pagina"
                 value={limite}
-                onChange={(e) => setLimite(Number(e.target.value))}
-                className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-              >
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={250}>250</option>
-              </select>
+                onChange={(v) => setLimite(Number(v))}
+                opciones={[20, 50, 100, 250].map((n) => ({ value: n, label: String(n) }))}
+                className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 w-24"
+              />
               <span className="text-sm text-muted">por página</span>
             </div>
             <div className="flex items-center gap-2">
