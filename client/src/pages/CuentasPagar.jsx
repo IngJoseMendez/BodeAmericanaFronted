@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto } from '../components/common';
 import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
 import {
   CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
@@ -583,8 +583,8 @@ export default function CuentasPagar() {
                                       <label className="block text-xs font-medium text-muted mb-1">
                                         Monto * <span className="text-muted/70 font-normal">en {codigoMoneda(inlineForm)}</span>
                                       </label>
-                                      <input type="text" inputMode="decimal" autoFocus
-                                        className={inpSm}
+                                      <CampoMonto autoFocus
+                                        className={`${inpSm} tabular-nums`}
                                         value={inlineForm.monto}
                                         onChange={(e) => setInlineForm({ ...inlineForm, monto: e.target.value })}
                                         placeholder="0" />
@@ -615,8 +615,9 @@ export default function CuentasPagar() {
                                         <label className="block text-xs font-medium text-muted mb-1">
                                           Tasa <span className="text-muted/70 font-normal">1 {codigoMoneda(inlineForm)} = ? {c.moneda}</span>
                                         </label>
-                                        <input type="text" inputMode="decimal"
-                                          className={inpSm}
+                                        <CampoMonto
+                                          decimales={6}
+                                          className={`${inpSm} tabular-nums`}
                                           value={inlineForm.tasa_cambio}
                                           onChange={(e) => setInlineForm({ ...inlineForm, tasa_cambio: e.target.value })}
                                           placeholder="Ej: 0.00025" />
@@ -805,9 +806,9 @@ export default function CuentasPagar() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Total Factura *</label>
-              <input type="number" min="0.01" step="0.01" className={inp} required
+              <CampoMonto className={`${inp} tabular-nums`} required
                 value={createForm.total_factura} onChange={(e) => setCreateForm({ ...createForm, total_factura: e.target.value })}
-                placeholder="0.00" />
+                placeholder="0" />
             </div>
             <div>
               <label className={lbl}>Moneda</label>

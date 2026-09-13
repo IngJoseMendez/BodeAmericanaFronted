@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -61,43 +61,15 @@ const escapeHtml = (v) => String(v ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+// Adaptador: los dos sitios que lo usan llaman onChange(valor) y no con un
+// evento. La maquinaria —que formateaba solo al SALIR del campo, con su propia
+// copia de la limpieza— se fue a CampoMonto, que formatea mientras se escribe.
 function PriceInput({ value, onChange, placeholder = 'Precio', className = '' }) {
-  const [focused, setFocused] = useState(false);
-  const [raw, setRaw] = useState('');
-
-  const handleFocus = () => {
-    setRaw(value > 0 ? String(value) : '');
-    setFocused(true);
-  };
-
-  const handleBlur = () => {
-    setFocused(false);
-    // El campo muestra el valor con Intl es-CO ("45.000"), donde el punto es
-    // separador de MILES. El parseo anterior sólo quitaba comas, así que leía ese
-    // punto como decimal y guardaba 45 en vez de 45.000.
-    onChange(parseMonto(raw));
-  };
-
-  const handleChange = (e) => {
-    const v = e.target.value.replace(/[^0-9.,]/g, '');
-    setRaw(v);
-  };
-
-  const displayValue = focused
-    ? raw
-    : value > 0
-      ? new Intl.NumberFormat('es-CO').format(value)
-      : '';
-
   return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={displayValue}
+    <CampoMonto
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
       placeholder={placeholder}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      onChange={handleChange}
       className={className}
     />
   );
@@ -998,15 +970,15 @@ export default function Cotizaciones() {
                     <option value="valor_fijo">$ Valor fijo</option>
                     <option value="porcentaje">% Porcentaje</option>
                   </select>
-                  <input
-                    type="number"
+                  {/* El max=100 del porcentaje se fue con el type=number, pero no
+                      protegia nada: era una pista del navegador que no impide
+                      teclear. Lo que de verdad topa el descuento es el
+                      Math.max(0, ...) de precioConDescuento. */}
+                  <CampoMonto
                     value={formData.descuento}
                     onChange={(e) => setFormData(f => ({ ...f, descuento: e.target.value }))}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
-                    min="0"
-                    max={formData.tipo_descuento === 'porcentaje' ? 100 : undefined}
-                    step={formData.tipo_descuento === 'porcentaje' ? 1 : 1000}
-                    placeholder={formData.tipo_descuento === 'porcentaje' ? 'Ej: 10' : 'Ej: 50000'}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm tabular-nums"
+                    placeholder={formData.tipo_descuento === 'porcentaje' ? 'Ej: 10' : 'Ej: 50.000'}
                   />
                 </div>
                 {items.some(i => i.precio_promocion != null) && (
@@ -1018,22 +990,20 @@ export default function Cotizaciones() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-sm font-medium text-primary mb-1">Transporte por unidad ($)</label>
-                  <input
-                    type="number"
+                  <CampoMonto
                     value={formData.transporte_unitario}
                     onChange={(e) => setFormData(f => ({ ...f, transporte_unitario: e.target.value }))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
-                    min="0" step="500" placeholder="Ej: 2000"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm tabular-nums"
+                    placeholder="Ej: 2.000"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-primary mb-1">Tasa (COP por USD)</label>
-                  <input
-                    type="number"
+                  <CampoMonto
                     value={formData.tasa}
                     onChange={(e) => setFormData(f => ({ ...f, tasa: e.target.value }))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm"
-                    min="0" step="1" placeholder="Ej: 4000"
+                    className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm tabular-nums"
+                    placeholder="Ej: 4.000"
                   />
                 </div>
               </div>
@@ -1223,12 +1193,11 @@ export default function Cotizaciones() {
                         ))}
                       </select>
 
-                      <input
-                        type="number"
+                      <CampoMonto
+                        decimales={0}
                         value={item.cantidad}
                         onChange={(e) => updateItem(index, 'cantidad', parseInt(e.target.value) || 1)}
-                        className="w-full px-2 py-1.5 rounded-lg border border-border text-sm text-center focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                        min="1"
+                        className="w-full px-2 py-1.5 rounded-lg border border-border text-sm text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30"
                       />
 
                       <PriceInput
@@ -1521,11 +1490,11 @@ export default function Cotizaciones() {
 
           <div>
             <label className="block text-sm font-medium text-primary mb-1">Abono inicial (opcional)</label>
-            <input type="number" min="0" step="0.01"
+            <CampoMonto
               value={convertForm.abono}
               onChange={(e) => setConvertForm({ ...convertForm, abono: e.target.value })}
               placeholder="0"
-              className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -1,47 +1,35 @@
-import { useState, useEffect, useRef, useId } from 'react';
-import { parseMonto, formatNumero } from '../../lib/money';
+import { useId } from 'react';
+import { CampoMonto } from './CampoMonto';
 
 // Todos los campos de la app salen de este archivo. Hasta ahora el <label> era un
 // simple hermano del control, sin htmlFor ni id: el lector de pantalla anunciaba
 // "campo de texto" sin decir de qué, y hacer clic en la etiqueta no llevaba el
 // foco al campo. El id se genera con useId cuando la página no pasa uno propio.
 
-export function CurrencyInput({ label, value, onChange, error, className = '', placeholder = '0', prefix = '$', id }) {
-  const [displayValue, setDisplayValue] = useState('');
-  const inputRef = useRef(null);
+// CurrencyInput y NumberInput ya no traen su propia maquinaria de formateo:
+// los dos apoyan en CampoMonto, que es el unico sitio del sistema donde se
+// decide como se ven los puntos de miles y —lo que mas cuesta— donde se queda
+// el cursor al reformatear. Aqui solo queda el envoltorio: etiqueta, prefijo,
+// error y las clases de la casa.
+//
+// Antes cada uno tenia su copia y no se parecian: CurrencyInput desformateaba
+// al recibir el foco y NumberInput no formateaba mientras se escribia. Ninguno
+// de los dos conservaba el cursor, asi que corregir un digito en medio de una
+// cifra larga era imposible.
+
+const cajaCampo = (error, extra = '') => `
+  w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
+  transition-all duration-300 ease-out
+  focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
+  disabled:opacity-50 disabled:cursor-not-allowed
+  ${extra}
+  ${error ? 'border-error focus:ring-error/30' : 'border-border'}
+`;
+
+export function CurrencyInput({ label, value, onChange, error, className = '', placeholder = '0', prefix = '$', id, ...rest }) {
   const autoId = useId();
   const inputId = id || autoId;
   const errorId = `${inputId}-error`;
-
-  useEffect(() => {
-    if (value !== undefined && value !== null && value !== '') {
-      setDisplayValue(formatNumero(parseMonto(value)));
-    } else {
-      setDisplayValue('');
-    }
-  }, [value]);
-
-  const handleChange = (e) => {
-    // Pesos sin centavos: solo dígitos. Se reformatea en cada tecla porque al no
-    // haber separador decimal no hay nada que se pueda romper a medio escribir.
-    const clean = e.target.value.replace(/[^0-9]/g, '');
-    const num = parseInt(clean, 10) || 0;
-
-    setDisplayValue(formatNumero(num));
-
-    if (onChange) {
-      onChange({ target: { value: num.toString() } });
-    }
-  };
-
-  const handleBlur = () => {
-    if (displayValue) setDisplayValue(formatNumero(parseMonto(displayValue)));
-  };
-
-  const handleFocus = () => {
-    const clean = String(value ?? '').replace(/[^0-9]/g, '');
-    setDisplayValue(clean);
-  };
 
   return (
     <div className="space-y-2">
@@ -54,27 +42,17 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
             {prefix}
           </span>
         )}
-        <input
+        <CampoMonto
+          {...rest}
           id={inputId}
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          value={displayValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onFocus={handleFocus}
+          value={value}
+          onChange={onChange}
+          // Pesos sin centavos: es lo que hacia esta casilla antes (solo digitos).
+          decimales={0}
           placeholder={placeholder}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          className={`
-            w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
-            transition-all duration-300 ease-out
-            focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${prefix ? 'pl-8' : ''}
-            ${error ? 'border-error focus:ring-error/30' : 'border-border'}
-            ${className}
-          `}
+          className={`${cajaCampo(error, prefix ? 'pl-8' : '')} ${className}`}
         />
       </div>
       {error && <p id={errorId} className="text-xs text-error mt-1">{error}</p>}
@@ -82,49 +60,10 @@ export function CurrencyInput({ label, value, onChange, error, className = '', p
   );
 }
 
-export function NumberInput({ label, value, onChange, error, className = '', placeholder = '0', suffix = '', id }) {
-  const [displayValue, setDisplayValue] = useState('');
-  const [focused, setFocused] = useState(false);
-  const inputRef = useRef(null);
+export function NumberInput({ label, value, onChange, error, className = '', placeholder = '0', suffix = '', id, ...rest }) {
   const autoId = useId();
   const inputId = id || autoId;
   const errorId = `${inputId}-error`;
-
-  // Mientras el campo tiene el foco manda el texto que escribe la persona; si
-  // reformateáramos en cada tecla, el separador decimal a medio escribir se
-  // borraría y sería imposible teclear "12,5" (quedaba 125).
-  useEffect(() => {
-    if (focused) return;
-    if (value !== undefined && value !== null && value !== '') {
-      setDisplayValue(formatNumero(parseMonto(value), { maxDecimales: 2 }));
-    } else {
-      setDisplayValue('');
-    }
-  }, [value, focused]);
-
-  const handleChange = (e) => {
-    const texto = e.target.value.replace(/[^0-9.,-]/g, '');
-    setDisplayValue(texto);
-
-    if (onChange) {
-      onChange({ target: { value: String(parseMonto(texto)) } });
-    }
-  };
-
-  const handleBlur = () => {
-    setFocused(false);
-    if (!String(displayValue).trim()) {
-      setDisplayValue('');
-      return;
-    }
-    setDisplayValue(formatNumero(parseMonto(displayValue), { maxDecimales: 2 }));
-  };
-
-  const handleFocus = () => {
-    setFocused(true);
-    const n = parseMonto(value);
-    setDisplayValue(n ? String(n).replace('.', ',') : '');
-  };
 
   return (
     <div className="space-y-2">
@@ -132,27 +71,16 @@ export function NumberInput({ label, value, onChange, error, className = '', pla
         <label htmlFor={inputId} className="block text-sm font-medium text-primary">{label}</label>
       )}
       <div className="relative">
-        <input
+        <CampoMonto
+          {...rest}
           id={inputId}
-          ref={inputRef}
-          type="text"
-          inputMode="decimal"
-          value={displayValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onFocus={handleFocus}
+          value={value}
+          onChange={onChange}
+          decimales={2}
           placeholder={placeholder}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          className={`
-            w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
-            transition-all duration-300 ease-out
-            focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${suffix ? 'pr-12' : ''}
-            ${error ? 'border-error focus:ring-error/30' : 'border-border'}
-            ${className}
-          `}
+          className={`${cajaCampo(error, suffix ? 'pr-12' : '')} ${className}`}
         />
         {suffix && (
           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted">

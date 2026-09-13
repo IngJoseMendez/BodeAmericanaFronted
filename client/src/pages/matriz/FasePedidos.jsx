@@ -26,7 +26,7 @@
 
 import { memo, useId } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardBody, Button, EmptyState, SelectorTransporte } from '../../components/common';
+import { Card, CardBody, Button, EmptyState, SelectorTransporte, CampoMonto } from '../../components/common';
 import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../../lib/cotizacion';
 import { normTxt, claveStock } from '../../lib/matriz';
 import { parseMonto, formatCOP, formatNumero } from '../../lib/money';
@@ -522,11 +522,9 @@ const FilaCliente = memo(function FilaCliente({
                       pero dejarlo en rojo mientras el select de al lado ya no lo
                       está sería peor que no cambiar nada. */}
                   <label htmlFor={idCant} className="sr-only">Cantidad del ítem {idx + 1}</label>
-                  <input
+                  <CampoMonto
                     id={idCant}
-                    type="number"
-                    min="1"
-                    step="1"
+                    decimales={0}
                     value={item.cantidad}
                     disabled={deshabilitado}
                     aria-label={`Cantidad del ítem ${idx + 1} de ${cliente.nombre}`}
@@ -537,22 +535,20 @@ const FilaCliente = memo(function FilaCliente({
 
                 <td className="px-2 py-1.5 align-top">
                   <label htmlFor={idPrecio} className="sr-only">Precio por paca del ítem {idx + 1}</label>
-                  <input
+                  {/* Aquí vivía un onBlur que reformateaba a mano al salir del
+                      campo, con el argumento de que meter el punto de miles en
+                      cada tecla haría imposible escribir. Es verdad si el cursor
+                      salta al final en cada pulsación, que es lo que pasaba en
+                      las cuatro copias que había de esto. CampoMonto cuenta los
+                      dígitos que hay a la izquierda del cursor y lo vuelve a
+                      poner donde estaba, así que se puede formatear mientras se
+                      teclea, que es cuando de verdad sirve. */}
+                  <CampoMonto
                     id={idPrecio}
-                    type="text"
-                    inputMode="decimal"
                     value={item.precio}
                     disabled={deshabilitado}
                     aria-label={`Precio por paca del ítem ${idx + 1} de ${cliente.nombre}`}
                     onChange={(e) => onItemCampo(cliente.id, idx, 'precio', e.target.value)}
-                    onBlur={(e) => {
-                      // Se reformatea al salir, no en cada tecla: con el punto
-                      // de miles metido a mitad de palabra sería imposible
-                      // escribir. maxDecimales conserva los centavos que
-                      // existan sin inventar ceros.
-                      const v = parseMonto(e.target.value);
-                      onItemCampo(cliente.id, idx, 'precio', v > 0 ? formatNumero(v, { maxDecimales: 2 }) : '');
-                    }}
                     placeholder="Precio"
                     className={`h-8 px-2 w-full rounded-lg border text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30 disabled:opacity-50 ${
                       item.esPromocion
@@ -602,10 +598,8 @@ const FilaCliente = memo(function FilaCliente({
                     <option value="valor_fijo">$</option>
                     <option value="porcentaje">%</option>
                   </select>
-                  <input
+                  <CampoMonto
                     id={`${uid}-desc`}
-                    type="text"
-                    inputMode="decimal"
                     value={fila?.descuento || ''}
                     disabled={deshabilitado}
                     aria-label={`Descuento de ${cliente.nombre}`}
@@ -623,10 +617,8 @@ const FilaCliente = memo(function FilaCliente({
                 <div className="flex items-center gap-1">
                   <Truck size={13} className="text-muted flex-shrink-0" aria-hidden="true" />
                   <label htmlFor={`${uid}-trans`} className="sr-only">Transporte por paca</label>
-                  <input
+                  <CampoMonto
                     id={`${uid}-trans`}
-                    type="text"
-                    inputMode="decimal"
                     value={fila?.transporte_unitario || ''}
                     disabled={deshabilitado}
                     aria-label={`Transporte por paca de ${cliente.nombre}`}
@@ -753,10 +745,8 @@ const FasePedidos = memo(function FasePedidos({
               <label htmlFor={idTasa} className="block text-xs font-medium text-muted mb-1">
                 Tasa del dólar <span className="text-error" aria-hidden="true">*</span>
               </label>
-              <input
+              <CampoMonto
                 id={idTasa}
-                type="text"
-                inputMode="decimal"
                 value={tasa}
                 onChange={(e) => onTasa(e.target.value)}
                 placeholder="Ej: 4.000"
@@ -777,10 +767,8 @@ const FasePedidos = memo(function FasePedidos({
               <label htmlFor={idTransporte} className="block text-xs font-medium text-muted mb-1">
                 Transporte por paca <span className="text-error" aria-hidden="true">*</span>
               </label>
-              <input
+              <CampoMonto
                 id={idTransporte}
-                type="text"
-                inputMode="decimal"
                 value={transporteGlobal}
                 onChange={(e) => onTransporte(e.target.value)}
                 placeholder="Ej: 2.000"

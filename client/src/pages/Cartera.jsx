@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto } from '../components/common';
 import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, matrizApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
@@ -430,7 +430,7 @@ export default function Cartera() {
       setError('Selecciona un cliente');
       return;
     }
-    if (!formData.monto || parseFloat(formData.monto) <= 0) {
+    if (!formData.monto || parseMonto(formData.monto) <= 0) {
       setError('El monto debe ser mayor a cero');
       return;
     }
@@ -439,7 +439,7 @@ export default function Cartera() {
       setEnviando(true);
       await pagosApi.create({
         cliente_id: parseInt(formData.cliente_id),
-        monto: parseFloat(formData.monto),
+        monto: parseMonto(formData.monto),
         fecha: formData.fecha,
         metodo_pago: formData.metodo_pago,
         cuenta_id: formData.cuenta_id ? parseInt(formData.cuenta_id) : null,
@@ -450,7 +450,7 @@ export default function Cartera() {
       });
 
       addToast(
-        `${formData.clase === 'descuento' ? 'Descuento' : 'Abono'} de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(parseFloat(formData.monto))} registrado correctamente`,
+        `${formData.clase === 'descuento' ? 'Descuento' : 'Abono'} de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(parseMonto(formData.monto))} registrado correctamente`,
         'success'
       );
 
@@ -496,13 +496,13 @@ export default function Cartera() {
 
   // Guardar edición de abono
   const handleGuardarEdicionAbono = async () => {
-    if (!editandoAbono || !editandoAbono.monto || parseFloat(editandoAbono.monto) <= 0) {
+    if (!editandoAbono || !editandoAbono.monto || parseMonto(editandoAbono.monto) <= 0) {
       addToast('El monto debe ser mayor a cero', 'error');
       return;
     }
     try {
       await pagosApi.update(editandoAbono.id, {
-        monto: parseFloat(editandoAbono.monto),
+        monto: parseMonto(editandoAbono.monto),
         fecha: editandoAbono.fecha,
         metodo_pago: editandoAbono.metodo_pago,
         cotizacion_id: editandoAbono.cotizacion_id || null,
@@ -872,12 +872,12 @@ export default function Cartera() {
 
   const addLegacyManualRow = () => {
     if (!legacyManual.cliente_id) { addToast('Selecciona un cliente', 'error'); return; }
-    if (!legacyManual.monto || parseFloat(legacyManual.monto) <= 0) { addToast('Monto inválido', 'error'); return; }
+    if (!legacyManual.monto || parseMonto(legacyManual.monto) <= 0) { addToast('Monto inválido', 'error'); return; }
     setLegacyRows(prev => [...prev, {
       cliente_id: parseInt(legacyManual.cliente_id),
       tipo: legacyManual.tipo,
       fecha: legacyManual.fecha,
-      monto: parseFloat(legacyManual.monto),
+      monto: parseMonto(legacyManual.monto),
       cuenta_id: legacyManual.cuenta_id ? parseInt(legacyManual.cuenta_id) : null,
       referencia: legacyManual.referencia || 'LEGACY',
     }]);
@@ -1326,11 +1326,10 @@ export default function Cartera() {
                         <>
                           <td className="px-2 py-1" colSpan={4}>
                             <div className="grid grid-cols-4 gap-2">
-                              <input
-                                type="number" step="0.01" min="0.01"
+                              <CampoMonto
                                 value={editandoAbono.monto}
                                 onChange={e => setEditandoAbono({ ...editandoAbono, monto: e.target.value })}
-                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                className="px-2 py-1 rounded border border-secondary/40 text-sm w-full tabular-nums"
                                 placeholder="Monto"
                               />
                               <input
@@ -1564,14 +1563,13 @@ export default function Cartera() {
               <Input
                 label="Monto"
                 type="number"
-                step="0.01"
                 value={formData.monto}
                 onChange={(e) => setFormData({ ...formData, monto: e.target.value })}
                 required
               />
               {/* Validación de monto vs saldo */}
-              {saldoCliente !== null && formData.monto && parseFloat(formData.monto) > 0 && (() => {
-                const monto = parseFloat(formData.monto);
+              {saldoCliente !== null && formData.monto && parseMonto(formData.monto) > 0 && (() => {
+                const monto = parseMonto(formData.monto);
                 if (saldoCliente <= 0) {
                   return (
                     <div className="mt-1 flex items-start gap-1.5 text-xs text-error bg-error/5 rounded-lg px-3 py-2">
@@ -1683,7 +1681,7 @@ export default function Cartera() {
             <Button
               type="submit"
               variant="secondary"
-              disabled={enviando || (saldoCliente !== null && parseFloat(formData.monto) > saldoCliente)}
+              disabled={enviando || (saldoCliente !== null && parseMonto(formData.monto) > saldoCliente)}
             >
               {enviando ? 'Registrando…' : 'Registrar Abono'}
             </Button>
@@ -1727,7 +1725,7 @@ export default function Cartera() {
               />
               <Input label="Fecha" type="date" value={legacyManual.fecha}
                 onChange={(e) => setLegacyManual({ ...legacyManual, fecha: e.target.value })} />
-              <Input label="Monto" type="number" min="0" step="0.01" value={legacyManual.monto}
+              <Input label="Monto" type="number" value={legacyManual.monto}
                 onChange={(e) => setLegacyManual({ ...legacyManual, monto: e.target.value })} placeholder="0" />
               <Select
                 label="Cuenta"

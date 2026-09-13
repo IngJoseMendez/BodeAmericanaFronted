@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, useToast, useConfirm, CampoMonto } from '../components/common';
 import { gastosApi, cuentasApi } from '../services/api';
 import ExcelJS from 'exceljs';
 import { Coins, Plus, Trash2, Download } from 'lucide-react';
@@ -26,7 +26,8 @@ const MONEDAS = [
   { value: 'MXN', label: 'MXN — Peso mexicano' },
   { value: 'PEN', label: 'PEN — Sol (Perú)' },
   { value: 'OTRA', label: 'Otra…' },
-];const fmt = formatCOP;
+];
+const fmt = formatCOP;
 const labelCategoria = (v) => CATEGORIAS_FIJAS.find(c => c.value === v)?.label || (v || 'Otro');
 const esMonedaCOP = (m) => !m || String(m).toUpperCase() === 'COP';
 // Convierte texto del usuario a número respetando el formato es-CO (punto = miles, coma = decimal).
@@ -228,8 +229,7 @@ export default function Gastos() {
               />
               <Input
                 label="Valor"
-                type="text"
-                inputMode="decimal"
+                type="number"
                 value={form.monto}
                 onChange={(e) => setForm({ ...form, monto: e.target.value })}
                 placeholder="0"
@@ -259,12 +259,15 @@ export default function Gastos() {
                   <label className="block text-sm font-medium text-primary mb-1">
                     Tasa a COP <span className="text-muted font-normal">(1 {monedaActual || '?'} = ? COP)</span>
                   </label>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
+                  {/* CampoMonto suelto y no <Input type="number">: una tasa
+                      inversa puede ser 0,00025 y con dos decimales se quedaria
+                      en cero. */}
+                  <CampoMonto
+                    decimales={6}
                     value={form.tasa_cambio}
                     onChange={(e) => setForm({ ...form, tasa_cambio: e.target.value })}
-                    placeholder="Ej: 4000"
+                    placeholder="Ej: 4.000"
+                    className="w-full px-4 py-3 rounded-xl border border-border bg-surface text-primary placeholder-muted tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                   />
                   <p className="text-xs text-muted mt-1">
                     {previewCOP > 0

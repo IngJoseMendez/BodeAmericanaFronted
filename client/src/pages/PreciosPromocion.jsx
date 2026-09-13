@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, useToast, useConfirm, CampoMonto } from '../components/common';
 import { preciosPromocionApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
@@ -330,13 +330,10 @@ export default function PreciosPromocion() {
 
               <div>
                 <label className="block text-sm font-medium text-primary mb-1">Precio Promocional *</label>
-                <input
-                  type="number"
+                <CampoMonto
                   value={form.precio_promocional}
                   onChange={(e) => setForm({ ...form, precio_promocional: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-                  min="0"
-                  step="0.01"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30"
                   placeholder="0"
                   required
                 />

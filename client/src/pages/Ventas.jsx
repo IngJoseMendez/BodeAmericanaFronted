@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
@@ -1283,14 +1283,11 @@ export default function Ventas() {
                         <td className="px-3 py-2 text-primary">{paca.referencia}</td>
                         <td className="px-3 py-2 text-right">
                           {selected ? (
-                            <input
-                              type="number"
-                              min="0"
-                              inputMode="numeric"
+                            <CampoMonto
                               value={selected.precio_venta ?? ''}
                               onChange={(e) => updatePrecio(paca.id, e.target.value)}
                               aria-label={`Precio de venta de la paca ${etiquetaPaca}`}
-                              className="w-24 text-right px-2 py-1 rounded border border-border bg-surface text-primary"
+                              className="w-24 text-right px-2 py-1 rounded border border-border bg-surface text-primary tabular-nums"
                             />
                           ) : (
                             formatCurrency(paca.precio_venta)

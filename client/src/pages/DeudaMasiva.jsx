@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Input, useToast, useConfirm, CampoMonto } from '../components/common';
 import { clientesApi, carteraApi } from '../services/api';
 import { ListChecks, Search, Save } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
@@ -18,9 +18,7 @@ const FilaCliente = memo(function FilaCliente({ cliente, saldo, valor, onChange 
       <td className="py-2 pr-3 text-primary">{cliente.nombre}</td>
       <td className="py-2 px-3 text-right text-muted tabular-nums">{fmt(saldo)}</td>
       <td className="py-2 pl-3 text-right">
-        <input
-          type="text"
-          inputMode="decimal"
+        <CampoMonto
           value={valor}
           onChange={(e) => onChange(cliente.id, e.target.value)}
           placeholder="0"

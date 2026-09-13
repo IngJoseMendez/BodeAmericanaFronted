@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Card, CardBody, Button, Modal, useToast, useConfirm } from './common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto } from './common';
 import { inversionistasApi, contenedoresApi } from '../services/api';
 import { Users, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
@@ -283,14 +283,14 @@ export function Inversionistas() {
                       {editAporte?.id === f.id ? (
                         <>
                           <td className="px-3 py-2">
-                            <input type="text" inputMode="decimal" value={editAporte.aporte_cop} autoFocus
+                            <CampoMonto value={editAporte.aporte_cop} autoFocus
                               onChange={(e) => setEditAporte({ ...editAporte, aporte_cop: e.target.value })}
-                              className={inp + ' w-32 text-right'} />
+                              className={inp + ' w-32 text-right tabular-nums'} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="text" inputMode="decimal" value={editAporte.aporte_usd}
+                            <CampoMonto value={editAporte.aporte_usd}
                               onChange={(e) => setEditAporte({ ...editAporte, aporte_usd: e.target.value })}
-                              className={inp + ' w-28 text-right'} />
+                              className={inp + ' w-28 text-right tabular-nums'} />
                           </td>
                           <td colSpan={3} className="px-3 py-2 text-xs text-muted">
                             Deja una en blanco y se calcula con la tasa.
@@ -367,13 +367,13 @@ export function Inversionistas() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Aporte COP</label>
-                <input type="text" inputMode="decimal" placeholder="0" className={inp + ' w-36 text-right'}
+                <CampoMonto placeholder="0" className={inp + ' w-36 text-right tabular-nums'}
                   value={aporteForm.aporte_cop}
                   onChange={(e) => setAporteForm({ ...aporteForm, aporte_cop: e.target.value })} />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-muted mb-1">Aporte US$</label>
-                <input type="text" inputMode="decimal" placeholder="0" className={inp + ' w-32 text-right'}
+                <CampoMonto placeholder="0" className={inp + ' w-32 text-right tabular-nums'}
                   value={aporteForm.aporte_usd}
                   onChange={(e) => setAporteForm({ ...aporteForm, aporte_usd: e.target.value })} />
               </div>

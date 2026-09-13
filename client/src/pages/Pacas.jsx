@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 // El mínimo por línea sale del mismo helper que las hojas de Excel y el PDF:
 // tres sitios calculándolo por su cuenta es como acaban enseñando cifras
 // distintas del mismo inventario.
+import { parseMonto } from '../lib/money';
 import { costoDeLinea } from '../lib/entregables';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -247,8 +248,10 @@ export default function Pacas() {
         referencia: formData.referencia,
         categoria: formData.categoria || null,
         peso: parseFloat(formData.peso) || 0,
-        costo_base: parseFloat(formData.costo_base) || 0,
-        precio_venta: parseFloat(formData.precio_venta) || 0,
+        // parseMonto y no parseFloat: la casilla guarda el texto ya formateado
+        // ("1.500.000") y parseFloat de eso es 1,5.
+        costo_base: parseMonto(formData.costo_base),
+        precio_venta: parseMonto(formData.precio_venta),
         notas: formData.notas,
         cantidad: parseInt(formData.cantidad) || 1
       };

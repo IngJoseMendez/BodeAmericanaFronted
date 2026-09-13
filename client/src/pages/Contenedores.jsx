@@ -9,7 +9,7 @@ import {
   ClipboardCheck, Sparkles, RefreshCw,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
-import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista } from '../components/common';
+import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 // `api` suelto además de contenedoresApi: el consecutivo de número
 // (/contenedores/siguiente-numero) todavía no tiene método propio en el cliente
 // de la API, y ese archivo lo está tocando otra persona.
@@ -103,39 +103,21 @@ const montoRedondeado = (n) => {
   return String(parseFloat((Math.round(n * 100) / 100).toFixed(2)));
 };
 
-// ── Price input with auto-formatting ─────────────────────────────
+// ── Casilla de dinero ─────────────────────────────────────────────
+//
+// Sobrevive solo como adaptador. Sus cinco sitios de uso llaman `onChange(valor)`
+// a secas y no con un evento, así que cambiarlos todos era mover código sin
+// ganar nada. Lo que hacía —limpiar el texto y formatear SOLO al salir del
+// campo, con su propia copia de las reglas— se fue a CampoMonto, que formatea
+// mientras se escribe y conserva el cursor.
 function PriceInput({ value, onChange, className = '', placeholder = '0', ...rest }) {
-  const [focused, setFocused] = useState(false);
-
-  const formatDisplay = (raw) => {
-    const n = parseFloat(raw);
-    if (!raw || isNaN(n)) return '';
-    return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
-  };
-
-  const handleChange = (e) => {
-    // La COMA se acepta como separador decimal y se normaliza a punto.
-    // Antes se borraba: quien tecleaba "285,50" —que es como se escribe un
-    // decimal en Colombia, y es justo lo que sugiere el ejemplo del campo—
-    // guardaba 28550. En un valor por unidad eso multiplica la factura
-    // estimada por cien.
-    const sinBasura = e.target.value.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
-    // Sólo el primer separador cuenta; los demás se descartan.
-    const stripped = sinBasura.replace(/(\..*)\./g, '$1');
-    onChange(stripped);
-  };
-
   return (
-    <input
+    <CampoMonto
       {...rest}
-      type="text"
-      inputMode="decimal"
       className={className}
       placeholder={placeholder}
-      value={focused ? value : formatDisplay(value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onChange={handleChange}
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
     />
   );
 }
@@ -3620,7 +3602,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       sobre esta cantidad cuando va compartido con otros. */}
                   <div>
                     <label htmlFor="cont-cantidad-total" className={lbl}>Cantidad total</label>
-                    <input id="cont-cantidad-total" type="number" min="0" className={inp} placeholder="ej. 312"
+                    <CampoMonto id="cont-cantidad-total" decimales={0} className={inp} placeholder="ej. 312"
                       value={formData.cantidad_total}
                       onChange={(e) => editarForm('cantidad_total', e.target.value)}
                       title="Unidades de TODO el contenedor, incluidas las de otros si va compartido. Sobre esta cantidad se reparten los servicios." />
@@ -3635,7 +3617,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       {modoEstimacion ? 'Total de Unidades estimadas' : 'Total de Unidades'}
                       <span className="ml-1.5 text-[9px] font-semibold normal-case text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">AUTO</span>
                     </label>
-                    <input id="cont-total-unidades" type="number" readOnly tabIndex={-1}
+                    <CampoMonto id="cont-total-unidades" decimales={0} readOnly tabIndex={-1}
                       className={`${inp} bg-primary/5 text-primary font-mono font-bold text-center cursor-not-allowed select-none`}
                       placeholder="0"
                       value={formData.total_pacas}
@@ -3643,7 +3625,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </div>
                   <div>
                     <label htmlFor="cont-tasa" className={lbl}>Tasa USD→COP</label>
-                    <input id="cont-tasa" type="number" min="0.01" step="0.01" className={inp} placeholder="ej. 4100"
+                    <CampoMonto id="cont-tasa" className={inp} placeholder="ej. 4.100"
                       value={formData.tasa_conversion} onChange={(e) => editarForm('tasa_conversion', e.target.value)} required />
                     {!tasaValida && (
                       <p className="text-[10px] text-warning mt-0.5 leading-tight">
@@ -3698,7 +3680,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       Utilidad por unidad (COP)
                       {modoEstimacion && <span className="ml-1.5 text-[9px] font-semibold normal-case text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">ESTIMADA</span>}
                     </label>
-                    <input id="cont-utilidad" type="text" inputMode="decimal" className={inp} placeholder="ej. 100.000"
+                    <CampoMonto id="cont-utilidad" className={inp} placeholder="ej. 100.000"
                       value={formData.utilidad_unitaria}
                       onChange={(e) => editarForm('utilidad_unitaria', e.target.value)} />
                     {/* El total se ve aquí mismo, sin tener que bajar al resumen */}
@@ -3734,7 +3716,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         Utilidad total estimada (COP)
                         <span className="ml-1.5 text-[9px] font-semibold normal-case text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">SE GUARDA</span>
                       </label>
-                      <input id="cont-utilidad-total-est" type="text" inputMode="decimal" className={inp}
+                      <CampoMonto id="cont-utilidad-total-est" className={inp}
                         placeholder={resumen.utilidadTotal > 0 ? `auto: ${fmtVista(resumen.utilidadTotal)}` : 'ej. 20.000.000'}
                         value={formData.utilidad_total_estimada}
                         onChange={(e) => editarForm('utilidad_total_estimada', e.target.value)} />
@@ -4159,11 +4141,11 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             <label htmlFor={`prov-cant-est-${pi}`} className="block text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
                               Cantidad estimada
                             </label>
-                            <input id={`prov-cant-est-${pi}`} type="text" inputMode="numeric" className={`${inp} text-xs ${soloLectura ? 'bg-primary/5 cursor-not-allowed select-none' : ''}`} placeholder="ej. 120"
+                            <CampoMonto id={`prov-cant-est-${pi}`} decimales={0} className={`${inp} text-xs ${soloLectura ? 'bg-primary/5 cursor-not-allowed select-none' : ''}`} placeholder="ej. 120"
                               readOnly={soloLectura} tabIndex={soloLectura ? -1 : undefined}
                               title="Cuántas pacas se le van a pedir a este proveedor"
                               aria-label={`Cantidad estimada del proveedor ${pi + 1}`}
-                              value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value.replace(/[^0-9]/g, ''))} />
+                              value={prov.cantidad_estimada || ''} onChange={(e) => updateProveedor(pi, 'cantidad_estimada', e.target.value)} />
                           </div>
                           <div>
                             <label htmlFor={`prov-factura-est-${pi}`} className="flex items-center gap-1 text-[9px] font-bold text-muted uppercase tracking-wide mb-0.5">
@@ -4316,7 +4298,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1">
                                     <label htmlFor={`det-cantidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
-                                    <input id={`det-cantidad-${pi}-${di}`} type="number" min="1" className={`${inp} text-center font-mono`} placeholder="0"
+                                    <CampoMonto id={`det-cantidad-${pi}-${di}`} decimales={0} className={`${inp} text-center font-mono`} placeholder="0"
                                       value={det.cantidad} required
                                       onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
                                   </div>
@@ -5696,7 +5678,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 opciones={opcionesCalidad}
                                 value={row.calidad}
                                 onChange={val => updateRevisionRow(idx, 'calidad', val)} />
-                              <input type="text" inputMode="decimal" className={`${inpBase} text-xs w-24 flex-shrink-0 py-1.5 text-right`}
+                              <CampoMonto className={`${inpBase} text-xs w-24 flex-shrink-0 py-1.5 text-right tabular-nums`}
                                 placeholder="Costo u." title="Costo unitario de este producto"
                                 aria-label="Costo unitario del producto que llegó sin factura"
                                 value={row.costo_unitario}
@@ -5759,7 +5741,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           {/* Col 3: Cantidad recibida (input grande, compacto verticalmente) */}
                           <div className="flex items-center gap-2">
                             <p className="text-[9px] font-bold text-success uppercase lg:hidden">✅</p>
-                            <input type="number" min="0" className={`${inpBase} text-center font-mono font-bold border-2 border-success/40 bg-success/5 text-success text-xl py-2 w-20 flex-shrink-0`}
+                            <CampoMonto decimales={0} className={`${inpBase} text-center font-mono font-bold border-2 border-success/40 bg-success/5 text-success text-xl py-2 w-20 flex-shrink-0`}
                               title="Cantidad recibida (entra al inventario)"
                               aria-label={`Cantidad recibida de ${row.referencia || 'este producto'}`}
                               value={row.cantidad_recibida}

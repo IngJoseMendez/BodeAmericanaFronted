@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast } from '../components/common';
+import { Card, CardBody, Button, useToast, CampoMonto } from '../components/common';
 import {
   despachosApi, pacasApi, clientesApi, carteraApi,
   listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi, matrizApi,
@@ -515,10 +515,8 @@ export default function Entregables() {
                     <label className="block text-xs font-semibold text-muted mb-1" htmlFor="tasa-lista">
                       Tasa USD (opcional)
                     </label>
-                    <input
+                    <CampoMonto
                       id="tasa-lista"
-                      type="text"
-                      inputMode="decimal"
                       value={tasaLista}
                       onChange={(e) => setTasaLista(e.target.value)}
                       placeholder="Ej: 4.100"

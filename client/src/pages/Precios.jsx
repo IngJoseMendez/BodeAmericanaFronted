@@ -1,51 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Modal, useToast, useConfirm } from '../components/common';
+import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto } from '../components/common';
 import { preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
 import { formatCOP } from '../lib/money';
-
-function PrecioInput({ value, onChange, required, id }) {
-  const [focused, setFocused] = useState(false);
-  const [raw, setRaw] = useState('');
-
-  const fmt = (v) =>
-    v ? new Intl.NumberFormat('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v) : '';
-
-  const handleFocus = () => {
-    setRaw(value ? String(value) : '');
-    setFocused(true);
-  };
-
-  const handleBlur = () => {
-    setFocused(false);
-    const parsed = parseFloat(raw.replace(/\./g, '').replace(',', '.')) || '';
-    onChange(parsed);
-  };
-
-  const handleChange = (e) => {
-    const v = e.target.value.replace(/[^0-9]/g, '');
-    setRaw(v);
-    const parsed = parseFloat(v) || '';
-    onChange(parsed);
-  };
-
-  return (
-    <input
-      id={id}
-      type="text"
-      inputMode="numeric"
-      value={focused ? (raw ? new Intl.NumberFormat('es-CO').format(raw) : '') : fmt(value)}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      onChange={handleChange}
-      placeholder="Ej: 520.000"
-      required={required}
-      className="w-full px-4 py-2.5 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-secondary/30"
-    />
-  );
-}
 
 const formatCurrency = formatCOP;
 
@@ -229,11 +188,14 @@ export default function Precios() {
           </div>
           <div>
             <label htmlFor="precio-valor" className="block text-sm font-medium text-primary mb-1">Precio *</label>
-            <PrecioInput
+            <CampoMonto
               id="precio-valor"
+              decimales={0}
               value={form.precio}
-              onChange={(v) => setForm({ ...form, precio: v })}
+              onChange={(e) => setForm({ ...form, precio: e.target.value })}
+              placeholder="Ej: 520.000"
               required
+              className="w-full px-4 py-2.5 rounded-xl border border-border tabular-nums focus:outline-none focus:ring-2 focus:ring-secondary/30"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
