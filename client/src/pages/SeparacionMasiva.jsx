@@ -49,7 +49,7 @@ import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, entreFechas } from '../lib/fecha';
 import {
   normTxt, coincideBusqueda, claveStock, claveAsignacion, aProrrata, porOrden, cubrirFaltante,
-  reconciliarReparto, proyectarFilas, totalesDeReparto,
+  reconciliarReparto, proyectarFilas, totalesDeReparto, quedanPorCalidad, resumenExistencias,
 } from '../lib/matriz';
 import FasePedidos from './matriz/FasePedidos';
 import FaseDistribucion from './matriz/FaseDistribucion';
@@ -478,15 +478,17 @@ export default function SeparacionMasiva() {
 
   const stockPorClave = useMemo(() => agruparStock(stock), [stock]);
 
-  // Opciones del <select> de referencia: sólo lo que TIENE stock, en orden
-  // alfabético y con lo que queda de cada una.
+  // Opciones de la lista de referencias: sólo lo que TIENE stock, en orden
+  // alfabético. SIN la suma de pacas: aquí se guardaba `disponibles` sumando
+  // todas las calidades y la lista lo pintaba como «Mixta Invierno · 30 disp»,
+  // cuando a quien pide Primera le caben 12. Lo que queda se cuenta por calidad
+  // al abrir la lista (ver `leerExistencias`), y el número sumado ya no existe
+  // para que nadie lo vuelva a pintar.
   const opcionesReferencia = useMemo(() => {
     const m = new Map();
     for (const r of stock) {
       const k = normTxt(r.referencia);
-      const previo = m.get(k);
-      if (previo) previo.disponibles += r.disponibles;
-      else m.set(k, { nombre: r.referencia, disponibles: r.disponibles });
+      if (!m.has(k)) m.set(k, { nombre: r.referencia });
     }
     return [...m.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   }, [stock]);
@@ -786,6 +788,17 @@ export default function SeparacionMasiva() {
             if (!elegibles.some((c) => normTxt(c) === normTxt(calidad))) calidad = '';
           }
         }
+        // UNA SOLA CALIDAD CON PACAS: SE ESCOGE SOLA. No hay nada que decidir y
+        // escogerla le ahorra un campo por línea, además de poner el precio en
+        // el acto (la cascada necesita la calidad). Sólo al cambiar la
+        // REFERENCIA y sólo si la línea se quedó sin calidad: si ella borra la
+        // calidad a mano es porque quiere otra, y volver a ponérsela sería
+        // pelearle el campo. Con varias calidades no se adivina nada: la línea
+        // enseña lo que queda de cada una para que ella escoja.
+        if (campo === 'referencia' && referencia && !calidad) {
+          const conPacas = calidadesRef.current.get(normTxt(referencia));
+          if (conPacas && conPacas.length === 1) calidad = conPacas[0];
+        }
         const info = stockRef.current.get(claveStock(referencia, calidad));
         const { precio, esPromocion, aviso } = resolverPrecio(referencia, calidad, info?.clasificacion || null);
         items[idx] = {
@@ -943,14 +956,22 @@ export default function SeparacionMasiva() {
   // ── Cuentas de la Fase 1 ──────────────────────────────────────────────────
   const pedidoPorClave = useMemo(() => {
     const m = new Map();
-    for (const fila of Object.values(filas)) {
+    for (const [clienteId, fila] of Object.entries(filas)) {
       for (const it of fila.items) {
         // Sólo cuentan las líneas que el envío VA a incluir.
         if (!itemCompleto(it)) continue;
         const k = claveStock(it.referencia, it.calidad);
-        const previo = m.get(k);
-        if (previo) previo.pedido += cantidadDe(it);
-        else m.set(k, { referencia: it.referencia, calidad: it.calidad, pedido: cantidadDe(it) });
+        const n = cantidadDe(it);
+        let v = m.get(k);
+        if (!v) {
+          v = { referencia: it.referencia, calidad: it.calidad, pedido: 0, clientes: new Map() };
+          m.set(k, v);
+        }
+        v.pedido += n;
+        // Quién lo pide, para el panel de existencias. Un cliente con dos
+        // líneas del mismo producto (pasa cuando los precios difieren) suma.
+        const id = String(clienteId);
+        v.clientes.set(id, (v.clientes.get(id) || 0) + n);
       }
     }
     return m;
@@ -960,24 +981,86 @@ export default function SeparacionMasiva() {
     const out = [];
     for (const [k, v] of pedidoPorClave) {
       const disponible = stockPorClave.get(k)?.disponibles ?? 0;
-      if (v.pedido > disponible) out.push({ ...v, disponible });
+      if (v.pedido > disponible) out.push({ referencia: v.referencia, calidad: v.calidad, pedido: v.pedido, disponible });
     }
     return out.sort((a, b) => (b.pedido - b.disponible) - (a.pedido - a.disponible));
   }, [pedidoPorClave, stockPorClave]);
 
+  // ── Lo que leen las listas de referencia y calidad AL ABRIRSE ─────────────
+  // «Primera · quedan 4 de 12» cambia cada vez que otro cliente pide Primera.
+  // Si esas cuentas bajaran a las filas como prop, teclear una cantidad en
+  // MARIA repintaría a los doscientos clientes, porque todos tienen una lista de
+  // referencias que enseñar. Viajan en un ref y la lista las lee en el momento
+  // de abrirse, que es el único en que se ven: con la lista cerrada el campo
+  // sólo dice lo escogido. `leerExistencias` no depende de nada, así que el
+  // memo de las filas sigue en pie.
+  const existenciasRef = useRef({ stock: new Map(), pedidos: new Map() });
+  useEffect(() => {
+    existenciasRef.current = { stock: stockPorClave, pedidos: pedidoPorClave };
+  }, [stockPorClave, pedidoPorClave]);
+  const leerExistencias = useCallback(() => existenciasRef.current, []);
+
+  // El panel de existencias: por referencia, cada calidad con lo que hay, lo
+  // pedido en la ronda, lo que queda y quién lo pidió. No baja a las filas —va
+  // a su propio componente memoizado—, así que puede cambiar con cada tecla.
+  const nombresClientes = useMemo(
+    () => new Map((clientes || []).map((c) => [String(c.id), c.nombre])),
+    [clientes],
+  );
+  const existencias = useMemo(
+    () => resumenExistencias(stockPorClave, pedidoPorClave, nombresClientes),
+    [stockPorClave, pedidoPorClave, nombresClientes],
+  );
+
   // Se reutiliza el MISMO array de avisos mientras su contenido no cambie: es lo
   // que permite que React.memo aguante y que teclear en una fila sólo repinte
-  // esa fila y las que comparten referencia+calidad con ella.
+  // esa fila y las que comparten producto con ella.
+  //
+  // EL AVISO YA NO ESPERA A QUE LA LÍNEA ESTÉ COMPLETA. Antes sólo salía con
+  // referencia, calidad, cantidad y precio puestos, así que al escoger la
+  // referencia no se veía cuánto quedaba de cada calidad: lo único a la vista
+  // era el «· 30 disp» de la lista, que sumaba las tres. Ahora:
+  //   · con referencia y sin calidad → lo que queda de CADA calidad, para
+  //     escoger con la cuenta delante (y con un toque);
+  //   · con las dos → la cuenta de esa calidad y, si no alcanza, lo que queda
+  //     de las otras de la misma referencia.
+  // Al repintar por referencia y no por referencia+calidad, teclear en una
+  // línea de Primera repinta también las filas que tienen esa referencia sin
+  // calidad escogida. Son pocas y de paso: una línea no se queda así.
   const cacheAvisos = useRef(new Map());
   const avisosPorCliente = useMemo(() => {
     const salida = {};
     for (const [clienteId, fila] of Object.entries(filas)) {
       const arr = fila.items.map((it) => {
-        if (!itemCompleto(it)) return null;
+        if (!it.referencia) return null;
+        const calidades = calidadesPorReferencia.get(normTxt(it.referencia)) || [];
+        if (!it.calidad) {
+          if (!calidades.length) return null;
+          return {
+            calidades: quedanPorCalidad(it.referencia, calidades, stockPorClave, pedidoPorClave)
+              .map(({ calidad, hay, pedido, quedan }) => ({ calidad, hay, pedido, quedan })),
+          };
+        }
         const k = claveStock(it.referencia, it.calidad);
         const disponible = stockPorClave.get(k)?.disponibles ?? 0;
-        const pedido = pedidoPorClave.get(k)?.pedido ?? 0;
-        return { disponible, pedido, excede: pedido > disponible };
+        // Lo suyo cuenta aunque la línea siga a medias (le falta el precio,
+        // por ejemplo): el chip dice cómo queda la cuenta SI esta línea sale,
+        // que es lo que ella quiere saber mientras la escribe. En las cuentas
+        // de las demás filas no entra hasta que esté completa, porque hasta
+        // entonces no se envía.
+        const pedido = (pedidoPorClave.get(k)?.pedido ?? 0) + (itemCompleto(it) ? 0 : cantidadDe(it));
+        const excede = pedido > disponible;
+        const otras = excede || disponible === 0
+          ? quedanPorCalidad(
+            it.referencia,
+            calidades.filter((c) => normTxt(c) !== normTxt(it.calidad)),
+            stockPorClave,
+            pedidoPorClave,
+          )
+            .filter((q) => q.quedan > 0)
+            .map(({ calidad, quedan }) => ({ calidad, quedan }))
+          : [];
+        return { disponible, pedido, excede, otras };
       });
       const firma = JSON.stringify(arr);
       const previo = cacheAvisos.current.get(clienteId);
@@ -989,7 +1072,7 @@ export default function SeparacionMasiva() {
       }
     }
     return salida;
-  }, [filas, pedidoPorClave, stockPorClave]);
+  }, [filas, pedidoPorClave, stockPorClave, calidadesPorReferencia]);
 
   const transporteGlobalNum = parseMonto(transporteGlobal);
 
@@ -2112,6 +2195,8 @@ export default function SeparacionMasiva() {
         opcionesSinStock={opcionesSinStock}
         calidadesPorReferencia={calidadesPorReferencia}
         calidadesCatalogo={calidadesCatalogo}
+        leerExistencias={leerExistencias}
+        existencias={existencias}
         faltantes={faltantesRef.current}
         selloFaltantes={selloFaltantes}
         clientesConFaltante={clientesConFaltante}
@@ -2157,6 +2242,7 @@ export default function SeparacionMasiva() {
         <FaseDistribucion
           oculto={fase !== 'reparto'}
           productos={reparto.productos}
+          stock={stockPorClave}
           asignado={asignado}
           precios={preciosPorAsignacion}
           descuentos={descuentosPorCliente}

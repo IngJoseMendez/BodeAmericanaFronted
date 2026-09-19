@@ -24,19 +24,51 @@
 // arreglos salen de `useMemo` en el padre y los manejadores de `useCallback` sin
 // dependencias.
 
-import { memo, useId } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardBody, Button, EmptyState, SelectorTransporte, CampoMonto, BuscadorLista } from '../../components/common';
 import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../../lib/cotizacion';
-import { normTxt, claveStock } from '../../lib/matriz';
+import {
+  normTxt, claveStock, quedanPorCalidad, textoExistencia, textoQuedanReferencia,
+} from '../../lib/matriz';
 import { parseMonto, formatCOP, formatNumero } from '../../lib/money';
 import {
   RAYA_CABECERA, campo, entregaDeCliente, itemTieneAlgo, faltaEnItem, porCargar, textoSobreprecio,
 } from './comun';
+import PanelExistencias from './PanelExistencias';
 import {
   Users, Search, Plus, ArrowRight, Trash2, FileSpreadsheet, RotateCcw,
   AlertTriangle, AlertCircle, Info, Package, Truck, ExternalLink, CheckCircle,
 } from 'lucide-react';
+
+// El panel de existencias se recuerda abierto o cerrado, pero SÓLO en pantalla
+// ancha, donde va al lado de la tabla. En tableta flota encima de ella y
+// arrancar con la tabla tapada sería un estorbo, así que ahí siempre empieza
+// cerrado y abrirlo no se guarda.
+const CLAVE_PANEL = 'matriz-existencias-abierto';
+const esAncha = () => {
+  try { return window.matchMedia('(min-width: 1280px)').matches; } catch { return false; }
+};
+const panelAlEntrar = () => {
+  if (!esAncha()) return false;
+  try {
+    const guardado = localStorage.getItem(CLAVE_PANEL);
+    if (guardado === '1') return true;
+    if (guardado === '0') return false;
+  } catch { /* sin almacenamiento: se decide por el ancho */ }
+  // Sin preferencia guardada, abierto sólo donde cabe sin estorbar a la tabla.
+  try { return window.matchMedia('(min-width: 1536px)').matches; } catch { return false; }
+};
+// Quien pidió menos movimiento en su sistema no tiene por qué ver la tabla
+// deslizarse sola hasta el cliente.
+const desplazamiento = () => {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; } catch { return 'auto'; }
+};
+
+// La forma de todos los chips de aviso de una línea. A 12px: a 10px, que es
+// como estaban, no se leían sin forzar la vista en la tableta. Cada chip pone
+// encima su peso y sus colores.
+const CHIP = 'inline-flex items-center gap-1 text-xs leading-tight px-2 py-0.5 rounded-full';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Un cliente = un <tbody>
@@ -56,6 +88,7 @@ import {
 const FilaCliente = memo(function FilaCliente({
   cliente, fila, avisos, problemas, transporteGlobal, transportes,
   opcionesReferencia, opcionesSinStock, calidadesPorReferencia, calidadesCatalogo,
+  leerExistencias, productoResaltado,
   faltante, deshabilitado, resaltado,
   onCampo, onItemCampo, onAgregarItem, onQuitarItem, onCatalogo,
   onCargarFaltante, onRespetarPrecio,
@@ -208,7 +241,12 @@ const FilaCliente = memo(function FilaCliente({
     // media tabla amanecía en rojo en una ronda normal: cuando todo está en
     // rojo, el rojo deja de querer decir nada y el fallo de verdad —el cliente
     // cuya cotización no se creó— pasa desapercibido.
+    //
+    // El id es a donde lleva la tabla el panel de existencias al tocar un
+    // nombre en «Lo pidieron». Lleva el prefijo `pedidos-` y NO es
+    // `data-cliente-fila`, por la razón que se explica justo abajo.
     <tbody
+      id={`pedidos-cliente-${cliente.id}`}
       className={`border-t border-border/70 ${
         // EL RESALTADO DE DOS SEGUNDOS AL VOLVER DEL REPARTO manda sobre los
         // demás fondos mientras dura: es lo único que le dice a la vista dónde
@@ -298,8 +336,22 @@ const FilaCliente = memo(function FilaCliente({
             // solo al repintar.
             const refHuerfana = Boolean(item.referencia) && !conPacas && !enCatalogo;
 
-            const falta = itemTieneAlgo(item) && !itemCompleto(item) ? faltaEnItem(item) : null;
+            // Lo que dice el aviso depende de si ya hay calidad. Sin calidad
+            // llega el desglose de la referencia (`calidades`); con calidad, la
+            // cuenta de esa calidad (`disponible`/`pedido`) y, si no alcanza, lo
+            // que queda de las demás (`otras`).
+            const porCalidad = !item.calidad && aviso?.calidades?.length ? aviso.calidades : null;
+            const cuenta = item.calidad && aviso && aviso.disponible !== undefined ? aviso : null;
             const sinPrecio = Boolean(item.avisoPrecio) && precioDe(item) <= 0;
+            // «Falta …» sin repetir lo que ya dice otro aviso de la misma línea:
+            // con los botones de calidad a la vista, «falta calidad» sobra, y
+            // con «Sin precio — escríbelo», «falta precio» también. Y sin
+            // calidad todavía no se pide el precio: se pone solo al escogerla,
+            // así que avisarlo antes es pedirle algo que no le toca escribir.
+            const falta = itemTieneAlgo(item) && !itemCompleto(item)
+              ? faltaEnItem(item).filter((f) => !(f === 'calidad' && porCalidad)
+                && !(f === 'precio' && (sinPrecio || !item.calidad)))
+              : [];
             // Esta línea trae mercancía del libro de faltantes. El chip lo dice
             // en la línea porque decide cómo se reparte en la Fase 2: es lo que
             // «Cubrir lo que faltó» va a pagar primero.
@@ -311,10 +363,64 @@ const FilaCliente = memo(function FilaCliente({
             const precioHoy = precioDe(item);
             const masCaroHoy = origen > 0 && precioHoy > origen && !item.respetaOrigen;
             const masBaratoHoy = origen > 0 && precioHoy < origen && !item.respetaOrigen;
+            // «sin existencias» de la REFERENCIA sólo mientras no haya calidad:
+            // con calidad escogida lo dice el chip de la cuenta, y dos chips
+            // iguales en la misma línea eran ruido.
+            const referenciaAgotada = sinExistencias && !item.calidad;
             const hayChips = Boolean(
-              aviso || item.esPromocion || falta || sinPrecio || sinExistencias
+              cuenta || item.esPromocion || falta.length || sinPrecio || referenciaAgotada
               || deAntes > 0 || masCaroHoy || masBaratoHoy || item.respetaOrigen,
             );
+
+            // Lo que esta línea ya pide, para que las listas no se lo descuenten
+            // a ella misma: si pide 5 de Primera y vuelve a abrir la lista, lo
+            // que tiene que leer es cuántas le caben a ella.
+            const propia = itemCompleto(item)
+              ? { clave: claveStock(item.referencia, item.calidad), cantidad: cantidadDe(item) }
+              : null;
+            // Las dos listas se arman AL ABRIRSE (son funciones): sus cuentas
+            // cambian con cada tecla de otra fila y esta fila no se repinta por
+            // eso. Ver `leerExistencias` en el orquestador.
+            const gruposReferencia = () => {
+              const { stock, pedidos } = leerExistencias();
+              return [
+                ...(refHuerfana
+                  ? [{ label: null, opciones: [{ value: item.referencia, label: item.referencia, detalle: 'sin existencias', apagada: true }] }]
+                  : []),
+                ...(opcionesReferencia.length > 0
+                  ? [{
+                    label: 'Con existencias',
+                    opciones: opcionesReferencia.map((o) => ({
+                      value: o.nombre,
+                      label: o.nombre,
+                      detalle: textoQuedanReferencia(quedanPorCalidad(
+                        o.nombre, calidadesPorReferencia.get(normTxt(o.nombre)) || [], stock, pedidos, propia,
+                      )),
+                    })),
+                  }]
+                  : []),
+                ...(opcionesSinStock.length > 0
+                  ? [{ label: 'Sin existencias', opciones: opcionesSinStock.map((o) => ({ value: o.nombre, label: o.nombre, detalle: 'sin existencias', apagada: true })) }]
+                  : []),
+              ];
+            };
+            const opcionesCalidad = () => {
+              const { stock, pedidos } = leerExistencias();
+              return quedanPorCalidad(item.referencia, opcionesCal, stock, pedidos, propia).map((q) => ({
+                value: q.calidad,
+                label: q.calidad,
+                detalle: textoExistencia(q),
+                apagada: q.hay === 0,
+              }));
+            };
+
+            // El panel de existencias resalta las líneas del producto que se
+            // tocó. Va en las celdas de la línea y no en el <tr>: el <tr> de la
+            // primera línea lleva también la celda del cliente, que cubre todo
+            // el bloque, y resaltarla haría parecer resaltado al cliente entero.
+            const resaltadaLinea = Boolean(productoResaltado) && Boolean(item.calidad)
+              && claveStock(item.referencia, item.calidad) === productoResaltado;
+            const fondo = resaltadaLinea ? 'bg-secondary/10' : '';
 
             const idRef = `${uid}-ref-${idx}`;
             const idCal = `${uid}-cal-${idx}`;
@@ -334,7 +440,13 @@ const FilaCliente = memo(function FilaCliente({
                   </td>
                 )}
 
-                <td className="px-2 py-1.5 align-top">
+                <td
+                  className={`px-2 py-1.5 align-top ${fondo}`}
+                  // La raya de la izquierda es lo que se encuentra con el ojo al
+                  // barrer la tabla: un fondo suave solo se pierde entre las
+                  // demás líneas.
+                  style={resaltadaLinea ? { boxShadow: 'inset 3px 0 0 var(--color-secondary)' } : undefined}
+                >
                   <label htmlFor={idRef} className="sr-only">Referencia del ítem {idx + 1}</label>
                   {/* Dos grupos, y el segundo es el cambio que sostiene el
                       encargo entero. Hasta hoy la lista solo ofrecia lo que
@@ -351,23 +463,28 @@ const FilaCliente = memo(function FilaCliente({
                     aria-label={`Referencia del item ${idx + 1} de ${cliente.nombre}`}
                     onChange={(v) => onItemCampo(cliente.id, idx, 'referencia', v)}
                     placeholder="Elegir referencia"
-                    grupos={[
-                      ...(refHuerfana
-                        ? [{ label: null, opciones: [{ value: item.referencia, label: `${item.referencia} · sin existencias` }] }]
-                        : []),
-                      ...(opcionesReferencia.length > 0
-                        ? [{ label: 'Con existencias', opciones: opcionesReferencia.map((o) => ({ value: o.nombre, label: `${o.nombre} · ${o.disponibles} disp` })) }]
-                        : []),
-                      ...(opcionesSinStock.length > 0
-                        ? [{ label: 'Sin existencias', opciones: opcionesSinStock.map((o) => ({ value: o.nombre, label: `${o.nombre} · 0 disp` })) }]
-                        : []),
-                    ]}
+                    // Cada referencia enseña debajo lo que queda de CADA calidad
+                    // («quedan: Primera 4 · Segunda 10 · Tercera 0») en vez del
+                    // «· 30 disp» que las sumaba. Y al escogerla el campo dice
+                    // sólo el nombre: la cuenta ya no se queda escrita en él,
+                    // vieja, mientras otros clientes piden lo mismo.
+                    grupos={gruposReferencia}
+                    anchoLista={320}
                     className={campo(false, 'w-full px-2')}
                   />
 
                   {/* Avisos del ítem, en corto y con el texto completo en el
                       title: en una tabla densa una frase larga por línea
-                      devolvería la pantalla al tamaño de antes. */}
+                      devolvería la pantalla al tamaño de antes. El title sólo
+                      AMPLÍA lo que el chip ya dice; ningún aviso vive únicamente
+                      ahí, porque en tableta no hay ratón que lo saque.
+                      VAN A 12PX Y NINGUNO REPITE A OTRO. Estaban a 10px, por
+                      debajo de lo que se lee sin forzar la vista de pie en la
+                      bodega, y una línea podía llevar a la vez «sin
+                      existencias» y «hay 0 · piden 5», o «Sin precio —
+                      escríbelo» y «Falta precio»: dos avisos del mismo hecho.
+                      Ahora hay UN aviso de existencias por línea y «Falta …» no
+                      nombra lo que ya dice otro chip. */}
                   {hayChips && (
                     <div className="flex flex-wrap items-center gap-1 mt-1">
                       {/* EL SEMÁFORO CAMBIA DE COLOR Y DE PALABRA SIN MOVERSE
@@ -383,25 +500,47 @@ const FilaCliente = memo(function FilaCliente({
                             la única forma de arreglarlo era borrar el pedido de
                             alguien. Ahora se anota, y se reparte en el paso 2.
                           Los otros dos tramos se conservan tal cual: margen de
-                          2 o menos en ámbar, holgado en verde. */}
-                      {aviso && (
+                          2 o menos en ámbar, holgado en verde. Y sale en cuanto
+                          hay referencia y calidad, sin esperar a la cantidad ni
+                          al precio: es al escoger cuando hace falta saberlo. */}
+                      {cuenta && (
                         <span
                           title={
-                            aviso.excede
-                              ? `Se piden ${aviso.pedido} pacas de ${item.referencia} / ${item.calidad}`
-                                + ` y hay ${aviso.disponible}. Lo repartes en el paso 2.`
-                              : `${aviso.disponible} disponibles · ${aviso.pedido} pedidas entre todos los clientes`
+                            cuenta.disponible === 0
+                              ? `No queda ninguna paca de ${item.referencia} / ${item.calidad}. Se puede pedir igual:`
+                                + ' queda anotado y, si no llega nada, se le queda faltando.'
+                              : cuenta.excede
+                                ? `Se piden ${cuenta.pedido} pacas de ${item.referencia} / ${item.calidad}`
+                                  + ` y hay ${cuenta.disponible}. Lo repartes en el paso 2.`
+                                : `${cuenta.disponible} disponibles · ${cuenta.pedido} pedidas entre todos los clientes, contando esta línea`
                           }
-                          className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                            aviso.excede || aviso.disponible - aviso.pedido <= 2
+                          className={`${CHIP} font-medium ${
+                            cuenta.disponible === 0 || cuenta.excede || cuenta.disponible - cuenta.pedido <= 2
                               ? 'bg-warning/15 text-warning'
                               : 'bg-success/15 text-success'
                           }`}
                         >
-                          <Package size={9} aria-hidden="true" />
-                          {aviso.excede
-                            ? `hay ${aviso.disponible} · piden ${aviso.pedido}`
-                            : `quedan ${aviso.disponible - aviso.pedido}`}
+                          {cuenta.disponible === 0 ? (
+                            <><AlertTriangle size={12} aria-hidden="true" /> sin existencias</>
+                          ) : (
+                            <>
+                              <Package size={12} aria-hidden="true" />
+                              {cuenta.excede
+                                ? `hay ${cuenta.disponible} · piden ${cuenta.pedido}`
+                                : `quedan ${cuenta.disponible - cuenta.pedido}`}
+                            </>
+                          )}
+                        </span>
+                      )}
+                      {/* La referencia elegida no tiene ni una paca. Se dice en
+                          la línea, no en el borde del campo: es un dato de la
+                          mercancía, no un defecto de lo que ella escribió. */}
+                      {referenciaAgotada && (
+                        <span
+                          title={`No queda ninguna paca de ${item.referencia}. Se puede pedir igual: queda anotado y, si no llega nada, se le queda faltando.`}
+                          className={`${CHIP} font-medium text-warning bg-warning/15`}
+                        >
+                          <AlertTriangle size={12} aria-hidden="true" /> sin existencias
                         </span>
                       )}
                       {/* «3 de antes»: de las que se piden en esta línea, tres
@@ -411,7 +550,7 @@ const FilaCliente = memo(function FilaCliente({
                       {deAntes > 0 && (
                         <span
                           title={`${deAntes} de esta línea vienen de lo que le quedó faltando en repartos anteriores. Si repartes al menos esas ${deAntes}, el faltante se abona.`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/15 px-1.5 py-0.5 rounded-full"
+                          className={`${CHIP} font-medium text-warning bg-warning/15`}
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" />
                           {deAntes} de antes
@@ -427,7 +566,7 @@ const FilaCliente = memo(function FilaCliente({
                           onClick={() => onRespetarPrecio(cliente.id, idx)}
                           disabled={deshabilitado}
                           title={`Se lo debíamos a ${formatCOP(origen)} y ${textoSobreprecio(precioHoy, origen)}. Está puesto el de hoy; pulsa para respetarle el anterior.`}
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded-full hover:bg-warning/20 disabled:opacity-50"
+                          className={`${CHIP} font-semibold text-warning bg-warning/10 hover:bg-warning/20 disabled:opacity-50`}
                         >
                           Respetar {formatNumero(origen)}
                         </button>
@@ -435,7 +574,7 @@ const FilaCliente = memo(function FilaCliente({
                       {masBaratoHoy && (
                         <span
                           title={`Se lo debíamos a ${formatCOP(origen)} y hoy vale ${formatCOP(precioHoy)}. Se le cobra el de hoy, que le favorece.`}
-                          className="inline-flex items-center text-[10px] font-medium text-muted bg-primary/5 px-1.5 py-0.5 rounded-full"
+                          className={`${CHIP} font-medium text-muted bg-primary/5`}
                         >
                           Precio cambió
                         </span>
@@ -443,57 +582,91 @@ const FilaCliente = memo(function FilaCliente({
                       {item.respetaOrigen && (
                         <span
                           title="Se le está respetando el precio que tenía cuando se le quedó debiendo."
-                          className="inline-flex items-center text-[10px] font-semibold text-secondary bg-secondary/10 px-1.5 py-0.5 rounded-full"
+                          className={`${CHIP} font-semibold text-secondary bg-secondary/10`}
                         >
                           Precio de antes
                         </span>
                       )}
-                      {/* La referencia elegida no tiene ni una paca. Se dice en
-                          la línea, no en el borde del campo: es un dato de la
-                          mercancía, no un defecto de lo que ella escribió. */}
-                      {sinExistencias && (
-                        <span
-                          title={`No queda ninguna paca de ${item.referencia}. Se puede pedir igual: queda anotado y, si no llega nada, se le queda faltando.`}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/15 px-1.5 py-0.5 rounded-full"
-                        >
-                          <AlertTriangle size={9} aria-hidden="true" /> sin existencias
-                        </span>
-                      )}
                       {item.esPromocion && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded-full">
-                          <AlertCircle size={9} aria-hidden="true" /> Promoción
+                        <span className={`${CHIP} font-semibold text-warning bg-warning/15`}>
+                          <AlertCircle size={12} aria-hidden="true" /> Promoción
                         </span>
                       )}
                       {sinPrecio && (
                         <span
                           title={item.avisoPrecio}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full"
+                          className={`${CHIP} font-medium text-warning bg-warning/10`}
                         >
-                          <AlertCircle size={9} aria-hidden="true" /> Sin precio — escríbelo
+                          <AlertCircle size={12} aria-hidden="true" /> Sin precio — escríbelo
                         </span>
                       )}
-                      {falta && (
+                      {falta.length > 0 && (
                         <span
                           title="Mientras falte algo, esta línea no se envía"
-                          className="inline-flex items-center text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full"
+                          className={`${CHIP} font-medium text-warning bg-warning/10`}
                         >
                           Falta {falta.join(', ')}
                         </span>
                       )}
                     </div>
                   )}
+
+                  {/* ESCOGER LA REFERENCIA YA DICE CUÁNTO QUEDA DE CADA
+                      CALIDAD. Es el momento exacto del encargo: «Mixta
+                      Invierno» llega en tres calidades y lo que importa es
+                      cuántas quedan de la que pide el cliente, no la suma. Un
+                      toque escoge la calidad. tabIndex={-1}: con teclado el
+                      camino sigue siendo la lista de calidad de al lado, que
+                      enseña las mismas cuentas, y estos botones no pueden
+                      meterse entre la referencia y la calidad en el Tab. */}
+                  {porCalidad && (
+                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                      <span className="text-xs text-muted">Escoge calidad:</span>
+                      {porCalidad.map((q) => (
+                        <button
+                          key={q.calidad}
+                          type="button"
+                          tabIndex={-1}
+                          disabled={deshabilitado}
+                          onClick={() => onItemCampo(cliente.id, idx, 'calidad', q.calidad)}
+                          className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-lg border text-xs disabled:opacity-50 ${
+                            q.quedan > 0
+                              ? 'border-secondary/40 bg-surface text-primary hover:bg-secondary/10'
+                              : 'border-border bg-surface text-muted hover:bg-primary/5'
+                          }`}
+                        >
+                          <span className="font-semibold">{q.calidad}</span>
+                          <span className="tabular-nums">{textoExistencia(q)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* La calidad escogida no alcanza (o no tiene ni una paca) y
+                      otra de la misma referencia sí tiene. Sólo se cuenta: pasar
+                      a otra calidad cambia el precio y eso se habla con el
+                      cliente. Si le sirve, se cambia en la lista de calidad. */}
+                  {cuenta && cuenta.otras.length > 0 && (
+                    <p className="text-xs text-muted mt-1">
+                      De otra calidad quedan:{' '}
+                      <span className="tabular-nums text-primary">
+                        {cuenta.otras.map((o) => `${o.calidad} ${o.quedan}`).join(' · ')}
+                      </span>
+                    </p>
+                  )}
                 </td>
 
-                <td className="px-2 py-1.5 align-top">
+                <td className={`px-2 py-1.5 align-top ${fondo}`}>
                   <label htmlFor={idCal} className="sr-only">Calidad del ítem {idx + 1}</label>
                   <BuscadorLista
                     value={item.calidad}
                     onChange={(valorElegido) => onItemCampo(cliente.id, idx, 'calidad', valorElegido)}
                     opcionVacia={item.referencia && opcionesCal.length === 0 ? 'Sin calidades' : 'Calidad…'}
                     placeholder={item.referencia && opcionesCal.length === 0 ? 'Sin calidades' : 'Calidad…'}
-                    opciones={[
-                      ...opcionesCal.map((c) => ({ value: c, label: c })),
-                    ]}
+                    // Cada calidad con lo que queda de ella en la ronda: «quedan
+                    // 4 de 12», «hay 8 · ya piden 11», «sin existencias».
+                    opciones={opcionesCalidad}
+                    anchoLista={240}
                     id={idCal}
                     disabled={deshabilitado}
                     aria-label={`Calidad del ítem ${idx + 1} de ${cliente.nombre}`}
@@ -501,7 +674,7 @@ const FilaCliente = memo(function FilaCliente({
                   />
                 </td>
 
-                <td className="px-1 py-1.5 align-top">
+                <td className={`px-1 py-1.5 align-top ${fondo}`}>
                   {/* Tampoco aquí hay borde rojo por pedir de más: `mal` vuelve
                       a significar sólo "el dato está incompleto", nunca "sobra".
                       Este campo no salía en la lista de seis sitios del diseño,
@@ -519,7 +692,7 @@ const FilaCliente = memo(function FilaCliente({
                   />
                 </td>
 
-                <td className="px-2 py-1.5 align-top">
+                <td className={`px-2 py-1.5 align-top ${fondo}`}>
                   <label htmlFor={idPrecio} className="sr-only">Precio por paca del ítem {idx + 1}</label>
                   {/* Aquí vivía un onBlur que reformateaba a mano al salir del
                       campo, con el argumento de que meter el punto de miles en
@@ -544,13 +717,13 @@ const FilaCliente = memo(function FilaCliente({
                   />
                 </td>
 
-                <td className="px-2 py-1.5 align-top text-right">
+                <td className={`px-2 py-1.5 align-top text-right ${fondo}`}>
                   <span className="inline-flex h-8 items-center text-sm font-semibold tabular-nums text-primary">
                     {formatCOP(cantidadDe(item) * precioDe(item))}
                   </span>
                 </td>
 
-                <td className="px-1 py-1.5 align-top text-center">
+                <td className={`px-1 py-1.5 align-top text-center ${fondo}`}>
                   <button
                     type="button"
                     onClick={() => onQuitarItem(cliente.id, idx)}
@@ -683,6 +856,7 @@ const FasePedidos = memo(function FasePedidos({
   cargando, clientes, clientesVisibles, filas, avisos, problemas, problemasSueltos,
   transportes, transporteGlobalNum,
   opcionesReferencia, opcionesSinStock, calidadesPorReferencia, calidadesCatalogo,
+  leerExistencias, existencias,
   faltantes, selloFaltantes, clientesConFaltante, unidadesFaltantes,
   enviando, cruzando, impedimento, resumen, conflictos, avisoCarga,
   borradorRecuperado, ultimoEnvio, generandoMatriz, estadoGuardado,
@@ -721,6 +895,72 @@ const FasePedidos = memo(function FasePedidos({
       ? 'border-error focus:ring-error/30'
       : 'border-border focus:ring-secondary/30',
   ].join(' ');
+
+  // ── El panel de existencias ───────────────────────────────────────────────
+  // El estado vive AQUÍ y no en el orquestador: abrirlo, cerrarlo o tocar un
+  // producto sólo repinta esta fase, nunca la del reparto.
+  const [panelAbierto, setPanelAbierto] = useState(panelAlEntrar);
+  const [productoSel, setProductoSel] = useState(null);
+  const soltarTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(soltarTimerRef.current), []);
+
+  const abrirPanel = useCallback((abrir) => {
+    setPanelAbierto(abrir);
+    // Cerrar el panel suelta también el producto tocado: con el panel cerrado
+    // no queda a la vista qué producto era, y unas líneas resaltadas sin
+    // motivo visible se leen como un estado de esos clientes.
+    if (!abrir) {
+      clearTimeout(soltarTimerRef.current);
+      setProductoSel(null);
+    }
+    // Sólo se recuerda en pantalla ancha, donde el panel va al lado de la
+    // tabla. En tableta tapa la tabla, así que abrirlo allí es de paso.
+    if (!esAncha()) return;
+    try { localStorage.setItem(CLAVE_PANEL, abrir ? '1' : '0'); } catch { /* sin almacenamiento: no se recuerda */ }
+  }, []);
+  const cerrarPanel = useCallback(() => abrirPanel(false), [abrirPanel]);
+
+  // Los clientes que pidieron el producto tocado. A cada fila le baja un TEXTO
+  // (la clave del producto) o null, nunca el Set: así, tocar un producto sólo
+  // repinta las filas de quien lo pidió, y teclear no repinta ninguna de más.
+  const clientesDelProducto = useMemo(() => {
+    if (!productoSel) return null;
+    for (const g of existencias || []) {
+      for (const c of g.calidades) if (c.clave === productoSel) return new Set(c.clientes.map((x) => x.id));
+    }
+    return new Set();
+  }, [existencias, productoSel]);
+
+  // Llevar la tabla hasta el cliente que se tocó en «Lo pidieron». En tableta
+  // el panel se cierra primero, porque tapa justo la tabla a la que se va; ahí
+  // el resaltado se queda unos segundos para que el ojo encuentre la línea y
+  // luego se suelta solo, igual que el de volver del reparto: con el panel
+  // cerrado no quedaría a la vista por qué está resaltada.
+  const irACliente = useCallback((clienteId) => {
+    if (!esAncha()) {
+      setPanelAbierto(false);
+      clearTimeout(soltarTimerRef.current);
+      soltarTimerRef.current = setTimeout(() => setProductoSel(null), 2500);
+    }
+    window.setTimeout(() => {
+      document.getElementById(`pedidos-cliente-${clienteId}`)
+        ?.scrollIntoView({ block: 'center', behavior: desplazamiento() });
+    }, 0);
+  }, []);
+
+  // La franja ámbar nombra los productos que no alcanzan; cada nombre abre el
+  // panel con ese producto tocado, que es donde se ve quién lo pidió.
+  const verProducto = useCallback((clave) => {
+    abrirPanel(true);
+    clearTimeout(soltarTimerRef.current);
+    setProductoSel(clave);
+  }, [abrirPanel]);
+  // Tocar un producto en el panel cancela el soltado pendiente de un salto
+  // anterior: si no, el resaltado nuevo se apagaría solo a los dos segundos.
+  const elegirProducto = useCallback((clave) => {
+    clearTimeout(soltarTimerRef.current);
+    setProductoSel(clave);
+  }, []);
 
   return (
     <>
@@ -846,6 +1086,24 @@ const FasePedidos = memo(function FasePedidos({
                 Cargar todo lo que faltó ({unidadesFaltantes})
               </Button>
             )}
+
+            {/* Abre y cierra el panel de existencias. Dice «Existencias» y no
+                «Inventario» porque no es el inventario entero: es lo que hay
+                disponible contra lo que se pide en ESTA ronda. */}
+            <button
+              type="button"
+              onClick={() => abrirPanel(!panelAbierto)}
+              aria-expanded={panelAbierto}
+              aria-controls="matriz-existencias"
+              className={`ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-xl border text-xs font-semibold transition-colors ${
+                panelAbierto
+                  ? 'border-secondary bg-secondary/15 text-secondary'
+                  : 'border-border bg-surface text-primary hover:bg-primary/5'
+              }`}
+            >
+              <Package size={14} aria-hidden="true" />
+              Existencias
+            </button>
           </div>
 
           <p className="text-[11px] text-muted mt-2">
@@ -854,6 +1112,14 @@ const FasePedidos = memo(function FasePedidos({
             {estadoGuardado ? ` · ${estadoGuardado}` : ''}
           </p>
         </div>
+
+        {/* Debajo de la barra, dos columnas: los avisos con la tabla, y el panel
+            de existencias a la derecha cuando está abierto. El panel NO va
+            encima de la tabla en pantalla ancha: ahí se consulta mientras se
+            escribe, y taparle las filas a quien está escribiendo en ellas es
+            justo lo que no puede pasar. */}
+        <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
 
         {/* Los avisos, en su propia banda fija. No entran en el scroll de la
             tabla ni le roban alto: se leen una vez y se quedan quietos. */}
@@ -962,16 +1228,36 @@ const FasePedidos = memo(function FasePedidos({
               </p>
               {/* Sólo los tres primeros y en una línea: con quince, la franja se
                   come la tabla y deja de leerse. El detalle completo de cada uno
-                  está en su propia fila, en el chip de la línea. */}
-              <p className="text-[11px] mt-0.5">
+                  está en su propia fila, en el chip de la línea, y en el panel
+                  de existencias: cada nombre lo abre con ese producto tocado,
+                  que es donde se ve quién lo pidió. */}
+              <p className="text-xs mt-0.5">
                 {conflictos.slice(0, 3).map((c, i) => (
                   <span key={`${c.referencia}|${c.calidad}`}>
                     {i > 0 && ' · '}
-                    <strong className="font-semibold">{c.referencia} / {c.calidad}</strong>
+                    <button
+                      type="button"
+                      onClick={() => verProducto(claveStock(c.referencia, c.calidad))}
+                      title="Ver quién lo pidió en el panel de existencias"
+                      className="font-semibold underline underline-offset-2 hover:no-underline"
+                    >
+                      {c.referencia} / {c.calidad}
+                    </button>
                     {` hay ${c.disponible} · piden ${c.pedido}`}
                   </span>
                 ))}
-                {conflictos.length > 3 && ` · +${conflictos.length - 3} más`}
+                {conflictos.length > 3 && (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => abrirPanel(true)}
+                      className="font-semibold underline underline-offset-2 hover:no-underline"
+                    >
+                      +{conflictos.length - 3} más
+                    </button>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -1072,6 +1358,11 @@ const FasePedidos = memo(function FasePedidos({
                     opcionesSinStock={opcionesSinStock}
                     calidadesPorReferencia={calidadesPorReferencia}
                     calidadesCatalogo={calidadesCatalogo}
+                    leerExistencias={leerExistencias}
+                    // La clave del producto tocado en el panel, pero SÓLO a
+                    // quien lo pidió; a los demás les llega null y no se
+                    // repintan. Mismo motivo que `resaltado`, justo debajo.
+                    productoResaltado={clientesDelProducto?.has(String(c.id)) ? productoSel : null}
                     faltante={faltantes.get(String(c.id))}
                     deshabilitado={enviando}
                     resaltado={clienteResaltado != null && String(clienteResaltado) === String(c.id)}
@@ -1088,6 +1379,17 @@ const FasePedidos = memo(function FasePedidos({
             </div>
           </div>
         )}
+        </div>{/* fin de la columna de avisos y tabla */}
+
+        <PanelExistencias
+          abierto={panelAbierto}
+          grupos={existencias}
+          seleccionado={productoSel}
+          onSeleccionar={elegirProducto}
+          onIrACliente={irACliente}
+          onCerrar={cerrarPanel}
+        />
+        </div>{/* fin de la fila tabla + panel */}
       </div>
 
       {/* ── Pie: el resumen siempre a la vista ───────────────────────────

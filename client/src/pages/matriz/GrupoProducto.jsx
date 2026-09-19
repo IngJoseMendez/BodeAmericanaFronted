@@ -164,7 +164,7 @@ function CeldaDoy({
           tendría que ir a mirar dos columnas para saber cuál de los dos topes le
           saltó. */}
       {aviso && (
-        <p className="text-[10px] text-warning leading-tight mt-0.5 text-right" role="status">{aviso}</p>
+        <p className="text-xs text-warning leading-tight mt-0.5 text-right" role="status">{aviso}</p>
       )}
     </div>
   );
@@ -310,28 +310,30 @@ const GrupoProducto = memo(function GrupoProducto({
                   {/* El chip de escasez dice el hecho completo en cuatro
                       palabras. «no queda ninguna» es un caso aparte del «no
                       alcanza» porque no hay nada que repartir: el grupo entero
-                      es una decisión ya tomada. */}
+                      es una decisión ya tomada.
+                      Todos los chips de esta fase van a 12px, igual que los de
+                      la Fase 1: a 10px no se leían de pie con la tableta. */}
                   {disponibles === 0 ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-error bg-error/15 px-1.5 py-0.5 rounded-full">
-                      <AlertTriangle size={9} aria-hidden="true" /> no queda ninguna
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-error bg-error/15 px-2 py-0.5 rounded-full">
+                      <AlertTriangle size={12} aria-hidden="true" /> no queda ninguna
                     </span>
                   ) : alcanza ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-success bg-success/15 px-1.5 py-0.5 rounded-full">
-                      <Package size={9} aria-hidden="true" /> alcanza para todos
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-success bg-success/15 px-2 py-0.5 rounded-full">
+                      <Package size={12} aria-hidden="true" /> alcanza para todos
                     </span>
                   ) : (
                     <span
                       title={`Hay ${disponibles} pacas y entre todos piden ${pedidoTotal}. Reparte las que hay; lo demás queda faltando.`}
-                      className="inline-flex items-center gap-1 text-[10px] font-medium text-warning bg-warning/15 px-1.5 py-0.5 rounded-full"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-warning bg-warning/15 px-2 py-0.5 rounded-full"
                     >
-                      <Scale size={9} aria-hidden="true" />
+                      <Scale size={12} aria-hidden="true" />
                       hay {disponibles} · piden {pedidoTotal} · faltan {pedidoTotal - disponibles}
                     </span>
                   )}
                   {cambiado && (
                     <span
                       title="Cambió lo disponible o lo que pidieron, así que reajusté este reparto. Revísalo."
-                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/20 px-1.5 py-0.5 rounded-full"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-warning bg-warning/20 px-2 py-0.5 rounded-full"
                     >
                       cambió
                     </span>
@@ -484,7 +486,7 @@ const GrupoProducto = memo(function GrupoProducto({
                 <span className="text-muted" title="No pude leer los faltantes de repartos anteriores.">—</span>
               ) : faltaba > 0 ? (
                 <>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning bg-warning/15 px-2 py-0.5 rounded-full">
                     <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" />
                     {faltaba}
                   </span>
@@ -540,7 +542,7 @@ const GrupoProducto = memo(function GrupoProducto({
                   {cuenta ? (
                     // NUNCA en rojo: quedar faltando no es un fallo, es el hecho
                     // que se está registrando.
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded-full">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning bg-warning/15 px-2 py-0.5 rounded-full">
                       <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" />
                       {queda}
                     </span>
@@ -550,7 +552,7 @@ const GrupoProducto = memo(function GrupoProducto({
                     // ella sin forma de ver qué descartó ni de deshacerlo, y el
                     // número es un hecho aunque no vaya a quedar anotado.
                     <span
-                      className="text-[10px] font-semibold text-muted line-through"
+                      className="text-xs font-semibold text-muted line-through"
                       title={`No va a quedar anotado. ${c.cliente_nombre} pidió ${pedida} y le faltan ${queda},`
                         + ' pero esta línea está marcada como que no queda debiendo nada.'}
                     >
@@ -604,7 +606,7 @@ const GrupoProducto = memo(function GrupoProducto({
               {puedeRespetar && (
                 <span className="block text-[10px] leading-tight mt-0.5">
                   <span
-                    className="inline-flex items-center text-[10px] font-semibold text-warning bg-warning/10 px-1.5 py-0.5 rounded-full"
+                    className="inline-flex items-center text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full"
                     title={`Se lo debíamos a ${formatCOP(origen)} y hoy vale ${formatCOP(precio)}. Se cambia desde la Fase 1, en la línea del cliente.`}
                   >
                     debía {formatNumero(origen)}

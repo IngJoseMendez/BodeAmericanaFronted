@@ -22,15 +22,17 @@
 //     pacas a propósito, y eso es una decisión de negocio. Se avisa en el
 //     contador y en el confirm, que es donde se avisa lo que no se prohíbe.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Button, EmptyState, BuscadorLista } from '../../components/common';
-import { claveAsignacion, claveStock, coincideBusqueda, normTxt } from '../../lib/matriz';
+import {
+  claveAsignacion, claveStock, coincideBusqueda, normTxt, hermanasDeReferencia,
+} from '../../lib/matriz';
 import { formatCOP } from '../../lib/money';
 import { RAYA_CABECERA } from './comun';
 import GrupoProducto from './GrupoProducto';
 import CintaClientes from './CintaClientes';
 import {
-  ArrowLeft, Search, Save, Package, Users, AlertTriangle, RefreshCw, PackageOpen,
+  ArrowLeft, Search, Save, Package, Users, AlertTriangle, RefreshCw, PackageOpen, Layers,
 } from 'lucide-react';
 
 // El mismo useDebounce que ya tienen Clientes, Pacas, Ventas y Catálogo. Se
@@ -61,6 +63,84 @@ const horaDe = (iso) => {
   }
 };
 
+/** «Primera», «Primera y Segunda», «Primera, Segunda y Tercera». */
+const enLista = (nombres) => (nombres.length <= 1
+  ? nombres.join('')
+  : `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`);
+
+// ── LA FRANJA DE UNA FAMILIA DE CALIDADES ───────────────────────────────────
+//
+// «Mixta Invierno · 3 calidades — Primera faltan 3 · Segunda libre 6, nadie la
+// pidió · Tercera alcanza». Va encima de las calidades de una misma referencia
+// cuando son dos o más, contando también las que tienen pacas y NADIE pidió:
+// esas no son un producto de la ronda y no tenían ni una fila, así que a quien
+// le faltaba Primera nadie le decía que había Segunda de sobra.
+//
+// SÓLO CUENTA, NO MUEVE A NADIE. Pasar a un cliente a otra calidad cambia su
+// precio y se habla con él; por eso la franja no reparte nada y lo que ofrece
+// es volver a los pedidos, donde se cambia la calidad de la línea.
+//
+// Está declarada aquí fuera y no dentro de la fase por lo de siempre: un
+// componente declarado dentro de otro es un tipo nuevo en cada render, y React
+// lo desmontaría y montaría en cada tecla del reparto.
+function FranjaFamilia({ referencia, hermanas, deshabilitado, onVolver }) {
+  const { calidades, cortas, libreOtras } = hermanas;
+  return (
+    <tbody className="border-t-2 border-border">
+      <tr>
+        <td colSpan={7} className="px-3 pt-2 pb-1.5 bg-primary/[0.03]">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
+              <Layers size={14} className="text-muted self-center" aria-hidden="true" />
+              {referencia}
+              <span className="font-normal text-muted">· {calidades.length} calidades</span>
+            </span>
+            <span className="text-xs text-muted tabular-nums">
+              {calidades.map((c, i) => (
+                <span key={c.calidad}>
+                  {i > 0 && ' · '}
+                  <span className="font-semibold text-primary">{c.calidad}</span>{' '}
+                  {c.falta > 0 ? (
+                    <span className="font-semibold text-warning">faltan {c.falta}</span>
+                  ) : !c.enRonda ? (
+                    <span><span className="font-semibold text-secondary">libre {c.libre}</span>, nadie la pidió</span>
+                  ) : c.libre > 0 ? (
+                    <span>alcanza · <span className="font-semibold text-secondary">libre {c.libre}</span></span>
+                  ) : (
+                    <span>alcanza</span>
+                  )}
+                </span>
+              ))}
+            </span>
+          </div>
+          {/* La frase sólo sale cuando hay algo que hacer con ella: una calidad
+              que no alcanza Y pacas sin repartir en otra. Con todo alcanzando,
+              la franja se queda en su línea de cuentas. */}
+          {cortas.length > 0 && libreOtras > 0 && (
+            <p className="mt-1 text-xs text-primary">
+              {enLista(cortas)} no {cortas.length === 1 ? 'alcanza' : 'alcanzan'} y hay {libreOtras} sin
+              repartir en otras calidades de {referencia}. Si a alguien le sirve otra calidad, cámbiasela en los
+              pedidos.{' '}
+              {/* tabIndex={-1} como los demás botones de la tabla: el único
+                  control de la Fase 2 que recorre el Tab es «Le doy». El mismo
+                  botón está siempre a mano en la columna lateral. */}
+              <button
+                type="button"
+                tabIndex={-1}
+                disabled={deshabilitado}
+                onClick={onVolver}
+                className="font-semibold text-secondary underline underline-offset-2 hover:no-underline disabled:opacity-50"
+              >
+                Volver a los pedidos
+              </button>
+            </p>
+          )}
+        </td>
+      </tr>
+    </tbody>
+  );
+}
+
 // ── POR QUÉ ESTE COMPONENTE ES UN React.memo ────────────────────────────────
 //
 // Estaba sin memoizar y era el agujero de rendimiento más caro de la pantalla.
@@ -83,7 +163,11 @@ const horaDe = (iso) => {
 // llevarlos en las dependencias del useCallback: cualquiera de ellos en las
 // dependencias devuelve el problema entero sin que nada se vea roto.
 const FaseDistribucion = memo(function FaseDistribucion({
-  oculto, productos, asignado, precios, descuentos, totales, clientes,
+  // `stock` es el inventario de la última lectura, por referencia+calidad. Lo
+  // usa la franja de cada familia para contar las calidades que tienen pacas y
+  // nadie pidió, que no son productos de la ronda. Sólo cambia al releer el
+  // inventario, así que no le tira el memo a nadie mientras se teclea.
+  oculto, productos, stock, asignado, precios, descuentos, totales, clientes,
   listos, cambiados, tocados, abiertos, faltantesFallo, sinFaltante,
   problemas, problemasSueltos, stockLeidoEn, avisoStock, ajustados,
   enviando, releyendo, numeroReparto,
@@ -216,12 +300,18 @@ const FaseDistribucion = memo(function FaseDistribucion({
   // 1. Los que cambiaron (el inventario se movió o ella volvió a tocar pedidos).
   // 2. Los que no alcanzan, por faltante descendente; empate por pedido.
   // 3. Los que alcanzan, alfabéticos.
+  // 4. Y encima de los tres, LAS CALIDADES DE UNA REFERENCIA VAN JUNTAS: la
+  //    familia entera se coloca donde cae la más urgente de sus calidades, y
+  //    dentro de ella se respeta el mismo orden. Separadas —Primera arriba por
+  //    no alcanzar, Segunda veinte productos más abajo por alcanzar— no había
+  //    forma de ver que a quien le falta Primera le podía servir la Segunda que
+  //    sobra. Ver `familias`, justo debajo.
   //
   // Ojo con lo que NO entra en las dependencias: `asignado`. El orden no se
   // recalcula mientras teclea. Ver la fila irse al final con el dedo puesto en
   // la pantalla es exactamente cómo se pierde el sitio y se confirma el que no
   // era. Un producto marcado «listo» tampoco baja: sólo cambia de aspecto.
-  const ordenados = useMemo(() => {
+  const ordenadosBase = useMemo(() => {
     const q = normTxt(buscarLento);
     const nRef = normTxt(filtroRef);
     const nCal = normTxt(filtroCal);
@@ -274,6 +364,51 @@ const FaseDistribucion = memo(function FaseDistribucion({
     // que la lista no se reordene bajo el dedo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productos, listos, cambiados, soloNoAlcanzan, filtroRef, filtroCal, buscarLento]);
+
+  // Las familias: la lista ya ordenada, agrupada por referencia en el orden en
+  // que aparece cada una por primera vez. Como la lista viene de más urgente a
+  // menos, la primera aparición de una referencia es su calidad más urgente, y
+  // la familia entera sube hasta ahí. No depende de `asignado`, así que
+  // tampoco se reordena bajo el dedo.
+  const familias = useMemo(() => {
+    const m = new Map();
+    for (const p of ordenadosBase) {
+      const k = normTxt(p.referencia);
+      if (!m.has(k)) m.set(k, { clave: k, referencia: p.referencia, productos: [] });
+      m.get(k).productos.push(p);
+    }
+    return [...m.values()];
+  }, [ordenadosBase]);
+
+  // `ordenados` es el orden TAL COMO SE VE, ya con las familias juntas. Lo usan
+  // el salto de Ctrl+Enter al siguiente por decidir, el chip de «para revisar»
+  // y la cuenta de lo que esconde el filtro: si leyeran el orden sin agrupar,
+  // el salto iría a un producto que no es el de abajo.
+  const ordenados = useMemo(() => familias.flatMap((f) => f.productos), [familias]);
+
+  // Todas las calidades de cada referencia: las de la ronda (sin filtrar, para
+  // que la franja cuente la familia entera aunque el filtro esconda alguna) y
+  // las que sólo están en bodega.
+  const rondaPorReferencia = useMemo(() => {
+    const m = new Map();
+    for (const p of productos) {
+      const k = normTxt(p.referencia);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(p);
+    }
+    return m;
+  }, [productos]);
+  const bodegaPorReferencia = useMemo(() => {
+    const m = new Map();
+    if (!stock || typeof stock.values !== 'function') return m;
+    for (const s of stock.values()) {
+      const k = normTxt(s?.referencia);
+      if (!k) continue;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push({ calidad: s.calidad, disponibles: s.disponibles });
+    }
+    return m;
+  }, [stock]);
 
   // El primero de los reajustados TAL COMO SE VE en la tabla, que es a donde
   // tiene que saltar el chip. Los reajustados suben al principio del orden, así
@@ -735,31 +870,55 @@ const FaseDistribucion = memo(function FaseDistribucion({
                   </tr>
                 </thead>
 
-                {ordenados.map((p) => {
-                  const clave = claveStock(p.referencia, p.calidad);
+                {familias.map((f) => {
+                  // Las cuentas de la franja se hacen aquí y no dentro de
+                  // `GrupoProducto`: lo libre de cada hermana cambia con cada
+                  // tecla, y pasárselo como prop a los grupos les tiraría el
+                  // memo a todos. Esta fase se repinta de todas formas al
+                  // teclear; los grupos no.
+                  const enRonda = (rondaPorReferencia.get(f.clave) || []).map((p) => {
+                    const c = cuentas.get(claveStock(p.referencia, p.calidad)) || {};
+                    return { calidad: p.calidad, pedido: c.pedido, disponibles: c.disponibles, repartido: c.repartido };
+                  });
+                  const hermanas = hermanasDeReferencia(enRonda, bodegaPorReferencia.get(f.clave));
                   return (
-                    <GrupoProducto
-                      key={clave}
-                      producto={p}
-                      valores={valoresPorProducto.get(clave)}
-                      precios={precios}
-                      descuentos={descuentos}
-                      listo={listos.has(clave)}
-                      cambiado={cambiados.has(clave)}
-                      tocado={tocados.has(clave)}
-                      abierto={abiertos.has(clave)}
-                      faltantesFallo={faltantesFallo}
-                      sinFaltante={sinFaltante}
-                      clienteResaltado={clienteResaltado}
-                      deshabilitado={enviando}
-                      onCantidad={onCantidad}
-                      onCriterio={onCriterio}
-                      onVaciar={onVaciar}
-                      onListo={onListo}
-                      onAbrir={onAbrir}
-                      onCuentaFaltante={onCuentaFaltante}
-                      onSaltar={saltar}
-                    />
+                    <Fragment key={`familia-${f.clave}`}>
+                      {hermanas.calidades.length >= 2 && (
+                        <FranjaFamilia
+                          referencia={f.referencia}
+                          hermanas={hermanas}
+                          deshabilitado={enviando}
+                          onVolver={volver}
+                        />
+                      )}
+                      {f.productos.map((p) => {
+                        const clave = claveStock(p.referencia, p.calidad);
+                        return (
+                          <GrupoProducto
+                            key={clave}
+                            producto={p}
+                            valores={valoresPorProducto.get(clave)}
+                            precios={precios}
+                            descuentos={descuentos}
+                            listo={listos.has(clave)}
+                            cambiado={cambiados.has(clave)}
+                            tocado={tocados.has(clave)}
+                            abierto={abiertos.has(clave)}
+                            faltantesFallo={faltantesFallo}
+                            sinFaltante={sinFaltante}
+                            clienteResaltado={clienteResaltado}
+                            deshabilitado={enviando}
+                            onCantidad={onCantidad}
+                            onCriterio={onCriterio}
+                            onVaciar={onVaciar}
+                            onListo={onListo}
+                            onAbrir={onAbrir}
+                            onCuentaFaltante={onCuentaFaltante}
+                            onSaltar={saltar}
+                          />
+                        );
+                      })}
+                    </Fragment>
                   );
                 })}
               </table>

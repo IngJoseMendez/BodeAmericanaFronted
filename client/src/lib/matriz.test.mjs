@@ -17,6 +17,7 @@ import {
   normTxt, coincideBusqueda, claveStock, claveAsignacion,
   aProrrata, porOrden, cubrirFaltante,
   reconciliarReparto, proyectarFilas, totalesDeReparto,
+  quedanPorCalidad, textoExistencia, textoQuedanReferencia, resumenExistencias, hermanasDeReferencia,
 } from './matriz.js';
 import { aplicarMovimiento, movimientoDeLinea } from './faltantes.js';
 
@@ -452,6 +453,130 @@ grupo('buscar sin acertar la frase entera');
     coincideBusqueda('lo que sea', '   '), true);
   comprobar('un texto nulo no lanza y no coincide',
     coincideBusqueda(null, 'algo'), false);
+}
+
+// ── Lo que queda de cada calidad ────────────────────────────────────────────
+// El caso del encargo: Mixta Invierno en tres calidades. La lista decía
+// «30 disp» y para quien pide Primera caben 12 como mucho.
+const STOCK = new Map([
+  ['mixta invierno|primera', { referencia: 'Mixta Invierno', calidad: 'Primera', disponibles: 12 }],
+  ['mixta invierno|segunda', { referencia: 'Mixta Invierno', calidad: 'Segunda', disponibles: 10 }],
+  ['mixta invierno|tercera', { referencia: 'Mixta Invierno', calidad: 'Tercera', disponibles: 8 }],
+]);
+const PEDIDOS = new Map([
+  ['mixta invierno|primera', { referencia: 'Mixta Invierno', calidad: 'Primera', pedido: 8, clientes: new Map([['1', 5], ['2', 3]]) }],
+  ['mixta invierno|tercera', { referencia: 'MIXTA INVIERNO', calidad: 'tercera', pedido: 11, clientes: new Map([['3', 11]]) }],
+  // Se pidió algo que no tiene ni una paca: tiene que salir igual.
+  ['jean|unica', { referencia: 'Jean', calidad: 'Única', pedido: 4, clientes: new Map([['2', 4]]) }],
+]);
+const CALIDADES = ['Primera', 'Segunda', 'Tercera'];
+const corto = (filas) => filas.map((q) => `${q.calidad}:${q.hay}/${q.pedido}/${q.quedan}`);
+
+{
+  grupo('quedanPorCalidad');
+  comprobar('cada calidad por separado, descontando la ronda',
+    corto(quedanPorCalidad('Mixta Invierno', CALIDADES, STOCK, PEDIDOS)),
+    ['Primera:12/8/4', 'Segunda:10/0/10', 'Tercera:8/11/-3']);
+  comprobar('lo pedido de más sale NEGATIVO, no se esconde',
+    quedanPorCalidad('Mixta Invierno', ['Tercera'], STOCK, PEDIDOS)[0].quedan, -3);
+  comprobar('la línea que pregunta no se descuenta a sí misma',
+    corto(quedanPorCalidad('Mixta Invierno', ['Primera'], STOCK, PEDIDOS, { clave: 'mixta invierno|primera', cantidad: 5 })),
+    ['Primera:12/3/9']);
+  comprobar('lo suyo sólo se devuelve en SU calidad',
+    corto(quedanPorCalidad('Mixta Invierno', ['Segunda'], STOCK, PEDIDOS, { clave: 'mixta invierno|primera', cantidad: 5 })),
+    ['Segunda:10/0/10']);
+  comprobar('mayúsculas y acentos no parten el producto en dos',
+    corto(quedanPorCalidad('MIXTA INVIERNO', ['primera'], STOCK, PEDIDOS)),
+    ['primera:12/8/4']);
+  comprobar('«Primera» y «PRIMERA» cuentan una sola vez',
+    quedanPorCalidad('Mixta Invierno', ['Primera', 'PRIMERA'], STOCK, PEDIDOS).length, 1);
+  comprobar('una calidad sin pacas sale con hay 0',
+    corto(quedanPorCalidad('Mixta Invierno', ['Premium'], STOCK, PEDIDOS)),
+    ['Premium:0/0/0']);
+  sinLanzar('basura por todas partes', () => quedanPorCalidad(null, null, null, null, null));
+  comprobar('y con basura devuelve una lista vacía',
+    quedanPorCalidad(undefined, 'no es lista', 42, 'x').length, 0);
+}
+
+{
+  grupo('textoExistencia');
+  comprobar('nada en bodega', textoExistencia({ hay: 0, pedido: 0 }), 'sin existencias');
+  comprobar('nada en bodega aunque lo pidan', textoExistencia({ hay: 0, pedido: 6 }), 'sin existencias');
+  comprobar('nadie más la pidió', textoExistencia({ hay: 12, pedido: 0 }), 'hay 12');
+  comprobar('cabe algo todavía', textoExistencia({ hay: 12, pedido: 8 }), 'quedan 4 de 12');
+  comprobar('ya se la pidieron entera', textoExistencia({ hay: 8, pedido: 8 }), 'hay 8 · ya piden 8');
+  comprobar('se la pidieron de más', textoExistencia({ hay: 8, pedido: 11 }), 'hay 8 · ya piden 11');
+  comprobar('basura', textoExistencia(null), 'sin existencias');
+}
+
+{
+  grupo('textoQuedanReferencia');
+  comprobar('el desglose que sustituye al «30 disp»',
+    textoQuedanReferencia(quedanPorCalidad('Mixta Invierno', CALIDADES, STOCK, PEDIDOS)),
+    'quedan: Primera 4 · Segunda 10 · Tercera 0');
+  comprobar('lo pedido de más dice 0, no −3, en la frase',
+    textoQuedanReferencia([{ calidad: 'Tercera', hay: 8, quedan: -3 }]), 'quedan: Tercera 0');
+  comprobar('sin ninguna calidad con pacas', textoQuedanReferencia([{ calidad: 'Primera', hay: 0, quedan: 0 }]), 'sin existencias');
+  comprobar('basura', textoQuedanReferencia(null), 'sin existencias');
+}
+
+{
+  grupo('resumenExistencias');
+  const nombres = new Map([['1', 'JOSE'], ['2', 'MARIA'], ['3', 'ANDREA']]);
+  const r = resumenExistencias(STOCK, PEDIDOS, nombres);
+  comprobar('por referencia, en orden alfabético', r.map((g) => g.referencia), ['Jean', 'Mixta Invierno']);
+  comprobar('lo pedido sin pacas entra con hay 0 y queda en negativo',
+    r[0].calidades.map((q) => `${q.calidad}:${q.hay}/${q.piden}/${q.quedan}`), ['Única:0/4/-4']);
+  comprobar('Mixta Invierno: las tres calidades, sin sumarlas',
+    r[1].calidades.map((q) => `${q.calidad}:${q.hay}/${q.piden}/${q.quedan}`),
+    ['Primera:12/8/4', 'Segunda:10/0/10', 'Tercera:8/11/-3']);
+  comprobar('«tercera» en minúscula cae en la Tercera del stock',
+    r[1].calidades.length, 3);
+  comprobar('quién lo pidió, el que más pide primero',
+    r[1].calidades[0].clientes.map((c) => `${c.nombre} ${c.cantidad}`), ['JOSE 5', 'MARIA 3']);
+  comprobar('lo que nadie pidió no trae clientes', r[1].calidades[1].clientes, []);
+  comprobar('sin nombre se ve el número, no un genérico',
+    resumenExistencias(null, new Map([['x|y', { referencia: 'X', calidad: 'Y', pedido: 1, clientes: new Map([['9', 1]]) }]]), null)[0]
+      .calidades[0].clientes[0].nombre,
+    'cliente 9');
+  sinLanzar('basura', () => resumenExistencias('no', 7, undefined));
+  comprobar('y con basura no hay nada', resumenExistencias(null, null, null).length, 0);
+}
+
+{
+  grupo('hermanasDeReferencia');
+  // A tres les falta Primera (piden 11, hay 8) y Segunda tiene 6 que nadie pidió.
+  const h = hermanasDeReferencia(
+    [{ calidad: 'Primera', pedido: 11, disponibles: 8, repartido: 8 }],
+    [{ calidad: 'Primera', disponibles: 8 }, { calidad: 'Segunda', disponibles: 6 }],
+  );
+  comprobar('las dos calidades, la de la ronda y la que nadie pidió',
+    h.calidades.map((c) => `${c.calidad}:${c.enRonda ? 'ronda' : 'bodega'}/libre ${c.libre}/falta ${c.falta}`),
+    ['Primera:ronda/libre 0/falta 3', 'Segunda:bodega/libre 6/falta 0']);
+  comprobar('la corta', h.cortas, ['Primera']);
+  comprobar('lo libre de las otras', h.libreOtras, 6);
+
+  // Segunda sí se pidió, alcanza, y ella se guardó 2 sin repartir.
+  const h2 = hermanasDeReferencia(
+    [
+      { calidad: 'Primera', pedido: 11, disponibles: 8, repartido: 8 },
+      { calidad: 'Segunda', pedido: 4, disponibles: 6, repartido: 4 },
+    ],
+    [{ calidad: 'Segunda', disponibles: 6 }],
+  );
+  comprobar('lo libre de una hermana de la ronda se cuenta en vivo', h2.libreOtras, 2);
+
+  // Lo que sobra en la MISMA calidad que no alcanza no es «de otra calidad».
+  const h3 = hermanasDeReferencia(
+    [{ calidad: 'Primera', pedido: 11, disponibles: 8, repartido: 5 }],
+    [{ calidad: 'Tercera', disponibles: 0 }],
+  );
+  comprobar('lo libre de la corta no cuenta como de otra', h3.libreOtras, 0);
+  comprobar('una calidad de bodega en cero no aparece', h3.calidades.length, 1);
+  comprobar('nadie corto, nada que avisar',
+    hermanasDeReferencia([{ calidad: 'Primera', pedido: 4, disponibles: 8, repartido: 4 }], []).cortas, []);
+  sinLanzar('basura', () => hermanasDeReferencia(null, 'x'));
+  comprobar('y con basura no hay hermanas', hermanasDeReferencia(undefined, null).calidades.length, 0);
 }
 
 console.log(malos ? `\n${malos} PRUEBA(S) FALLIDA(S)` : '\nEl reparto y el libro de faltantes cuadran');

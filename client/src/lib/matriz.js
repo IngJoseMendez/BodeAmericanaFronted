@@ -647,3 +647,212 @@ export function totalesDeReparto(filas, asignado, transporteGlobal, sinFaltante)
     clientesConFaltante, clientesSinNada, total,
   };
 }
+
+// ── Lo que queda de cada calidad ────────────────────────────────────────────
+//
+// EL CASO QUE LO MOTIVÓ: una referencia como «Mixta Invierno» llega en tres
+// calidades —12 de Primera, 10 de Segunda, 8 de Tercera— y la lista de
+// referencias decía «Mixta Invierno · 30 disp». Treinta no existen para ningún
+// cliente: el servidor aparta por referencia Y calidad, y a quien pide Primera
+// le caben 12 como mucho. La suma no fallaba en ningún sitio; se leía como un
+// dato, que es la forma cara de mentir.
+//
+// Así que la cuenta se hace SIEMPRE por calidad, y siempre descontando lo que ya
+// se pidió en la ronda: si tres clientes ya se llevaron 8 de las 12 de Primera,
+// al cuarto le quedan 4, no 12.
+
+/**
+ * Lo que queda de cada calidad de UNA referencia, ya descontado lo pedido en la
+ * ronda.
+ *
+ * `propia` es la línea que hace la pregunta. Lo suyo NO se descuenta: si esta
+ * línea ya pide 5 de Primera y vuelve a abrir la lista, lo que tiene que leer es
+ * cuántas le caben a ella, y restarle sus propias 5 le enseñaría menos de las
+ * que de verdad puede llevarse.
+ *
+ * `quedan` puede salir negativo —se pidió más de lo que hay— y se devuelve tal
+ * cual: cómo decirlo es cosa de quien lo pinta, y recortarlo a cero aquí
+ * borraría justo el dato de cuánto no alcanza.
+ *
+ * @param {string} referencia
+ * @param {string[]} calidades  las calidades a contar, en el orden en que se enseñan
+ * @param {Map|object} stock    claveStock → { disponibles }
+ * @param {Map|object} pedidos  claveStock → { pedido }
+ * @param {{clave:string, cantidad:number}|null} [propia]
+ * @returns {Array<{ calidad:string, clave:string, hay:number, pedido:number, quedan:number }>}
+ */
+export function quedanPorCalidad(referencia, calidades, stock, pedidos, propia = null) {
+  const vistas = new Set();
+  const salida = [];
+  for (const calidad of lista(calidades)) {
+    if (!normTxt(calidad)) continue;
+    const clave = claveStock(referencia, calidad);
+    // «Primera» y «PRIMERA» son la misma calidad: contarla dos veces pintaría
+    // dos botones que hacen lo mismo y dos cifras que parecen distintas.
+    if (vistas.has(clave)) continue;
+    vistas.add(clave);
+    const hay = entero(leerMapa(stock, clave)?.disponibles);
+    const todo = entero(leerMapa(pedidos, clave)?.pedido);
+    const suyo = propia && propia.clave === clave ? entero(propia.cantidad) : 0;
+    const pedido = Math.max(0, todo - suyo);
+    salida.push({ calidad: String(calidad), clave, hay, pedido, quedan: hay - pedido });
+  }
+  return salida;
+}
+
+/**
+ * Lo que dice la lista de calidades al lado de cada una.
+ *
+ * Cuatro casos y ni uno más, con la gramática que ya usa el chip de la línea
+ * («hay 10 · piden 20», «quedan 3»), para que la lista y el chip se lean como
+ * la misma cuenta vista antes y después de escoger:
+ *   · nada en bodega      → «sin existencias»
+ *   · nadie más la pidió  → «hay 12»
+ *   · cabe algo todavía   → «quedan 4 de 12»
+ *   · ya se la pidieron   → «hay 8 · ya piden 11»
+ * Sin la palabra FALTANTE: en esta fase todavía no le falta nada a nadie, sólo
+ * hay menos mercancía que demanda.
+ */
+export function textoExistencia(q) {
+  const hay = entero(q?.hay);
+  const pedido = entero(q?.pedido);
+  if (hay === 0) return 'sin existencias';
+  if (pedido === 0) return `hay ${hay}`;
+  if (pedido < hay) return `quedan ${hay - pedido} de ${hay}`;
+  return `hay ${hay} · ya piden ${pedido}`;
+}
+
+/**
+ * El desglose que acompaña a una referencia en su lista: «quedan: Primera 4 ·
+ * Segunda 10 · Tercera 0». Sustituye al «· 30 disp» que sumaba calidades.
+ *
+ * Aquí sí se recorta a cero, y es a propósito: la frase dice cuántas QUEDAN sin
+ * pedir, y de Tercera no queda ninguna. El «−3» vive en el panel de
+ * existencias, que es una tabla con columnas de hay y piden al lado; en una
+ * frase suelta un número negativo no se sabe de qué es.
+ */
+export function textoQuedanReferencia(filas) {
+  const conPacas = lista(filas).filter((q) => entero(q?.hay) > 0);
+  if (!conPacas.length) return 'sin existencias';
+  return 'quedan: ' + conPacas.map((q) => `${q.calidad} ${entero(q.quedan)}`).join(' · ');
+}
+
+/**
+ * El panel de existencias de la Fase 1: por referencia, cada calidad con lo que
+ * hay, lo que se pide en la ronda y lo que queda, y quién lo pidió.
+ *
+ * Entra lo que tiene pacas Y lo que se pidió sin tener ninguna: el cliente que
+ * pide lo que se voló es media razón de ser del módulo, y un panel que sólo
+ * enseñara lo que hay escondería justo esa demanda.
+ *
+ * Sin totales por referencia, a propósito: sumar calidades es el error que este
+ * panel viene a corregir.
+ *
+ * @param {Map|object} stock    claveStock → { referencia, calidad, disponibles }
+ * @param {Map|object} pedidos  claveStock → { referencia, calidad, pedido, clientes: Map<id, cantidad> }
+ * @param {Map|object} nombres  cliente_id (string) → nombre
+ * @returns {Array<{ referencia:string, calidades: Array<{ clave, calidad, hay, piden, quedan,
+ *                   clientes: Array<{ id:string, nombre:string, cantidad:number }> }> }>}
+ */
+export function resumenExistencias(stock, pedidos, nombres) {
+  const porRef = new Map();
+  const filaDe = (referencia, calidad) => {
+    const kRef = normTxt(referencia);
+    if (!kRef || !normTxt(calidad)) return null;
+    const clave = claveStock(referencia, calidad);
+    if (!porRef.has(kRef)) porRef.set(kRef, { referencia: String(referencia), calidades: new Map() });
+    const grupo = porRef.get(kRef);
+    if (!grupo.calidades.has(clave)) {
+      grupo.calidades.set(clave, { clave, calidad: String(calidad), hay: 0, piden: 0, quedan: 0, clientes: [] });
+    }
+    return grupo.calidades.get(clave);
+  };
+
+  for (const [, s] of pares(stock)) {
+    const f = filaDe(s?.referencia, s?.calidad);
+    if (f) f.hay += entero(s?.disponibles);
+  }
+  for (const [, p] of pares(pedidos)) {
+    const f = filaDe(p?.referencia, p?.calidad);
+    if (!f) continue;
+    f.piden += entero(p?.pedido);
+    for (const [id, cantidad] of pares(p?.clientes)) {
+      const n = entero(cantidad);
+      if (n <= 0) continue;
+      // Sin nombre se enseña el número de cliente, no un «Cliente» genérico:
+      // dos genéricos seguidos no se pueden distinguir y el botón llevaría a
+      // uno que no es.
+      const nombre = leerMapa(nombres, String(id));
+      f.clientes.push({ id: String(id), nombre: nombre ? String(nombre) : `cliente ${id}`, cantidad: n });
+    }
+  }
+
+  const alfabetico = (a, b) => String(a).localeCompare(String(b), 'es');
+  return [...porRef.values()]
+    .map((g) => ({
+      referencia: g.referencia,
+      calidades: [...g.calidades.values()]
+        .map((f) => ({
+          ...f,
+          quedan: f.hay - f.piden,
+          // El que más pide primero: es a quien más le afecta que no alcance.
+          clientes: f.clientes.sort((a, b) => b.cantidad - a.cantidad || alfabetico(a.nombre, b.nombre)),
+        }))
+        .sort((a, b) => alfabetico(a.calidad, b.calidad)),
+    }))
+    .sort((a, b) => alfabetico(a.referencia, b.referencia));
+}
+
+/**
+ * Las calidades hermanas de una referencia, para la franja que las agrupa en la
+ * Fase 2.
+ *
+ * La pregunta que contesta: «a tres clientes les falta Primera, ¿hay de otra
+ * calidad sin repartir?». Mira las calidades de la ronda —con lo que ya se
+ * repartió, que cambia mientras ella teclea— y también las que tienen pacas y
+ * NADIE pidió, que es justo el caso que no se veía: esas no son un producto de
+ * la Fase 2 y por tanto no tenían ni una fila.
+ *
+ * `libreOtras` suma sólo lo libre de las calidades que alcanzan. Lo que sobra
+ * en la misma calidad que no alcanza no es «de otra calidad»: eso ya lo dice su
+ * propio contador en ámbar.
+ *
+ * NO propone cambiar a nadie de calidad: cambiarla cambia el precio, y eso se
+ * habla con el cliente. Sólo cuenta.
+ *
+ * @param {Array<{calidad, pedido, disponibles, repartido}>} enRonda
+ * @param {Array<{calidad, disponibles}>} enBodega
+ * @returns {{ calidades: Array<{ calidad, enRonda:boolean, pedido, disponibles, libre, falta }>,
+ *             cortas: string[], libreOtras: number }}
+ */
+export function hermanasDeReferencia(enRonda, enBodega) {
+  const m = new Map();
+  for (const p of lista(enRonda)) {
+    const k = normTxt(p?.calidad);
+    if (!k || m.has(k)) continue;
+    const pedido = entero(p?.pedido);
+    const disponibles = entero(p?.disponibles);
+    const repartido = entero(p?.repartido);
+    m.set(k, {
+      calidad: String(p.calidad),
+      enRonda: true,
+      pedido,
+      disponibles,
+      libre: Math.max(0, disponibles - repartido),
+      falta: Math.max(0, pedido - disponibles),
+    });
+  }
+  for (const s of lista(enBodega)) {
+    const k = normTxt(s?.calidad);
+    if (!k || m.has(k)) continue;
+    const disponibles = entero(s?.disponibles);
+    if (disponibles <= 0) continue;
+    m.set(k, { calidad: String(s.calidad), enRonda: false, pedido: 0, disponibles, libre: disponibles, falta: 0 });
+  }
+  const calidades = [...m.values()].sort((a, b) => a.calidad.localeCompare(b.calidad, 'es'));
+  return {
+    calidades,
+    cortas: calidades.filter((c) => c.falta > 0).map((c) => c.calidad),
+    libreOtras: calidades.filter((c) => c.falta === 0).reduce((s, c) => s + c.libre, 0),
+  };
+}

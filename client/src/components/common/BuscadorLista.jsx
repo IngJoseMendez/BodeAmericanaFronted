@@ -39,10 +39,25 @@ import { coincideBusqueda, normTxt as norm } from '../../lib/matriz';
 // La segunda es la mitad de los desplegables del sistema —clientes, bancos,
 // cuentas, contenedores, temporadas—, y sin ella este buscador solo servía para
 // la otra mitad. Dentro se trabaja siempre con { valor, etiqueta }.
+//
+// La forma de objeto admite además dos campos opcionales, que nacieron en la
+// Matriz para dejar de sumar calidades en la lista de referencias:
+//   detalle  una segunda línea pequeña bajo la etiqueta («quedan 4 de 12»). NO
+//            se busca —teclear «4» no puede encontrar todas las referencias que
+//            tengan un 4 en sus cuentas— y NO se enseña con la lista cerrada: el
+//            campo dice lo que se escogió, no una cuenta que se queda vieja en
+//            cuanto otro cliente pide lo mismo.
+//   apagada  se pinta en gris, pero se puede escoger igual. Es para lo que
+//            existe y hoy no tiene existencias: pedirlo es legítimo.
 const normalizarOpciones = (lista) => (lista || []).map((o) => (
   o !== null && typeof o === 'object'
-    ? { valor: String(o.value ?? o.valor ?? ''), etiqueta: String(o.label ?? o.etiqueta ?? o.value ?? '') }
-    : { valor: String(o ?? ''), etiqueta: String(o ?? '') }
+    ? {
+      valor: String(o.value ?? o.valor ?? ''),
+      etiqueta: String(o.label ?? o.etiqueta ?? o.value ?? ''),
+      detalle: o.detalle ? String(o.detalle) : '',
+      apagada: Boolean(o.apagada),
+    }
+    : { valor: String(o ?? ''), etiqueta: String(o ?? ''), detalle: '', apagada: false }
 ));
 
 export function BuscadorLista({
@@ -57,6 +72,10 @@ export function BuscadorLista({
   placeholder = 'Seleccionar…',
   className = '',
   disabled = false,
+  // Ancho mínimo de la lista desplegada, en píxeles. Por defecto la lista mide
+  // lo mismo que el campo; en una columna estrecha de tabla, una opción con
+  // `detalle` se partiría en cuatro renglones.
+  anchoLista = 0,
   id,
   ...rest
 }) {
@@ -73,7 +92,18 @@ export function BuscadorLista({
   const refLista = useRef(null);
 
   const actual = String(value ?? '').trim();
-  const listas = useMemo(() => grupos ?? [{ label: null, opciones }], [grupos, opciones]);
+  // `opciones` y `grupos` pueden llegar también como FUNCIÓN, y entonces se
+  // leen al abrir la lista. Es para cuentas que cambian con cada tecla de otra
+  // fila —«quedan 4 de 12» baja en cuanto otro cliente pide Primera—: pasarlas
+  // ya calculadas obligaría a repintar todas las filas de una tabla memoizada
+  // en cada pulsación, y la lista cerrada no enseña esas cuentas. Por eso
+  // `abierto` está en las dependencias: abrir la lista la vuelve a leer.
+  const listas = useMemo(() => {
+    const g = typeof grupos === 'function' ? grupos() : grupos;
+    const o = typeof opciones === 'function' ? opciones() : opciones;
+    return g ?? [{ label: null, opciones: o }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grupos, opciones, abierto]);
 
   // Todas las opciones en plano, con su grupo al lado. La lista se recorre con
   // flechas de arriba abajo sin que los rótulos de grupo estorben.
@@ -114,14 +144,18 @@ export function BuscadorLista({
     // Si abajo no cabe y arriba sí, se abre hacia arriba en vez de salirse de
     // la pantalla.
     const haciaArriba = espacioAbajo < 160 && r.top > espacioAbajo;
+    // Más ancha que el campo sólo si se pidió, y sin salirse por la derecha:
+    // una lista cortada por el borde de la ventana esconde justo el final de
+    // cada línea, que es donde van las cuentas.
+    const ancho = Math.min(Math.max(r.width, anchoLista || 0), window.innerWidth - 16);
     setCaja({
-      left: r.left,
-      width: r.width,
+      left: Math.max(8, Math.min(r.left, window.innerWidth - ancho - 8)),
+      width: ancho,
       top: haciaArriba ? undefined : r.bottom + 4,
       bottom: haciaArriba ? window.innerHeight - r.top + 4 : undefined,
       maxHeight: haciaArriba ? Math.min(260, r.top - 12) : alto,
     });
-  }, []);
+  }, [anchoLista]);
 
   useLayoutEffect(() => {
     if (!abierto) return undefined;
@@ -227,11 +261,19 @@ export function BuscadorLista({
               onMouseDown={(ev) => { ev.preventDefault(); escoger(p.valor); }}
               onMouseEnter={() => setMarcada(i)}
               className={`w-full text-left px-3 py-1.5 text-sm ${
-                i === marcada ? 'bg-secondary/10 text-primary' : 'text-primary'
-              } ${esLaElegida ? 'font-semibold' : ''} ${p.valor === '' ? 'text-muted italic' : ''}`}
+                i === marcada ? 'bg-secondary/10' : ''
+              } ${p.apagada ? 'text-muted' : 'text-primary'} ${esLaElegida ? 'font-semibold' : ''} ${p.valor === '' ? 'text-muted italic' : ''}`}
             >
               {p.etiqueta}
-              {p.grupo && <span className="block text-[10px] text-muted leading-tight">{p.grupo}</span>}
+              {/* La segunda línea es el detalle si lo hay y, si no, el grupo,
+                  como siempre. Con detalle el grupo sobra: «sin existencias»
+                  ya dice en qué grupo está, y dos líneas de letra pequeña por
+                  opción doblarían el alto de la lista. */}
+              {p.detalle ? (
+                <span className="block text-xs text-muted leading-tight tabular-nums">{p.detalle}</span>
+              ) : p.grupo ? (
+                <span className="block text-[10px] text-muted leading-tight">{p.grupo}</span>
+              ) : null}
             </button>
           </li>
         );
