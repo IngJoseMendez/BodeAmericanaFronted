@@ -11,7 +11,7 @@ import autoTable from 'jspdf-autotable';
 // El costo por línea sale del mismo sitio que en las hojas de Excel: si el PDF
 // se lo calculara por su cuenta, el papel y el libro acabarían enseñando cifras
 // distintas del mismo inventario y nadie sabría cuál creer.
-import { costoDeLinea } from './entregables.js';
+import { costoDeLinea, promoDeLinea } from './entregables.js';
 
 const formatNum = (v) => (parseInt(v) || 0).toLocaleString('es-CO');
 const formatCOP = (v) => '$' + (parseFloat(v) || 0).toLocaleString('es-CO');
@@ -206,14 +206,22 @@ export async function exportarPDFInternos(sel, data, fileName) {
 
   if (sel.includes('INVENTARIO(INTERNO)')) {
     addTitle(`INVENTARIO (INTERNO)`);
-    const rows = data.inventario.map(f => [
-      f.categoria, f.clasificacion, f.referencia, f.calidad,
-      formatCOP(costoDeLinea(f)), formatCOP(f.precio_unitario),
-      f.disponibles
-    ]);
+    // PROMO va al lado de PRECIO y sale de la misma función que en el Excel:
+    // el papel y el libro tienen que decir el mismo precio del mismo producto.
+    // Vacía cuando no hay rebaja, para que se vea de un golpe qué está en
+    // promoción.
+    const rows = data.inventario.map(f => {
+      const promo = promoDeLinea(f);
+      return [
+        f.categoria, f.clasificacion, f.referencia, f.calidad,
+        formatCOP(costoDeLinea(f)), formatCOP(f.precio_unitario),
+        promo != null ? formatCOP(promo) : '',
+        f.disponibles
+      ];
+    });
     autoTable(doc, {
       startY: 60,
-      head: [['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP']],
+      head: [['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'DISP']],
       body: rows,
       theme: 'grid',
       styles: { fontSize: 8 },

@@ -47,6 +47,36 @@ export const int = (v) => parseInt(v) || 0;
 export const costoDeLinea = (f) => num(f?.precio_minimo);
 
 /**
+ * LA PROMOCIÓN VIGENTE DE UNA LÍNEA DE INVENTARIO, o null si no tiene.
+ *
+ * Hay dos formas de estar en promoción y las hojas tienen que enseñar las dos:
+ *   · `precio_promocion` — la promoción que está corriendo en la tabla de
+ *     promociones para esa referencia y calidad. La paca conserva su precio de
+ *     lista y la rebaja vive aparte, así que al quitarla se vuelve sola al de
+ *     lista. Es como se registran hoy.
+ *   · `tiene_promocion` — las pacas cuyo `precio_venta` YA es el rebajado: nacen
+ *     así al finalizar un contenedor con una promoción corriendo.
+ *
+ * Vive aquí, junto a `costoDeLinea` y por el mismo motivo: el Excel y el PDF
+ * tienen que decir el mismo precio del mismo producto, y este proyecto ya tuvo
+ * el bug de dos fórmulas de dinero que se separaron sin que nada fallara.
+ */
+export const promoDeLinea = (f) => (f?.precio_promocion != null
+  ? num(f.precio_promocion)
+  : (f?.tiene_promocion ? num(f?.precio_unitario) : null));
+
+/**
+ * EL PRECIO QUE SE VA A COBRAR HOY: el de promoción si lo hay, y si no el de
+ * lista. La promoción gana sobre el precio, que es como lo resuelve también la
+ * pantalla de Cotizaciones (promoción → inventario → preestablecido). Valorar
+ * el inventario con el de lista cuando hay rebaja infla justo lo rebajado.
+ */
+export const precioDeLinea = (f) => {
+  const promo = promoDeLinea(f);
+  return promo != null ? promo : num(f?.precio_unitario);
+};
+
+/**
  * La tasa con la que se pasa de pesos a dólares, o 0 si no hay ninguna.
  *
  * UNO NO ES UNA TASA. La columna `tasa` de cotizaciones nace con DEFAULT 1, así
@@ -372,18 +402,24 @@ export function hojaMatrizClientes(wb, filas, separadas) {
 
   for (const f of filas) {
     const r = ws.getRow(fila);
-    const promo = Boolean(f.tiene_promocion);
     const precio = num(f.precio_unitario);
 
-    // Sólo una de las dos columnas de precio se llena por fila: si el grupo
-    // tiene promoción vigente, el precio que se está aplicando es el de promo;
-    // si no, es el original. Dejar la otra en blanco es lo que permite ver de
-    // un vistazo qué está rebajado.
+    // EL PRECIO DE HOY ES EL DE PROMOCIÓN, Y AHORA SE VE. La columna PROMO
+    // llegaba vacía siempre que la rebaja vivía en la tabla de promociones —que
+    // es como se registran hoy—, así que el papel enseñaba el precio de lista
+    // mientras Cotizaciones cobraba el rebajado. `promoDeLinea` conoce las dos
+    // formas de estar en promoción.
+    const promo = promoDeLinea(f);
+    // El de lista se escribe al lado, que es como está en la plantilla de la
+    // operación. Se deja en blanco cuando sería el MISMO número: repetir la
+    // cifra bajo los dos rótulos se lee como que la promoción no rebaja nada.
+    const original = promo != null && (Boolean(f.tiene_promocion) || promo === precio) ? '' : precio;
+
     const base = [
       f.contenedor || '', f.proveedor_nombre || '', f.referencia || '', f.calidad || '',
       costoDeLinea(f) || '',
-      promo ? precio : '',
-      promo ? '' : precio,
+      promo != null ? promo : '',
+      original,
       int(f.cantidad), int(f.fisico), int(f.despachadas), int(f.separadas), int(f.disponibles),
     ];
     base.forEach((v, i) => {
@@ -1050,41 +1086,48 @@ export function hojaListaDisponiblesInterna(wb, filas) {
 /** INVENTARIO(INTERNO) — con costo, precio y sus totales. */
 export function hojaInventarioInterno(wb, filas) {
   const ws = wb.addWorksheet('INVENTARIO(INTERNO)');
-  [18, 16, 24, 14, 14, 14, 8, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [18, 16, 24, 14, 14, 14, 14, 8, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 9);
+  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 10);
   // Mismo rótulo que la hoja MATRIZ, y el mismo dato debajo: el mínimo por línea.
-  fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
+  // PROMO va al lado de PRECIO, como en la plantilla de la operación.
+  fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
 
   let ct = 0, pt = 0, disp = 0;
   for (const f of filas) {
     const d = int(f.disponibles);
     const costo = costoDeLinea(f);
     const precio = num(f.precio_unitario);
+    // La misma regla que en la MATRIZ: la promoción vigente manda sobre el
+    // precio de lista, y PRECIO TOTAL se valora con lo que de verdad se va a
+    // cobrar.
+    const promo = promoDeLinea(f);
+    const efectivo = precioDeLinea(f);
     const r = ws.getRow(fila);
-    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo || '', precio, d, costo * d || '', precio * d]
+    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo || '', precio,
+      promo != null ? promo : '', d, costo * d || '', efectivo * d]
       .forEach((v, i) => {
         const c = r.getCell(i + 1);
         c.value = v ?? '';
-        if ([4, 5, 7, 8].includes(i)) { c.numFmt = '$#,##0'; c.alignment = { horizontal: 'right' }; }
-        if (i === 6) { c.alignment = { horizontal: 'center' }; c.font = { bold: true }; }
+        if ([4, 5, 6, 8, 9].includes(i)) { c.numFmt = '$#,##0'; c.alignment = { horizontal: 'right' }; }
+        if (i === 7) { c.alignment = { horizontal: 'center' }; c.font = { bold: true }; }
       });
-    zebra(ws, fila, 9);
-    ct += costo * d; pt += precio * d; disp += d;
+    zebra(ws, fila, 10);
+    ct += costo * d; pt += efectivo * d; disp += d;
     fila++;
   }
 
   const r = ws.getRow(fila);
-  ws.mergeCells(fila, 1, fila, 6);
+  ws.mergeCells(fila, 1, fila, 7);
   r.getCell(1).value = 'TOTAL';
-  r.getCell(7).value = disp;
-  r.getCell(8).value = ct;
-  r.getCell(9).value = pt;
-  [8, 9].forEach(i => { r.getCell(i).numFmt = '$#,##0'; });
-  for (let i = 1; i <= 9; i++) {
+  r.getCell(8).value = disp;
+  r.getCell(9).value = ct;
+  r.getCell(10).value = pt;
+  [9, 10].forEach(i => { r.getCell(i).numFmt = '$#,##0'; });
+  for (let i = 1; i <= 10; i++) {
     r.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
     r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
-    r.getCell(i).alignment = { horizontal: i === 1 ? 'right' : i === 7 ? 'center' : 'right' };
+    r.getCell(i).alignment = { horizontal: i === 1 ? 'right' : i === 8 ? 'center' : 'right' };
   }
   return ws;
 }
