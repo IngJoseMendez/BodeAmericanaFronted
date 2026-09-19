@@ -1,5 +1,13 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+// LA TABLA SE DIBUJA LLAMANDO A LA FUNCIÓN, NO AL DOCUMENTO.
+// Hasta jspdf-autotable 4, importar el paquete por su efecto —`import
+// 'jspdf-autotable'`— le añadía el método `autoTable` a jsPDF y se escribía
+// `doc.autoTable({…})`. Desde la 5 ya no engancha nada: el método no existe y
+// todos los entregables en PDF morían con «g.autoTable is not a function»
+// (`g` es `doc` después de minificar), con el Excel funcionando al lado. Ahora
+// se importa la función y se le pasa el documento, que es como ya lo hacían
+// Pacas.jsx y Ventas.jsx.
+import autoTable from 'jspdf-autotable';
 // El costo por línea sale del mismo sitio que en las hojas de Excel: si el PDF
 // se lo calculara por su cuenta, el papel y el libro acabarían enseñando cifras
 // distintas del mismo inventario y nadie sabría cuál creer.
@@ -44,7 +52,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
         first = false;
       }
     }
-    doc.autoTable({
+    autoTable(doc, {
       startY: 60,
       head: [['CLIENTE', 'CIUDAD', 'TRANSPORTE', 'CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'CANT']],
       body: rows,
@@ -67,7 +75,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
         first = false;
       }
     }
-    doc.autoTable({
+    autoTable(doc, {
       startY: 60,
       head: [['CLIENTE', 'CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'CANT']],
       body: rows,
@@ -83,7 +91,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
       f.categoria, f.clasificacion, f.referencia, f.calidad,
       f.fisico, f.separadas, f.disponibles
     ]);
-    doc.autoTable({
+    autoTable(doc, {
       startY: 60,
       head: [['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'FISICO', 'SEPARADA', 'DISP']],
       body: rows,
@@ -161,7 +169,7 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
         formatCOP((parseInt(f.cantidad_abierta) || 0) * (parseFloat(f.precio_unitario_origen) || 0)),
         formatFechaCorta(f.created_at), formatNum(f.dias_abierto), formatNum(f.veces_aplazado),
       ]);
-      doc.autoTable({
+      autoTable(doc, {
         startY: 72,
         head: [['CLIENTE', 'CIUDAD', 'CELULAR', 'REFERENCIA', 'CALIDAD',
                 'PIDIO', 'RECIBIO', 'FALTA', 'PRECIO', 'VALOR', 'DESDE', 'DIAS', 'REPARTOS']],
@@ -203,7 +211,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
       formatCOP(costoDeLinea(f)), formatCOP(f.precio_unitario),
       f.disponibles
     ]);
-    doc.autoTable({
+    autoTable(doc, {
       startY: 60,
       head: [['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'DISP']],
       body: rows,
@@ -218,7 +226,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
     const rows = data.cartera.map(c => [
       c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo), formatCOP(c.vencido)
     ]);
-    doc.autoTable({
+    autoTable(doc, {
       startY: 60,
       head: [['CLIENTE', 'LIMITE', 'DIAS', 'SALDO', 'VENCIDO']],
       body: rows,
