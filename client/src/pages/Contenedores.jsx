@@ -6,7 +6,7 @@ import {
   TrendingUp, DollarSign, Archive, Boxes,
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
-  ClipboardCheck, Sparkles, RefreshCw,
+  ClipboardCheck, Sparkles, RefreshCw, Info,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista, CampoMonto } from '../components/common';
@@ -18,6 +18,9 @@ import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import { parseMonto, formatCOP, formatNumero, formatMoneda } from '../lib/money';
 import { hoy, formatFecha, aInputDate } from '../lib/fecha';
+// El mismo «19/09 a las 6:40 p. m.» que usa el borrador de la Matriz: los dos
+// avisos dicen lo mismo y tienen que leerse igual.
+import { selloBorrador } from './matriz/borrador';
 import { descargarExcel } from '../lib/descargar';
 // Las cuentas del contenedor viven fuera de la pantalla porque el SERVIDOR tiene
 // su propia copia de las mismas fórmulas —él decide lo que se guarda, esta
@@ -769,6 +772,74 @@ export default function Contenedores() {
   // Mientras el aviso de "cambios sin guardar" está en pantalla, no se vuelve a
   // pedir: sin esto, un segundo Escape descartaba el aviso y abría otro igual.
   const avisoCierreAbiertoRef = useRef(false);
+
+  // ── EL BORRADOR DE ESTE NAVEGADOR ──────────────────────────────
+  //
+  // Llenar un contenedor son veinte minutos a ratos: entre llamadas, con el
+  // proveedor al teléfono y la factura a medio leer. Salir a medias es lo
+  // normal, así que lo escrito se guarda aquí mismo mientras se teclea —un
+  // segundo después de la última tecla— y vuelve solo al abrir el formulario.
+  // Es la misma red que ya tiene la Matriz.
+  //
+  // NO SUSTITUYE A GUARDAR: lo guardado vive en el servidor y se ve desde
+  // cualquier parte. Esto salva los dos casos que el servidor no puede: que no
+  // se llegara ni a pulsar guardar —se cerró la pestaña, se fue la luz— y las
+  // líneas a medio escribir, que la base no admite porque le faltan columnas
+  // obligatorias.
+  const CLAVE_BORRADOR = 'bodega_contenedor_borrador';
+  const claveBorrador = (id) => (id ? `${CLAVE_BORRADOR}:${id}` : CLAVE_BORRADOR);
+  const leerBorrador = (clave) => {
+    try {
+      const x = JSON.parse(localStorage.getItem(clave) || 'null');
+      return x && x.v === 1 && x.formData ? x : null;
+    } catch { return null; }   // almacenamiento bloqueado, o basura dentro
+  };
+  const escribirBorrador = (clave, datos) => {
+    try { localStorage.setItem(clave, JSON.stringify({ v: 1, guardado_en: new Date().toISOString(), ...datos })); }
+    catch { /* sin almacenamiento: se sigue trabajando, sólo que sin red debajo */ }
+  };
+  const olvidarBorrador = (clave) => {
+    try { localStorage.removeItem(clave); } catch { /* idem */ }
+  };
+  // Lo recuperado, para la franja que lo dice y lo deja tirar.
+  const [borradorRecuperado, setBorradorRecuperado] = useState(null);
+  // La última foto de lo tecleado y si hay algo que perder, en refs: los lee el
+  // cierre de la pestaña, que no puede consultar el estado de React.
+  const fotoFormRef = useRef(null);
+  const tocadoRef = useRef(false);
+  useEffect(() => { tocadoRef.current = formTocado; }, [formTocado]);
+
+  useEffect(() => {
+    if (!modalOpen || soloLectura) { fotoFormRef.current = null; return undefined; }
+    const clave = claveBorrador(editMode ? selectedContenedor?.id : null);
+    const foto = {
+      modo: modoEstimacion ? 'estimacion' : 'contenedor',
+      contenedor_id: editMode ? (selectedContenedor?.id ?? null) : null,
+      formData, proveedores, servicios,
+    };
+    fotoFormRef.current = { clave, foto };
+    if (!formTocado) return undefined;
+    // Un segundo, y no en cada tecla: serializar el formulario entero por
+    // pulsación es trabajo real en el hilo que está pintando la tabla.
+    const t = setTimeout(() => escribirBorrador(clave, foto), 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, soloLectura, formTocado, formData, proveedores, servicios, editMode, selectedContenedor, modoEstimacion]);
+
+  // Cerrar la pestaña, recargar o irse a otra pantalla no puede llevarse los
+  // últimos segundos: el retardo de arriba puede no haber saltado todavía.
+  // `beforeunload` cubre el cierre y el F5; la limpieza cubre la navegación de
+  // React Router, que no lo dispara. Las dos leen los refs, así que después de
+  // guardar —cuando ya no hay nada tocado— no reescriben nada.
+  useEffect(() => {
+    const guardarYa = () => {
+      const f = fotoFormRef.current;
+      if (f && tocadoRef.current) escribirBorrador(f.clave, f.foto);
+    };
+    window.addEventListener('beforeunload', guardarYa);
+    return () => { window.removeEventListener('beforeunload', guardarYa); guardarYa(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Load ───────────────────────────────────────────────────────
   const loadContenedores = async () => {
@@ -2299,6 +2370,21 @@ export default function Contenedores() {
     // El número que llega abajo lo escribe el servidor, no la usuaria: no cuenta
     // como trabajo por perder.
     setFormTocado(false);
+
+    // ¿Quedó algo a medias la última vez? Vuelve tal cual estaba, con su franja
+    // arriba diciendo de cuándo es y cómo tirarlo. Sólo se recupera lo del
+    // mismo tipo: una estimación no se abre encima de un contenedor.
+    const b = leerBorrador(claveBorrador(null));
+    if (b && b.modo === (estimacion ? 'estimacion' : 'contenedor')) {
+      const base = b.formData?.moneda_base || MONEDA_BASE_POR_DEFECTO;
+      setFormData({ ...FORM_VACIO, ...b.formData });
+      setProveedores(b.proveedores?.length ? b.proveedores : [emptyProveedor(base)]);
+      setServicios(b.servicios?.length ? b.servicios : [emptyServicio(base)]);
+      setBorradorRecuperado({ cuando: b.guardado_en, clave: claveBorrador(null) });
+      // No se pide número nuevo: el borrador trae el que ya tenía.
+      return;
+    }
+    setBorradorRecuperado(null);
     // `contenedoresApi` todavía no expone este endpoint (ese archivo lo lleva
     // otra persona), así que se pide con el cliente crudo.
     api.get('/contenedores/siguiente-numero')
@@ -2382,9 +2468,32 @@ export default function Contenedores() {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
       volcarContenedorAlFormulario(full);
+      // Lo que se quedó a medias en ESTE contenedor manda sobre lo guardado:
+      // es más nuevo. Aquí vuelven también las líneas sin clasificación o sin
+      // referencia, que el servidor no pudo guardar.
+      const b = leerBorrador(claveBorrador(contenedor.id));
+      if (b) {
+        const base = b.formData?.moneda_base || MONEDA_BASE_POR_DEFECTO;
+        setFormData({ ...FORM_VACIO, ...b.formData });
+        setProveedores(b.proveedores?.length ? b.proveedores : [emptyProveedor(base)]);
+        setServicios(b.servicios?.length ? b.servicios : [emptyServicio(base)]);
+        setBorradorRecuperado({ cuando: b.guardado_en, clave: claveBorrador(contenedor.id) });
+      } else {
+        setBorradorRecuperado(null);
+      }
       setSoloLectura(false);
       setEditMode(true); setModalOpen(true);
     } catch (err) { addToast(err.message, 'error'); }
+  };
+
+  // Tirar el borrador: vuelve a lo que hay guardado en el servidor (o a un
+  // formulario limpio si todavía no existe).
+  const descartarBorrador = () => {
+    if (borradorRecuperado?.clave) olvidarBorrador(borradorRecuperado.clave);
+    setBorradorRecuperado(null);
+    setFormTocado(false);
+    if (editMode && selectedContenedor) volcarContenedorAlFormulario(selectedContenedor);
+    else openCreateModal(modoEstimacion);
   };
 
   const openViewModal = async (contenedor) => {
@@ -2392,6 +2501,10 @@ export default function Contenedores() {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
       volcarContenedorAlFormulario(full, { lectura: true });
+      // Mirando no se recupera ningún borrador: lo que se enseña es lo que hay
+      // guardado, y un formulario con cosas a medias encima se leería como si
+      // estuvieran registradas.
+      setBorradorRecuperado(null);
       // editMode en true a propósito: no se está creando nada, se está mirando
       // un contenedor que existe, y de eso dependen el título y los bloques que
       // solo tienen sentido sobre algo guardado.
@@ -2407,6 +2520,20 @@ export default function Contenedores() {
     setFormTocado(false);
   };
 
+  // El número que se usa cuando la casilla se quedó vacía: el consecutivo que
+  // propone el servidor y, si no contesta, uno con la fecha y la hora que se
+  // corrige después. Un contenedor sin número no se puede guardar —es su nombre
+  // y es único—, pero eso no puede costarle a nadie lo que llevaba escrito.
+  const numeroParaGuardar = async () => {
+    try {
+      const r = await api.get('/contenedores/siguiente-numero');
+      if (r?.numero) return String(r.numero);
+    } catch { /* sin respuesta: se usa el de respaldo, que se puede corregir */ }
+    const d = new Date();
+    const dos = (n) => String(n).padStart(2, '0');
+    return `SIN-NUMERO-${dos(d.getDate())}${dos(d.getMonth() + 1)}-${dos(d.getHours())}${dos(d.getMinutes())}`;
+  };
+
   // ── Submit form ────────────────────────────────────────────────
   //
   // El guardado vive suelto porque lo llaman DOS sitios: el submit del
@@ -2414,17 +2541,22 @@ export default function Contenedores() {
   // Devuelve si se guardó, para que quien lo llame sepa si puede cerrar.
   const guardarContenedor = async () => {
     const r = calcularResumen();
-    // Se permite guardar a medias: el contenedor se puede ir cargando proveedor por
-    // proveedor a lo largo de varios días. Que las líneas cuadren con el total solo
-    // se exige al FINALIZAR, que es el paso irreversible que crea las unidades.
-    if (modoEstimacion && !proveedores.some(p => p.proveedor_nombre?.trim())) {
-      addToast('Agrega al menos un proveedor con su estimación', 'error');
-      return false;
-    }
+    // GUARDAR NUNCA SE NIEGA. Se permite guardar a medias: el contenedor se va
+    // cargando proveedor por proveedor a lo largo de varios días, a ratos y
+    // entre llamadas. Aquí se exigía al menos un proveedor para guardar una
+    // estimación, y eso convertía «me tengo que ir» en «pierdo lo escrito».
+    // Que las líneas cuadren con el total solo se exige al FINALIZAR, que es el
+    // paso irreversible que crea las unidades.
     setSubmitting(true);
     try {
+      // El número es el nombre del contenedor y la base de datos lo exige, así
+      // que si se dejó vacío se escribe el que propone el sistema. Nunca se
+      // devuelve un error por esto: sería el único campo capaz de impedir
+      // guardar, justo el que la pantalla ya sabe rellenar sola.
+      const numero = (formData.numero || '').trim() || await numeroParaGuardar();
+      const numeroPuestoSolo = numero !== (formData.numero || '').trim();
       const payload = {
-        numero: formData.numero,
+        numero,
         fecha_llegada: formData.fecha_llegada || null,
         fecha_salida: formData.fecha_salida || null,
         tasa_conversion: parseFloat(formData.tasa_conversion) || 1,
@@ -2484,16 +2616,42 @@ export default function Contenedores() {
         ? ` — guardado parcial: ${r.sumDetalles} de ${r.totalPacas} unidades (${r.faltanUnidades > 0 ? `faltan ${r.faltanUnidades}` : `sobran ${Math.abs(r.faltanUnidades)}`})`
         : '';
 
+      let guardado;
       if (editMode && selectedContenedor) {
-        await contenedoresApi.update(selectedContenedor.id, payload);
+        guardado = await contenedoresApi.update(selectedContenedor.id, payload);
         addToast((modoEstimacion ? 'Estimación actualizada' : 'Contenedor actualizado') + avisoParcial, parcial ? 'warning' : 'success');
       } else {
-        await contenedoresApi.create(payload);
+        guardado = await contenedoresApi.create(payload);
         addToast(modoEstimacion
           ? 'Estimación creada — revisa Cuentas por Pagar para registrar abonos'
           : 'Contenedor creado' + avisoParcial, parcial ? 'warning' : 'success');
       }
-      setModalOpen(false); setSoloLectura(false); resetForm(); loadContenedores();
+
+      // LO QUE NO CUPO SE DICE, Y NO SE PIERDE. Una línea sin clasificación o
+      // sin referencia no se puede guardar —las dos columnas son obligatorias
+      // en la base—, así que el borrador de este navegador se queda colgado del
+      // contenedor que acaba de existir: al abrirlo otra vez, esas líneas
+      // vuelven a aparecer donde estaban.
+      const incompletas = parseInt(guardado?.lineas_incompletas) || 0;
+      const idGuardado = guardado?.id ?? selectedContenedor?.id ?? null;
+      olvidarBorrador(claveBorrador(editMode ? selectedContenedor?.id : null));
+      if (incompletas > 0 && idGuardado) {
+        escribirBorrador(claveBorrador(idGuardado), {
+          modo: modoEstimacion ? 'estimacion' : 'contenedor',
+          contenedor_id: idGuardado,
+          formData: { ...formData, numero },
+          proveedores, servicios,
+        });
+        addToast(
+          `${incompletas} línea(s) a medias (sin clasificación o sin referencia) no se pudieron guardar todavía.`
+          + ' Te esperan en este navegador al volver a abrir el contenedor.',
+          'warning', 9000,
+        );
+      }
+      if (numeroPuestoSolo) {
+        addToast(`Se guardó con el número ${numero}: la casilla estaba vacía. Cámbialo cuando tengas el de la naviera.`, 'info', 8000);
+      }
+      setModalOpen(false); setSoloLectura(false); setBorradorRecuperado(null); resetForm(); loadContenedores();
       return true;
     } catch (err) { addToast(err.message, 'error'); return false; }
     finally { setSubmitting(false); }
@@ -2515,14 +2673,16 @@ export default function Contenedores() {
   const cerrarFormulario = async () => {
     if (avisoCierreAbiertoRef.current) return;
     // Mirando no se ha escrito nada, así que no hay nada que preguntar.
-    if (soloLectura) { setModalOpen(false); setSoloLectura(false); resetForm(); return; }
-    if (!formTocado) { setModalOpen(false); resetForm(); return; }
+    if (soloLectura) { setModalOpen(false); setSoloLectura(false); setBorradorRecuperado(null); resetForm(); return; }
+    if (!formTocado) { setModalOpen(false); setBorradorRecuperado(null); resetForm(); return; }
     avisoCierreAbiertoRef.current = true;
     let respuesta;
     try {
       respuesta = await confirm({
         title: 'Tienes cambios sin guardar',
         message: `Lo que escribiste en ${editMode ? `"${selectedContenedor?.numero || 'este contenedor'}"` : (modoEstimacion ? 'esta estimación' : 'este contenedor')} todavía no está guardado.
+
+"Guardar y salir" guarda lo que haya, aunque esté a medias: lo que falte se completa cuando vuelvas.
 
 Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escribirlos otra vez.`,
         confirmText: 'Guardar y salir',
@@ -2531,16 +2691,24 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
         variant: 'warning',
       });
     } finally { avisoCierreAbiertoRef.current = false; }
-    if (respuesta === 'alterna') { setModalOpen(false); setSoloLectura(false); resetForm(); return; }
-    if (!respuesta) return;                       // seguir editando
-
-    // "Guardar y salir" no dispara el submit del formulario, así que los campos
-    // obligatorios del navegador se saltarían: se le pide la validación a mano y,
-    // si falta algo, se deja el formulario abierto con el campo señalado.
-    if (formRef.current && !formRef.current.reportValidity()) {
-      addToast('Falta algún campo obligatorio: revísalo y vuelve a intentarlo', 'warning');
+    // "Salir sin guardar" tira también el borrador de este navegador: si se
+    // quedara, al volver a abrir reaparecería lo que ella acaba de decidir que
+    // no quería, y encima sin haberlo pedido.
+    if (respuesta === 'alterna') {
+      olvidarBorrador(claveBorrador(editMode ? selectedContenedor?.id : null));
+      setModalOpen(false); setSoloLectura(false); setBorradorRecuperado(null); setFormTocado(false); resetForm();
       return;
     }
+    if (!respuesta) return;                       // seguir editando
+
+    // AQUÍ YA NO SE VALIDA NADA. Antes se le pedía al navegador la validación
+    // de los campos obligatorios y, si faltaba uno, no se podía salir: el
+    // formulario se quedaba abierto con un aviso y la única salida real era
+    // perder el trabajo. Llenar un contenedor son veinte minutos a ratos, entre
+    // llamadas, así que salir a medias es lo normal y no puede costar lo
+    // escrito. Lo que falte se completa después, y lo que no se pueda guardar
+    // todavía se queda en el borrador de este navegador.
+    //
     // guardarContenedor cierra y limpia solo cuando el guardado sale bien; si el
     // servidor lo rechaza, el formulario se queda como está con todo dentro.
     await guardarContenedor();
@@ -3399,6 +3567,33 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               cont-calidades y cont-refs-N) desaparecieron: las líneas de
               distribución ya no usan <input list="…"> sino <select>, que trae
               sus propias opciones. */}
+
+          {/* LO QUE SE RECUPERÓ DEL NAVEGADOR. Va arriba del todo y no se cierra
+              sola: es donde vive el único botón capaz de deshacer una
+              recuperación que ella no quería, y un aviso que se desvanece se
+              lleva el botón con él. */}
+          {borradorRecuperado && !soloLectura && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 p-3 rounded-xl border border-secondary/40 bg-secondary/10 text-xs text-primary">
+              <Info size={14} className="flex-shrink-0 text-secondary" aria-hidden="true" />
+              <span className="min-w-0">
+                {/* El sello ya trae su punto final («… a las 7:11 p. m.»), así
+                    que el de la frase sólo se pone cuando no hay sello. */}
+                Recuperé lo que estabas escribiendo
+                {borradorRecuperado.cuando ? ` el ${selloBorrador(borradorRecuperado.cuando)}` : '.'}
+                {/* El espacio va explícito: JSX se come el que queda entre una
+                    expresión y el salto de línea, y quedaba «7:12 p. m.Sigue». */}
+                {' '}Sigue donde ibas; todavía no está guardado en el servidor.
+              </span>
+              <button
+                type="button"
+                onClick={descartarBorrador}
+                className="font-semibold text-secondary hover:underline underline-offset-2"
+              >
+                Descartar y empezar de cero
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-col lg:flex-row gap-6 items-start">
 
             {/* ── LEFT: form sections ─────────────────────────── */}
@@ -3580,13 +3775,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
                 <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="col-span-2">
-                    <label htmlFor="cont-numero" className={lbl}>Número *</label>
+                    <label htmlFor="cont-numero" className={lbl}>Número</label>
                     <input id="cont-numero" type="text" className={inp} placeholder="C526"
-                      value={formData.numero} onChange={(e) => editarForm('numero', e.target.value)} required />
+                      value={formData.numero} onChange={(e) => editarForm('numero', e.target.value)} />
                     {/* El consecutivo se propone solo al crear, pero se puede
                         cambiar: aquí queda escrito el formato para quien tenga
-                        que escribirlo a mano. */}
-                    <p className="text-[10px] text-muted mt-0.5">C + consecutivo + año, ej. C526</p>
+                        que escribirlo a mano. Ya no lleva asterisco ni
+                        `required`: dejarlo vacío no puede impedir guardar, así
+                        que al guardar se escribe el que propone el sistema. */}
+                    <p className="text-[10px] text-muted mt-0.5">C + consecutivo + año, ej. C526. Si lo dejas vacío se guarda con el que propone el sistema.</p>
                   </div>
                   <div>
                     <label htmlFor="cont-fecha-salida" className={lbl}>Fecha Salida</label>
@@ -3628,7 +3825,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   <div>
                     <label htmlFor="cont-tasa" className={lbl}>Tasa USD→COP</label>
                     <CampoMonto id="cont-tasa" className={inp} placeholder="ej. 4.100"
-                      value={formData.tasa_conversion} onChange={(e) => editarForm('tasa_conversion', e.target.value)} required />
+                      value={formData.tasa_conversion} onChange={(e) => editarForm('tasa_conversion', e.target.value)} />
                     {!tasaValida && (
                       <p className="text-[10px] text-warning mt-0.5 leading-tight">
                         Sin tasa no se pueden convertir los dólares: todo se lee en pesos.
@@ -4041,9 +4238,13 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-[10px] font-bold text-secondary uppercase tracking-widest leading-none mb-0.5">Proveedor {pi + 1}</p>
-                            <input type="text" className={`${inp} font-semibold`} placeholder="Nombre del proveedor *"
+                            {/* Sin `required`: un proveedor a medio escribir no
+                                puede impedir guardar lo demás. Si se queda sin
+                                nombre no se guarda él —sus líneas cuelgan de
+                                él—, y el aviso al guardar lo dice. */}
+                            <input type="text" className={`${inp} font-semibold`} placeholder="Nombre del proveedor"
                               aria-label={`Nombre del proveedor ${pi + 1}`}
-                              value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} required />
+                              value={prov.proveedor_nombre} onChange={(e) => updateProveedor(pi, 'proveedor_nombre', e.target.value)} />
                           </div>
                           {/* La moneda se hereda del contenedor. Cuando NO
                               coincide es una excepción a propósito y se marca:
@@ -4270,7 +4471,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                     <SelectCatalogo id={`det-clasificacion-${pi}-${di}`}
                                       placeholder="Clasificación (Dama / Hombre…)"
                                       opciones={opcionesClasificacion}
-                                      value={det.clasificacion} required
+                                      value={det.clasificacion}
                                       onChange={(val) => updateDetalle(pi, di, 'clasificacion', val)} />
                                   </div>
                                   <div>
@@ -4278,7 +4479,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                     <SelectCatalogo id={`det-referencia-${pi}-${di}`}
                                       placeholder="Referencia (Chaqueta / Pantalón…)"
                                       grupos={gruposReferencias(det.categoria)}
-                                      value={det.referencia} required
+                                      value={det.referencia}
                                       onChange={(val) => updateDetalle(pi, di, 'referencia', val)} />
                                     {/* La familia es lo que agrupa las referencias en la
                                         matriz, y se copia a la paca al finalizar. Se
@@ -4300,7 +4501,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                     <SelectCatalogo id={`det-calidad-${pi}-${di}`}
                                       placeholder="Calidad (Primera / Segunda…)"
                                       opciones={opcionesCalidad}
-                                      value={det.calidad} required
+                                      value={det.calidad}
                                       onChange={(val) => updateDetalle(pi, di, 'calidad', val)} />
                                   </div>
                                 </div>
@@ -4308,7 +4509,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                   <div className="flex-1">
                                     <label htmlFor={`det-cantidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
                                     <CampoMonto id={`det-cantidad-${pi}-${di}`} decimales={0} className={`${inp} text-center font-mono`} placeholder="0"
-                                      value={det.cantidad} required
+                                      value={det.cantidad}
                                       onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
                                   </div>
                                   <div className="flex-1">
