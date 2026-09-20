@@ -184,7 +184,49 @@ export function BuscadorLista({
     return () => document.removeEventListener('mousedown', fuera);
   }, [abierto]);
 
-  useEffect(() => { setMarcada(0); }, [texto, abierto]);
+  // ── AUTOCOMPLETADO AL ESCRIBIR, COMO EN EL BUSCADOR DEL NAVEGADOR ──────────
+  //
+  // Se escribe «chaq» y el campo enseña «chaq|ueta mixta|», con lo que falta ya
+  // puesto y seleccionado; Tab lo acepta y salta al campo siguiente, y seguir
+  // tecleando lo reemplaza como si no estuviera. Escribir a mano una referencia
+  // de veintitrés letras, veinte veces por contenedor, era el grueso del rato
+  // que se va en capturar.
+  //
+  // Se completa SÓLO hacia adelante: si está borrando no se le vuelve a poner
+  // lo que acaba de quitar, que es la forma segura de dejar a alguien sin poder
+  // borrar nunca la última letra.
+  const seleccionPendienteRef = useRef(null);
+  const completar = (escrito) => {
+    const t = norm(escrito);
+    if (!t) return null;
+    const opcion = planas.find((p) => p.valor !== '' && norm(p.etiqueta).startsWith(t));
+    if (!opcion || opcion.etiqueta.length <= escrito.length) return null;
+    // Se conserva lo que ella escribió y sólo se añade el resto: cambiarle las
+    // mayúsculas mientras teclea se siente como que el campo se le pelea.
+    return escrito + opcion.etiqueta.slice(escrito.length);
+  };
+
+  // Dejar la selección donde toca hay que hacerlo DESPUÉS de pintar: el input
+  // es controlado y React acaba de reescribir su valor.
+  useLayoutEffect(() => {
+    const sel = seleccionPendienteRef.current;
+    if (!sel) return;
+    seleccionPendienteRef.current = null;
+    const input = refCampo.current?.querySelector('input');
+    try { input?.setSelectionRange(sel[0], sel[1]); } catch { /* el navegador no deja: se queda sin seleccionar */ }
+  });
+
+  // La opción marcada por defecto es la que EMPIEZA por lo escrito: es la que
+  // se está completando en el campo, y así Tab y Enter aceptan lo mismo que se
+  // está viendo. Sin esto, Enter escogía la primera de la lista —que puede
+  // coincidir por una palabra del final— y no la que el campo prometía.
+  useEffect(() => {
+    if (!abierto) { setMarcada(0); return; }
+    const t = norm(texto);
+    if (!t) { setMarcada(0); return; }
+    const i = visibles.findIndex((p) => p.valor !== '' && norm(p.etiqueta).startsWith(t));
+    setMarcada(i >= 0 ? i : 0);
+  }, [texto, abierto, visibles]);
 
   // La opción marcada se mantiene a la vista al recorrer con las flechas.
   useEffect(() => {
@@ -192,11 +234,14 @@ export function BuscadorLista({
     refLista.current?.querySelector('[data-marcada="1"]')?.scrollIntoView({ block: 'nearest' });
   }, [marcada, abierto]);
 
-  const escoger = (v) => {
+  // `devolverFoco` en false es para Tab: ahí el foco va al campo siguiente por
+  // su cuenta y recuperarlo aquí dejaría a la usuaria escribiendo otra vez en
+  // el campo que acaba de terminar.
+  const escoger = (v, { devolverFoco = true } = {}) => {
     onChange?.(v);
     setAbierto(false);
     setTexto('');
-    refCampo.current?.querySelector('input')?.focus();
+    if (devolverFoco) refCampo.current?.querySelector('input')?.focus();
   };
 
   const alTeclear = (e) => {
@@ -227,7 +272,17 @@ export function BuscadorLista({
       setTexto('');
       return;
     }
-    if (e.key === 'Tab') setAbierto(false);
+    // TAB ACEPTA LO QUE EL CAMPO ESTÁ PROMETIENDO Y SIGUE. Sin preventDefault:
+    // el foco pasa al campo siguiente por su cuenta, que es la mitad de lo que
+    // se pide al pulsar Tab. Si no hay nada escrito —o no hay a qué
+    // parecerse—, Tab se comporta como siempre y sólo cierra la lista.
+    if (e.key === 'Tab') {
+      if (abierto && norm(texto)) {
+        const elegida = visibles[marcada];
+        if (elegida && elegida.valor !== '') { escoger(elegida.valor, { devolverFoco: false }); return; }
+      }
+      setAbierto(false);
+    }
   };
 
   // Lo que se ve: mientras escribe, lo escrito; con la lista cerrada, lo elegido.
@@ -305,7 +360,21 @@ export function BuscadorLista({
         // porque escoger una opción y pulsar la × usan onMouseDown con
         // preventDefault, así que ninguno de los dos llega a quitar el foco.
         onBlur={() => { setAbierto(false); setTexto(''); }}
-        onChange={(e) => { setTexto(e.target.value); setAbierto(true); }}
+        // Al escribir, el campo completa solo con la opción que empieza por lo
+        // tecleado y deja seleccionado lo añadido: seguir escribiendo lo
+        // reemplaza, Tab lo acepta y Retroceso lo quita. Ver `completar`.
+        onChange={(e) => {
+          const escrito = e.target.value;
+          setAbierto(true);
+          const borrando = escrito.length < texto.length;
+          const completada = borrando ? null : completar(escrito);
+          if (completada) {
+            setTexto(completada);
+            seleccionPendienteRef.current = [escrito.length, completada.length];
+          } else {
+            setTexto(escrito);
+          }
+        }}
         onKeyDown={alTeclear}
         className={`${className} ${fueraDeCatalogo ? 'border-warning' : ''} pr-7`}
       />
