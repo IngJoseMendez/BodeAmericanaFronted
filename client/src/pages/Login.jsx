@@ -35,8 +35,8 @@ export default function Login() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-secondary to-accent mb-4">
             <Package className="w-8 h-8 text-white" />
           </div>
-          <h1 className="font-display text-3xl text-primary">Bodega</h1>
-          <p className="text-muted">Americana</p>
+          <h1 className="font-display text-3xl text-primary">Comercio</h1>
+          <p className="text-muted">Global Logístico</p>
         </div>
 
         <Card hover className="animate-fade-in-up">

@@ -1,8 +1,8 @@
-# Bodega Americana - Sistema de Gestión
+# Comercio Global Logístico - Sistema de Gestión
 
 ## 1. PROJECT OVERVIEW
 
-**Project Name:** Bodega Americana  
+**Project Name:** Comercio Global Logístico  
 **Type:** Full-stack Inventory & Sales Management Web Application  
 **Core Functionality:** Control de inventario de pacas de ropa americana, gestión de clientes, ventas, y cartera  
 **Target Users:** Dueños y empleados de distribuidores de ropa americana (pacas)

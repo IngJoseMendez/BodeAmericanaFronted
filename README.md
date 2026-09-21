@@ -1,4 +1,4 @@
-# Bodega Americana - Sistema de Gestión
+# Comercio Global Logístico - Sistema de Gestión
 
 Aplicación web completa para la gestión de una distribuidora de pacas de ropa americana.
 

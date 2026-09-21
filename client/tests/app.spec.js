@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Bodega Americana - E2E Tests', () => {
+test.describe('Comercio Global Logístico - E2E Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
   });

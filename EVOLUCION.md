@@ -1,4 +1,4 @@
-# 🚀 PLAN DE EVOLUCIÓN - Bodega Americana
+# 🚀 PLAN DE EVOLUCIÓN - Comercio Global Logístico
 
 ## FASE 1: Fundamentos (Semana 1)
 ### 1.1 Refactor Backend
