@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { matrizApi, clientesApi, cotizacionesApi } from '../services/api';
 import { claveStock, normTxt } from '../lib/matriz';
 import { aplicarMovimiento } from '../lib/faltantes';
+import { cargarModulo } from '../lib/cargaDiferida';
 import { formatCOP, formatNumero, parseMonto } from '../lib/money';
 import { aFecha, formatFecha, formatFechaCorta } from '../lib/fecha';
 import {
@@ -1013,7 +1014,11 @@ export default function Faltantes() {
     }
     try {
       setGenerandoExcel(true);
-      const mod = await import('../lib/entregables');
+      // Por `cargarModulo` y no por un `import()` pelado: este trozo de código
+      // también se publica con un hash en el nombre, así que tras un despliegue
+      // la pestaña que lleva abierta desde antes lo pide y ya no está. Ver
+      // cargaDiferida.js.
+      const mod = await cargarModulo(() => import('../lib/entregables'));
       if (typeof mod.hojaFaltantes !== 'function') {
         addToast('La hoja FALTANTES todavía no está disponible en esta versión.', 'error');
         return;
