@@ -357,12 +357,16 @@ export function hojaMatrizClientes(wb, filas, separadas) {
   // de debajo: ahora es el mínimo de ESA línea y no el prorrateo del contenedor,
   // que salía idéntico en todas las filas. Ojo si algún día se renombra: ese
   // número lleva servicios y utilidad dentro, no es el costo de mercancía pelado.
-  const FIJAS = ['COD', 'PROVE', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PRECIO',
+  // Las TRES columnas de precio comparten el rotulo 'PRECIO' en la fila de
+  // encabezados y se distinguen por el sub-rotulo de arriba: PROMO / ORIGINAL /
+  // FINAL. Las dos primeras son de la plantilla de la operacion; FINAL se anade
+  // porque era la cuenta que habia que hacer a mano fila a fila.
+  const FIJAS = ['COD', 'PROVE', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PRECIO', 'PRECIO',
                  'INVENTARIO', 'FISICO', 'DESPACHOS', 'SEP', 'DISP'];
   const N = FIJAS.length;
   const nCols = N + cols.length;
 
-  [16, 20, 26, 14, 13, 13, 13, 12, 10, 12, 9, 9].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [16, 20, 26, 14, 13, 13, 13, 13, 12, 10, 12, 9, 9].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
   cols.forEach((_, i) => { ws.getColumn(N + i + 1).width = 14; });
 
   // ── Cabecera de tres filas, como en la plantilla ───────────────
@@ -379,7 +383,8 @@ export function hojaMatrizClientes(wb, filas, separadas) {
   // distinguen por el sub-rótulo de arriba, igual que en el original.
   ws.getCell(3, 6).value = 'PROMO';
   ws.getCell(3, 7).value = 'ORIGINAL';
-  [6, 7].forEach((c) => {
+  ws.getCell(3, 8).value = 'FINAL';
+  [6, 7, 8].forEach((c) => {
     const cell = ws.getCell(3, c);
     cell.font = { bold: true, size: 9, color: { argb: ACCENT } };
     cell.alignment = { horizontal: 'center' };
@@ -420,14 +425,21 @@ export function hojaMatrizClientes(wb, filas, separadas) {
       costoDeLinea(f) || '',
       promo != null ? promo : '',
       original,
+      // EL PRECIO QUE SE VA A COBRAR, sin que nadie tenga que mirar dos columnas
+      // y decidir. Con promocion es la promocion; sin promocion, el de lista.
+      // PROMO y ORIGINAL siguen ahi porque la plantilla de la operacion los
+      // lleva y porque enseñan la rebaja; esta es la que se factura, y con
+      // sesenta filas hacer esa eleccion a ojo es una equivocacion esperando.
+      // Vacia, no cero, cuando el producto no tiene precio.
+      precioDeLinea(f) || '',
       int(f.cantidad), int(f.fisico), int(f.despachadas), int(f.separadas), int(f.disponibles),
     ];
     base.forEach((v, i) => {
       const c = r.getCell(i + 1);
       c.value = v === '' ? '' : v;
-      c.font = { size: 10, bold: i >= 7 };
+      c.font = { size: 10, bold: i >= 8 };
       c.alignment = { horizontal: i >= 4 ? 'center' : 'left' };
-      if (i >= 4 && i <= 6 && v !== '') c.numFmt = '#,##0';
+      if (i >= 4 && i <= 7 && v !== '') c.numFmt = '#,##0';
     });
 
     const m = porProducto.get(clave(f)) || new Map();
@@ -459,11 +471,11 @@ export function hojaMatrizClientes(wb, filas, separadas) {
     c.alignment = { horizontal: 'center' };
     c.numFmt = '#,##0';
   };
-  totalEn(8,  tot.inventario);
-  totalEn(9,  tot.fisico);
-  totalEn(10, tot.despachos);
-  totalEn(11, tot.sep);
-  totalEn(12, tot.disp);
+  totalEn(9,  tot.inventario);
+  totalEn(10, tot.fisico);
+  totalEn(11, tot.despachos);
+  totalEn(12, tot.sep);
+  totalEn(13, tot.disp);
   cols.forEach((_, i) => {
     const c = ws.getCell(3, N + i + 1);
     c.value = tot.porCliente[i] || '';

@@ -2,7 +2,10 @@ import ExcelJS from 'exceljs';
 import { hojaMatrizClientes } from '../src/lib/entregables.js';
 
 // Encabezados EXACTOS de la plantilla de la operación (ejemplo matriz.xlsx)
-const ESPERADO = ['COD','PROVE','REFERENCIA','CALIDAD','COSTO','PRECIO','PRECIO',
+// Las TRES de precio comparten rotulo y se distinguen por el sub-rotulo de la
+// fila 3: PROMO / ORIGINAL / FINAL. Las dos primeras son de la plantilla;
+// FINAL es el precio que se cobra, que antes habia que deducir a ojo.
+const ESPERADO = ['COD','PROVE','REFERENCIA','CALIDAD','COSTO','PRECIO','PRECIO','PRECIO',
                   'INVENTARIO','FISICO','DESPACHOS','SEP','DISP'];
 
 const inventario = [
@@ -41,10 +44,11 @@ ok('C1 = MATRIZ', v(1,3), 'MATRIZ');
 ok('D1 = FECHA', v(1,4), 'FECHA');
 ok('sub-rótulo PROMO sobre la 6ª', v(3,6), 'PROMO');
 ok('sub-rótulo ORIGINAL sobre la 7ª', v(3,7), 'ORIGINAL');
-ok('encabezados de la fila 4', Array.from({length:12},(_,i)=>v(4,i+1)), ESPERADO);
+ok('sub-rótulo FINAL sobre la 8ª', v(3,8), 'FINAL');
+ok('encabezados de la fila 4', Array.from({length:13},(_,i)=>v(4,i+1)), ESPERADO);
 
 console.log('\n── Una columna por cliente, en orden ────────────────────');
-ok('clientes como columnas', [v(4,13), v(4,14), v(4,15)], ['CAROLINA','JOSE','MARIA']);
+ok('clientes como columnas', [v(4,14), v(4,15), v(4,16)], ['CAROLINA','JOSE','MARIA']);
 
 console.log('\n── Los datos del producto ───────────────────────────────');
 ok('COD es el contenedor', v(5,1), 'CONT-19-08-2026-0001');
@@ -56,21 +60,25 @@ ok('sin promo: PROMO vacío', v(5,6), '');
 ok('sin promo: ORIGINAL lleva el precio', v(5,7), 98000);
 ok('con promo: PROMO lleva el precio', v(6,6), 40000);
 ok('con promo: ORIGINAL vacío', v(6,7), '');
+// PRECIO FINAL es lo que se cobra: el de lista cuando no hay rebaja, la rebaja
+// cuando la hay. Es la cuenta que antes habia que hacer a ojo, fila a fila.
+ok('sin promo: FINAL es el de lista', v(5,8), 98000);
+ok('con promo: FINAL es la rebaja', v(6,8), 40000);
 ok('INVENTARIO / FISICO / DESP / SEP / DISP',
-   [v(5,8), v(5,9), v(5,10), v(5,11), v(5,12)], [40,30,10,12,18]);
+   [v(5,9), v(5,10), v(5,11), v(5,12), v(5,13)], [40,30,10,12,18]);
 
 console.log('\n── El cruce con los clientes ────────────────────────────');
-ok('MARIA tiene 7 de CHAQ-001', v(5,15), 7);
-ok('JOSE tiene 5 de CHAQ-001', v(5,14), 5);
-ok('CAROLINA no tiene CHAQ-001', v(5,13), '');
-ok('CAROLINA tiene 5 de JEAN-002', v(6,13), 5);
-ok('lo ya despachado NO cuenta como separado', v(5,15), 7);
+ok('MARIA tiene 7 de CHAQ-001', v(5,16), 7);
+ok('JOSE tiene 5 de CHAQ-001', v(5,15), 5);
+ok('CAROLINA no tiene CHAQ-001', v(5,14), '');
+ok('CAROLINA tiene 5 de JEAN-002', v(6,14), 5);
+ok('lo ya despachado NO cuenta como separado', v(5,16), 7);
 
 console.log('\n── Totales en la fila 3 ─────────────────────────────────');
-ok('total INVENTARIO', v(3,8), 65);
-ok('total FISICO', v(3,9), 55);
-ok('total SEP', v(3,11), 17);
-ok('total por cliente', [v(3,13), v(3,14), v(3,15)], [5,5,7]);
+ok('total INVENTARIO', v(3,9), 65);
+ok('total FISICO', v(3,10), 55);
+ok('total SEP', v(3,12), 17);
+ok('total por cliente', [v(3,14), v(3,15), v(3,16)], [5,5,7]);
 
 const buf = await wb.xlsx.writeBuffer();
 const wb2 = new ExcelJS.Workbook();

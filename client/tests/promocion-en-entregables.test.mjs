@@ -60,6 +60,13 @@ ok('sin promo: PROMO vacío y ORIGINAL con el precio', [m(5, 6), m(5, 7)], ['', 
 ok('con promo: PROMO la rebaja y ORIGINAL el de lista', [m(6, 6), m(6, 7)], [1300000, 1600000]);
 ok('paca ya rebajada: PROMO su precio y ORIGINAL vacío', [m(7, 6), m(7, 7)], [1600000, '']);
 
+// PRECIO FINAL: el que se va a cobrar, sin obligar a mirar dos columnas y
+// decidir. Con sesenta filas, hacer esa eleccion a ojo es una equivocacion
+// esperando su turno.
+ok('FINAL sin promo: el de lista', m(5, 8), 2300000);
+ok('FINAL con promo: la rebaja', m(6, 8), 1300000);
+ok('FINAL de una paca ya rebajada: su precio', m(7, 8), 1600000);
+
 const interno = hojaInventarioInterno(new ExcelJS.Workbook(), filas);
 const i = (r, c) => { const x = interno.getCell(r, c).value; return x == null || x === '' ? '' : x; };
 const filaCab = 2;
