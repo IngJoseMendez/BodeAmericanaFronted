@@ -7,7 +7,7 @@ import {
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
   ClipboardCheck, Sparkles, RefreshCw, Info,
-  Copy, ClipboardPaste, CornerDownLeft,
+  Copy, ClipboardPaste, CornerDownLeft, PanelRight, PanelBottom,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { leerBloquePegado, cruzarConCatalogo, CAMPOS_PEGADO } from '../lib/pegarLineas';
@@ -2487,6 +2487,25 @@ export default function Contenedores() {
   // superior descuenta la cabecera del modal, para que una sección no se dé por
   // activa mientras todavía está tapada por ella.
   const [seccionActiva, setSeccionActiva] = useState('seccion-basica');
+
+  // ── DONDE VIVE EL RESUMEN ──────────────────────────────────────
+  //
+  // Abajo (por defecto) o pegado al costado derecho. No es un capricho: son dos
+  // formas distintas de usar la misma pantalla.
+  //   · ABAJO, mientras se CAPTURA: las lineas se leen enteras y las tres
+  //     cifras que importan estan en la barra de abajo, siempre a la vista.
+  //   · AL LADO, cuando se REVISA: se mira el desglose de costos mientras se
+  //     recorren las lineas, sin ir y volver.
+  // Al lado solo a partir de xl (1280 px): por debajo, quitarle 26rem a una
+  // tabla de nueve columnas es justo el apretujamiento del que venimos.
+  //
+  // Se recuerda, como la moneda del resumen y por el mismo motivo: es una
+  // preferencia de como se trabaja, no una decision que se tome cada vez.
+  const [resumenAlLado, setResumenAlLado] = useState(
+    () => localStorage.getItem('bodega_contenedor_resumen_lado') === '1');
+  useEffect(() => {
+    localStorage.setItem('bodega_contenedor_resumen_lado', resumenAlLado ? '1' : '0');
+  }, [resumenAlLado]);
   useEffect(() => {
     if (!modalOpen) return undefined;
     const ids = ['seccion-basica', ...proveedores.map((_, i) => `prov-${i}`),
@@ -3926,6 +3945,26 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             ))}
             <BotonSalto destino="seccion-servicios" activo={seccionActiva === 'seccion-servicios'}>Servicios</BotonSalto>
             <BotonSalto destino="seccion-resumen" activo={seccionActiva === 'seccion-resumen'}>Resumen</BotonSalto>
+
+            {/* Donde se quiere el resumen. Solo desde xl: por debajo no hay
+                ancho que repartir. `ml-auto` lo manda al extremo, separado de
+                los saltos, porque no es un sitio al que ir sino como se ve. */}
+            <div className="ml-auto hidden xl:flex items-center rounded-lg border border-border overflow-hidden flex-shrink-0">
+              <button type="button" onClick={() => setResumenAlLado(false)}
+                aria-pressed={!resumenAlLado}
+                title="Resumen abajo: las lineas ocupan todo el ancho"
+                className={`px-2 py-1 flex items-center gap-1 text-[11px] transition-colors ${
+                  !resumenAlLado ? 'bg-secondary text-white font-semibold' : 'text-muted hover:bg-primary/5'}`}>
+                <PanelBottom size={13} aria-hidden="true" /> Abajo
+              </button>
+              <button type="button" onClick={() => setResumenAlLado(true)}
+                aria-pressed={resumenAlLado}
+                title="Resumen al costado: se ve el desglose mientras se recorren las lineas"
+                className={`px-2 py-1 flex items-center gap-1 text-[11px] transition-colors ${
+                  resumenAlLado ? 'bg-secondary text-white font-semibold' : 'text-muted hover:bg-primary/5'}`}>
+                <PanelRight size={13} aria-hidden="true" /> Al lado
+              </button>
+            </div>
           </nav>
         }
       >
@@ -3975,10 +4014,24 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               que estar SIEMPRE a la vista —guardar y las tres cifras que se
               miran al capturar— vive en la barra de abajo, que no le quita
               ancho a nada. */}
-          <div className="space-y-5">
+          {/* ── EL ANCHO TIENE UN TOPE ──────────────────────────
+              El modal mide 92vw. En un portatil son ~1.250 px y esta bien; en un
+              monitor de 1920 son 1.766, y ahi el formulario se estiraba hasta
+              perder el sentido: la cantidad y el costo quedaban a un palmo de
+              distancia, y una ficha de datos con renglones de metro y medio no
+              se lee, se recorre. 1.600 px es el tope; por debajo no cambia nada,
+              que es el caso normal.
 
-            {/* ── LEFT: form sections ─────────────────────────── */}
-            <div className="min-w-0 space-y-5">
+              El resumen va abajo o al costado segun el interruptor de la
+              cabecera. `space-y-5` y `flex` no se llevan bien —space-y pone
+              margen arriba a cada hijo, que en una fila es al reves—, asi que en
+              modo costado se apaga y manda el `gap`. */}
+          <div className={`max-w-[1600px] mx-auto ${resumenAlLado
+            ? 'space-y-5 xl:space-y-0 xl:flex xl:items-start xl:gap-6'
+            : 'space-y-5'}`}>
+
+            {/* ── EL CONTENIDO: ficha, proveedores, servicios ──── */}
+            <div className={`min-w-0 space-y-5 ${resumenAlLado ? 'xl:flex-1' : ''}`}>
 
               {/* ── La ficha del contenedor ─────────────────────
                   Estado, de dónde viene, fechas, tasa, lote y el enlace a sus
@@ -4785,10 +4838,25 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           const totalPacas  = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0),0);
                           const nLineas     = prov.detalles.length;
                           const sinFamilia  = prov.detalles.filter((d) => d.referencia && !familiaDeReferencia(d.referencia)).length;
+                          // Debajo de lg la tabla no cabe y se arrastra a lo
+                          // ancho; de lg en adelante (la tableta en horizontal ya
+                          // lo es) no hay envoltorio de scroll, que es lo que
+                          // permite que la cabecera se quede pegada: un ancestro
+                          // con overflow distinto de visible se convierte en el
+                          // contenedor de desplazamiento del sticky.
                           return (
                         <div data-tabla-prov={pi}
+                             className="overflow-x-auto lg:overflow-x-visible"
                              onKeyDown={soloLectura ? undefined : (e) => alTeclearEnTabla(e, pi)}
                              onPaste={soloLectura ? undefined : (e) => alPegarEnTabla(e, pi)}>
+                          {/* LAS COLUMNAS NO SE REPARTEN EL SOBRANTE.
+                              Estaban en porcentajes, asi que al ensanchar la
+                              ventana crecian TODAS: «Cant.» llegaba a 140 px
+                              para tres digitos y entre el numero y su costo
+                              quedaba un palmo de blanco. Ahora los numeros
+                              miden lo que miden y el sobrante se lo queda
+                              REFERENCIA, que es la unica columna con nombres
+                              largos de verdad («buzo con capota/joggers»). */}
                           <table className="w-full table-fixed">
                             {/* CABECERA PEGAJOSA, EN DOS PISOS.
                                 Arriba, de quién son estas filas y cuánto suman: con
@@ -4832,14 +4900,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 </th>
                               </tr>
                               <tr className="text-[9px] font-bold text-muted uppercase tracking-wider">
-                                <th style={RAYA_CABECERA} className="w-8 px-1.5 py-1.5 text-center bg-surface">#</th>
-                                <th style={RAYA_CABECERA} className="w-[12%] px-1 py-1.5 text-left bg-surface">Categoría</th>
-                                <th style={RAYA_CABECERA} className="w-[14%] px-1 py-1.5 text-left bg-surface">Clasificación *</th>
-                                <th style={RAYA_CABECERA} className="w-[23%] px-1 py-1.5 text-left bg-surface">Referencia *</th>
-                                <th style={RAYA_CABECERA} className="w-[13%] px-1 py-1.5 text-left bg-surface">Calidad *</th>
-                                <th style={RAYA_CABECERA} className="w-[8%] px-1 py-1.5 text-center bg-surface">Cant. *</th>
-                                <th style={RAYA_CABECERA} className="w-[11%] px-1 py-1.5 text-right bg-surface">Costo ({monedaProv}) *</th>
-                                <th style={RAYA_CABECERA} className="w-[11%] px-1.5 py-1.5 text-right bg-surface">Subtotal</th>
+                                <th style={RAYA_CABECERA} className="w-9 px-1.5 py-1.5 text-center bg-surface">#</th>
+                                <th style={RAYA_CABECERA} className="w-32 px-1 py-1.5 text-left bg-surface">Categoría</th>
+                                <th style={RAYA_CABECERA} className="w-32 px-1 py-1.5 text-left bg-surface">Clasificación *</th>
+                                {/* Sin ancho: es la que se queda el sobrante. */}
+                                <th style={RAYA_CABECERA} className="px-1 py-1.5 text-left bg-surface">Referencia *</th>
+                                <th style={RAYA_CABECERA} className="w-28 px-1 py-1.5 text-left bg-surface">Calidad *</th>
+                                <th style={RAYA_CABECERA} className="w-16 px-1 py-1.5 text-center bg-surface">Cant. *</th>
+                                <th style={RAYA_CABECERA} className="w-24 px-1 py-1.5 text-right bg-surface">Costo ({monedaProv}) *</th>
+                                <th style={RAYA_CABECERA} className="w-24 px-1.5 py-1.5 text-right bg-surface">Subtotal</th>
                                 {!soloLectura && (
                                   <th style={RAYA_CABECERA} className="w-14 px-1 py-1.5 bg-surface">
                                     <span className="sr-only">Acciones de la línea</span>
@@ -5459,8 +5528,11 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 lo de debajo al desplazarse y, sobre todo, se comia la mitad del
                 ancho que necesitan las lineas. Se llega en un toque desde la
                 barra de saltos. */}
-            <div className="min-w-0">
-              <div id="seccion-resumen" className="space-y-3 scroll-mt-28">
+            <div className={`min-w-0 ${resumenAlLado ? 'xl:w-[26rem] xl:flex-shrink-0' : ''}`}>
+              {/* Pegado solo cuando esta al costado: abajo no hay nada a lo que
+                  quedarse pegado, y pegarlo taparia lo que viene debajo. */}
+              <div id="seccion-resumen"
+                   className={`space-y-3 scroll-mt-28 ${resumenAlLado ? 'xl:sticky xl:top-0' : ''}`}>
                 <div className={`rounded-2xl border p-6 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
                   {/* Título + interruptor de moneda.
                       El detalle (mercancía y servicios) va en UNA sola moneda —la
@@ -5717,7 +5789,11 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               `-mx-6 -mb-6 px-6` lo saca a los bordes del modal (que tiene p-6),
               para que el contenido no asome por los lados al pasar por debajo. */}
           {!soloLectura && (
-          <div className="sticky bottom-0 z-30 -mx-6 -mb-6 mt-5 px-6 py-3 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3">
+          <div className="sticky bottom-0 z-30 -mx-6 -mb-6 mt-5 px-6 py-3 bg-surface border-t border-border">
+            {/* Mismo tope que el contenido: con el modal a 1920 px, los botones
+                pegados al borde y el formulario terminando en 1.600 se leen como
+                dos cosas distintas. */}
+            <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs min-w-0">
               <span className="text-muted">
                 Unidades <b className={`font-mono tabular-nums ml-1 ${resumen.cantidadValida ? 'text-primary' : 'text-warning'}`}>
@@ -5746,6 +5822,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                 {submitting ? 'Guardando…' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
               </button>
+            </div>
             </div>
           </div>
           )}
