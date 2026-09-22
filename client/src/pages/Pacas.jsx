@@ -4,17 +4,102 @@ import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfi
 import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { PACA_ESTADOS } from '../types';
-import { Plus, Search, Edit2, Trash2, Layers, Hash, Grid, List, ChevronDown, ChevronRight, ChevronLeft, Package, Eye, EyeOff, Link, Unlink, Download, Calendar, User, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Hash, Grid, List, ChevronRight, ChevronLeft, Package, Eye, Link, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 // El mínimo por línea sale del mismo helper que las hojas de Excel y el PDF:
 // tres sitios calculándolo por su cuenta es como acaban enseñando cifras
 // distintas del mismo inventario.
-import { parseMonto } from '../lib/money';
-import { costoDeLinea } from '../lib/entregables';
+// formatCOP y no un Intl.NumberFormat propio: esta pantalla era la ÚNICA de las
+// veinte que se formateaba el dinero a mano, y no salía igual. `style:'currency'`
+// en es-CO mete un espacio duro («$ 1.500.000») y en algunos navegadores escribe
+// «COP»; formatCOP da «$1.500.000». El mismo importe se veía distinto aquí que en
+// Lista de Precios, que es la pantalla de al lado.
+import { parseMonto, formatCOP } from '../lib/money';
+// La promoción se resuelve con el MISMO helper que las hojas de Excel y el PDF.
+// Tres sitios decidiendo por su cuenta qué precio vale es como acaban diciendo
+// cifras distintas del mismo producto, que es justo lo que pasaba aquí.
+import { costoDeLinea, promoDeLinea } from '../lib/entregables';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
+
+// La raya de una cabecera de tabla PEGAJOSA. Va como sombra interior y no como
+// borde: un border-bottom lo pinta la TABLA, no la celda, asi que al despegarse
+// la cabecera se queda clavado en su sitio y el encabezado flota sin linea.
+// Mismo truco y mismo motivo que en Contenedores y en Separacion Masiva.
+const RAYA_CABECERA = { boxShadow: 'inset 0 -1px 0 var(--color-border)' };
+
+// El rotulo de las pacas que no tienen categoria. No es una categoria de
+// verdad, asi que no se puede mandar al servidor como filtro: ese caso se
+// resuelve aqui, sobre lo que ya llego.
+const SIN_CATEGORIA = 'Sin categoría';
+
+// ── LOS RÓTULOS DE LAS COLUMNAS, LARGOS Y CORTOS ──────────────────
+//
+// Doce columnas con nombres largos —«Clasificación», «Disponibles»,
+// «Despachadas»— no caben en la tableta sin scroll horizontal, y con scroll
+// horizontal se pierde de vista la referencia justo cuando se está leyendo su
+// número. En corto caben todas de una vez.
+//
+// Se puede elegir, y se recuerda: en corto para trabajar, completo cuando hay
+// alguien nuevo mirando la pantalla y «Clas.» no le dice nada. El nombre
+// completo NO desaparece: viaja en el `title` y en el aria-label de cada
+// cabecera, así que el lector de pantalla siempre lee la palabra entera.
+const ROTULOS = {
+  uuid:          ['UUID', 'UUID'],
+  contenedor:    ['Contenedor', 'Cont.'],
+  proveedor:     ['Proveedor', 'Prov.'],
+  categoria:     ['Categoría', 'Cat.'],
+  clasificacion: ['Clasificación', 'Clas.'],
+  referencia:    ['Referencia', 'Ref.'],
+  calidad:       ['Calidad', 'Cal.'],
+  fisico:        ['Físico', 'Fis.'],
+  separadas:     ['Separadas', 'Sep.'],
+  disponibles:   ['Disponibles', 'Disp.'],
+  despachadas:   ['Despachadas', 'Desp.'],
+  precioHoy:     ['Precio hoy', 'Precio'],
+  valorDisp:     ['Valor disp.', 'Valor'],
+  peso:          ['Peso', 'Peso'],
+  costo:         ['Costo', 'Costo'],
+  precio:        ['Precio', 'Precio'],
+  estadoCot:     ['Estado / Cotización', 'Estado'],
+  acciones:      ['Acciones', 'Acc.'],
+};
+
+// ── LOS FILTROS SOBREVIVEN A UNA RECARGA ──────────────────────────
+//
+// Esta pantalla era la unica del sistema que los perdia: Cartera, Contenedores,
+// Cotizaciones, Cuentas, Despachos, Faltantes y la Matriz ya guardan los suyos.
+// Aqui, volver de mirar un contenedor con el enlace de la tabla te devolvia con
+// la busqueda vacia, sin estado, sin categoria, en la pagina 1 y en la vista
+// que no era. En sessionStorage y no en localStorage a proposito: un filtro es
+// de la sesion de trabajo de hoy, no una preferencia para siempre.
+const CLAVE_FILTROS = 'inventario.filtros.v1';
+
+const leerFiltros = () => {
+  try { return JSON.parse(sessionStorage.getItem(CLAVE_FILTROS)) || {}; }
+  catch { return {}; }   // ventana privada, permisos de sitio: se sigue sin filtros
+};
+
+// La cabecera de una columna: abreviada o entera segun el interruptor, pero el
+// nombre completo NUNCA se pierde —viaja en el `title` y, para quien usa lector
+// de pantalla, en un texto oculto—.
+//
+// Declarado FUERA del cuerpo de Pacas a proposito: dentro, React lo veria como
+// un tipo nuevo en cada render y reharía las celdas. Es el mismo cuidado que
+// pide SelectCatalogo en Contenedores.
+function CabeceraColumna({ col, className, cortos, raya = false }) {
+  const [largo, corto] = ROTULOS[col];
+  const texto = cortos ? corto : largo;
+  return (
+    <th scope="col" className={className} style={raya ? RAYA_CABECERA : undefined}
+        title={texto === largo ? undefined : largo}>
+      {texto}
+      {texto !== largo && <span className="sr-only"> ({largo})</span>}
+    </th>
+  );
+}
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -29,13 +114,18 @@ export default function Pacas() {
   const [pacas, setPacas] = useState([]);
   const [lotes, setLotes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [pagina, setPagina] = useState(1);
+  const [pagina, setPagina] = useState(() => leerFiltros().pagina || 1);
   const [totalPaginas, setTotalPaginas] = useState(1);
-  const [limite, setLimite] = useState(50);
-  const [search, setSearch] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('');
+  // Cuantas unidades hay DE VERDAD con los filtros puestos. El backend ya lo
+  // mandaba en `total` y se tiraba a la basura, asi que la cabecera contaba las
+  // filas de la pagina. null mientras no se sepa: mejor sin subtitulo que con
+  // un numero que no es el que dice ser.
+  const [totalUnidades, setTotalUnidades] = useState(null);
+  const [limite, setLimite] = useState(() => leerFiltros().limite || 50);
+  const [search, setSearch] = useState(() => leerFiltros().search || '');
+  const [filtroEstado, setFiltroEstado] = useState(() => leerFiltros().estado || '');
+  const [filtroTipo, setFiltroTipo] = useState(() => leerFiltros().tipo || '');
+  const [filtroCategoria, setFiltroCategoria] = useState(() => leerFiltros().categoria || '');
   const [modalOpen, setModalOpen] = useState(false);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
@@ -46,11 +136,12 @@ export default function Pacas() {
   const [formData, setFormData] = useState({
     clasificacion: '', referencia: '', calidad: '', categoria: '', peso: '', costo_base: '', precio_venta: '', notas: '', cantidad: 1, lote_id: ''
   });
-  const [error, setError] = useState('');
-  const [vistaAgrupada, setVistaAgrupada] = useState(true);
+  const [vistaAgrupada, setVistaAgrupada] = useState(() => leerFiltros().agrupada ?? true);
+  // Arranca en corto: es como se usa a diario, y es lo que hace que quepan las
+  // doce columnas sin salirse.
+  const [rotulosCortos, setRotulosCortos] = useState(() => leerFiltros().cortos ?? true);
   const [inventarioAgrupado, setInventarioAgrupado] = useState([]);
   const [loadingAgrupado, setLoadingAgrupado] = useState(false);
-  const [tiposExpandidos, setTiposExpandidos] = useState({});
   // Modal "por quién están separadas"
   const [comprometidas, setComprometidas] = useState(null); // { label, loading, rows }
   const { tipos: tiposRaw, categorias: categoriasRaw, calidades: calidadesRaw, temporadas: temporadasRaw } = useCatalog();
@@ -97,7 +188,16 @@ export default function Pacas() {
   // que podía ser la obsoleta. Ahora el reset ocurre dentro del mismo efecto,
   // antes de pedir nada, y cada carga descarta su respuesta si ya no es la
   // vigente (bandera de cancelación por número de carga).
-  const filtrosKey = `${filtroEstado}|${filtroTipo}|${debouncedSearch}|${limite}`;
+  const filtrosKey = `${filtroEstado}|${filtroTipo}|${filtroCategoria}|${debouncedSearch}|${limite}`;
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(CLAVE_FILTROS, JSON.stringify({
+        search, estado: filtroEstado, tipo: filtroTipo, categoria: filtroCategoria,
+        pagina, limite, agrupada: vistaAgrupada, cortos: rotulosCortos,
+      }));
+    } catch { /* sin memoria de sesion se sigue funcionando igual */ }
+  }, [search, filtroEstado, filtroTipo, filtroCategoria, pagina, limite, vistaAgrupada, rotulosCortos]);
   const filtrosPrevRef  = useRef(filtrosKey);
   const cargaPacasRef    = useRef(0);
   const cargaAgrupadoRef = useRef(0);
@@ -115,7 +215,7 @@ export default function Pacas() {
 
   useEffect(() => {
     loadInventarioAgrupado();
-  }, [filtroEstado, filtroTipo, debouncedSearch]);
+  }, [filtroEstado, filtroTipo, filtroCategoria, debouncedSearch]);
 
   useEffect(() => {
     loadLotes();
@@ -130,6 +230,11 @@ export default function Pacas() {
       if (filtroEstado)    params.estado = filtroEstado;
       if (filtroTipo)      params.tipo   = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
+      // La categoria se filtraba SOLO en el navegador y solo sobre la tabla
+      // agrupada: el chip decia "Filtrado por: Verano", cambiabas a Lista y
+      // salia todo, y el Excel se descargaba entero. Lo que se descarga tiene
+      // que ser lo que se ve.
+      if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
       const data = await pacasApi.getInventario(params);
       if (miCarga !== cargaAgrupadoRef.current) return; // respuesta vieja: ya hay otra carga en curso
       setInventarioAgrupado(data);
@@ -170,6 +275,16 @@ export default function Pacas() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // ── DESPUES DE CAMBIAR ALGO SE RECARGAN LAS DOS VISTAS ─────────
+  //
+  // Todas las acciones (crear, editar, borrar, reservar, asignar lote) llamaban
+  // SOLO a loadPacas(), que alimenta la vista Lista. Pero la vista por defecto
+  // es la Agrupada, y las tarjetas de resumen se calculan sobre ella: borrabas
+  // una unidad y la tabla y las tarjetas seguian contandola; reservabas una
+  // paca y seguia figurando como disponible. Numeros falsos justo despues de
+  // que el usuario hiciera algo, y solo se arreglaban recargando la pagina.
+  const recargarInventario = () => { loadPacas(); loadInventarioAgrupado(); };
+
   const loadPacas = async () => {
     const miCarga = ++cargaPacasRef.current;
     try {
@@ -178,6 +293,7 @@ export default function Pacas() {
       if (filtroEstado) params.estado = filtroEstado;
       if (filtroTipo) params.tipo = filtroTipo;
       if (debouncedSearch) params.buscar = debouncedSearch;
+      if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
 
       // Las tarjetas de resumen se calculan sobre el inventario agrupado, así que
       // ya no hace falta pedir /pacas/resumen en cada carga.
@@ -185,7 +301,12 @@ export default function Pacas() {
 
       if (miCarga !== cargaPacasRef.current) return; // respuesta vieja: la descartamos
       setPacas(data.data || data);
-      if (data.total_paginas) setTotalPaginas(data.total_paginas);
+      if (typeof data.total === 'number') setTotalUnidades(data.total);
+      // `if (data.total_paginas)` dejaba el valor VIEJO cuando la busqueda no
+      // devolvia nada: Math.ceil(0/50) es 0, que es falsy. Se quedaba "Pagina 1
+      // de 7" bajo una tabla vacia, con "Siguiente" activo, y pulsarlo llevaba a
+      // la pagina 2 igual de vacia. Sin resultados hay UNA pagina, la vacia.
+      if (typeof data.total_paginas === 'number') setTotalPaginas(Math.max(1, data.total_paginas));
     } catch (err) {
       if (miCarga === cargaPacasRef.current) addToast(err.message, 'error');
     } finally {
@@ -233,7 +354,7 @@ export default function Pacas() {
       });
       addToast('Reserva creada correctamente', 'success');
       setReservaModalOpen(false);
-      loadPacas();
+      recargarInventario();
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -241,15 +362,22 @@ export default function Pacas() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     try {
       const payload = {
         clasificacion: formData.clasificacion,
         referencia: formData.referencia,
+        // LA CALIDAD FALTABA AQUÍ. El formulario la pedía, handleEdit la cargaba
+        // y el estado la guardaba… y nunca se enviaba. Toda unidad creada desde
+        // esta pantalla nacía con calidad NULL, con el aviso verde de "creada" y
+        // sin un solo error. Y como la clave de stock es referencia|calidad y la
+        // promoción cruza por calidad, esas pacas además no casaban con ninguna
+        // promoción ni con su grupo del inventario. Al editar pasaba lo mismo:
+        // se cambiaba la calidad, decía "Unidad actualizada" y no cambiaba nada.
+        calidad: formData.calidad || null,
         categoria: formData.categoria || null,
         peso: parseFloat(formData.peso) || 0,
-        // parseMonto y no parseFloat: la casilla guarda el texto ya formateado
-        // ("1.500.000") y parseFloat de eso es 1,5.
+        // parseMonto y no parseFloat: la casilla entrega el número crudo, pero
+        // si alguna vez entregara "1.500.000" parseFloat de eso es 1,5.
         costo_base: parseMonto(formData.costo_base),
         precio_venta: parseMonto(formData.precio_venta),
         notas: formData.notas,
@@ -270,7 +398,7 @@ export default function Pacas() {
 
       setModalOpen(false);
       resetForm();
-      loadPacas();
+      recargarInventario();
     } catch (err) {
       addToast(err.message, 'error');
     }
@@ -295,14 +423,19 @@ export default function Pacas() {
   const handleDelete = async (id) => {
     const ok = await confirm({
       title: '¿Eliminar unidad?',
-      message: 'La unidad será eliminada del inventario permanentemente.',
+      // El backend hace DELETE de sus reservas y de sus lineas de cotizacion
+      // (routes/pacas.js). El dialogo no lo decia, asi que borrar una paca
+      // separada le quitaba la mercancia a un cliente sin que nadie lo supiera.
+      message: 'La unidad será eliminada del inventario permanentemente.'
+        + ' Si estaba separada o reservada, también se quitará de la cotización'
+        + ' o de la reserva del cliente.',
       confirmText: 'Sí, eliminar',
       variant: 'danger',
     });
     if (!ok) return;
     try {
       await pacasApi.delete(id);
-      loadPacas();
+      recargarInventario();
       addToast('Unidad eliminada', 'success');
     } catch (err) {
       addToast(err.message, 'error');
@@ -321,16 +454,11 @@ export default function Pacas() {
       await pacasApi.update(selectedPaca.id, { lote_id: loteId });
       addToast(loteId ? 'Paca asignada al lote' : 'Paca desasignada del lote', 'success');
       setAssignModalOpen(false);
-      loadPacas();
+      recargarInventario();
       loadLotes();
     } catch (err) {
       addToast(err.message, 'error');
     }
-  };
-
-  const getLoteNumero = (loteId) => {
-    const lote = lotes.find(l => l.id === loteId);
-    return lote ? lote.numero : null;
   };
 
   const resetForm = () => {
@@ -340,11 +468,15 @@ export default function Pacas() {
 
   const [exporting, setExporting] = useState(false);
 
+  // Lo que se descarga tiene que ser lo que se ve: estos dos se saltaban el
+  // filtro de categoria, asi que con el chip "Filtrado por: Verano" puesto el
+  // Excel salia con el inventario entero.
   const fetchInventarioActual = async () => {
     const params = { limite: 10000 };
     if (filtroEstado) params.estado = filtroEstado;
     if (filtroTipo) params.tipo = filtroTipo;
     if (debouncedSearch) params.buscar = debouncedSearch;
+    if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
 
     const res = await pacasApi.getAll(params);
     return res.data || res;
@@ -355,7 +487,12 @@ export default function Pacas() {
     if (filtroEstado)    params.estado = filtroEstado;
     if (filtroTipo)      params.tipo   = filtroTipo;
     if (debouncedSearch) params.buscar = debouncedSearch;
-    return await pacasApi.getInventario(params);
+    if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
+    const filas = await pacasApi.getInventario(params);
+    // «Sin categoria» no es una categoria que el servidor pueda filtrar.
+    return filtroCategoria === SIN_CATEGORIA
+      ? filas.filter((r) => !(r.categoria || '').trim())
+      : filas;
   };
 
   const exportarInventarioExcel = async () => {
@@ -446,10 +583,15 @@ export default function Pacas() {
         { header: 'Clasificación',  key: 'clasificacion',  width: 18 },
         { header: 'Referencia',     key: 'referencia',     width: 14 },
         { header: 'Calidad',        key: 'calidad',        width: 12 },
+        // FISICO . SEPARADAS . DISPONIBLES, y DESPACHADAS al final: ese es el
+        // orden de la resta que explica la diferencia, el mismo que usan las
+        // hojas de entregables y ahora tambien la tabla de la pantalla. Con
+        // DESPACHADAS en medio, la unica columna que NO participa en la resta
+        // partia justo las tres que si lo hacen.
         { header: 'Físico',         key: 'fisico',         width: 10 },
-        { header: 'Despachadas',    key: 'despachadas',    width: 12 },
         { header: 'Separadas',      key: 'separadas',      width: 11 },
         { header: 'Disponibles',    key: 'disponibles',    width: 12 },
+        { header: 'Despachadas',    key: 'despachadas',    width: 12 },
         // «Costo Unit.» es el prorrateo del contenedor y sale IGUAL en todas
         // las filas del mismo contenedor por construcción: es correcto para
         // valorar el inventario, pero no distingue una referencia de otra. Por
@@ -459,8 +601,14 @@ export default function Pacas() {
         { header: 'Costo Unit.',    key: 'costo_unit',     width: 14 },
         { header: 'Mínimo Unit.',   key: 'minimo_unit',    width: 14 },
         { header: 'Precio Unit.',   key: 'precio_unit',    width: 14 },
+        // La promocion vigente, al lado del precio de lista. Sin esta columna
+        // el Excel del inventario decia un precio y la cotizacion cobraba otro.
+        { header: 'Promo',          key: 'promo',          width: 14 },
         { header: 'Costo Total',    key: 'costo_total',    width: 16 },
-        { header: 'Precio Total',   key: 'precio_total',   width: 16 },
+        // Disponibles x el precio de HOY (promocion si la hay), igual que la
+        // hoja INVENTARIO(INTERNO) de entregables y que la pantalla. Antes era
+        // SUM(precio_venta) de todo el grupo, despachadas incluidas.
+        { header: 'Valor disp.',    key: 'precio_total',   width: 16 },
       ];
 
       wsAg.getRow(1).eachCell(cell => {
@@ -484,13 +632,18 @@ export default function Pacas() {
           despachadas:   parseInt(row.despachadas) || 0,
           separadas:     parseInt(row.separadas) || 0,
           disponibles:   parseInt(row.disponibles) || 0,
-          costo_unit:    parseFloat(row.costo_unitario) || 0,
-          // Vacio, no cero, cuando esa paca no trae minimo guardado: un cero
-          // en una columna de dinero se lee como "vale cero".
+          // Vacio, no cero, cuando el dato no esta: un cero en una columna de
+          // dinero se lee como "vale cero", y eso el sistema no lo sabe.
+          costo_unit:    Number.isFinite(parseFloat(row.costo_unitario)) ? parseFloat(row.costo_unitario) : '',
           minimo_unit:   costoDeLinea(row) || '',
-          precio_unit:   parseFloat(row.precio_unitario) || 0,
-          costo_total:   parseFloat(row.costo_total) || 0,
-          precio_total:  parseFloat(row.precio_total) || 0,
+          precio_unit:   Number.isFinite(parseFloat(row.precio_unitario)) ? parseFloat(row.precio_unitario) : '',
+          promo:         promoDeLinea(row) ?? '',
+          costo_total:   Number.isFinite(parseFloat(row.costo_total)) ? parseFloat(row.costo_total) : '',
+          precio_total:  (() => {
+            const d = parseInt(row.disponibles) || 0;
+            const e = precioHoy(row);
+            return d > 0 && e != null ? e * d : '';
+          })(),
         });
         r.eachCell({ includeEmpty: true }, (cell) => {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
@@ -505,7 +658,13 @@ export default function Pacas() {
       const totalFisico   = agrupado.reduce((s, r) => s + (parseInt(r.fisico) || 0), 0);
       const totalDisp     = agrupado.reduce((s, r) => s + (parseInt(r.disponibles) || 0), 0);
       const totalCosto    = agrupado.reduce((s, r) => s + (parseFloat(r.costo_total) || 0), 0);
-      const totalPrecio   = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
+      // El total valora lo DISPONIBLE al precio de hoy, que es lo que suman las
+      // filas de arriba. Sumar `precio_total` del servidor daria otra cifra.
+      const totalPrecio   = agrupado.reduce((s, r) => {
+        const d = parseInt(r.disponibles) || 0;
+        const e = precioHoy(r);
+        return s + (d > 0 && e != null ? e * d : 0);
+      }, 0);
       const totalRow = wsAg.addRow({
         contenedor: 'TOTAL', fisico: totalFisico, disponibles: totalDisp,
         costo_total: totalCosto, precio_total: totalPrecio,
@@ -518,6 +677,7 @@ export default function Pacas() {
       wsAg.getColumn('costo_unit').numFmt   = '$#,##0.00';
       wsAg.getColumn('minimo_unit').numFmt  = '$#,##0.00';
       wsAg.getColumn('precio_unit').numFmt  = '$#,##0.00';
+      wsAg.getColumn('promo').numFmt        = '$#,##0.00';
       wsAg.getColumn('costo_total').numFmt  = '$#,##0.00';
       wsAg.getColumn('precio_total').numFmt = '$#,##0.00';
 
@@ -557,33 +717,56 @@ export default function Pacas() {
       const totalPacas = datos.length;
       const totalFisico = agrupado.reduce((s, r) => s + (parseInt(r.fisico) || 0), 0);
       const totalDisp   = agrupado.reduce((s, r) => s + (parseInt(r.disponibles) || 0), 0);
-      const totalPrecio = agrupado.reduce((s, r) => s + (parseFloat(r.precio_total) || 0), 0);
-      doc.text(`Pacas individuales: ${totalPacas}   ·   Físico: ${totalFisico}   ·   Disponibles: ${totalDisp}   ·   Valor: ${formatCurrency(totalPrecio)}`, 14, 31);
+      // Lo DISPONIBLE al precio de hoy. Antes esta linea ponia el conteo de
+      // disponibles y, pegado, un "Valor" que era la suma de TODAS las pacas del
+      // grupo, despachadas incluidas: se leia inevitablemente como el valor de
+      // lo disponible, y no lo era.
+      const totalPrecio = agrupado.reduce((s, r) => {
+        const d = parseInt(r.disponibles) || 0;
+        const e = precioHoy(r);
+        return s + (d > 0 && e != null ? e * d : 0);
+      }, 0);
+      doc.text(`Pacas individuales: ${totalPacas}   ·   Físico: ${totalFisico}   ·   Disponibles: ${totalDisp}   ·   Valor de lo disponible: ${formatCurrency(totalPrecio)}`, 14, 31);
 
       // ── Sección 1: Vista Agrupada ─────────────────────────────
       doc.setFontSize(13);
       doc.setFont(undefined, 'bold');
       doc.text('Vista Agrupada (inventario por tipo)', 14, 41);
+      // Un asterisco sin leyenda es un misterio impreso.
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.text('* precio de promoción vigente', 120, 41);
+      doc.setFontSize(13);
+      doc.setFont(undefined, 'bold');
 
       autoTable(doc, {
         startY: 45,
-        head: [['Contenedor', 'Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Físico', 'Separadas', 'Despachadas', 'Disponibles', 'Precio Unit.', 'Precio Total']],
-        body: agrupado.map(r => [
-          r.contenedor || 'Sin contenedor',
-          r.proveedor_nombre || '—',
-          r.clasificacion,
-          r.referencia,
-          r.calidad || '—',
-          parseInt(r.fisico) || 0,
-          parseInt(r.separadas) || 0,
-          parseInt(r.despachadas) || 0,
-          parseInt(r.disponibles) || 0,
-          formatCurrency(r.precio_unitario),
-          formatCurrency(r.precio_total),
-        ]),
+        // MISMO ORDEN QUE LA PANTALLA Y QUE EL EXCEL. Aqui las columnas
+        // Separadas y Despachadas iban al reves que en los otros dos sitios:
+        // quien comparara un PDF impreso con la pantalla leia el numero
+        // equivocado y nada lo advertia.
+        head: [['Contenedor', 'Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Físico', 'Separadas', 'Disponibles', 'Despachadas', 'Precio hoy', 'Valor disp.']],
+        body: agrupado.map(r => {
+          const d = parseInt(r.disponibles) || 0;
+          const e = precioHoy(r);
+          return [
+            r.contenedor || 'Sin contenedor',
+            r.proveedor_nombre || '—',
+            r.clasificacion,
+            r.referencia,
+            r.calidad || '—',
+            parseInt(r.fisico) || 0,
+            parseInt(r.separadas) || 0,
+            d,
+            parseInt(r.despachadas) || 0,
+            // La promocion gana, y si no hay precio se deja vacio.
+            e != null ? formatCurrency(e) + (promoDeLinea(r) != null ? ' *' : '') : '',
+            d > 0 && e != null ? formatCurrency(e * d) : '',
+          ];
+        }),
         foot: [[
           'TOTAL', '', '', '', '',
-          totalFisico, '', '', totalDisp,
+          totalFisico, '', totalDisp, '',
           '', formatCurrency(totalPrecio),
         ]],
         theme: 'striped',
@@ -644,25 +827,33 @@ export default function Pacas() {
     }
   };
 
-  const formatCurrency = (value) => {
-    const num = parseFloat(value) || 0;
-    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(num);
+  // El de la casa. Ver el comentario del import.
+  const formatCurrency = formatCOP;
+
+  // ── DINERO QUE FALTA SE DEJA VACÍO, NUNCA EN $ 0 ────────────────
+  // `parseFloat(x) || 0` convertía un precio o un costo ausente en «$ 0», que se
+  // lee como "esto no vale nada" y es una afirmación que el sistema no puede
+  // hacer. Vacío dice lo único cierto: que ese dato no está. Es la misma regla
+  // que ya cumple la columna «Mínimo Unit.» del Excel de esta pantalla.
+  // ── EL PRECIO DE HOY DE UNA LINEA, o null si no tiene ──────────
+  // La promocion gana sobre el precio de lista, igual que en Cotizaciones, en
+  // la Lista de Precios y en el Excel de la MATRIZ. `precioDeLinea` de
+  // entregables.js hace lo mismo pero cae a 0 cuando no hay precio, que en una
+  // hoja pasa y en pantalla no: un $0 se lee como "esto no vale nada".
+  const precioHoy = (row) => {
+    const promo = promoDeLinea(row);
+    if (promo != null) return promo;
+    const lista = parseFloat(row?.precio_unitario);
+    return Number.isFinite(lista) ? lista : null;
   };
 
-  const pacasAgrupadas = useMemo(() => {
-    const grupos = {};
-    pacas.forEach(paca => {
-      const key = paca.clasificacion || '';
-      if (!grupos[key]) {
-        grupos[key] = { clasificacion: key, pacas: [] };
-      }
-      grupos[key].pacas.push(paca);
-    });
-    return Object.values(grupos).sort((a, b) => a.clasificacion.localeCompare(b.clasificacion));
-  }, [pacas]);
+  // `raya` solo la de la tabla agrupada, que es la que lleva cabecera pegada.
+  const Rotulo      = (props) => <CabeceraColumna {...props} cortos={rotulosCortos} raya />;
+  const RotuloLista = (props) => <CabeceraColumna {...props} cortos={rotulosCortos} />;
 
-  const toggleTipo = (tipo) => {
-    setTiposExpandidos(prev => ({ ...prev, [tipo]: !prev[tipo] }));
+  const dineroOVacio = (valor) => {
+    const n = parseFloat(valor);
+    return Number.isFinite(n) ? formatCurrency(n) : '';
   };
 
   // ── Excel de separadas, con una hoja por cliente ──────────────────
@@ -671,6 +862,10 @@ export default function Pacas() {
   const exportarSeparadasPorCliente = async () => {
     const PRIMARY = '0f172a', WARNING = 'd97706', WHITE = 'ffffff', LIGHT = 'f1f5f9';
     try {
+      // setExporting faltaba: el boton se declaraba `disabled={exporting}` y
+      // esta funcion nunca lo encendia, asi que en tableta un doble toque
+      // generaba dos libros y dos descargas.
+      setExporting(true);
       addToast('Generando Excel de separadas…', 'info');
       const rows = await pacasApi.getComprometidas({});
       const separadas = (Array.isArray(rows) ? rows : []).filter(r => r.estado !== 'despachada');
@@ -816,6 +1011,8 @@ export default function Pacas() {
       addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');
     } catch (err) {
       addToast('No se pudo generar el Excel: ' + err.message, 'error');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -825,7 +1022,7 @@ export default function Pacas() {
   const resumenCategorias = useMemo(() => {
     const acc = {};
     for (const row of inventarioAgrupado) {
-      const key = (row.categoria || '').trim() || 'Sin categoría';
+      const key = (row.categoria || '').trim() || SIN_CATEGORIA;
       if (!acc[key]) acc[key] = { categoria: key, fisico: 0, disponibles: 0, separadas: 0, despachadas: 0 };
       acc[key].fisico      += parseInt(row.fisico) || 0;
       acc[key].disponibles += parseInt(row.disponibles) || 0;
@@ -835,14 +1032,19 @@ export default function Pacas() {
     return Object.values(acc).sort((a, b) => b.fisico - a.fisico);
   }, [inventarioAgrupado]);
 
-  // Filtro por categoría al pulsar una tarjeta (se resuelve en el cliente porque
-  // el endpoint de inventario no recibe categoría).
-  const filasInventario = filtroCategoria
-    ? inventarioAgrupado.filter(r => ((r.categoria || '').trim() || 'Sin categoría') === filtroCategoria)
+  // El filtro por categoría YA lo aplica el servidor, y por eso lo respetan
+  // también la vista Lista y las exportaciones. Aquí sólo queda el caso de
+  // «Sin categoría», que no es una categoría que se pueda pedir por nombre.
+  const filasInventario = filtroCategoria === SIN_CATEGORIA
+    ? inventarioAgrupado.filter(r => !(r.categoria || '').trim())
     : inventarioAgrupado;
 
+  // `pacas` es la PÁGINA actual de /pacas (como mucho `limite` filas), así que
+  // con 4.000 pacas y límite 50 la cabecera decía "50 unidades". Y en la vista
+  // agrupada, que es la de por defecto, decía 50 mientras la tabla enseñaba otra
+  // cosa. Ahora sale lo que de verdad hay, que el backend ya mandaba en `total`.
   return (
-    <Layout title="Inventario" subtitle={`${pacas.length} unidades`}>
+    <Layout title="Inventario" subtitle={totalUnidades != null ? `${totalUnidades.toLocaleString('es-CO')} unidades` : undefined}>
       <div className="space-y-6">
         {/* Resumen por categoría. Cada tarjeta filtra el inventario al pulsarla:
             como Card es un <div>, sin role/tabIndex/teclado no había manera de
@@ -863,7 +1065,7 @@ export default function Pacas() {
                 role="button"
                 tabIndex={0}
                 aria-pressed={activa}
-                aria-label={`Filtrar por categoría ${r.categoria}: ${r.disponibles} disponibles, ${r.despachadas} despachadas, ${r.separadas} separadas, ${r.fisico} en total`}
+                aria-label={`Filtrar por categoría ${r.categoria}: ${r.fisico} en bodega, ${r.separadas} separadas, ${r.disponibles} disponibles, ${r.despachadas} ya despachadas`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -874,24 +1076,36 @@ export default function Pacas() {
                 <CardBody className="p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Package className="w-4 h-4 text-secondary flex-shrink-0" aria-hidden="true" />
-                    <span className="font-medium text-sm capitalize truncate" title={r.categoria}>{r.categoria}</span>
+                    {/* break-words y no truncate: la tarjeta es ademas el boton de filtrar,
+                        y con `truncate` se filtraba por algo que en la tableta no se
+                        podia leer —el title no existe sin raton—. */}
+                    <span className="font-medium text-sm capitalize break-words leading-tight">{r.categoria}</span>
                   </div>
+                  {/* EL ULTIMO NUMERO SE LLAMA FISICO, NO "TOTAL".
+                      Decia "Total" y era `fisico`, que EXCLUYE las despachadas.
+                      Con "Desp" justo al lado, el orden invitaba a leer
+                      Disp + Desp + Sep = Total, y esa cuenta nunca cuadraba: le
+                      sobraban las despachadas. Ademas la tabla llama "Fisico" a
+                      ese mismo numero treinta pixeles mas abajo.
+                      Ahora el orden es el de la resta que si se cumple
+                      —Fisico = Sep + Disp— y las despachadas van al final,
+                      apagadas, porque son las que ya no estan en la bodega. */}
                   <div className="grid grid-cols-4 gap-1 text-xs">
                     <div>
-                      <p className="text-muted">Disp</p>
-                      <p className="font-bold text-emerald-600 tabular-nums">{r.disponibles}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted">Desp</p>
-                      <p className="font-bold text-accent tabular-nums">{r.despachadas}</p>
+                      <p className="text-muted">Fisico</p>
+                      <p className="font-bold text-primary tabular-nums">{r.fisico}</p>
                     </div>
                     <div>
                       <p className="text-muted">Sep</p>
                       <p className="font-bold text-warning tabular-nums">{r.separadas}</p>
                     </div>
                     <div>
-                      <p className="text-muted">Total</p>
-                      <p className="font-bold text-primary tabular-nums">{r.fisico}</p>
+                      <p className="text-muted">Disp</p>
+                      <p className="font-bold text-emerald-600 tabular-nums">{r.disponibles}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted/70">Desp</p>
+                      <p className="font-semibold text-muted tabular-nums">{r.despachadas}</p>
                     </div>
                   </div>
                 </CardBody>
@@ -921,8 +1135,8 @@ export default function Pacas() {
             <input
               id="pacas-buscar"
               type="text"
-              aria-label="Buscar unidades por UUID o notas"
-              placeholder="Buscar por UUID o notas..."
+              aria-label="Buscar unidades por referencia, calidad, clasificación, UUID o notas"
+              placeholder="Buscar referencia, calidad, clasificación, UUID o notas…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
@@ -953,6 +1167,22 @@ export default function Pacas() {
                 <span className="hidden sm:inline">Lista</span>
               </button>
             </div>
+            {/* Nombres de columna cortos o enteros. Va pegado al interruptor de
+                vista porque es lo mismo: como se quiere ver la tabla. */}
+            <button
+              type="button"
+              onClick={() => setRotulosCortos((v) => !v)}
+              aria-pressed={rotulosCortos}
+              title={rotulosCortos
+                ? 'Ahora las columnas se llaman Cont., Prov., Clas… Toca para ver los nombres completos'
+                : 'Ahora las columnas llevan su nombre completo. Toca para abreviarlos y que quepan todas'}
+              className={`px-3 py-2 rounded-xl border text-sm transition-colors ${
+                rotulosCortos
+                  ? 'border-secondary/40 bg-secondary/10 text-secondary font-medium'
+                  : 'border-border bg-surface text-muted hover:bg-primary/5'}`}
+            >
+              {rotulosCortos ? 'Cols. cortas' : 'Cols. completas'}
+            </button>
             <BuscadorLista
               value={filtroEstado}
               onChange={(valorElegido) => setFiltroEstado(valorElegido)}
@@ -991,30 +1221,44 @@ export default function Pacas() {
           </div>
         </div>
 
-        {error && (
-          <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>
-        )}
-
         {/* Vista Agrupada */}
         {vistaAgrupada ? (
           <Card padding={false}>
-            <div className="overflow-x-auto">
+            {/* CON LOS RÓTULOS CORTOS LA TABLA CABE, y sin envoltorio de scroll
+                horizontal la cabecera puede pegarse de verdad: un ancestro con
+                overflow distinto de visible se convierte en el contenedor de
+                desplazamiento del sticky, y la cabecera se queda pegada a un
+                sitio que no se mueve, o sea a nada.
+                Con los rótulos completos la tabla puede no caber, así que ahí
+                vuelve el scroll horizontal y se renuncia a la cabecera pegada.
+                En pantallas estrechas manda siempre el scroll. */}
+            <div className={rotulosCortos ? 'overflow-x-auto md:overflow-x-visible' : 'overflow-x-auto'}>
               <table className="w-full">
                 <caption className="sr-only">Inventario agrupado por contenedor, clasificación y calidad</caption>
-                <thead className="bg-primary/3 border-b border-border/50">
+                {/* CABECERA PEGAJOSA: con hasta 250 filas, a media tabla no se
+                    sabe qué columna se está leyendo, y son nueve números
+                    seguidos. La raya va como sombra interior porque un
+                    border-bottom lo pinta la tabla y se queda clavado al
+                    despegarse la cabecera (mismo motivo que en Contenedores).
+                    El orden es FÍSICO · SEPARADAS · DISPONIBLES, con
+                    DESPACHADAS al final: esa es la resta que explica la
+                    diferencia, y es el orden que ya usan las hojas de Excel.
+                    Aquí DESPACHADAS iba en medio, justo la columna que NO
+                    participa en la resta. */}
+                <thead className="sticky top-0 z-10 bg-surface">
                   <tr>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Proveedor</th>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Categoría</th>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
-                    <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-muted uppercase">Calidad</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Físico</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Despachadas</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Separadas</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Disponibles</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Unit.</th>
-                    <th scope="col" className="px-3 py-3 text-right text-xs font-medium text-muted uppercase">Precio Total</th>
+                    <Rotulo col="contenedor" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="proveedor" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="categoria" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="clasificacion" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="referencia" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="calidad" className="bg-surface px-3 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="fisico" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="separadas" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="disponibles" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="despachadas" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="precioHoy" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
+                    <Rotulo col="valorDisp" className="bg-surface px-3 py-3 text-right text-xs font-medium text-muted uppercase" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -1026,7 +1270,27 @@ export default function Pacas() {
                       description={filtroCategoria ? 'Quita el filtro de categoría para ver todo el inventario' : 'Las unidades del inventario aparecerán aquí'}
                     /></td></tr>
                   ) : (
-                    filasInventario.map((row, idx) => (
+                    filasInventario.map((row, idx) => {
+                      // ── EL PRECIO DE HOY, NO EL DE LISTA ──────────────
+                      // Esta pantalla enseñaba `precio_unitario` a secas: el de
+                      // lista. Cotizaciones cobra el rebajado, la Lista de
+                      // Precios tiene su columna de promoción y el Excel de la
+                      // MATRIZ también, todos leyendo ESTE mismo endpoint. O
+                      // sea: la bodega miraba aquí el precio antes de vender y
+                      // era el único sitio donde la rebaja no existía.
+                      //
+                      // Y el indicador «●promo» salía de `tiene_promocion`, que
+                      // es una bandera estampada en la paca al nacer, mientras
+                      // que la rebaja es una consulta viva con fechas. Se
+                      // desincronizaban en los dos sentidos: promoción caducada
+                      // ayer seguía con su puntito, promoción creada hoy sobre
+                      // pacas viejas no lo tenía. Ahora las dos cosas salen del
+                      // mismo helper, y además dice cuánto es.
+                      const promo    = promoDeLinea(row);
+                      const efectivo = precioHoy(row);
+                      const lista    = parseFloat(row.precio_unitario);
+                      const disp     = parseInt(row.disponibles) || 0;
+                      return (
                       <tr key={idx} className="hover:bg-primary/3 transition-colors duration-150">
                         <td className="px-3 py-2.5">
                           {row.contenedor_id ? (
@@ -1044,16 +1308,18 @@ export default function Pacas() {
                         </td>
                         <td className="px-3 py-2.5 text-sm font-semibold text-primary capitalize">
                           {row.clasificacion}
-                          {row.tiene_promocion && <span className="ml-1 text-xs text-amber-600">●promo</span>}
                         </td>
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.referencia}</td>
                         <td className="px-3 py-2.5 text-sm text-muted capitalize">{row.calidad || <span className="text-muted/40">—</span>}</td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-primary">{row.fisico}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-sm text-warning">
+                          {/* El conteo es un botón y su única pista era un
+                              subrayado al pasar el ratón: en la tableta era un
+                              número igual a los de al lado. Ahora se ve que es
+                              pulsable sin necesidad de puntero. */}
                           {row.separadas > 0 ? (
                             <button type="button" onClick={() => verComprometidas(row)}
-                              className="text-warning font-semibold hover:underline underline-offset-2 cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-warning/10 text-warning font-semibold underline underline-offset-2 decoration-warning/40 hover:bg-warning/20"
                               aria-label={`Ver por quién están separadas las ${row.separadas} unidades de ${row.clasificacion} ${row.referencia}`}
                               title="Ver por quién están separadas">
                               {row.separadas}
@@ -1061,10 +1327,33 @@ export default function Pacas() {
                           ) : row.separadas}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-600">{row.disponibles}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-secondary">{formatCurrency(row.precio_unitario)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm text-secondary/70">{formatCurrency(row.precio_total)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-muted">{row.despachadas}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-sm">
+                          <span className={promo != null ? 'font-bold text-amber-600' : 'font-semibold text-secondary'}>
+                            {dineroOVacio(efectivo) || <span className="text-muted/40">—</span>}
+                          </span>
+                          {promo != null && Number.isFinite(lista) && lista > promo && (
+                            <span className="block text-[10px] text-muted line-through leading-tight">
+                              {dineroOVacio(lista)}
+                            </span>
+                          )}
+                          {promo != null && (
+                            <span className="block text-[9px] font-bold text-amber-600 uppercase tracking-wide leading-tight">promoción</span>
+                          )}
+                        </td>
+                        {/* Disponibles × precio de hoy, que es exactamente lo
+                            que calcula la columna PRECIO TOTAL del Excel de esta
+                            misma pantalla. Antes era SUM(precio_venta) de TODO
+                            el grupo, despachadas incluidas: un "valor del
+                            inventario" que contaba mercancía que ya había salido
+                            por la puerta, y dividirlo por el precio unitario no
+                            daba ninguna de las cuatro columnas de la tabla. */}
+                        <td className="px-3 py-2.5 text-right font-mono text-sm text-secondary/70">
+                          {disp > 0 && efectivo != null ? dineroOVacio(efectivo * disp) : <span className="text-muted/40">—</span>}
+                        </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1078,15 +1367,15 @@ export default function Pacas() {
                 <caption className="sr-only">Unidades del inventario, una fila por paca</caption>
                 <thead className="bg-primary/3 border-b border-border/50">
                   <tr>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">UUID</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Clasificación</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Referencia</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Peso</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Costo</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Precio</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Contenedor</th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado / Cotización</th>
-                    <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
+                    <RotuloLista col="uuid" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="clasificacion" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="referencia" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="peso" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="costo" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="precio" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="contenedor" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="estadoCot" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase" />
+                    <RotuloLista col="acciones" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -1123,8 +1412,11 @@ export default function Pacas() {
                             <div className="mt-0.5">
                               <RefLink to="/cotizaciones" id={paca.cotizacion_id} title="Ver cotización"
                                 className="text-xs font-semibold" icon={false}>{paca.cotizacion_numero}</RefLink>
+                              {/* Llevaba `truncate` SIN title: no es que estuviera
+                                  escondido tras el ratón, es que no había forma de
+                                  leerlo, ni siquiera con ratón. */}
                               {paca.cotizacion_cliente && (
-                                <span className="block text-xs text-muted truncate max-w-[130px]">{paca.cotizacion_cliente}</span>
+                                <span className="block text-xs text-muted break-words max-w-[160px] leading-tight">{paca.cotizacion_cliente}</span>
                               )}
                             </div>
                           )}
@@ -1170,8 +1462,12 @@ export default function Pacas() {
           </Card>
         )}
 
-        {/* Paginación */}
-        {totalPaginas > 0 && (
+        {/* PAGINACION SOLO EN LA VISTA LISTA.
+            La vista agrupada sale de /pacas/inventario, que NO pagina: salia
+            "Mostrar 50 por pagina" y "Pagina 1 de 7" debajo de una tabla que ya
+            ensenaba todo, y tocarlos recargaba /pacas sin ningun efecto visible.
+            Un control que no hace nada es peor que no tenerlo. */}
+        {!vistaAgrupada && totalPaginas > 0 && (
           <div className="flex flex-col sm:flex-row justify-between items-center bg-surface p-4 rounded-xl border border-border mt-4 gap-4 shadow-sm">
             <div className="flex items-center gap-2">
               <label htmlFor="pacas-por-pagina" className="text-sm text-muted">Mostrar:</label>
@@ -1212,7 +1508,6 @@ export default function Pacas() {
       {/* Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar Unidad' : 'Nueva Unidad'}>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {error && <div role="alert" className="p-4 bg-accent/10 text-accent rounded-xl text-sm border border-accent/20">{error}</div>}
 
           <div className="grid grid-cols-2 gap-4">
             <Select
@@ -1243,13 +1538,17 @@ export default function Pacas() {
             />
             <div>
               <label htmlFor="paca-categoria" className="block text-sm font-medium text-primary mb-1">Categoría <span className="text-muted font-normal">(opcional)</span></label>
-              <input id="paca-categoria" list="temporadas-paca-form" className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              {/* Era el unico <datalist> de la pantalla, y en tableta apenas
+                  funciona: en iOS el desplegable puede no aparecer. Los otros
+                  tres campos de catalogo de este mismo formulario usan
+                  BuscadorLista, que si es tactil y ademas no deja teclear una
+                  categoria que no existe en el catalogo. */}
+              <BuscadorLista id="paca-categoria"
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
                 value={formData.categoria}
-                onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                onChange={(val) => setFormData({ ...formData, categoria: val })}
+                opciones={temporadasList.map(t => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
                 placeholder="Verano / Invierno" />
-              <datalist id="temporadas-paca-form">
-                {temporadasList.map(t => <option key={t} value={t.charAt(0).toUpperCase() + t.slice(1)} />)}
-              </datalist>
             </div>
           </div>
 
@@ -1580,9 +1879,11 @@ export default function Pacas() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {g.pacas.map(p => (
-                          <span key={p.id} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${p.estado === 'vendida' ? 'bg-accent/15 text-accent' : 'bg-warning/15 text-warning'}`}
-                            title={`${p.estado} · ${formatCurrency(p.precio_venta)}`}>
+                          // El precio vivia SOLO en el title: en la tableta,
+                          // que es donde se usa esto, no existia. Y es dinero.
+                          <span key={p.id} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${p.estado === 'vendida' ? 'bg-accent/15 text-accent' : 'bg-warning/15 text-warning'}`}>
                             {p.uuid?.slice(0, 8)} · {p.estado}
+                            {p.precio_venta != null && <> · <b>{dineroOVacio(p.precio_venta)}</b></>}
                           </span>
                         ))}
                       </div>
