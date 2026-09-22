@@ -584,6 +584,9 @@ export const despachosApi = {
   getOne(id) { return api.get(`/despachos/${id}`); },
   confirmar(id, body = {}) { return api.post(`/despachos/${id}/confirmar`, body); },
   anular(id) { return api.delete(`/despachos/${id}`); },
+  // Despachar sin cotizacion detras: una venta de mostrador. Ver el comentario
+  // de POST /despachos/directo en el servidor, que explica que deja escrito.
+  crearDirecto(body) { return api.post('/despachos/directo', body); },
 };
 
 export const preciosApi = {

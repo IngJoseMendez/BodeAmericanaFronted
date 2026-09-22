@@ -2,11 +2,15 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink } from '../components/common';
-import { despachosApi, pacasApi, transportesApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check } from 'lucide-react';
+import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista, CampoMonto } from '../components/common';
+import { despachosApi, pacasApi, transportesApi, clientesApi } from '../services/api';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
-import { formatCOP } from '../lib/money';
+import { formatCOP, parseMonto } from '../lib/money';
+// La promocion gana sobre el precio de lista, y se resuelve con el MISMO
+// helper que las hojas de Excel y el inventario: tres sitios decidiendo por
+// su cuenta que precio vale es como acaban cobrando cifras distintas.
+import { promoDeLinea } from '../lib/entregables';
 import { descargarExcel } from '../lib/descargar';
 
 const formatCurrency = formatCOP;
@@ -570,6 +574,149 @@ export default function Despachos() {
   const [viewModalOpen, setViewModalOpen]       = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [seleccion, setSeleccion]               = useState({});
+
+  // ── DESPACHO DIRECTO, SIN COTIZACION ──────────────────────────
+  // Para vender tres pacas de mostrador habia que inventarse una cotizacion,
+  // aprobarla y despacharla: tres pantallas para una venta de treinta segundos.
+  // Esto crea la venta, el despacho y la deuda en cartera de una vez, igual que
+  // el flujo por cotizacion (ver POST /despachos/directo).
+  const LINEA_VACIA = { referencia: '', calidad: '', cantidad: '', precio_unitario: '' };
+  const [directoOpen, setDirectoOpen]   = useState(false);
+  const [clientes, setClientes]         = useState([]);
+  const [inventario, setInventario]     = useState([]);
+  const [creandoDirecto, setCreandoDirecto] = useState(false);
+  const [directo, setDirecto] = useState({
+    cliente_id: '', lineas: [{ ...LINEA_VACIA }],
+    destinatario: '', ciudad_entrega: '', direccion_entrega: '', celular: '',
+    tipo_transporte: '', abono: '', metodo_pago: '', notas: '',
+  });
+
+  const abrirDirecto = async () => {
+    setDirecto({
+      cliente_id: '', lineas: [{ ...LINEA_VACIA }],
+      destinatario: '', ciudad_entrega: '', direccion_entrega: '', celular: '',
+      tipo_transporte: '', abono: '', metodo_pago: '', notas: '',
+    });
+    setDirectoOpen(true);
+    try {
+      const [cls, inv] = await Promise.all([clientesApi.getAll(), pacasApi.getInventario()]);
+      setClientes(Array.isArray(cls) ? cls : (cls?.data || []));
+      setInventario(Array.isArray(inv) ? inv : []);
+    } catch {
+      addToast('No se pudo cargar el inventario disponible', 'error');
+    }
+  };
+
+  // Lo disponible, agrupado por referencia + calidad. El endpoint agrupa TAMBIEN
+  // por contenedor, asi que una misma referencia llega repartida en varias filas
+  // y hay que sumarla: si no, la pantalla ofreceria menos de lo que hay.
+  const stockDirecto = useMemo(() => {
+    const m = new Map();
+    for (const f of inventario) {
+      const disp = parseInt(f.disponibles) || 0;
+      if (disp <= 0) continue;
+      const ref = String(f.referencia || '').trim();
+      const cal = String(f.calidad || '').trim();
+      if (!ref) continue;
+      const k = `${ref.toLowerCase()}|${cal.toLowerCase()}`;
+      const ya = m.get(k);
+      // El precio de HOY: la promocion si la hay, y si no el de lista. Se toma
+      // el de la primera fila con precio; en un grupo con precios mezclados es
+      // una sugerencia, y por eso la casilla se puede cambiar a mano.
+      const promo = promoDeLinea(f);
+      const lista = parseFloat(f.precio_unitario);
+      const precio = promo != null ? promo : (Number.isFinite(lista) ? lista : null);
+      if (ya) {
+        ya.disponibles += disp;
+        if (ya.precio == null) ya.precio = precio;
+      } else {
+        m.set(k, { referencia: ref, calidad: cal, disponibles: disp, precio });
+      }
+    }
+    return [...m.values()].sort((a, b) =>
+      a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es'));
+  }, [inventario]);
+
+  const refsDirecto = useMemo(
+    () => [...new Set(stockDirecto.map((x) => x.referencia))], [stockDirecto]);
+  const calidadesDe = (ref) => stockDirecto
+    .filter((x) => x.referencia.toLowerCase() === String(ref || '').trim().toLowerCase())
+    .map((x) => x.calidad);
+  const hayDe = (ref, cal) => stockDirecto.find((x) =>
+    x.referencia.toLowerCase() === String(ref || '').trim().toLowerCase() &&
+    x.calidad.toLowerCase() === String(cal || '').trim().toLowerCase());
+
+  const setLinea = (i, campo, valor) => setDirecto((d) => {
+    const lineas = [...d.lineas];
+    const linea = { ...lineas[i], [campo]: valor };
+    // Al elegir referencia o calidad se sugiere el precio de hoy y, si solo hay
+    // una calidad con existencias, se escoge sola: es el gesto que se repite en
+    // cada linea y no tiene ninguna decision detras.
+    if (campo === 'referencia') {
+      const cals = calidadesDe(valor);
+      if (cals.length === 1) linea.calidad = cals[0];
+    }
+    if (campo === 'referencia' || campo === 'calidad') {
+      const hay = hayDe(linea.referencia, linea.calidad);
+      if (hay?.precio != null && !linea.precio_unitario) linea.precio_unitario = String(hay.precio);
+    }
+    lineas[i] = linea;
+    return { ...d, lineas };
+  });
+
+  const totalDirecto = directo.lineas.reduce((sum, l) =>
+    sum + (parseInt(l.cantidad) || 0) * (parseMonto(l.precio_unitario) || 0), 0);
+
+  // Lo que impide crear el despacho, dicho en palabras. Se calcula aqui y se
+  // ensena en el formulario: un boton apagado sin decir por que es una pared.
+  const problemasDirecto = () => {
+    const faltas = [];
+    if (!directo.cliente_id) faltas.push('Falta el cliente');
+    const utiles = directo.lineas.filter((l) => l.referencia || l.cantidad || l.precio_unitario);
+    if (!utiles.length) faltas.push('Falta al menos una linea');
+    utiles.forEach((l, i) => {
+      const n = i + 1;
+      const cant = parseInt(l.cantidad) || 0;
+      if (!l.referencia) faltas.push(`Linea ${n}: falta la referencia`);
+      if (cant <= 0) faltas.push(`Linea ${n}: falta la cantidad`);
+      if (!(parseMonto(l.precio_unitario) > 0)) faltas.push(`Linea ${n}: falta el precio`);
+      const hay = l.referencia ? hayDe(l.referencia, l.calidad) : null;
+      const disp = hay?.disponibles || 0;
+      if (l.referencia && cant > disp) {
+        faltas.push(`Linea ${n}: pides ${cant} y hay ${disp} disponibles`);
+      }
+    });
+    return faltas;
+  };
+
+  const crearDirecto = async () => {
+    const faltas = problemasDirecto();
+    if (faltas.length) { addToast(faltas[0], 'warning'); return; }
+    try {
+      setCreandoDirecto(true);
+      const r = await despachosApi.crearDirecto({
+        cliente_id: directo.cliente_id,
+        lineas: directo.lineas
+          .filter((l) => l.referencia && (parseInt(l.cantidad) || 0) > 0)
+          .map((l) => ({
+            referencia: l.referencia, calidad: l.calidad,
+            cantidad: parseInt(l.cantidad) || 0,
+            precio_unitario: parseMonto(l.precio_unitario),
+          })),
+        destinatario: directo.destinatario, ciudad_entrega: directo.ciudad_entrega,
+        direccion_entrega: directo.direccion_entrega, celular: directo.celular,
+        tipo_transporte: directo.tipo_transporte, notas: directo.notas,
+        abono: parseMonto(directo.abono) || 0, metodo_pago: directo.metodo_pago,
+      });
+      addToast(r.mensaje || `Despacho ${r.numero} creado`, 'success');
+      setDirectoOpen(false);
+      loadDespachos();
+    } catch (err) {
+      addToast(err.message || 'No se pudo crear el despacho', 'error');
+    } finally {
+      setCreandoDirecto(false);
+    }
+  };
   const [submitting, setSubmitting]             = useState(false);
   const [entrega, setEntrega]                   = useState({ tipo_transporte: '', destinatario: '', direccion_entrega: '', ciudad_entrega: '', celular: '' });
 
@@ -827,12 +974,19 @@ export default function Despachos() {
         {/* ── VISTA PENDIENTES ─────────────────────────────────── */}
         {vistaActiva === 'pendientes' && (
           <>
-            {/* Búsqueda */}
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-              <input type="text" placeholder="Buscar por número o cliente..."
-                value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+            {/* Búsqueda + despacho directo */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+                <input type="text" placeholder="Buscar por número o cliente..."
+                  value={search} onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+              </div>
+              <button type="button" onClick={abrirDirecto}
+                title="Vender y despachar mercancía disponible sin pasar por una cotización"
+                className="flex-shrink-0 flex items-center justify-center gap-2 px-5 py-3 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-[0.98] transition-all duration-150">
+                <Plus size={17} aria-hidden="true" /> Nuevo despacho
+              </button>
             </div>
 
             <Card padding={false}>
@@ -1268,6 +1422,205 @@ export default function Despachos() {
       )}
 
       {/* ── Catálogo de tipos de transporte ─────────────────────── */}
+      {/* ══ DESPACHO DIRECTO ════════════════════════════════
+          Una venta de mostrador: se elige cliente, se teclean las líneas y sale
+          el despacho, la venta y la deuda en cartera de una vez. Sólo ofrece
+          mercancía DISPONIBLE: lo que ya está apartado para alguien tiene su
+          camino por cotización, y tirar de ahí es como se le quita en silencio a
+          un cliente lo que tenía pedido. */}
+      <Modal isOpen={directoOpen} onClose={() => setDirectoOpen(false)}
+             title="Nuevo despacho (sin cotización)" size="xl">
+        <div className="space-y-5">
+          <div>
+            <label htmlFor="dir-cliente" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">Cliente *</label>
+            <BuscadorLista id="dir-cliente"
+              value={directo.cliente_id}
+              onChange={(v) => setDirecto((d) => ({ ...d, cliente_id: v }))}
+              opcionVacia="Elige el cliente"
+              opciones={clientes.map((c) => ({
+                value: String(c.id),
+                label: c.nombre,
+                detalle: c.ciudad || '',
+              }))}
+              className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+          </div>
+
+          {/* ── Las líneas ──────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider">Qué se despacha</p>
+              <span className="text-xs text-muted">
+                {stockDirecto.length} producto(s) con existencias
+              </span>
+            </div>
+            <div className="rounded-xl border border-border/60 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-primary/[0.03] text-[10px] font-bold text-muted uppercase tracking-wider">
+                    <th className="px-2 py-2 text-left w-[30%]">Referencia *</th>
+                    <th className="px-2 py-2 text-left w-[20%]">Calidad</th>
+                    <th className="px-2 py-2 text-center w-[13%]">Cant. *</th>
+                    <th className="px-2 py-2 text-right w-[19%]">Precio *</th>
+                    <th className="px-2 py-2 text-right w-[14%]">Subtotal</th>
+                    <th className="px-2 py-2 w-[4%]"><span className="sr-only">Quitar</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {directo.lineas.map((l, i) => {
+                    const hay = l.referencia ? hayDe(l.referencia, l.calidad) : null;
+                    const disp = hay?.disponibles || 0;
+                    const cant = parseInt(l.cantidad) || 0;
+                    const excede = Boolean(l.referencia) && cant > disp;
+                    return (
+                      <tr key={i} className={excede ? 'bg-warning/[0.07]' : ''}>
+                        <td className="px-2 py-1.5">
+                          <BuscadorLista
+                            value={l.referencia}
+                            onChange={(v) => setLinea(i, 'referencia', v)}
+                            opciones={refsDirecto.map((r) => ({ value: r, label: r }))}
+                            placeholder="Referencia"
+                            className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <BuscadorLista
+                            value={l.calidad}
+                            onChange={(v) => setLinea(i, 'calidad', v)}
+                            opciones={calidadesDe(l.referencia).map((q) => ({ value: q, label: q || '—' }))}
+                            placeholder="Calidad"
+                            className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <CampoMonto decimales={0} placeholder="0"
+                            value={l.cantidad}
+                            onChange={(e) => setLinea(i, 'cantidad', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs text-center font-mono" />
+                          {/* Cuánto hay, en la línea y no en un tooltip: en la
+                              tableta un title no existe, y este número es el que
+                              decide si la venta se puede hacer. */}
+                          {l.referencia && (
+                            <p className={`text-[9px] mt-0.5 text-center leading-none ${excede ? 'text-warning font-bold' : 'text-muted'}`}>
+                              hay {disp}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <CampoMonto decimales={0} placeholder="0"
+                            value={l.precio_unitario}
+                            onChange={(e) => setLinea(i, 'precio_unitario', e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs text-right font-mono" />
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-secondary font-semibold">
+                          {cant > 0 && parseMonto(l.precio_unitario) > 0
+                            ? formatCOP(cant * parseMonto(l.precio_unitario))
+                            : <span className="text-muted/40">—</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {directo.lineas.length > 1 && (
+                            <button type="button"
+                              onClick={() => setDirecto((d) => ({ ...d, lineas: d.lineas.filter((_, j) => j !== i) }))}
+                              aria-label={`Quitar la línea ${i + 1}`}
+                              className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10">
+                              <X size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <button type="button"
+              onClick={() => setDirecto((d) => ({ ...d, lineas: [...d.lineas, { ...LINEA_VACIA }] }))}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5">
+              <Plus size={13} /> Agregar línea
+            </button>
+          </div>
+
+          {/* ── A dónde va ─────────────────────────────── */}
+          <div>
+            <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">A dónde va (opcional)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input type="text" placeholder="Quién recibe" aria-label="Quién recibe"
+                value={directo.destinatario} onChange={(e) => setDirecto((d) => ({ ...d, destinatario: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <input type="text" placeholder="Ciudad" aria-label="Ciudad de entrega"
+                value={directo.ciudad_entrega} onChange={(e) => setDirecto((d) => ({ ...d, ciudad_entrega: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <input type="text" placeholder="Dirección" aria-label="Dirección de entrega"
+                value={directo.direccion_entrega} onChange={(e) => setDirecto((d) => ({ ...d, direccion_entrega: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <input type="text" placeholder="Celular" aria-label="Celular"
+                value={directo.celular} onChange={(e) => setDirecto((d) => ({ ...d, celular: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <BuscadorLista
+                value={directo.tipo_transporte}
+                onChange={(v) => setDirecto((d) => ({ ...d, tipo_transporte: v }))}
+                opcionVacia="Transporte"
+                opciones={(transportes || []).map((t) => ({ value: t.nombre, label: t.nombre }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <input type="text" placeholder="Notas" aria-label="Notas del despacho"
+                value={directo.notas} onChange={(e) => setDirecto((d) => ({ ...d, notas: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+            </div>
+          </div>
+
+          {/* ── Lo que paga en el acto ────────────────────── */}
+          <div>
+            <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Abono (opcional)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <CampoMonto decimales={0} placeholder="Cuánto paga ahora" aria-label="Abono"
+                value={directo.abono} onChange={(e) => setDirecto((d) => ({ ...d, abono: e.target.value }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm font-mono text-right" />
+              <BuscadorLista
+                value={directo.metodo_pago}
+                onChange={(v) => setDirecto((d) => ({ ...d, metodo_pago: v }))}
+                opcionVacia="Método de pago"
+                opciones={['efectivo', 'transferencia', 'cheque', 'otro'].map((m) => ({ value: m, label: m }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+            </div>
+            <p className="text-[11px] text-muted mt-1.5 leading-snug">
+              El despacho crea la venta y la deuda en cartera del cliente. Lo que abone
+              aquí se registra de una vez; el resto queda como saldo.
+            </p>
+          </div>
+
+          {/* ── Total, avisos y acciones ─────────────────── */}
+          {(() => {
+            const faltas = problemasDirecto();
+            return (
+              <>
+                {faltas.length > 0 && (
+                  /* Se dice QUÉ falta. Un botón apagado sin explicar por qué es
+                     una pared: quien lo mira no sabe si le falta un dato o si el
+                     sistema se rompió. */
+                  <ul className="rounded-xl border border-warning/40 bg-warning/[0.07] px-4 py-3 text-xs text-warning space-y-0.5">
+                    {faltas.slice(0, 4).map((f, i) => <li key={i}>· {f}</li>)}
+                    {faltas.length > 4 && <li className="text-muted">y {faltas.length - 4} más…</li>}
+                  </ul>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border/50">
+                  <span className="text-sm text-muted">
+                    Total <b className="font-mono tabular-nums text-primary ml-1">{formatCOP(totalDirecto)}</b>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setDirectoOpen(false)}
+                      className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium">
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={crearDirecto}
+                      disabled={creandoDirecto || faltas.length > 0}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-xl text-sm font-bold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Truck size={16} /> {creandoDirecto ? 'Creando…' : 'Crear despacho'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      </Modal>
+
       <Modal isOpen={transpOpen} onClose={cerrarTransportes} title="Tipos de transporte">
         <div className="space-y-4">
           <p className="text-sm text-muted">
