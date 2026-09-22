@@ -143,14 +143,29 @@ select {
 /* ============================================
    KEYFRAME ANIMATIONS
    ============================================ */
+/* ── LAS ANIMACIONES DE ENTRADA TERMINAN EN `transform: none` ──────
+   No es cosmético: todas llevan `forwards`, así que el elemento se queda con
+   el transform de su último fotograma PARA SIEMPRE. Escrito como
+   `translateY(0)` o `scale(1)` eso es un transform de verdad —identidad, pero
+   existente—, y un ancestro con transform ROMPE `position: sticky` en todo lo
+   que tenga dentro.
+
+   Eso dejaba el modal de contenedores sin nada pegado: ni la barra de saltos,
+   ni las cabeceras de las tablas de distribución. Se veía como un fallo de esas
+   cabeceras y estaba aquí, a cuatro archivos de distancia, en el `scale(1)` con
+   el que acababa la animación del panel.
+
+   `none` se interpola igual que la identidad, así que la animación se ve
+   exactamente igual. Si alguien vuelve a escribir `scale(1)` o `translateY(0)`
+   aquí, el sticky de los modales se apaga otra vez sin que falle nada. */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes fadeInScale {
   from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes fadeOutScale {
@@ -160,7 +175,7 @@ select {
 
 @keyframes slideInLeft {
   from { opacity: 0; transform: translateX(-24px); }
-  to   { opacity: 1; transform: translateX(0); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes slideInUp {
@@ -170,7 +185,7 @@ select {
 
 @keyframes slideInDown {
   from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes pulse-soft {
@@ -210,7 +225,7 @@ select {
 
 @keyframes toast-enter {
   from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes toast-exit {
@@ -225,7 +240,7 @@ select {
 
 @keyframes cmd-enter {
   from { opacity: 0; transform: translateY(-12px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes cmd-exit {

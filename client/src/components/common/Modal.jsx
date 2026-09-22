@@ -15,7 +15,13 @@ const modalStack = [];
 // salida ya ha corrido y `visible` ya es false: al decidir NO cerrar, el modal
 // se quedaba en pantalla pero con el manejador de Escape apagado. La pantalla
 // cierra poniendo `isOpen` en false, que es el camino de siempre.
-export function Modal({ isOpen, onClose, title, children, size = 'md', onSolicitarCierre }) {
+// `barra` (opcional) es una tira que va EN LA CABECERA, junto al titulo y fuera
+// del area que hace scroll. Nacio para los atajos del formulario de
+// contenedores: dentro del contenido no hay forma de que no se mueva —por muy
+// `sticky` que este, comparte el desplazamiento con lo que tiene detras— y la
+// unica manera de que este quieta de verdad es sacarla del scroll. Cualquier
+// modal que no la pase se dibuja exactamente igual que antes.
+export function Modal({ isOpen, onClose, title, children, size = 'md', onSolicitarCierre, barra }) {
   const [visible, setVisible] = useState(false);
   const [animatingOut, setAnimatingOut] = useState(false);
   const modalRef = useRef(null);
@@ -203,13 +209,15 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', onSolicit
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+        <div className="flex items-center gap-4 px-6 py-4 border-b border-border/50">
           <h2
             id={titleId}
-            className="font-display text-xl text-primary"
+            className="font-display text-xl text-primary flex-shrink-0"
           >
             {title}
           </h2>
+          {barra && <div className="min-w-0 flex-1">{barra}</div>}
+          {!barra && <div className="flex-1" />}
           <button
             ref={triggerRef}
             onClick={solicitarCierre}
