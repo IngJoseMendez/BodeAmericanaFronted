@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect, memo } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import {
@@ -7,8 +7,10 @@ import {
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
   ClipboardCheck, Sparkles, RefreshCw, Info,
+  Copy, ClipboardPaste, CornerDownLeft,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
+import { leerBloquePegado, cruzarConCatalogo, CAMPOS_PEGADO } from '../lib/pegarLineas';
 import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 // `api` suelto además de contenedoresApi: el consecutivo de número
 // (/contenedores/siguiente-numero) todavía no tiene método propio en el cliente
@@ -45,6 +47,12 @@ const RAYA_CABECERA = { boxShadow: 'inset 0 -1px 0 var(--color-border)' };
 // Las dos monedas con las que trabaja un contenedor. Todo lo de adentro se
 // captura en una de ellas y la tasa del contenedor las une.
 const MONEDAS_CONTENEDOR = ['USD', 'COP'];
+
+// Las columnas de la tabla de distribución, por su posición real en la fila.
+// El teclado navega por índice de celda (ver `alTeclearEnTabla`), así que si
+// mañana se añade o se mueve una columna hay que tocar esto y nada más.
+const COL_NUMERO = 0, COL_CATEGORIA = 1, COL_CLASIFICACION = 2, COL_REFERENCIA = 3,
+      COL_CALIDAD = 4, COL_CANTIDAD = 5, COL_COSTO = 6;
 
 const formatCurrency = formatCOP;
 
@@ -132,6 +140,43 @@ const inpBase =
   'placeholder:text-muted/60 transition-colors duration-150';
 const inp = `w-full ${inpBase}`;
 const lbl = 'block text-xs font-semibold text-muted mb-1.5 uppercase tracking-wider';
+// Campo de una fila de la tabla de distribución: mismo comportamiento que `inp`
+// con la mitad de alto (30 px). El rótulo no va encima de cada campo sino una
+// sola vez en la cabecera de la tabla, que es de donde sale la densidad.
+const inpFila =
+  'w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-primary text-xs ' +
+  'focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30 ' +
+  'placeholder:text-muted/60 transition-colors duration-150';
+
+// ── IR A UNA SECCIÓN DEL FORMULARIO ───────────────────────────────
+//
+// Un contenedor real mide varias pantallas, con 61 líneas de distribución entre
+// la información básica y los servicios. Bajar a los servicios, o saltar de un
+// proveedor a otro para comparar, costaba rodar la rueda a ciegas.
+//
+// El desplazamiento respeta `prefers-reduced-motion`: para quien pidió que nada
+// se mueva, saltar de golpe no es un defecto, es exactamente lo que pidió.
+function BotonSalto({ destino, activo, children }) {
+  const ir = () => {
+    const el = document.getElementById(destino);
+    if (!el) return;
+    const quietud = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    el.scrollIntoView({ behavior: quietud ? 'auto' : 'smooth', block: 'start' });
+    // EL FOCO VA DETRÁS DE LA VISTA. Si se queda en la barra, quien navega con
+    // teclado sigue arriba aunque la pantalla haya bajado, y el siguiente Tab lo
+    // devuelve al principio. Se enfoca la SECCIÓN y no su primer campo: enfocar
+    // el campo abriría su desplegable sin que nadie lo haya pedido.
+    el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: true });
+  };
+  return (
+    <button type="button" onClick={ir} aria-current={activo ? 'true' : undefined}
+      className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+        activo ? 'bg-secondary text-white shadow-sm' : 'text-muted hover:text-primary hover:bg-primary/5'}`}>
+      {children}
+    </button>
+  );
+}
 
 // ── Interruptor de moneda del resumen (Ambas / USD / COP) ─────────
 //
@@ -325,6 +370,127 @@ function SelectCatalogo({
     />
   );
 }
+
+// ── UNA LÍNEA DE DISTRIBUCIÓN = UNA FILA ──────────────────────────
+//
+// POR QUÉ ES UNA TABLA Y NO UNA TARJETA POR LÍNEA
+// Cada línea era una tarjeta de ~207 px que repetía sus siete rótulos. Un
+// contenedor normal trae 61 líneas: 12.600 px de scroll, quince pantallas, y
+// cuatro líneas a la vista de golpe. El mismo contenedor, en el Excel del que
+// se copia, cabe en dos pantallas con treinta filas visibles. Por eso capturar
+// aquí se sentía más lento que capturar allí, aunque aquí los valores estén
+// validados contra el catálogo.
+//
+// En tabla la línea ocupa ~38 px y los rótulos se escriben UNA vez, en una
+// cabecera que se queda pegada mientras se baja: 2.440 px y veintiuna líneas a
+// la vista. No es un cambio de estilo. Es poder revisar un contenedor de un
+// vistazo en lugar de de cuatro en cuatro.
+//
+// Y no hay que inventar el formato: la pantalla de REVISIÓN ya pintaba estas
+// mismas líneas en tabla. Esto trae al formulario de captura lo que el sistema
+// ya hacía al otro lado del flujo.
+//
+// MEMOIZADA A PROPÓSITO
+// Con 61 filas × 4 desplegables, redibujarlas todas en cada tecla se nota en la
+// tableta. Las props que recibe son estables —las listas de opciones vienen de
+// useMemo, `gruposRef` está cacheado por categoría y las tres acciones son
+// callbacks fijos que leen de una ref—, así que sólo se redibuja la fila que
+// cambia. Si alguien le pasa un objeto o una función creados en el render del
+// padre, el memo deja de servir y vuelve la lentitud sin que nada falle: es el
+// mismo cuidado que pide FilaCliente en la Matriz.
+const FilaDistribucion = memo(function FilaDistribucion({
+  det, pi, di, moneda, soloLectura, puedeBorrar, familia,
+  opcionesCategoria, opcionesClasificacion, opcionesCalidad, gruposRef,
+  onCampo, onBorrar, onDuplicar,
+}) {
+  const subtotal = (parseInt(det.cantidad) || 0) * (parseFloat(det.costo_unitario) || 0);
+  // La familia es lo que agrupa las referencias en la matriz y se copia a la
+  // paca al finalizar. Sólo se avisa cuando FALTA, que es el único caso
+  // accionable; decir "Familia: chaquetas" en las 61 filas gastaría el alto que
+  // este cambio vino a recuperar. El aviso es texto en la fila y no un `title`:
+  // en la tableta no hay ratón que lo saque.
+  const sinFamilia = Boolean(det.referencia) && !familia;
+
+  return (
+    <tr className={`align-top ${sinFamilia ? 'bg-warning/[0.06]' : 'hover:bg-secondary/[0.04]'}`}>
+      <td className="px-1.5 py-1 text-center text-[10px] font-mono text-muted tabular-nums">{di + 1}</td>
+      <td className="px-1 py-1">
+        {/* Se rellena sola al elegir la referencia; se deja cambiar por si esa
+            referencia todavía no tiene categoría asignada en Productos. */}
+        <SelectCatalogo aria-label={`Categoría de la línea ${di + 1}`}
+          className={inpFila} placeholder="Categoría"
+          opciones={opcionesCategoria} value={det.categoria}
+          onChange={(val) => onCampo(pi, di, 'categoria', val)} />
+      </td>
+      <td className="px-1 py-1">
+        <SelectCatalogo aria-label={`Clasificación de la línea ${di + 1}`}
+          className={inpFila} placeholder="Clasificación"
+          opciones={opcionesClasificacion} value={det.clasificacion}
+          onChange={(val) => onCampo(pi, di, 'clasificacion', val)} />
+      </td>
+      <td className="px-1 py-1">
+        <SelectCatalogo aria-label={`Referencia de la línea ${di + 1}`}
+          className={inpFila} placeholder="Referencia"
+          grupos={gruposRef} value={det.referencia}
+          onChange={(val) => onCampo(pi, di, 'referencia', val)} />
+        {/* En UNA linea y corta. La frase entera ocupaba dos renglones en una
+            celda estrecha y hacia la fila el doble de alta: en un contenedor
+            donde faltan familias, eso se come toda la densidad que la tabla vino
+            a ganar. El porque completo vive una sola vez, en la franja del
+            proveedor, que ademas dice cuantas son. */}
+        {sinFamilia && (
+          <p className="text-[9px] text-warning font-semibold leading-none mt-0.5">sin familia</p>
+        )}
+      </td>
+      <td className="px-1 py-1">
+        <SelectCatalogo aria-label={`Calidad de la línea ${di + 1}`}
+          className={inpFila} placeholder="Calidad"
+          opciones={opcionesCalidad} value={det.calidad}
+          onChange={(val) => onCampo(pi, di, 'calidad', val)} />
+      </td>
+      <td className="px-1 py-1">
+        <CampoMonto aria-label={`Cantidad de la línea ${di + 1}`} decimales={0}
+          className={`${inpFila} text-center font-mono`} placeholder="0"
+          value={det.cantidad}
+          onChange={(e) => onCampo(pi, di, 'cantidad', e.target.value)} />
+      </td>
+      <td className="px-1 py-1">
+        <PriceInput aria-label={`Costo unitario de la línea ${di + 1} en ${moneda}`}
+          className={`${inpFila} text-right font-mono`} placeholder="0"
+          value={det.costo_unitario}
+          onChange={(val) => onCampo(pi, di, 'costo_unitario', val)} />
+      </td>
+      <td className="px-1.5 py-1 text-right font-mono text-xs text-secondary font-semibold tabular-nums">
+        {/* Vacío y no 0: un 0 aquí se lee como "esta línea no cuesta nada". */}
+        {subtotal > 0 ? subtotal.toLocaleString('es-CO', { maximumFractionDigits: 0 }) : '—'}
+      </td>
+      {!soloLectura && (
+        <td className="px-1 py-1">
+          <div className="flex items-center justify-end gap-0.5">
+            {/* Duplicar: en un contenedor real la mayoría de líneas repiten
+                categoría, clasificación y calidad y sólo cambia la referencia.
+                Es el "no volver a teclear lo mismo" de WCAG 2.2 (Redundant
+                Entry), no un adorno. */}
+            <button type="button" onClick={() => onDuplicar(pi, di)}
+              title="Duplicar esta línea (Ctrl+D)"
+              aria-label={`Duplicar la línea ${di + 1}`}
+              className="p-1.5 rounded-md text-muted hover:text-secondary hover:bg-secondary/10 transition-colors">
+              <Copy size={13} />
+            </button>
+            {puedeBorrar && (
+              <button type="button" onClick={() => onBorrar(pi, di)}
+                title="Eliminar esta línea"
+                aria-label={`Eliminar la línea ${di + 1}`}
+                className="p-1.5 rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors">
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+});
 
 // ── Status badge ─────────────────────────────────────────────────
 function StatusBadge({ estado }) {
@@ -2205,6 +2371,187 @@ export default function Contenedores() {
     n[pi] = { ...n[pi], detalles }; setProveedores(n);
   };
 
+  // ── EL FOCO DESPUÉS DE CAMBIAR LAS FILAS ───────────────────────
+  // Al crear o duplicar una línea, la fila todavía no existe en el DOM cuando
+  // se pide el foco. Se apunta a dónde hay que ir y se va cuando React ya la
+  // pintó. En useLayoutEffect y no useEffect: así el salto ocurre antes de que
+  // el navegador pinte y no se ve el parpadeo de la fila sin foco.
+  const focoPendienteRef = useRef(null);
+  useLayoutEffect(() => {
+    const destino = focoPendienteRef.current;
+    if (!destino) return;
+    focoPendienteRef.current = null;
+    const fila = document.querySelector(
+      `[data-tabla-prov="${destino.pi}"] tbody tr:nth-child(${destino.di + 1})`);
+    fila?.children[destino.col]?.querySelector('input')?.focus();
+  }, [proveedores]);
+
+  // ── DUPLICAR LA LÍNEA ──────────────────────────────────────────
+  // En un contenedor de verdad la mayoría de las líneas repiten categoría,
+  // clasificación y calidad y sólo cambia la referencia: en el C626, 40 de las
+  // 61 líneas de DIAS comparten calidad y 33 comparten clasificación. Se copia
+  // TODO y se deja el foco en Referencia, que es lo que casi siempre cambia;
+  // borrar lo que no sirva es un gesto, volver a teclearlo son seis.
+  const duplicarDetalle = (pi, di) => {
+    marcarTocado();
+    setProveedores((prev) => {
+      const n = [...prev];
+      const detalles = [...n[pi].detalles];
+      detalles.splice(di + 1, 0, { ...detalles[di] });
+      n[pi] = { ...n[pi], detalles };
+      return n;
+    });
+    focoPendienteRef.current = { pi, di: di + 1, col: COL_REFERENCIA };
+  };
+
+  // ── TECLADO COMO EN EL EXCEL DEL QUE SE COPIA ──────────────────
+  //
+  // Tab pasa al campo de al lado (eso ya lo hace el navegador). Lo que falta, y
+  // es lo que hace que una hoja de cálculo se sienta rápida, es que ENTER baje
+  // a la MISMA columna de la línea siguiente: se teclea una columna entera de
+  // arriba abajo sin levantar la mano. En la última línea, Enter crea una nueva
+  // y cae en la misma columna, que es como se añade una fila en Excel.
+  //
+  // Se escucha en la tabla entera y se navega por el DOM (celda → índice de
+  // columna → misma columna de la fila siguiente) en vez de cablear índices por
+  // props: así una columna nueva mañana no obliga a tocar esto.
+  //
+  // `defaultPrevented` es la clave de la convivencia con los desplegables:
+  // BuscadorLista sólo atiende Enter cuando su lista está ABIERTA (para escoger
+  // la opción marcada) y en ese caso llama a preventDefault. Si no lo hizo, el
+  // Enter era para bajar. Sin esa comprobación, aceptar una opción saltaría
+  // además de fila y se perdería lo elegido de vista.
+  //
+  // Y de paso tapa un agujero viejo: estos campos viven dentro de un <form>, así
+  // que Enter enviaba el contenedor sin querer.
+  const alTeclearEnTabla = (e, pi) => {
+    if (e.defaultPrevented) return;
+
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+      const filaActual = e.target.closest('tr');
+      if (!filaActual) return;
+      e.preventDefault();
+      duplicarDetalle(pi, [...filaActual.parentNode.children].indexOf(filaActual));
+      return;
+    }
+
+    if (e.key !== 'Enter') return;
+    const celda = e.target.closest('td');
+    const fila  = celda?.closest('tr');
+    if (!celda || !fila) return;
+    e.preventDefault();
+
+    const col = celda.cellIndex;
+    const siguiente = fila.nextElementSibling;
+    if (siguiente) {
+      siguiente.children[col]?.querySelector('input')?.focus();
+      return;
+    }
+    // Última línea: se añade una y se cae en la misma columna.
+    addDetalle(pi);
+    focoPendienteRef.current = { pi, di: [...fila.parentNode.children].length, col };
+  };
+
+  // Las tres acciones que recibe cada fila, con identidad FIJA. La fila está
+  // memoizada (ver FilaDistribucion) y una función nueva en cada render del
+  // padre tiraría el memo al suelo sin que nada fallara a la vista: sólo se
+  // pondría lenta con 61 filas. Leen de una ref para no tener que depender de
+  // `proveedores` y seguir viendo siempre lo último.
+  const accionesFilaRef = useRef({});
+  accionesFilaRef.current = { updateDetalle, removeDetalle, duplicarDetalle };
+  const onCampoDetalle    = useCallback((pi, di, campo, val) => accionesFilaRef.current.updateDetalle(pi, di, campo, val), []);
+  const onBorrarDetalle   = useCallback((pi, di) => accionesFilaRef.current.removeDetalle(pi, di), []);
+  const onDuplicarDetalle = useCallback((pi, di) => accionesFilaRef.current.duplicarDetalle(pi, di), []);
+
+  // ── PEGAR UN BLOQUE DESDE EXCEL ────────────────────────────────
+  //
+  // La factura del proveedor YA existe en una hoja de cálculo: es de donde se
+  // copia línea a línea. Pegarla entera es lo único que hace este formulario
+  // más rápido que el Excel en vez de sólo igual de rápido.
+  //
+  // NUNCA PEGA A CIEGAS. Los nombres se cruzan contra el catálogo sin tildes ni
+  // mayúsculas, y lo que no casa se enseña ANTES de tocar nada: una referencia
+  // mal cruzada nace sin familia, se queda sin precio en cotizaciones y eso no
+  // se descubre hasta tres semanas después, al abrir el Excel de matriz. Por
+  // eso hay una previsualización y no un "pegado mágico".
+  //
+  // Leer el bloque y cruzarlo con el catálogo vive en lib/pegarLineas.js, con
+  // sus pruebas: es lo que puede ensuciar un contenedor entero sin que falle
+  // nada, y eso no se deja dentro de una pantalla de 6.000 líneas.
+  const [pegado, setPegado] = useState(null);
+
+  // ── EN QUÉ SECCIÓN VA ────────────────────────────────────────
+  // La barra de saltos marca en qué sección está quien mira. Se observa contra
+  // la VENTANA (root nulo) y no contra el cuerpo del modal: ese nodo lo crea
+  // <Modal> y buscarlo por su clase sería atarse a un detalle suyo. El margen
+  // superior descuenta la cabecera del modal, para que una sección no se dé por
+  // activa mientras todavía está tapada por ella.
+  const [seccionActiva, setSeccionActiva] = useState('seccion-basica');
+  useEffect(() => {
+    if (!modalOpen) return undefined;
+    const ids = ['seccion-basica', ...proveedores.map((_, i) => `prov-${i}`),
+                 'seccion-servicios', 'seccion-resumen'];
+    const nodos = ids.map((id) => document.getElementById(id)).filter(Boolean);
+    if (!nodos.length) return undefined;
+    const visibles = new Set();
+    const observador = new IntersectionObserver((entradas) => {
+      for (const e of entradas) {
+        if (e.isIntersecting) visibles.add(e.target.id);
+        else visibles.delete(e.target.id);
+      }
+      const primera = ids.find((id) => visibles.has(id));
+      if (primera) setSeccionActiva(primera);
+    }, { rootMargin: '-56px 0px -55% 0px' });
+    nodos.forEach((n) => observador.observe(n));
+    return () => observador.disconnect();
+  }, [modalOpen, proveedores.length, modoEstimacion, soloLectura]);
+
+  const alPegarEnTabla = (e, pi) => {
+    const bloque = leerBloquePegado(e.clipboardData?.getData('text/plain') || '');
+    // `null` = no era un bloque sino alguien pegando una palabra en un campo,
+    // y eso tiene que seguir funcionando como siempre, sin previsualizacion.
+    if (!bloque) return;
+    e.preventDefault();
+    setPegado({ pi, ...bloque });
+  };
+
+  // Lo que quedaria al aplicar el pegado, con cada valor ya cruzado contra el
+  // catalogo. Se recalcula al cambiar el mapeo de columnas para que la
+  // previsualizacion ensene siempre lo que de verdad se va a guardar.
+  const previsualizacionPegado = useMemo(() => {
+    if (!pegado) return null;
+    return cruzarConCatalogo(
+      pegado,
+      {
+        categoria: opcionesCategoria,
+        clasificacion: opcionesClasificacion,
+        calidad: opcionesCalidad,
+        referencia: referencias.map((r) => r.nombre).filter(Boolean),
+      },
+      (ref) => referenciaPorNombre(ref)?.temporada_nombre || '',
+    );
+  }, [pegado, opcionesCategoria, opcionesClasificacion, opcionesCalidad, referencias, referenciaPorNombre]);
+
+  const aplicarPegado = (modo) => {
+    if (!pegado || !previsualizacionPegado) return;
+    const { pi } = pegado;
+    const nuevas = previsualizacionPegado.lineas.map((l) => l.linea);
+    marcarTocado();
+    setProveedores((prev) => {
+      const n = [...prev];
+      // Al AGREGAR se respeta lo que ya hay, salvo las líneas vacías del final
+      // (la que el formulario deja siempre lista para escribir): dejarlas
+      // convertiría un pegado limpio en una lista con huecos.
+      const previas = modo === 'reemplazar'
+        ? []
+        : n[pi].detalles.filter((d) => d.referencia || d.clasificacion || d.cantidad || d.costo_unitario);
+      n[pi] = { ...n[pi], detalles: [...previas, ...nuevas] };
+      return n;
+    });
+    addToast(`${nuevas.length} ${nuevas.length === 1 ? 'línea pegada' : 'líneas pegadas'}`, 'success');
+    setPegado(null);
+  };
+
   // ── Service row management ─────────────────────────────────────
   // Igual que los proveedores: hereda la moneda del contenedor.
   const addServicio    = () => { marcarTocado(); setServicios([...servicios, emptyServicio(monedaBase)]); };
@@ -3560,6 +3907,27 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             ? `${modoEstimacion ? 'Editar estimación' : 'Editar'} — ${selectedContenedor?.numero}`
             : (modoEstimacion ? 'Nueva estimación de contenedor' : 'Nuevo Contenedor')}
         size="full"
+        barra={
+          /* LOS ATAJOS VAN EN LA CABECERA, NO EN EL CONTENIDO.
+             Estaban dentro del formulario con `position: sticky`. Sticky
+             comparte el desplazamiento con lo que tiene detras: por muy pegada
+             que este, durante el scroll se la ve moverse, y en una barra de
+             navegacion eso se lee como que no esta fija. En la cabecera del
+             modal esta FUERA del area que hace scroll, asi que no se mueve
+             porque no puede. */
+          <nav aria-label="Secciones del contenedor"
+               className="flex items-center gap-1.5 overflow-x-auto">
+            <BotonSalto destino="seccion-basica" activo={seccionActiva === 'seccion-basica'}>Básica</BotonSalto>
+            {!modoEstimacion && proveedores.map((prov, pi) => (
+              <BotonSalto key={pi} destino={`prov-${pi}`} activo={seccionActiva === `prov-${pi}`}>
+                {prov.proveedor_nombre || `Proveedor ${pi + 1}`}
+                <span className="ml-1 text-[10px] font-mono opacity-70">({prov.detalles.length})</span>
+              </BotonSalto>
+            ))}
+            <BotonSalto destino="seccion-servicios" activo={seccionActiva === 'seccion-servicios'}>Servicios</BotonSalto>
+            <BotonSalto destino="seccion-resumen" activo={seccionActiva === 'seccion-resumen'}>Resumen</BotonSalto>
+          </nav>
+        }
       >
         {/* Mirando, el submit no existe: ni con Enter en un campo. */}
         <form ref={formRef} onSubmit={soloLectura ? (e) => e.preventDefault() : handleSubmit}>
@@ -3594,10 +3962,23 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             </div>
           )}
 
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* ── TODO A LO ANCHO ──────────────────────────────────
+              Esto eran DOS columnas: el formulario a la izquierda y un resumen
+              de 32rem (512 px) pegado a la derecha. En una pantalla normal el
+              modal mide unos 1.250 px, asi que al formulario le quedaban ~670:
+              la mitad. Y en esa mitad hay que meter una tabla de nueve columnas
+              por linea. De ahi que la seccion de proveedores se viera recortada
+              y apinada, que es justo lo que la tabla vino a arreglar.
+
+              Ahora el contenido ocupa el ancho entero y el resumen es la ultima
+              seccion, con su propio salto en la barra de arriba. Lo que si tiene
+              que estar SIEMPRE a la vista —guardar y las tres cifras que se
+              miran al capturar— vive en la barra de abajo, que no le quita
+              ancho a nada. */}
+          <div className="space-y-5">
 
             {/* ── LEFT: form sections ─────────────────────────── */}
-            <div className="flex-1 min-w-0 space-y-5">
+            <div className="min-w-0 space-y-5">
 
               {/* ── La ficha del contenedor ─────────────────────
                   Estado, de dónde viene, fechas, tasa, lote y el enlace a sus
@@ -3750,7 +4131,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               <fieldset disabled={soloLectura} style={{ minInlineSize: 0 }}
                         className="min-w-0 border-0 p-0 m-0">
               {/* [1] Información Básica */}
-              <div className="rounded-2xl border border-border/60 overflow-hidden">
+              <div id="seccion-basica" className="rounded-2xl border border-border/60 overflow-hidden scroll-mt-28">
                 <div className="flex items-center gap-3 px-4 py-3 bg-primary/[0.03] border-b border-border/40">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
                   <div>
@@ -4229,9 +4610,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
                 <div className="space-y-6">
                   {proveedores.map((prov, pi) => (
-                    <div key={pi} className="rounded-2xl border-2 border-secondary/20 bg-surface overflow-hidden shadow-sm hover:shadow-md hover:border-secondary/40 transition-all duration-200">
+                    <div key={pi} className="rounded-2xl border-2 border-secondary/20 bg-surface shadow-sm hover:shadow-md hover:border-secondary/40 transition-all duration-200">
                       {/* ── Cabecera del proveedor (color destacado) ─── */}
-                      <div className="px-4 py-3 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20">
+                      <div className="px-4 py-3 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20 rounded-t-2xl">
                         <div className="flex items-center gap-3">
                           <span className="w-9 h-9 rounded-xl bg-secondary text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">
                             P{pi + 1}
@@ -4397,148 +4778,111 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
 
                       {/* ── Líneas de distribución (oculto en modo estimación) ─── */}
                       {!modoEstimacion && (
-                      <div className="px-4 pb-4 pt-3 bg-cream/30">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <Layers size={12} className="text-muted" />
-                            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">
-                              Líneas de Distribución ({prov.detalles.length})
-                            </p>
-                          </div>
-                          {/* El total de las líneas está en la moneda DEL
-                              PROVEEDOR, no en pesos: se rotula con la suya y se
-                              añade el equivalente. Antes salía con formatCOP, y
-                              3.720 dólares se leían como 3.720 pesos. */}
-                          {(() => {
-                            const totalLineas = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0);
-                            const monedaProv = prov.moneda || 'USD';
-                            return (
-                              <span className="text-[10px] font-bold text-secondary tabular-nums bg-secondary/10 px-2 py-0.5 rounded-full">
-                                Total: {fmtPropia(totalLineas, monedaProv)} {monedaProv}
-                                {monedaProv === 'USD' && tasaValida && totalLineas > 0 &&
-                                  ` ≈ ${formatCurrency(totalLineas * tasaVista)} COP`}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                        <div className="space-y-4">
-                          {prov.detalles.map((det, di) => {
-                            const subtotal = (parseInt(det.cantidad)||0)*(parseFloat(det.costo_unitario)||0);
-                            // Familia de la referencia elegida. Se calcula aquí,
-                            // una sola vez por línea, para pintarla debajo del
-                            // select: así se ve la consecuencia al capturar y no
-                            // tres semanas después, al abrir el Excel de matriz.
-                            const familiaDeLaLinea = familiaDeReferencia(det.referencia);
-                            return (
-                              <div key={di} className="bg-surface rounded-xl border border-border/60 border-l-4 border-l-secondary/50 shadow-sm hover:shadow-md hover:border-l-secondary transition-all duration-150 overflow-hidden">
-                                {/* Cabecera de la línea */}
-                                <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/5 border-b border-border/30">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="w-5 h-5 rounded-md bg-secondary/15 text-secondary text-[10px] font-bold flex items-center justify-center">
-                                      {di + 1}
+                      <div id={`prov-${pi}`} className="px-4 pb-4 pt-3 bg-cream/30 rounded-b-2xl scroll-mt-28">
+                        {(() => {
+                          const monedaProv  = prov.moneda || 'USD';
+                          const totalLineas = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0);
+                          const totalPacas  = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0),0);
+                          const nLineas     = prov.detalles.length;
+                          const sinFamilia  = prov.detalles.filter((d) => d.referencia && !familiaDeReferencia(d.referencia)).length;
+                          return (
+                        <div data-tabla-prov={pi}
+                             onKeyDown={soloLectura ? undefined : (e) => alTeclearEnTabla(e, pi)}
+                             onPaste={soloLectura ? undefined : (e) => alPegarEnTabla(e, pi)}>
+                          <table className="w-full table-fixed">
+                            {/* CABECERA PEGAJOSA, EN DOS PISOS.
+                                Arriba, de quién son estas filas y cuánto suman: con
+                                cuarenta líneas seguidas, a media tabla ya no se sabe si
+                                se está en DIAS o en MIRTA sin volver a subir. Debajo, los
+                                rótulos de las columnas —lo que se deja de repetir en cada
+                                línea, que es de donde sale toda la densidad ganada—.
+                                La raya va como sombra interior (RAYA_CABECERA) porque un
+                                border-bottom lo pinta la tabla y se queda clavado al
+                                despegarse la cabecera. */}
+                            {/* `top-0`: la barra de atajos ya no vive aqui
+                                dentro, asi que lo primero que aparece al subir
+                                es el borde del contenido. */}
+                            <thead className="sticky top-0 z-20">
+                              <tr>
+                                {/* OPACA, en dos capas. `bg-secondary/10` es un
+                                    10% de color sobre NADA: al quedarse pegada,
+                                    las filas se veian pasar por detras y eso se
+                                    lee como que la cabecera se mueve. La celda
+                                    lleva el fondo solido y el tinte va encima,
+                                    en su propia capa. */}
+                                <th scope="colgroup" colSpan={soloLectura ? 8 : 9}
+                                    className="bg-surface p-0 text-left font-normal">
+                                  <div className="bg-secondary/10 px-3 py-1.5">
+                                  <span className="text-[11px] font-bold text-secondary uppercase tracking-wide">
+                                    {prov.proveedor_nombre || `Proveedor ${pi + 1}`}
+                                  </span>
+                                  <span className="text-[10px] text-muted font-mono ml-2 tabular-nums">
+                                    {nLineas} {nLineas === 1 ? 'línea' : 'líneas'} · {totalPacas.toLocaleString('es-CO')} {totalPacas === 1 ? 'paca' : 'pacas'} · {fmtPropia(totalLineas, monedaProv)} {monedaProv}
+                                    {monedaProv === 'USD' && tasaValida && totalLineas > 0 && ` ≈ ${formatCurrency(totalLineas * tasaVista)} COP`}
+                                  </span>
+                                  {/* El aviso de familia ya no cabe bajo cada referencia,
+                                      así que se cuenta aquí: sigue siendo visible sin
+                                      ratón y ahora se ve de una vez cuántas faltan. */}
+                                  {sinFamilia > 0 && (
+                                    <span className="text-[10px] font-bold text-warning ml-2">
+                                      · {sinFamilia} sin familia: no se agrupan en la matriz
                                     </span>
-                                    <span className="text-[10px] font-bold text-secondary uppercase tracking-wider">Línea {di + 1}</span>
-                                    {subtotal > 0 && (
-                                      <span className="ml-2 text-[10px] text-muted font-mono">
-                                        Subtotal: <span className="font-bold text-secondary">{subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0})}</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  {!soloLectura && prov.detalles.length > 1 && (
-                                    <button type="button" onClick={() => removeDetalle(pi, di)}
-                                      title="Eliminar línea"
-                                      className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
-                                      <X size={12} />
-                                    </button>
                                   )}
-                                </div>
-                                {/* Campos */}
-                                <div className="px-3 pt-2.5 pb-3 space-y-2">
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                  <div>
-                                    <label htmlFor={`det-categoria-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Categoría</label>
-                                    {/* Se rellena sola al elegir la referencia, pero
-                                        se deja cambiar por si la referencia aún no
-                                        tiene categoría asignada en Productos. */}
-                                    <SelectCatalogo id={`det-categoria-${pi}-${di}`}
-                                      placeholder="Categoría (Verano / Invierno)"
-                                      opciones={opcionesCategoria}
-                                      value={det.categoria}
-                                      onChange={(val) => updateDetalle(pi, di, 'categoria', val)} />
                                   </div>
-                                  <div>
-                                    <label htmlFor={`det-clasificacion-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Clasificación *</label>
-                                    <SelectCatalogo id={`det-clasificacion-${pi}-${di}`}
-                                      placeholder="Clasificación (Dama / Hombre…)"
-                                      opciones={opcionesClasificacion}
-                                      value={det.clasificacion}
-                                      onChange={(val) => updateDetalle(pi, di, 'clasificacion', val)} />
-                                  </div>
-                                  <div>
-                                    <label htmlFor={`det-referencia-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Referencia *</label>
-                                    <SelectCatalogo id={`det-referencia-${pi}-${di}`}
-                                      placeholder="Referencia (Chaqueta / Pantalón…)"
-                                      grupos={gruposReferencias(det.categoria)}
-                                      value={det.referencia}
-                                      onChange={(val) => updateDetalle(pi, di, 'referencia', val)} />
-                                    {/* La familia es lo que agrupa las referencias en la
-                                        matriz, y se copia a la paca al finalizar. Se
-                                        avisa aquí para que se corrija ahora. */}
-                                    {det.referencia && (
-                                      familiaDeLaLinea ? (
-                                        <p className="text-[9px] text-muted mt-1 truncate" title={`Familia: ${familiaDeLaLinea}`}>
-                                          Familia: <span className="font-bold text-primary capitalize">{familiaDeLaLinea}</span>
-                                        </p>
-                                      ) : (
-                                        <p className="text-[9px] text-warning font-semibold mt-1" title="Asígnale una familia a esta referencia en Productos para que se agrupe en la matriz">
-                                          Sin familia — no se agrupará en la matriz
-                                        </p>
-                                      )
-                                    )}
-                                  </div>
-                                  <div>
-                                    <label htmlFor={`det-calidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Calidad *</label>
-                                    <SelectCatalogo id={`det-calidad-${pi}-${di}`}
-                                      placeholder="Calidad (Primera / Segunda…)"
-                                      opciones={opcionesCalidad}
-                                      value={det.calidad}
-                                      onChange={(val) => updateDetalle(pi, di, 'calidad', val)} />
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1">
-                                    <label htmlFor={`det-cantidad-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">Cantidad *</label>
-                                    <CampoMonto id={`det-cantidad-${pi}-${di}`} decimales={0} className={`${inp} text-center font-mono`} placeholder="0"
-                                      value={det.cantidad}
-                                      onChange={(e) => updateDetalle(pi, di, 'cantidad', e.target.value)} />
-                                  </div>
-                                  <div className="flex-1">
-                                    {/* La moneda en el rótulo: este costo va en
-                                        la del proveedor, no en pesos, y sin
-                                        decirlo se teclean dólares creyendo que
-                                        son pesos (o al revés). */}
-                                    <label htmlFor={`det-costo-${pi}-${di}`} className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">
-                                      Costo Unitario * <span className="text-secondary">({prov.moneda || 'USD'})</span>
-                                    </label>
-                                    <PriceInput id={`det-costo-${pi}-${di}`} className={inp} placeholder="0"
-                                      value={det.costo_unitario}
-                                      onChange={(val) => updateDetalle(pi, di, 'costo_unitario', val)} />
-                                  </div>
-                                  <div className="flex-1">
-                                    {/* No es <label>: no hay control debajo, es una cifra calculada */}
-                                    <span className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1 block">
-                                      Subtotal <span className="text-secondary">({prov.moneda || 'USD'})</span>
-                                    </span>
-                                    <div className={`${inp} bg-primary/3 text-secondary font-mono font-semibold text-sm text-right select-none`}>
-                                      {subtotal > 0 ? subtotal.toLocaleString('es-CO', {maximumFractionDigits: 0}) : '—'}
-                                    </div>
-                                  </div>
-                                </div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                                </th>
+                              </tr>
+                              <tr className="text-[9px] font-bold text-muted uppercase tracking-wider">
+                                <th style={RAYA_CABECERA} className="w-8 px-1.5 py-1.5 text-center bg-surface">#</th>
+                                <th style={RAYA_CABECERA} className="w-[12%] px-1 py-1.5 text-left bg-surface">Categoría</th>
+                                <th style={RAYA_CABECERA} className="w-[14%] px-1 py-1.5 text-left bg-surface">Clasificación *</th>
+                                <th style={RAYA_CABECERA} className="w-[23%] px-1 py-1.5 text-left bg-surface">Referencia *</th>
+                                <th style={RAYA_CABECERA} className="w-[13%] px-1 py-1.5 text-left bg-surface">Calidad *</th>
+                                <th style={RAYA_CABECERA} className="w-[8%] px-1 py-1.5 text-center bg-surface">Cant. *</th>
+                                <th style={RAYA_CABECERA} className="w-[11%] px-1 py-1.5 text-right bg-surface">Costo ({monedaProv}) *</th>
+                                <th style={RAYA_CABECERA} className="w-[11%] px-1.5 py-1.5 text-right bg-surface">Subtotal</th>
+                                {!soloLectura && (
+                                  <th style={RAYA_CABECERA} className="w-14 px-1 py-1.5 bg-surface">
+                                    <span className="sr-only">Acciones de la línea</span>
+                                  </th>
+                                )}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/30">
+                              {prov.detalles.map((det, di) => (
+                                <FilaDistribucion
+                                  key={di}
+                                  det={det} pi={pi} di={di}
+                                  moneda={monedaProv}
+                                  soloLectura={soloLectura}
+                                  puedeBorrar={prov.detalles.length > 1}
+                                  familia={familiaDeReferencia(det.referencia)}
+                                  opcionesCategoria={opcionesCategoria}
+                                  opcionesClasificacion={opcionesClasificacion}
+                                  opcionesCalidad={opcionesCalidad}
+                                  gruposRef={gruposReferencias(det.categoria)}
+                                  onCampo={onCampoDetalle}
+                                  onBorrar={onBorrarDetalle}
+                                  onDuplicar={onDuplicarDetalle}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                          {!soloLectura && (
+                            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
+                              <span className="inline-flex items-center gap-1">
+                                <CornerDownLeft size={11} aria-hidden="true" /> Enter baja a la línea siguiente
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Copy size={11} aria-hidden="true" /> Ctrl+D duplica la línea
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <ClipboardPaste size={11} aria-hidden="true" /> pega aquí un bloque copiado de Excel
+                              </span>
+                            </p>
+                          )}
                         </div>
+                          );
+                        })()}
                         {/* Las referencias, clasificaciones y calidades se dan de
                             alta en Productos, no aquí: creándolas al vuelo se
                             volverían a colar nombres sueltos que no casan con el
@@ -4743,7 +5087,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               <fieldset disabled={soloLectura} style={{ minInlineSize: 0 }}
                         className="min-w-0 border-0 p-0 m-0">
               {/* [3] Servicios */}
-              <div>
+              <div id="seccion-servicios" className="scroll-mt-28">
                 <div className="flex items-center gap-3 mb-3">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
                   <div>
@@ -5108,23 +5452,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               </div>
               )}
 
-              {/* Mobile action row */}
-              <div className={`lg:hidden gap-3 pt-1 ${soloLectura ? 'hidden' : 'flex'}`}>
-                <button type="button" onClick={cerrarFormulario}
-                  className="flex-1 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={submitting}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
-                  {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-                  {submitting ? 'Guardando...' : editMode ? 'Actualizar' : 'Crear'}
-                </button>
-              </div>
             </div>
 
             {/* ── RIGHT: sticky summary ────────────────────────── */}
-            <div className="hidden lg:block w-[32rem] flex-shrink-0">
-              <div className="sticky top-0 space-y-3">
+            {/* El resumen ya no va pegado al lateral: pegado tapaba parte de
+                lo de debajo al desplazarse y, sobre todo, se comia la mitad del
+                ancho que necesitan las lineas. Se llega en un toque desde la
+                barra de saltos. */}
+            <div className="min-w-0">
+              <div id="seccion-resumen" className="space-y-3 scroll-mt-28">
                 <div className={`rounded-2xl border p-6 transition-colors duration-300 ${resumen.cantidadValida ? 'border-success/30 bg-success/5' : 'border-border bg-surface shadow-sm'}`}>
                   {/* Título + interruptor de moneda.
                       El detalle (mercancía y servicios) va en UNA sola moneda —la
@@ -5368,20 +5704,51 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     </p>
                   </div>
                 )}
-                <div className={`space-y-2 ${soloLectura ? 'hidden' : ''}`}>
-                  <button type="submit" disabled={submitting}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
-                    {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
-                    {submitting ? 'Guardando...' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
-                  </button>
-                  <button type="button" onClick={cerrarFormulario}
-                    className="w-full py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
-                    Cancelar
-                  </button>
-                </div>
               </div>
             </div>
           </div>
+
+          {/* ── BARRA DE ABAJO, PEGADA ──────────────────────────────
+              Antes habia DOS juegos de Guardar/Cancelar: uno al final de la
+              columna del resumen (solo en pantalla grande) y otro suelto para
+              movil. Ahora hay uno, siempre a la vista y sin quitarle ancho a las
+              lineas, con las tres cifras que se miran mientras se captura.
+
+              `-mx-6 -mb-6 px-6` lo saca a los bordes del modal (que tiene p-6),
+              para que el contenido no asome por los lados al pasar por debajo. */}
+          {!soloLectura && (
+          <div className="sticky bottom-0 z-30 -mx-6 -mb-6 mt-5 px-6 py-3 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs min-w-0">
+              <span className="text-muted">
+                Unidades <b className={`font-mono tabular-nums ml-1 ${resumen.cantidadValida ? 'text-primary' : 'text-warning'}`}>
+                  {resumen.totalPacas.toLocaleString('es-CO')}
+                </b>
+                {!resumen.cantidadValida && resumen.sumDetalles > 0 && (
+                  <span className="text-warning ml-1">(las líneas suman {resumen.sumDetalles.toLocaleString('es-CO')})</span>
+                )}
+              </span>
+              <span className="text-muted">
+                Costo total <b className="font-mono tabular-nums text-primary ml-1">{formatCurrency(resumen.costoTotal)}</b>
+              </span>
+              <span className="text-muted">
+                Por unidad <b className="font-mono tabular-nums text-secondary ml-1">
+                  {resumen.totalPacas > 0 ? formatCurrency(resumen.costoUnitario) : '—'}
+                </b>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button type="button" onClick={cerrarFormulario}
+                className="px-4 py-2.5 rounded-xl border border-border text-muted hover:text-primary hover:bg-primary/5 text-sm font-medium transition-colors">
+                Cancelar
+              </button>
+              <button type="submit" disabled={submitting}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
+                {submitting ? 'Guardando…' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
+              </button>
+            </div>
+          </div>
+          )}
         </form>
       </Modal>
       )}
@@ -6045,6 +6412,143 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           </div>
         </Modal>
       )}
+
+      {/* ════════════════════════════════════════════════════════
+          PEGAR LÍNEAS DESDE EXCEL — LA PREVISUALIZACIÓN
+
+          Esta pantalla es la mitad importante del pegado. Lo que se copia de
+          una hoja de cálculo son NOMBRES sueltos, y aquí todo se cruza por
+          nombre: una referencia que no casa con el catálogo nace sin familia,
+          se queda sin precio en cotizaciones y no se descubre hasta tres
+          semanas después, al abrir el Excel de matriz. Por eso se enseña qué va
+          a quedar ANTES de tocar el formulario, se marca en ámbar lo que no
+          casó, y las columnas se pueden reasignar a mano: ninguna hoja tiene
+          las columnas en el orden que este formulario supone.
+      ════════════════════════════════════════════════════════ */}
+      <Modal isOpen={Boolean(pegado)} onClose={() => setPegado(null)}
+             title="Pegar líneas desde Excel" size="xl">
+        {pegado && previsualizacionPegado && (() => {
+          const nLineas = previsualizacionPegado.lineas.length;
+          const malas   = previsualizacionPegado.sinCasar;
+          const destino = proveedores[pegado.pi];
+          const yaTiene = (destino?.detalles || [])
+            .filter((d) => d.referencia || d.clasificacion || d.cantidad || d.costo_unitario).length;
+          const cambiarColumna = (i, campo) => setPegado((p) => ({
+            ...p,
+            // Dos columnas al mismo campo dejarían una de las dos pisando a la
+            // otra en silencio: la anterior se suelta.
+            columnas: p.columnas.map((c, j) => (j === i ? campo : (campo && c === campo ? '' : c))),
+          }));
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-primary">
+                Se leyeron <b>{nLineas}</b> {nLineas === 1 ? 'línea' : 'líneas'} para{' '}
+                <b>{destino?.proveedor_nombre || `Proveedor ${pegado.pi + 1}`}</b>.{' '}
+                <span className="text-muted">
+                  {pegado.cabeceraDetectada
+                    ? 'La primera fila se tomó como rótulos y las columnas se asignaron por su nombre.'
+                    : 'No traía fila de rótulos, así que las columnas se asignaron por su posición. Revísalas.'}
+                </span>
+              </p>
+
+              {/* ── A qué va cada columna ───────────────────────── */}
+              <div>
+                <p className="text-[10px] font-bold text-muted uppercase tracking-wider mb-2">A qué corresponde cada columna</p>
+                <div className="flex flex-wrap gap-2">
+                  {pegado.columnas.map((campo, i) => (
+                    <label key={i} className="flex flex-col gap-1 min-w-[9.5rem]">
+                      <span className="text-[10px] text-muted truncate" title={String(pegado.cuerpo[0]?.[i] ?? '')}>
+                        Columna {i + 1}: <span className="font-mono text-primary">{String(pegado.cuerpo[0]?.[i] ?? '').trim() || '—'}</span>
+                      </span>
+                      <select value={campo} onChange={(e) => cambiarColumna(i, e.target.value)}
+                        className={`${inpFila} ${campo ? '' : 'text-muted'}`}>
+                        <option value="">— no usar —</option>
+                        {CAMPOS_PEGADO.map((c) => (
+                          <option key={c.campo} value={c.campo}>{c.rotulo}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Cómo quedaría ───────────────────────────────── */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Así quedaría</p>
+                  {malas > 0 ? (
+                    <span className="text-[11px] font-bold text-warning">
+                      {malas} {malas === 1 ? 'línea tiene un valor' : 'líneas tienen valores'} que no están en el catálogo
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-success">Todos los valores casan con el catálogo</span>
+                  )}
+                </div>
+                <div className="rounded-xl border border-border/60 overflow-hidden">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="bg-primary/[0.03] text-[9px] font-bold text-muted uppercase tracking-wider">
+                        <th className="px-2 py-1.5 text-center w-8">#</th>
+                        <th className="px-2 py-1.5 text-left">Categoría</th>
+                        <th className="px-2 py-1.5 text-left">Clasificación</th>
+                        <th className="px-2 py-1.5 text-left">Referencia</th>
+                        <th className="px-2 py-1.5 text-left">Calidad</th>
+                        <th className="px-2 py-1.5 text-center">Cant.</th>
+                        <th className="px-2 py-1.5 text-right">Costo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/30">
+                      {previsualizacionPegado.lineas.slice(0, 10).map(({ linea, avisos }, i) => (
+                        <tr key={i} className={avisos.length ? 'bg-warning/[0.07]' : ''}>
+                          <td className="px-2 py-1 text-center font-mono text-muted">{i + 1}</td>
+                          {['categoria', 'clasificacion', 'referencia', 'calidad'].map((c) => (
+                            <td key={c} className={`px-2 py-1 capitalize ${avisos.includes(c) ? 'text-warning font-semibold' : ''}`}>
+                              {linea[c] || <span className="text-muted">—</span>}
+                              {avisos.includes(c) && <span className="ml-1 text-[9px] font-bold">fuera del catálogo</span>}
+                            </td>
+                          ))}
+                          <td className="px-2 py-1 text-center font-mono">{linea.cantidad || <span className="text-muted">—</span>}</td>
+                          <td className="px-2 py-1 text-right font-mono">{linea.costo_unitario || <span className="text-muted">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {nLineas > 10 && (
+                  <p className="text-[10px] text-muted mt-1.5">
+                    Se enseñan las 10 primeras; se pegarán las {nLineas}.
+                  </p>
+                )}
+                {malas > 0 && (
+                  <p className="text-[11px] text-warning mt-2 leading-snug">
+                    Lo que está fuera del catálogo se pega tal como venía, para no perderlo, pero
+                    queda marcado en la línea. Corrígelo antes de finalizar el contenedor: una
+                    referencia que no existe en Productos se queda sin familia y sin precio.
+                  </p>
+                )}
+              </div>
+
+              {/* ── Qué hacer con lo que ya hay ─────────────────── */}
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setPegado(null)}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-muted hover:text-primary hover:bg-primary/5">
+                  Cancelar
+                </button>
+                {yaTiene > 0 && (
+                  <button type="button" onClick={() => aplicarPegado('reemplazar')}
+                    className="px-4 py-2.5 rounded-xl border border-error/40 text-sm font-semibold text-error hover:bg-error/5">
+                    Reemplazar las {yaTiene} que ya hay
+                  </button>
+                )}
+                <button type="button" onClick={() => aplicarPegado('agregar')}
+                  className="px-4 py-2.5 rounded-xl bg-secondary text-white text-sm font-bold hover:opacity-90">
+                  {yaTiene > 0 ? `Agregar al final (${nLineas})` : `Pegar ${nLineas}`}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* ════════════════════════════════════════════════════════
           COMPARADOR MODAL
