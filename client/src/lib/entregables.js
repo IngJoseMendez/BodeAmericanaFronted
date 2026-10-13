@@ -1027,7 +1027,16 @@ export function hojaCarteraCliente(wb, data, nombreHoja) {
 
 // ── INTERNOS ──────────────────────────────────────────────────────
 
-/** CARTERA(INTERNA) — quién debe cuánto, para revisión propia. */
+/** CARTERA(INTERNA) — quién debe cuánto, para revisión propia.
+ *
+ * Sólo los que deben, en orden alfabético. Las dos cosas las pidió la dueña
+ * después de revisar el entregable a mano, y por la misma razón: la lista se
+ * usa para cobrar. Un cliente en cero es ruido —de 85 filas sobraban 55— y
+ * buscar un nombre en una lista ordenada por monto obliga a recorrerla entera.
+ *
+ * Ordena por el nombre como se lee, que empieza por el primer nombre, y compara
+ * sin tildes ni mayúsculas para que «Ángela» no se vaya al final de la lista.
+ */
 export function hojaCarteraInterna(wb, filas) {
   const ws = wb.addWorksheet('CARTERA(INTERNA)');
   [34, 18, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
@@ -1035,8 +1044,14 @@ export function hojaCarteraInterna(wb, filas) {
   let fila = titulo(ws, `CARTERA — ${hoyStr()}`, 4);
   fila = cabecera(ws, fila, ['CLIENTE', 'VENDIDO', 'ABONADO', 'CARTERA']);
 
+  const paraOrdenar = (s) => String(s || '').normalize('NFD')
+    .replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  const conSaldo = filas
+    .filter((c) => num(c.saldo_pendiente) !== 0)
+    .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
+
   let tv = 0, ta = 0, ts = 0;
-  for (const c of filas) {
+  for (const c of conSaldo) {
     const vend = num(c.total_vendido), ab = num(c.total_abonado), sal = num(c.saldo_pendiente);
     const r = ws.getRow(fila);
     r.getCell(1).value = c.nombre || '';
