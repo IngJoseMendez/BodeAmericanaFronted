@@ -647,8 +647,13 @@ export default function Cartera() {
         ws.getCell(`B${row}`).value = m.tipo;
         ws.getCell(`B${row}`).font = { bold: true, color: { argb: esVenta ? primaryColor : successColor } };
 
+        // En una venta del sistema se recorta el " - pacas" y queda "Venta
+        // #1a2b3c4d". En una compra de antes del sistema la descripción ES lo
+        // que compró («MIXTA VERANO»), así que se deja entera: recortarla por
+        // el guion le quitaría la mitad del nombre a referencias como
+        // «BLUSA - SHORT».
         ws.getCell(`C${row}`).value = esVenta
-          ? m.descripcion.split(' - ')[0]                       // solo "Venta #1a2b3c4d"
+          ? (m.legado ? (m.descripcion || '') : String(m.descripcion || '').split(' - ')[0])
           : `${m.descripcion}${m.metodo_pago ? ` · ${m.metodo_pago}` : ''}${m.referencia ? ` · ${m.referencia}` : ''}`;
 
         ws.getCell(`H${row}`).value = parseFloat(m.monto);

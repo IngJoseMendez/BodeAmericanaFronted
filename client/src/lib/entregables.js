@@ -992,6 +992,25 @@ export function hojaCarteraCliente(wb, data, nombreHoja) {
       ws.getCell(fila - 1, 10).numFmt = '$#,##0';
       ws.getCell(fila - 1, 10).font = { bold: true };
       ws.getCell(fila - 1, 10).alignment = { horizontal: 'right' };
+    } else if (esVenta) {
+      // UNA COMPRA SIN DETALLE DE PACAS: es de antes del sistema.
+      // Las compras del Excel viejo no tienen pacas detrás —ocurrieron antes de
+      // que el sistema existiera—, así que caían en la rama de abajo y salían
+      // con su monto en la columna ABONO y en verde: el extracto le mostraba al
+      // cliente una compra como si fuera un pago suyo. Su plata va en TOTAL,
+      // donde va la de cualquier otra compra.
+      const r = ws.getRow(fila);
+      r.getCell(1).value = m.descripcion || 'Compra anterior al sistema';
+      r.getCell(5).value = num(m.monto);
+      r.getCell(5).numFmt = '$#,##0';
+      r.getCell(5).alignment = { horizontal: 'right' };
+      r.getCell(6).value = m.metodo_pago || '';
+      r.getCell(10).value = num(m.saldo);
+      r.getCell(10).numFmt = '$#,##0';
+      r.getCell(10).font = { bold: true };
+      r.getCell(10).alignment = { horizontal: 'right' };
+      zebra(ws, fila, 10);
+      fila++;
     } else {
       const r = ws.getRow(fila);
       r.getCell(1).value = m.tipo === 'ABONO' ? 'ABONO' : (m.descripcion || m.tipo);
