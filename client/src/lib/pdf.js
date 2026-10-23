@@ -231,9 +231,17 @@ export async function exportarPDFInternos(sel, data, fileName) {
 
   if (sel.includes('CARTERA(INTERNA)')) {
     addTitle(`CARTERA (INTERNA)`);
-    const rows = data.cartera.map(c => [
-      c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo), formatCOP(c.vencido)
-    ]);
+    // Sólo los que deben, y en orden alfabético: lo mismo que en el Excel. Se
+    // había arreglado allá y aquí no, así que el PDF seguía sacando las 85
+    // filas con 55 clientes en cero. La lista se usa para cobrar.
+    const paraOrdenar = (s) => String(s || '').normalize('NFD')
+      .replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+    const rows = (data.cartera || [])
+      .filter((c) => Number(c.saldo ?? c.saldo_pendiente ?? 0) !== 0)
+      .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'))
+      .map((c) => [
+        c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo), formatCOP(c.vencido),
+      ]);
     autoTable(doc, {
       startY: 60,
       head: [['CLIENTE', 'LIMITE', 'DIAS', 'SALDO', 'VENCIDO']],
