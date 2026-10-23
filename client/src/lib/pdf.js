@@ -236,20 +236,49 @@ export async function exportarPDFInternos(sel, data, fileName) {
     // filas con 55 clientes en cero. La lista se usa para cobrar.
     const paraOrdenar = (s) => String(s || '').normalize('NFD')
       .replace(/[̀-ͯ]/g, '').trim().toUpperCase();
-    const rows = (data.cartera || [])
-      .filter((c) => Number(c.saldo ?? c.saldo_pendiente ?? 0) !== 0)
-      .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'))
-      .map((c) => [
-        c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo), formatCOP(c.vencido),
-      ]);
+    const saldoDe = (c) => Number(c.saldo ?? c.saldo_pendiente ?? 0);
+    const conSaldo = (data.cartera || [])
+      .filter((c) => saldoDe(c) !== 0)
+      .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
+    // Las dadas por perdidas van en su propia tabla, debajo del total y con el
+    // motivo al lado. Mezcladas en la misma tabla alguien sumaría la columna
+    // entera; separadas, la cifra que se cobra es la del TOTAL y punto. Es la
+    // misma decisión que en la hoja de Excel (ver hojaCarteraInterna).
+    const activas = conSaldo.filter((c) => !c.cartera_inactiva);
+    const perdidas = conSaldo.filter((c) => c.cartera_inactiva);
+
+    const total = activas.reduce((s, c) => s + saldoDe(c), 0);
     autoTable(doc, {
       startY: 60,
       head: [['CLIENTE', 'LIMITE', 'DIAS', 'SALDO', 'VENCIDO']],
-      body: rows,
+      body: activas.map((c) => [
+        c.nombre, formatCOP(c.limite_credito), c.dias_credito, formatCOP(c.saldo ?? c.saldo_pendiente), formatCOP(c.vencido),
+      ]),
+      foot: [['TOTAL', '', '', formatCOP(total), '']],
       theme: 'grid',
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [231, 111, 81] }
+      headStyles: { fillColor: [231, 111, 81] },
+      footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' }
     });
+
+    if (perdidas.length) {
+      const perdido = perdidas.reduce((s, c) => s + saldoDe(c), 0);
+      autoTable(doc, {
+        startY: (doc.lastAutoTable?.finalY || 60) + 18,
+        head: [['DADAS POR PERDIDAS — no suman al TOTAL de arriba', 'SALDO', 'POR QUÉ SE DEJÓ DE COBRAR']],
+        body: perdidas.map((c) => [
+          c.nombre,
+          formatCOP(saldoDe(c)),
+          String(c.cartera_inactiva_motivo || '').trim() || 'SIN MOTIVO ESCRITO',
+        ]),
+        foot: [['TOTAL DADO POR PERDIDO', formatCOP(perdido), 'no entra en el TOTAL de arriba']],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        columnStyles: { 1: { halign: 'right' } },
+        headStyles: { fillColor: [180, 83, 9] },
+        footStyles: { fillColor: [253, 230, 138], textColor: [146, 64, 14], fontStyle: 'bold' }
+      });
+    }
   }
 
   if (!pageAdded) {

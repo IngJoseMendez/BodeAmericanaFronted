@@ -212,6 +212,12 @@ export default function Cartera() {
   // el detalle de un cliente; la lista de tarjetas no lo toca ni de lejos.
   const [faltantesPorCliente, setFaltantesPorCliente] = useState(null);
 
+  // Dar una cartera por perdida. El motivo se pide en su propia ventana y no
+  // con un confirm: hace falta ESCRIBIR, y un confirm sólo sabe decir sí o no.
+  const [inactivaModal, setInactivaModal] = useState(null); // { clienteId, nombre, saldo }
+  const [inactivaMotivo, setInactivaMotivo] = useState('');
+  const [guardandoInactiva, setGuardandoInactiva] = useState(false);
+
   // Carga histórica (legacy)
   const [legacyModalOpen, setLegacyModalOpen] = useState(false);
   const [legacyTab, setLegacyTab] = useState('manual'); // 'manual' | 'csv'
@@ -278,6 +284,35 @@ export default function Cartera() {
       c.telefono?.toLowerCase().includes(q)
     );
   }, [searchQuery, carteraOriginal]);
+
+  // ── LO QUE SE COBRA Y LO QUE SE DIO POR PERDIDO, SIEMPRE SEPARADO ──────────
+  //
+  // Hay cuentas que la dueña da por perdidas: la deuda sigue escrita, pero no
+  // entra en lo que espera cobrar. En su Excel eso lo venía restando a mano —la
+  // fórmula de su total es la suma de la columna menos la celda de esa fila—, y
+  // era la razón por la que sus cifras y las del sistema no cuadraban.
+  //
+  // Las dos cifras se enseñan juntas y nunca sumadas. Una sola cifra obliga a
+  // elegir cuál mentira contar: si incluye lo perdido, abulta la cartera y la
+  // contradice a ella; si no lo incluye y no lo nombra, 20 millones desaparecen
+  // de la pantalla sin que nadie sepa dónde fueron.
+  //
+  // Se calcula sobre la lista COMPLETA, no sobre la filtrada: un total que
+  // cambia mientras se escribe en el buscador no es un total, y nadie espera
+  // que buscar a alguien le mueva la cifra de arriba.
+  const resumenCartera = useMemo(() => {
+    let porCobrar = 0, perdido = 0, cuentasPerdidas = 0;
+    for (const c of carteraOriginal) {
+      const s = parseFloat(c.saldo_pendiente) || 0;
+      if (c.cartera_inactiva) {
+        perdido += s;
+        if (Math.round(s) !== 0) cuentasPerdidas++;
+      } else {
+        porCobrar += s;
+      }
+    }
+    return { porCobrar, perdido, cuentasPerdidas };
+  }, [carteraOriginal]);
 
   // El detalle recalculaba resumenPorCotizacion en CADA render (recorre todos
   // los movimientos y ordena por fecha). Memoizado, solo se rehace cuando
@@ -975,6 +1010,55 @@ export default function Cartera() {
     }
   };
 
+  // ── DAR POR PERDIDA / VOLVER A COBRAR ───────────────────────────────────────
+  //
+  // Marcar pide el motivo en una ventana aparte; desmarcar va por un confirm,
+  // porque devolver una deuda a cobro no necesita que nadie explique nada.
+  const cambiarInactiva = async (clienteId, inactiva) => {
+    if (inactiva) {
+      setInactivaMotivo('');
+      setInactivaModal({
+        clienteId,
+        nombre: detalleCliente?.cliente?.nombre || '',
+        saldo: parseFloat(detalleCliente?.saldo_pendiente) || 0,
+      });
+      return;
+    }
+    const ok = await confirm({
+      title: 'Volver a cobrar esta cartera',
+      message: 'La deuda vuelve a sumar al total por cobrar y el motivo por el que se dejó de cobrar se borra.',
+      confirmText: 'Volver a cobrarla',
+      variant: 'info',
+    });
+    if (!ok) return;
+    await guardarInactiva(clienteId, false, '');
+  };
+
+  const guardarInactiva = async (clienteId, inactiva, motivo) => {
+    try {
+      setGuardandoInactiva(true);
+      await carteraApi.marcarInactiva(clienteId, inactiva, motivo);
+      addToast(inactiva
+        ? 'Cartera dada por perdida. Sigue escrita, pero ya no suma al total.'
+        : 'Cartera devuelta a cobro.', 'success');
+      setInactivaModal(null);
+      setInactivaMotivo('');
+      // Las dos cosas se refrescan: la lista, porque de ella salen los totales
+      // de arriba, y el detalle abierto, porque el aviso que se acaba de poner
+      // o quitar vive dentro de él. Sin lo segundo el botón no cambia hasta
+      // cerrar y volver a abrir al cliente, y parece que no hizo nada.
+      await loadCartera(fechaCorte);
+      if (detalleCliente?.cliente?.id === clienteId) {
+        const data = await carteraApi.getOne(clienteId);
+        setDetalleCliente(data);
+      }
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setGuardandoInactiva(false);
+    }
+  };
+
   const submitLegacy = async () => {
     if (!legacyRows.length) { addToast('No hay registros para importar', 'error'); return; }
     try {
@@ -1042,6 +1126,29 @@ export default function Cartera() {
           </div>
         )}
 
+        {/* Las dos cifras, nunca sumadas. La de cobrar manda y por eso va más
+            grande; la perdida sólo aparece cuando hay alguna, para no poner un
+            cero permanente al lado de lo que de verdad importa. */}
+        {!loading && (
+          <div className="flex flex-wrap items-stretch gap-3">
+            <div className="flex-1 min-w-[220px] p-4 rounded-xl border border-border bg-surface">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Por cobrar</p>
+              <p className="font-display text-2xl text-accent break-all">{formatCurrency(resumenCartera.porCobrar)}</p>
+            </div>
+            {resumenCartera.cuentasPerdidas > 0 && (
+              <div className="flex-1 min-w-[220px] p-4 rounded-xl border border-amber-300 bg-amber-50">
+                <p className="text-xs text-amber-700 uppercase tracking-wide">Dado por perdido</p>
+                <p className="font-display text-2xl text-amber-800 break-all">{formatCurrency(resumenCartera.perdido)}</p>
+                <p className="text-xs text-amber-700 mt-1">
+                  {resumenCartera.cuentasPerdidas === 1
+                    ? '1 cuenta. No suma a lo de cobrar.'
+                    : `${resumenCartera.cuentasPerdidas} cuentas. No suman a lo de cobrar.`}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Barra de búsqueda */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -1088,7 +1195,7 @@ export default function Cartera() {
             </div>
           ) : (
             cartera.map((c) => (
-              <Card key={c.id} hover className="animate-fade-in" onClick={() => openDetalle(c.id)}>
+              <Card key={c.id} hover className={`animate-fade-in${c.cartera_inactiva ? ' ring-1 ring-amber-300 bg-amber-50/40' : ''}`} onClick={() => openDetalle(c.id)}>
                 <CardBody>
                   <div className="flex items-start justify-between mb-3">
                     <div>
@@ -1097,6 +1204,19 @@ export default function Cartera() {
                     </div>
                     <Badge variant={c.tipo_cliente}>{c.tipo_cliente}</Badge>
                   </div>
+                  {/* El aviso va ARRIBA de las cifras, no debajo: quien lee una
+                      tarjeta de cobro baja hasta el saldo y para. Si la marca
+                      estuviera al pie, se llamaría a cobrar una cuenta que ya
+                      nadie espera cobrar. */}
+                  {c.cartera_inactiva && (
+                    <div className="mb-3 px-2.5 py-2 rounded-lg bg-amber-100 border border-amber-300">
+                      <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Dada por perdida</p>
+                      <p className="text-xs text-amber-800 mt-0.5">
+                        {String(c.cartera_inactiva_motivo || '').trim() || 'Sin motivo escrito.'}
+                      </p>
+                      <p className="text-[11px] text-amber-700 mt-1">No suma al total por cobrar.</p>
+                    </div>
+                  )}
                   <div className="space-y-2 pt-3 border-t border-gray-100">
                     {parseFloat(c.saldo_inicial) > 0 && (
                       <div className="flex justify-between items-start text-sm gap-2 pb-2 border-b border-orange-100">
@@ -1148,6 +1268,63 @@ export default function Cartera() {
                 <p className="text-lg font-display text-accent break-all">{formatCurrency(detalleCliente.saldo_pendiente)}</p>
               </div>
             </div>
+
+            {/* ── DAR LA CARTERA POR PERDIDA ──────────────────────────────────
+                La deuda no se borra ni se pone en cero. Un cero diría «pagó»,
+                que es justo lo contrario de lo que pasó, y borrar los
+                movimientos perdería cuánto fue y de quién —que es exactamente
+                por lo que la dueña nunca borró el renglón en su Excel—. Lo único
+                que cambia es que deja de entrar en los totales.
+
+                El motivo es obligatorio. Dentro de un año «inactiva» a secas no
+                le dice a nadie por qué dejaron de cobrarle a alguien, y esa
+                pregunta siempre vuelve, normalmente delante de la dueña. */}
+            {(() => {
+              const cid = detalleCliente.cliente?.id;
+              const inactiva = !!detalleCliente.cliente?.cartera_inactiva;
+              const saldo = parseFloat(detalleCliente.saldo_pendiente) || 0;
+              if (!cid) return null;
+              if (inactiva) {
+                return (
+                  <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-amber-900">
+                          Esta cartera está dada por perdida — no suma al total por cobrar
+                        </p>
+                        <p className="text-sm text-amber-800 mt-0.5 break-words">
+                          {String(detalleCliente.cliente?.cartera_inactiva_motivo || '').trim() || 'Sin motivo escrito.'}
+                        </p>
+                        {detalleCliente.cliente?.cartera_inactiva_fecha && (
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            Desde el {formatFecha(String(detalleCliente.cliente.cartera_inactiva_fecha).slice(0, 10))}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button size="sm" variant="ghost" disabled={guardandoInactiva}
+                      onClick={() => cambiarInactiva(cid, false)}>
+                      <CheckCircle size={14} /> Volver a cobrarla
+                    </Button>
+                  </div>
+                );
+              }
+              // Sin saldo no se ofrece: dar por perdido cero no significa nada,
+              // y el botón sólo estorbaría en las 65 fichas que están al día.
+              if (Math.round(saldo) === 0) return null;
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border border-border bg-surface">
+                  <p className="text-xs text-muted">
+                    ¿Esta deuda ya no se va a cobrar? Se puede dejar escrita sin que sume al total.
+                  </p>
+                  <Button size="sm" variant="ghost" disabled={guardandoInactiva}
+                    onClick={() => cambiarInactiva(cid, true)}>
+                    <AlertTriangle size={14} /> Dar por perdida
+                  </Button>
+                </div>
+              );
+            })()}
 
             {/* MERCANCÍA QUE LE FALTA — UN RENGLÓN, Y DELIBERADAMENTE FUERA DEL
                 RESUMEN DE ARRIBA. Va DESPUÉS del bloque gris de las cuatro
@@ -1792,6 +1969,65 @@ export default function Cartera() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── DAR UNA CARTERA POR PERDIDA ───────────────────────────────────────
+          Ventana propia y no un confirm porque aquí hay que ESCRIBIR, y un
+          confirm sólo sabe decir sí o no. Los tres motivos de un toque son los
+          que de verdad se repiten; se pueden editar después de pulsarlos, que
+          es lo que hace falta cuando el caso es parecido pero no igual. */}
+      <Modal isOpen={!!inactivaModal} onClose={() => setInactivaModal(null)} title="Dar la cartera por perdida">
+        {inactivaModal && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-xl border border-amber-300 bg-amber-50">
+              <p className="text-sm text-amber-900">
+                <strong>{inactivaModal.nombre}</strong> debe{' '}
+                <strong className="font-display">{formatCurrency(inactivaModal.saldo)}</strong>.
+              </p>
+              <p className="text-sm text-amber-800 mt-2">
+                La deuda <strong>no se borra</strong>: sigue escrita con todos sus movimientos y se sigue
+                viendo en la lista y en el entregable, con el motivo al lado. Lo único que cambia es que
+                deja de sumar al total por cobrar.
+              </p>
+              <p className="text-xs text-amber-700 mt-2">Se puede volver a cobrar cuando se quiera.</p>
+            </div>
+
+            <div>
+              <label htmlFor="motivo-perdida" className="block text-sm font-medium text-primary mb-1">
+                ¿Por qué se deja de cobrar? <span className="text-error">*</span>
+              </label>
+              <textarea
+                id="motivo-perdida"
+                rows={3}
+                value={inactivaMotivo}
+                onChange={(e) => setInactivaMotivo(e.target.value)}
+                placeholder="Ej.: no volvió a contestar desde marzo; se cerró el negocio."
+                className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['No volvió a contestar', 'Cerró el negocio', 'Acuerdo con la dueña'].map((m) => (
+                  <button key={m} type="button" onClick={() => setInactivaMotivo(m)}
+                    className="px-2.5 py-1 text-xs rounded-lg border border-border text-muted hover:text-primary hover:border-secondary">
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted mt-2">
+                Queda escrito con la fecha de hoy. Dentro de un año esta frase es lo único que va a
+                explicar por qué se dejó de cobrar.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={() => setInactivaModal(null)}>Cancelar</Button>
+              <Button type="button" variant="secondary"
+                disabled={guardandoInactiva || !inactivaMotivo.trim()}
+                onClick={() => guardarInactiva(inactivaModal.clienteId, true, inactivaMotivo.trim())}>
+                {guardandoInactiva ? 'Guardando…' : 'Dar por perdida'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </Layout>
   );

@@ -1058,7 +1058,7 @@ export function hojaCarteraCliente(wb, data, nombreHoja) {
  */
 export function hojaCarteraInterna(wb, filas) {
   const ws = wb.addWorksheet('CARTERA(INTERNA)');
-  [34, 18, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [34, 18, 18, 18, 44].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   let fila = titulo(ws, `CARTERA — ${hoyStr()}`, 4);
   fila = cabecera(ws, fila, ['CLIENTE', 'VENDIDO', 'ABONADO', 'CARTERA']);
@@ -1069,8 +1069,24 @@ export function hojaCarteraInterna(wb, filas) {
     .filter((c) => num(c.saldo_pendiente) !== 0)
     .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
 
-  let tv = 0, ta = 0, ts = 0;
-  for (const c of conSaldo) {
+  // LAS DADAS POR PERDIDAS VAN APARTE, DEBAJO DEL TOTAL.
+  //
+  // La dueña lleva años restando esas filas a mano en su propio Excel —la
+  // fórmula de su total es la suma de la columna MENOS la celda de esa fila— y
+  // era la razón por la que sus cifras y las del sistema no cuadraban. Aquí la
+  // resta ya viene hecha, pero la deuda sigue escrita: hace falta saber cuánto
+  // fue y de quién, que es exactamente por lo que ella nunca borró el renglón.
+  //
+  // Van DESPUÉS del TOTAL, no antes y no entremezcladas con una columna que diga
+  // «sí/no». Si fueran una columna más de la misma tabla, alguien acabaría
+  // seleccionando la columna de cifras entera para sumarla —es lo primero que
+  // hace cualquiera en Excel— y el error no avisaría. Debajo de un total ya
+  // cerrado, con su propia cabecera y su propio subtotal, no hay forma de
+  // sumarlas por descuido.
+  const activas = conSaldo.filter((c) => !c.cartera_inactiva);
+  const perdidas = conSaldo.filter((c) => c.cartera_inactiva);
+
+  const pintar = (c) => {
     const vend = num(c.total_vendido), ab = num(c.total_abonado), sal = num(c.saldo_pendiente);
     const r = ws.getRow(fila);
     r.getCell(1).value = c.nombre || '';
@@ -1083,8 +1099,14 @@ export function hojaCarteraInterna(wb, filas) {
     });
     r.getCell(4).font = { bold: true, color: { argb: sal > 0 ? 'dc2626' : '16a34a' } };
     zebra(ws, fila, 4);
-    tv += vend; ta += ab; ts += sal;
     fila++;
+    return { vend, ab, sal };
+  };
+
+  let tv = 0, ta = 0, ts = 0;
+  for (const c of activas) {
+    const t = pintar(c);
+    tv += t.vend; ta += t.ab; ts += t.sal;
   }
 
   const r = ws.getRow(fila);
@@ -1094,6 +1116,44 @@ export function hojaCarteraInterna(wb, filas) {
     r.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
     r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
     r.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right' };
+  }
+  fila += 2;
+
+  if (perdidas.length) {
+    ws.mergeCells(fila, 1, fila, 5);
+    const av = ws.getCell(fila, 1);
+    av.value = 'DADAS POR PERDIDAS — están aquí para saber cuánto fue y de quién, pero NO suman al TOTAL de arriba';
+    av.font = { size: 11, bold: true, color: { argb: '92400e' } };
+    av.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fef3c7' } };
+    av.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.getRow(fila).height = 24;
+    fila++;
+    fila = cabecera(ws, fila, ['CLIENTE', 'VENDIDO', 'ABONADO', 'CARTERA', 'POR QUÉ SE DEJÓ DE COBRAR']);
+
+    let pv = 0, pa = 0, ps = 0;
+    for (const c of perdidas) {
+      const suya = fila;
+      const t = pintar(c);
+      pv += t.vend; pa += t.ab; ps += t.sal;
+      const motivo = String(c.cartera_inactiva_motivo || '').trim();
+      const desde = c.cartera_inactiva_fecha ? ` (desde ${String(c.cartera_inactiva_fecha).slice(0, 10)})` : '';
+      // Sin motivo escrito se dice que falta, no se deja la celda en blanco: un
+      // hueco se lee como «no hay nada que explicar», y aquí siempre lo hay.
+      const celda = ws.getRow(suya).getCell(5);
+      celda.value = motivo ? motivo + desde : 'SIN MOTIVO ESCRITO';
+      celda.font = { size: 9, italic: !motivo, color: { argb: motivo ? '475569' : 'b45309' } };
+      celda.alignment = { wrapText: true, vertical: 'top' };
+    }
+
+    const p = ws.getRow(fila);
+    p.getCell(1).value = 'TOTAL DADO POR PERDIDO';
+    [pv, pa, ps].forEach((v, i) => { p.getCell(i + 2).value = v; p.getCell(i + 2).numFmt = '$#,##0'; });
+    p.getCell(5).value = 'no entra en el TOTAL de arriba';
+    for (let i = 1; i <= 5; i++) {
+      p.getCell(i).font = { bold: true, size: 10, color: { argb: '92400e' } };
+      p.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fde68a' } };
+      p.getCell(i).alignment = { horizontal: i === 1 || i === 5 ? 'left' : 'right' };
+    }
   }
   return ws;
 }

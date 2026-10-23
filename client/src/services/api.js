@@ -257,6 +257,12 @@ export const carteraApi = {
   exportOne(clienteId) {
     return api.get(`/cartera/exportar/${clienteId}`);
   },
+  // Dar una cartera por perdida, o devolverla a cobro. No borra ni un
+  // movimiento: la deuda queda entera y sólo deja de entrar en los totales.
+  // El motivo es obligatorio al marcarla, y el backend lo exige.
+  marcarInactiva(clienteId, inactiva, motivo) {
+    return api.patch(`/cartera/${clienteId}/inactiva`, { inactiva, motivo });
+  },
   // Carga histórica (legacy): un registro o un arreglo de { cliente_id, tipo, fecha, monto, cuenta_id?, referencia? }
   importarLegacy(registros) {
     return api.post('/cartera/legacy', registros);
