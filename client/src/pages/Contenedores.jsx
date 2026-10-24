@@ -276,6 +276,20 @@ const PASOS_CONTENEDOR = [
 function FlujoContenedor({ estado, origen, convertidoEn, compacto = false }) {
   const deEstimacion = origen === 'estimacion' || estado === 'estimacion';
   const idxActual = PASOS_CONTENEDOR.findIndex(p => p.estado === estado);
+  // UN LEGADO NO ESTÁ EN EL CAMINO: NO ES QUE LE FALTE RECORRERLO.
+  // Llegó antes del sistema y ya no va a pasar por ninguno de los cuatro pasos.
+  // Pintarle la fila con las cuatro casillas apagadas —que es lo que salía, por
+  // el idxActual = -1— lo enseña como el contenedor MÁS atrasado de todos, y es
+  // al revés: es el único con el que no hay nada que hacer.
+  if (estado === 'legado') {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide
+                        whitespace-nowrap bg-gray-500/10 text-gray-600 ${compacto ? 'text-[10px]' : 'text-[11px]'}`}
+        title="Llegó y se repartió antes de que existiera el sistema. Su mercancía ya está contada en el inventario; el contenedor se guarda solo para consultarlo.">
+        Legado · antes del sistema
+      </span>
+    );
+  }
   return (
     <div className={`flex items-center gap-1 flex-wrap ${compacto ? 'text-[10px]' : 'text-[11px]'}`}
          role="list" aria-label="Camino del contenedor">
@@ -518,6 +532,23 @@ function StatusBadge({ estado }) {
       </span>
     );
   }
+  // Llegó antes del sistema. Se guarda para consultarlo y nada más: ni se edita
+  // ni se finaliza, porque su mercancía ya está contada en el inventario.
+  //
+  // En gris a propósito. Ámbar y azul son los colores de «falta hacer algo
+  // aquí», y lo que hay que entender de un legado es justo lo contrario: que no
+  // hay nada que hacer con él. Antes caía en el `return` de abajo y se pintaba
+  // como Borrador, que es la lectura más peligrosa de todas —un borrador invita
+  // a finalizarlo, y finalizar éste duplicaría 205 pacas—.
+  if (estado === 'legado') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-500/10 text-gray-600"
+        title="Llegó antes del sistema. Se guarda solo para consulta: no se edita ni se finaliza.">
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+        Legado
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-warning/15 text-warning">
       <span className="w-1.5 h-1.5 rounded-full bg-warning" />
@@ -590,6 +621,7 @@ function TimelineView({ items, onView, isAdmin = false }) {
                   cont.estado === 'finalizado' ? 'bg-success'
                   : cont.estado === 'estimacion' ? 'bg-amber-400'
                   : cont.estado === 'revision' ? 'bg-blue-500'
+                  : cont.estado === 'legado' ? 'bg-gray-400'
                   : 'bg-warning'}`} />
                 <div
                   className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-secondary/40"
@@ -1285,6 +1317,7 @@ export default function Contenedores() {
           c.estado === 'finalizado' ? success
           : c.estado === 'estimacion' ? 'd97706'
           : c.estado === 'revision' ? '2563eb'
+          : c.estado === 'legado' ? '6b7280'
           : warning } },
         alignment: { horizontal: 'center', vertical: 'middle' },
       });

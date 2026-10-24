@@ -19,6 +19,11 @@ export const ESTADO_LABEL = {
   borrador:   'Borrador',
   revision:   'En revisión',
   finalizado: 'Finalizado',
+  // Llegó y se repartió ANTES de que existiera el sistema. Su mercancía ya está
+  // contada en el inventario, así que no se edita ni se finaliza: finalizarlo
+  // crearía sus pacas por segunda vez. Es lo mismo que `es_legacy` hace con los
+  // movimientos de la cartera vieja.
+  legado:     'Legado',
 };
 export const etiquetaEstado = (e) => ESTADO_LABEL[e] || e || '—';
 
