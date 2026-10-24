@@ -11,7 +11,7 @@ import autoTable from 'jspdf-autotable';
 // El costo por línea sale del mismo sitio que en las hojas de Excel: si el PDF
 // se lo calculara por su cuenta, el papel y el libro acabarían enseñando cifras
 // distintas del mismo inventario y nadie sabría cuál creer.
-import { costoDeLinea, promoDeLinea } from './entregables.js';
+import { agruparPorProducto } from './entregables.js';
 
 const formatNum = (v) => (parseInt(v) || 0).toLocaleString('es-CO');
 const formatCOP = (v) => '$' + (parseFloat(v) || 0).toLocaleString('es-CO');
@@ -206,26 +206,44 @@ export async function exportarPDFInternos(sel, data, fileName) {
 
   if (sel.includes('INVENTARIO(INTERNO)')) {
     addTitle(`INVENTARIO (INTERNO)`);
-    // PROMO va al lado de PRECIO y sale de la misma función que en el Excel:
-    // el papel y el libro tienen que decir el mismo precio del mismo producto.
-    // Vacía cuando no hay rebaja, para que se vea de un golpe qué está en
-    // promoción.
-    const rows = data.inventario.map(f => {
-      const promo = promoDeLinea(f);
+    // Las mismas columnas, el mismo orden y el mismo criterio que la hoja de
+    // Excel (ver hojaInventarioInterno): primero cuánto hay, luego cómo se
+    // llama, y al final la plata. El papel y el libro tienen que poder ponerse
+    // uno al lado del otro sin que nadie dude de si son el mismo inventario.
+    //
+    // PRECIO TOTAL se valora con la promoción donde la hay, que es lo que de
+    // verdad se cobra, igual que en la MATRIZ y en Cotizaciones.
+    // La MISMA agrupacion que el Excel, de la misma funcion: una linea por
+    // producto. Repetir aqui el agrupado seria la segunda version de la misma
+    // cuenta, y este proyecto ya tuvo el bug de dos formulas de dinero que se
+    // separaron sin que nada fallara.
+    let ct = 0, pt = 0, disp = 0;
+    const rows = agruparPorProducto(data.inventario || []).map(g => {
+      ct += g.costoTotal; pt += g.precioTotal; disp += g.disponibles;
       return [
-        f.categoria, f.clasificacion, f.referencia, f.calidad,
-        formatCOP(costoDeLinea(f)), formatCOP(f.precio_unitario),
-        promo != null ? formatCOP(promo) : '',
-        f.disponibles
+        g.disponibles, g.referencia, g.calidad,
+        // Vacia, no cero, cuando el producto entro a costos distintos en dos
+        // contenedores: no hay UN costo por unidad. Los totales si son exactos.
+        g.costo != null ? formatCOP(g.costo) : '',
+        g.precio != null ? formatCOP(g.precio) : '',
+        g.promo != null ? formatCOP(g.promo) : '',
+        formatCOP(g.costoTotal), formatCOP(g.precioTotal),
       ];
     });
     autoTable(doc, {
       startY: 60,
-      head: [['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'DISP']],
+      head: [['DISPONIBLES', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'COSTO TOTAL', 'PRECIO TOTAL']],
       body: rows,
+      foot: [[disp, 'TOTAL', '', '', '', '', formatCOP(ct), formatCOP(pt)]],
       theme: 'grid',
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [231, 111, 81] }
+      columnStyles: {
+        0: { halign: 'center' },
+        3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' },
+        6: { halign: 'right' }, 7: { halign: 'right' },
+      },
+      headStyles: { fillColor: [231, 111, 81] },
+      footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' }
     });
   }
 

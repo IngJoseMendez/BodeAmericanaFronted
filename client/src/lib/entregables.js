@@ -47,6 +47,25 @@ export const int = (v) => parseInt(v) || 0;
 export const costoDeLinea = (f) => num(f?.precio_minimo);
 
 /**
+ * ORDENAR POR LA REFERENCIA, COMO SE BUSCA CON EL DEDO.
+ *
+ * Las hojas de inventario salían en el orden en que la consulta devolviera las
+ * filas, que no es ninguno. Con doscientas y pico líneas, encontrar «mixta
+ * verano» era recorrerlas todas.
+ *
+ * Compara SIN TILDES Y SIN MAYÚSCULAS para que «NIÑO» no se vaya al final de la
+ * lista, y desempata por la calidad, para que las variantes de una misma
+ * referencia queden siempre juntas y en el mismo orden entre un entregable y el
+ * siguiente. Sin el desempate, dos descargas del mismo día podían traer las
+ * calidades barajadas de otra forma y parecer que algo había cambiado.
+ */
+const paraOrdenar = (s) => String(s ?? '').normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+export const porReferencia = (a, b) =>
+  paraOrdenar(a?.referencia).localeCompare(paraOrdenar(b?.referencia), 'es')
+  || paraOrdenar(a?.calidad).localeCompare(paraOrdenar(b?.calidad), 'es');
+
+/**
  * LA PROMOCIÓN VIGENTE DE UNA LÍNEA DE INVENTARIO, o null si no tiene.
  *
  * Hay dos formas de estar en promoción y las hojas tienen que enseñar las dos:
@@ -1171,7 +1190,10 @@ export function hojaListaDisponiblesInterna(wb, filas) {
 
   let fila = cabecera(ws, 2, ['DISP', 'CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'PRECIO', 'PROMO']);
 
-  for (const f of filas) {
+  // Por la referencia, igual que la hoja de INVENTARIO. Las dos salían en el
+  // orden que diera la consulta, y son las dos hojas donde se busca un producto
+  // con el dedo.
+  for (const f of [...filas].sort(porReferencia)) {
     const r = ws.getRow(fila);
     r.getCell(1).value = int(f.disponibles);
     r.getCell(2).value = f.categoria || '';
@@ -1189,53 +1211,151 @@ export function hojaListaDisponiblesInterna(wb, filas) {
   return ws;
 }
 
-/** INVENTARIO(INTERNO) — con costo, precio y sus totales. */
+/**
+ * INVENTARIO(INTERNO) — qué hay, a cómo entró y a cómo sale.
+ *
+ * EL ORDEN DE LAS COLUMNAS LO PIDIÓ EL DUEÑO, y tiene su lógica: primero
+ * CUÁNTO HAY, que es lo que se mira al despachar, y enseguida la referencia y
+ * la calidad, que es cómo se busca. El dinero va después, de izquierda a
+ * derecha en el orden en que se piensa: lo que costó, a cómo está en lista, a
+ * cómo está rebajado, y al final los dos totales de la línea.
+ *
+ * Fuera quedan CATEGORIA y CLASIFICACION. Están en LISTADISPONIBLES(INTERNA),
+ * que es la hoja que se usa para clasificar; aquí sólo estorbaban dos columnas
+ * entre el nombre del producto y su plata.
+ *
+ * COSTO es el mínimo por línea (`precio_minimo`), el mismo dato y el mismo
+ * rótulo que en la MATRIZ. PRECIO es el de lista.
+ *
+ * Y LA PROMO MANDA SOBRE TODO, igual que en la MATRIZ y que en Cotizaciones:
+ * cuando una línea está rebajada, PRECIO TOTAL se valora con la promoción y no
+ * con el de lista. Valorarlo con el de lista infla justo lo que se rebajó. Por
+ * eso además el precio de lista se pinta en gris cuando hay promo: sigue
+ * estando —hace falta para ver cuánto se rebajó— pero no es lo que se cobra, y
+ * la columna que sí se cobra va en negrita.
+ */
 export function hojaInventarioInterno(wb, filas) {
   const ws = wb.addWorksheet('INVENTARIO(INTERNO)');
-  [18, 16, 24, 14, 14, 14, 14, 8, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  [14, 28, 16, 14, 14, 14, 18, 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 10);
-  // Mismo rótulo que la hoja MATRIZ, y el mismo dato debajo: el mínimo por línea.
-  // PROMO va al lado de PRECIO, como en la plantilla de la operación.
-  fila = cabecera(ws, fila, ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
+  let fila = titulo(ws, `INVENTARIO TOTAL Y DISPONIBLE — ${hoyStr()}`, 8);
+  fila = cabecera(ws, fila, ['DISPONIBLES', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'COSTO TOTAL', 'PRECIO TOTAL']);
 
-  let ct = 0, pt = 0, disp = 0;
-  for (const f of filas) {
-    const d = int(f.disponibles);
-    const costo = costoDeLinea(f);
-    const precio = num(f.precio_unitario);
-    // La misma regla que en la MATRIZ: la promoción vigente manda sobre el
-    // precio de lista, y PRECIO TOTAL se valora con lo que de verdad se va a
-    // cobrar.
-    const promo = promoDeLinea(f);
-    const efectivo = precioDeLinea(f);
+  const grupos = agruparPorProducto(filas);
+  let ct = 0, pt = 0, disp = 0, sinUnitario = 0;
+  for (const g of grupos) {
     const r = ws.getRow(fila);
-    [f.categoria, f.clasificacion, f.referencia, f.calidad, costo || '', precio,
-      promo != null ? promo : '', d, costo * d || '', efectivo * d]
+    [g.disponibles, g.referencia, g.calidad,
+      g.costo ?? '', g.precio ?? '', g.promo ?? '',
+      g.costoTotal || '', g.precioTotal]
       .forEach((v, i) => {
         const c = r.getCell(i + 1);
         c.value = v ?? '';
-        if ([4, 5, 6, 8, 9].includes(i)) { c.numFmt = '$#,##0'; c.alignment = { horizontal: 'right' }; }
-        if (i === 7) { c.alignment = { horizontal: 'center' }; c.font = { bold: true }; }
+        if ([3, 4, 5, 6, 7].includes(i)) { c.numFmt = '$#,##0'; c.alignment = { horizontal: 'right' }; }
       });
-    zebra(ws, fila, 10);
-    ct += costo * d; pt += efectivo * d; disp += d;
+    r.getCell(1).alignment = { horizontal: 'center' };
+    r.getCell(1).font = { bold: true };
+    if (g.promo != null) {
+      r.getCell(5).font = { color: { argb: '94a3b8' } };
+      r.getCell(6).font = { bold: true, color: { argb: ACCENT } };
+    }
+    // Un producto cuyas pacas no entraron todas al mismo costo no tiene UN
+    // costo por unidad, así que la casilla se queda vacía. Las dos de total
+    // siguen siendo exactas: se suman línea por línea antes de juntarlas.
+    if (g.costo == null || g.precio == null) {
+      sinUnitario++;
+      for (const i of [4, 5]) {
+        if (r.getCell(i).value === '') r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fef3c7' } };
+      }
+    }
+    zebra(ws, fila, 8);
+    ct += g.costoTotal; pt += g.precioTotal; disp += g.disponibles;
     fila++;
   }
 
   const r = ws.getRow(fila);
-  ws.mergeCells(fila, 1, fila, 7);
-  r.getCell(1).value = 'TOTAL';
-  r.getCell(8).value = disp;
-  r.getCell(9).value = ct;
-  r.getCell(10).value = pt;
-  [9, 10].forEach(i => { r.getCell(i).numFmt = '$#,##0'; });
-  for (let i = 1; i <= 10; i++) {
+  r.getCell(1).value = disp;
+  ws.mergeCells(fila, 2, fila, 6);
+  r.getCell(2).value = 'TOTAL';
+  r.getCell(7).value = ct;
+  r.getCell(8).value = pt;
+  [7, 8].forEach(i => { r.getCell(i).numFmt = '$#,##0'; });
+  for (let i = 1; i <= 8; i++) {
     r.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
     r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
-    r.getCell(i).alignment = { horizontal: i === 1 ? 'right' : i === 8 ? 'center' : 'right' };
+    r.getCell(i).alignment = { horizontal: i === 1 ? 'center' : i === 2 ? 'left' : 'right' };
   }
+  // El PRECIO TOTAL está valorado con las promociones puestas. Dicho en voz
+  // alta y debajo del total, porque si no la única forma de saberlo es leer
+  // este archivo.
+  const nota = ws.getRow(fila + 1);
+  ws.mergeCells(fila + 1, 1, fila + 1, 8);
+  nota.getCell(1).value = 'PRECIO TOTAL está calculado con la promoción donde la hay, que es lo que de verdad se cobra. '
+    + 'El precio de lista de esas líneas queda en gris al lado.'
+    + (sinUnitario
+      ? `  ·  ${sinUnitario} producto(s) llegaron en contenedores con costos distintos: su casilla de COSTO o `
+        + 'PRECIO va vacía y en amarillo, porque no hay UN precio por unidad. Los dos totales de esas filas sí son exactos.'
+      : '');
+  nota.getCell(1).font = { size: 9, italic: true, color: { argb: '64748b' } };
+  nota.getCell(1).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   return ws;
+}
+
+/**
+ * UNA LÍNEA POR PRODUCTO (referencia + calidad), NO POR CONTENEDOR.
+ *
+ * La consulta del inventario agrupa también por contenedor y por proveedor,
+ * porque la pantalla necesita saber de dónde salió cada paca. En una hoja que
+ * sólo enseña referencia y calidad eso se ve como filas repetidas: «blusa
+ * vestido · especial» salía CUATRO veces, con el mismo costo y el mismo precio,
+ * cambiando nada más la cantidad. Nadie puede distinguirlas, y lo primero que
+ * hace cualquiera al verlas es pensar que la hoja está mal.
+ *
+ * SUMAR SIEMPRE ES SEGURO. Los dos totales se calculan línea por línea —cada
+ * una con SU costo y SU precio— y luego se suman, así que salen exactos aunque
+ * las pacas hayan entrado a precios distintos.
+ *
+ * LO QUE NO SIEMPRE EXISTE ES EL PRECIO POR UNIDAD. Si el mismo producto entró
+ * en dos contenedores a costos distintos, no hay un COSTO: hay dos. Ahí la
+ * casilla se devuelve en null y la hoja la deja VACÍA, que es la regla de toda
+ * la casa —mejor un hueco que un número que no es el que dice ser—. Escribir el
+ * promedio sería inventar un costo que ninguna paca tuvo, y nadie volvería a
+ * preguntar. Hoy en producción los 8 productos repetidos coinciden en costo y
+ * precio, así que no se ve ninguno; el día que dejen de coincidir, se verá.
+ */
+export function agruparPorProducto(filas) {
+  const m = new Map();
+  for (const f of filas || []) {
+    const clave = `${String(f?.referencia ?? '').trim().toLowerCase()}|${String(f?.calidad ?? '').trim().toLowerCase()}`;
+    const d = int(f.disponibles);
+    const costo = costoDeLinea(f);
+    const promo = promoDeLinea(f);
+    const efectivo = precioDeLinea(f);
+    const g = m.get(clave) || {
+      referencia: f.referencia || '', calidad: f.calidad || '',
+      disponibles: 0, costoTotal: 0, precioTotal: 0,
+      costos: new Set(), precios: new Set(), promos: new Set(),
+    };
+    g.disponibles += d;
+    g.costoTotal += costo * d;
+    g.precioTotal += efectivo * d;
+    // Sólo cuentan para «¿hay un precio único?» las líneas que de verdad
+    // tienen existencias: una fila en cero no aporta plata a ningún total y su
+    // costo no debería poder vaciar la casilla de las que sí hay.
+    if (d > 0) {
+      g.costos.add(Math.round(costo));
+      g.precios.add(Math.round(num(f.precio_unitario)));
+      g.promos.add(promo == null ? null : Math.round(promo));
+    }
+    m.set(clave, g);
+  }
+  const unico = (s) => (s.size === 1 ? [...s][0] : null);
+  return [...m.values()].map((g) => ({
+    ...g,
+    costo: unico(g.costos) || null,
+    precio: unico(g.precios),
+    promo: unico(g.promos),
+  })).sort(porReferencia);
 }
 
 /**
