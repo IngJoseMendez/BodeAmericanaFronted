@@ -116,6 +116,18 @@ function matchVenta(c, q) {
   if (qd && [c.venta, c.abonado, c.saldo, c.pct].some(v => _digits(v).includes(qd))) return true;
   return false;
 }
+// Coincidencia de una COMPRA contra la búsqueda (fecha, monto, qué se llevó, de
+// qué hoja del Excel salió). Es el espejo de matchAbono: lo que se busca aquí
+// es el nombre del producto —«mixta verano»— y la fecha, no un método de pago.
+function matchCompra(m, q) {
+  if (!q) return true;
+  const ql = q.toLowerCase().trim();
+  const qd = _digits(q);
+  const fechaStr = `${String(m.fecha || '')} ${m.fecha ? formatFechaCorta(m.fecha) : ''}`.toLowerCase();
+  if ([m.descripcion, m.referencia, m.cotizacion_numero, fechaStr].some(v => _txt(v).includes(ql))) return true;
+  if (qd && _digits(m.monto).includes(qd)) return true;
+  return false;
+}
 // Coincidencia de un abono contra la búsqueda (fecha, monto, método, cuenta, cotización, referencia).
 function matchAbono(m, q) {
   if (!q) return true;
@@ -197,7 +209,7 @@ export default function Cartera() {
     cliente_id: '', monto: '', fecha: hoy(), metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
-  const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'abonos'
+  const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'compras' | 'abonos'
   const [detalleBusqueda, setDetalleBusqueda] = useState(''); // búsqueda dentro del detalle del cliente
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
@@ -339,6 +351,30 @@ export default function Cartera() {
   const abonosFiltrados = useMemo(
     () => (detalleCliente?.movimientos || []).filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)),
     [detalleCliente, detalleBusqueda]
+  );
+
+  // ── LAS COMPRAS, UNA POR UNA ────────────────────────────────────────────────
+  //
+  // La pestaña de Ventas está armada alrededor de las COTIZACIONES: agrupa por
+  // `cotizacion_id` para poder enseñar cuánto se ha abonado a cada una. Las
+  // compras del Excel viejo no tienen cotización —nunca pasaron por el
+  // sistema—, así que las 454 compras de Sonia caían todas en el mismo saco y
+  // salían como UNA línea que decía «Sin cotización específica · Venta
+  // 1.272.635.000». La plata estaba bien contada, pero no había forma de ver
+  // QUÉ compró ni CUÁNDO, que es justo para lo que se cargaron.
+  //
+  // Esto es el espejo de la pestaña de Abonos: la misma tabla, la misma
+  // búsqueda, el mismo scroll. Son de sólo lectura a propósito —son historia
+  // de antes del sistema, no algo que se edite— y por eso no llevan los
+  // botones de editar y borrar que sí tienen los abonos.
+  const comprasFiltradas = useMemo(
+    () => (detalleCliente?.movimientos || [])
+      .filter(m => m.tipo === 'venta' && matchCompra(m, detalleBusqueda)),
+    [detalleCliente, detalleBusqueda]
+  );
+  const totalCompras = useMemo(
+    () => comprasFiltradas.reduce((s, m) => s + (parseFloat(m.monto) || 0), 0),
+    [comprasFiltradas]
   );
 
   // corte vacío = saldo de hoy (comportamiento de siempre); con fecha, el
@@ -1373,7 +1409,7 @@ export default function Cartera() {
               <input
                 value={detalleBusqueda}
                 onChange={(e) => setDetalleBusqueda(e.target.value)}
-                placeholder="Buscar por cotización, fecha, monto, método, cuenta..."
+                placeholder="Buscar por producto, cotización, fecha, monto, método, cuenta..."
                 className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
               />
               {detalleBusqueda && (
@@ -1384,17 +1420,87 @@ export default function Cartera() {
               )}
             </div>
 
-            {/* Pestañas: Ventas | Abonos */}
+            {/* Pestañas: Ventas | Compras | Abonos.
+                El contador va en la de Compras porque es la única cuyo
+                contenido no se adivina: Ventas enseña cotizaciones (y de un
+                cliente del Excel viejo, ninguna) y Abonos siempre tuvo su
+                lista. Sin el número, nadie abre una pestaña que cree vacía. */}
             <div className="flex gap-1 border-b border-border">
               <button type="button" onClick={() => setDetalleTab('ventas')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'ventas' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
                 Ventas
+              </button>
+              <button type="button" onClick={() => setDetalleTab('compras')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'compras' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
+                Compras
+                {(detalleCliente.movimientos || []).some(m => m.tipo === 'venta') && (
+                  <span className="ml-1.5 text-[11px] text-muted tabular-nums">
+                    {(detalleCliente.movimientos || []).filter(m => m.tipo === 'venta').length}
+                  </span>
+                )}
               </button>
               <button type="button" onClick={() => setDetalleTab('abonos')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'abonos' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
                 Abonos
               </button>
             </div>
+
+            {/* PESTAÑA COMPRAS: qué se llevó el cliente y cuándo. */}
+            {detalleTab === 'compras' && (
+              <div>
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Fecha</th>
+                        <th className="px-3 py-2 text-left">Qué se llevó</th>
+                        <th className="px-3 py-2 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {comprasFiltradas.length === 0 && (
+                        <tr><td colSpan={3} className="px-3 py-6 text-center text-muted text-sm">
+                          {detalleBusqueda.trim()
+                            ? `Ninguna compra coincide con "${detalleBusqueda.trim()}"`
+                            : 'Sin compras registradas para este cliente'}
+                        </td></tr>
+                      )}
+                      {comprasFiltradas.map(m => (
+                        <tr key={m.id}>
+                          <td className="px-3 py-2 whitespace-nowrap">{formatFechaCorta(m.fecha)}</td>
+                          <td className="px-3 py-2">
+                            {/* Un movimiento del Excel trae el nombre del producto escrito a
+                                mano; uno del sistema trae el número de la venta. Ninguno de
+                                los dos se deja en blanco: una fila sin concepto en una lista
+                                de compras parece un error de carga. */}
+                            <span className="break-words">
+                              {String(m.descripcion || '').split(' [')[0] || 'Compra anterior al sistema'}
+                            </span>
+                            {m.es_legacy && (
+                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 align-middle whitespace-nowrap">
+                                histórico
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-primary font-medium whitespace-nowrap">
+                            {formatCurrency(m.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {comprasFiltradas.length > 0 && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-sm">
+                    <span className="text-muted">
+                      {comprasFiltradas.length} compra{comprasFiltradas.length === 1 ? '' : 's'}
+                      {detalleBusqueda.trim() ? ' que coinciden' : ''}
+                    </span>
+                    <span className="font-display text-primary tabular-nums">{formatCurrency(totalCompras)}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* PESTAÑA VENTAS: cada cotización con su saldo, abonable directamente */}
             {detalleTab === 'ventas' && vistaVentas && (() => {
@@ -1460,24 +1566,39 @@ export default function Cartera() {
                       </div>
                     </div>
                   ))}
-                  {mostrarGeneral && (
-                    <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
-                      <div>
-                        <p className="text-sm font-medium text-muted">Sin cotización específica</p>
-                        <div className="flex items-center gap-3 text-xs mt-0.5">
-                          {generalVenta > 0 && <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(generalVenta)}</strong></span>}
-                          <span className="text-success">Abono a favor <strong>{formatCurrency(generalAbonadoRemanente)}</strong></span>
+                  {mostrarGeneral && (() => {
+                    // CUÁNTAS COMPRAS HAY DETRÁS DE ESTA CIFRA.
+                    // Esta línea resumía en un solo número todas las compras sin
+                    // cotización, que en un cliente venido del Excel son TODAS: las
+                    // 454 de Sonia salían como «Venta 1.272.635.000» y ahí se
+                    // acababa el rastro. El número estaba bien, pero no se podía ver
+                    // qué compró ni cuándo, que es justo para lo que se cargaron.
+                    const nCompras = (detalleCliente.movimientos || []).filter(m => m.tipo === 'venta').length;
+                    return (
+                      <div className="rounded-xl border border-dashed border-border/60 p-3 flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <p className="text-sm font-medium text-muted">Sin cotización específica</p>
+                          <div className="flex items-center gap-3 text-xs mt-0.5">
+                            {generalVenta > 0 && <span className="text-muted">Venta <strong className="text-primary">{formatCurrency(generalVenta)}</strong></span>}
+                            <span className="text-success">Abono a favor <strong>{formatCurrency(generalAbonadoRemanente)}</strong></span>
+                          </div>
+                          {generalVenta > 0 && nCompras > 0 && (
+                            <button type="button" onClick={() => setDetalleTab('compras')}
+                              className="text-[11px] text-secondary hover:underline mt-1">
+                              Ver las {nCompras} compras, una por una →
+                            </button>
+                          )}
+                          {generalAbonadoRemanente > 0 && (
+                            <p className="text-[10px] text-muted/80 mt-0.5">Saldo a favor del cliente (no aplicado a ninguna cotización)</p>
+                          )}
                         </div>
-                        {generalAbonadoRemanente > 0 && (
-                          <p className="text-[10px] text-muted/80 mt-0.5">Saldo a favor del cliente (no aplicado a ninguna cotización)</p>
-                        )}
+                        <Button size="sm" variant="ghost" icon={Plus}
+                          onClick={() => openPagoModalConCotizacion(detalleCliente.cliente, null)}>
+                          Abono general
+                        </Button>
                       </div>
-                      <Button size="sm" variant="ghost" icon={Plus}
-                        onClick={() => openPagoModalConCotizacion(detalleCliente.cliente, null)}>
-                        Abono general
-                      </Button>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })()}
