@@ -520,6 +520,74 @@ export default function Ventas() {
     }
   };
 
+  // ── Lo disponible, por producto ────────────────────────────────
+  //
+  // Una fila por referencia + calidad, en orden alfabético, con lo que hay y el
+  // precio de hoy. De 206 casillas se pasa a unas sesenta filas, que es el
+  // numero de productos distintos que de verdad tiene la bodega.
+  //
+  // TODO ESTE BLOQUE VA ANTES DE `totalVenta`, y no es un detalle de estilo:
+  // `totalVenta` se calcula durante el render leyendo `gruposElegidos`. Cuando
+  // este bloque estaba debajo, ese const seguia en zona muerta y la pantalla
+  // entera reventaba con un ReferenceError antes de pintar una sola fila.
+
+  // Tope de filas pintadas. Son unos sesenta productos hoy, pero la bodega
+  // crece y una tabla de mil filas en una tableta se arrastra.
+  const FILAS_PRODUCTOS_VISIBLES = 150;
+
+  const productos = useMemo(
+    () => agruparPacas(pacasDisponibles, preciosDeHoy(inventario)),
+    [pacasDisponibles, inventario]
+  );
+
+  // Filtra sobre el término ya reposado (300 ms): antes se recorría el inventario
+  // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
+  // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
+  const productosCoincidentes = useMemo(() => {
+    const q = debouncedBuscarPacas.trim().toLowerCase();
+    if (!q) return productos;
+    return productos.filter(g =>
+      g.referencia?.toLowerCase().includes(q) ||
+      g.calidad?.toLowerCase().includes(q) ||
+      g.clasificacion?.toLowerCase().includes(q)
+    );
+  }, [productos, debouncedBuscarPacas]);
+
+  const productosVisibles = useMemo(
+    () => productosCoincidentes.slice(0, FILAS_PRODUCTOS_VISIBLES),
+    [productosCoincidentes]
+  );
+
+  // Lo elegido, con el producto al lado. Se mira SIEMPRE contra `productos`
+  // completo y no contra lo filtrado: si no, escribir en el buscador despues de
+  // elegir haria desaparecer del total lo que ya estaba pedido.
+  const gruposElegidos = useMemo(
+    () => productos
+      .map(g => ({ ...g, ...grupoSel[claveStock(g.referencia, g.calidad)] }))
+      .filter(g => (parseInt(g.cantidad, 10) || 0) > 0),
+    [productos, grupoSel]
+  );
+
+  // LAS PACAS CONCRETAS, derivadas de las cantidades.
+  //
+  // El endpoint de ventas vende pacas con nombre y apellido, asi que de cada
+  // producto se toman las N primeras por id: el mismo criterio que usa el
+  // servidor al despachar (`ORDER BY id`), o sea que se vende lo que llego
+  // antes. Es lo unico que esta pantalla decide por su cuenta, y por eso se
+  // deriva aqui y no se guarda: nunca puede quedar desfasado de las cantidades.
+  const pacasSeleccionadas = useMemo(
+    () => gruposElegidos.flatMap(g =>
+      g.ids.slice(0, parseInt(g.cantidad, 10) || 0).map(id => ({
+        id,
+        referencia: g.referencia,
+        calidad: g.calidad,
+        clasificacion: g.clasificacion,
+        precio_venta: parseMonto(g.precio),
+      }))
+    ),
+    [gruposElegidos]
+  );
+
   const totalVenta = gruposElegidos.reduce(
     (sum, g) => sum + (parseInt(g.cantidad, 10) || 0) * parseMonto(g.precio), 0);
 
@@ -635,68 +703,6 @@ export default function Ventas() {
     doc.save(`Venta_${data.uuid?.slice(0, 8) || 'sin-folio'}_${hoy()}.pdf`);
     addToast('PDF descargado', 'success');
   };
-
-  // ── Lo disponible, por producto ────────────────────────────────
-  //
-  // Una fila por referencia + calidad, en orden alfabético, con lo que hay y el
-  // precio de hoy. De 206 casillas se pasa a unas sesenta filas, que es el
-  // numero de productos distintos que de verdad tiene la bodega.
-  // Tope de filas pintadas. Son unos sesenta productos hoy, pero la bodega
-  // crece y una tabla de mil filas en una tableta se arrastra.
-  const FILAS_PRODUCTOS_VISIBLES = 150;
-
-  const productos = useMemo(
-    () => agruparPacas(pacasDisponibles, preciosDeHoy(inventario)),
-    [pacasDisponibles, inventario]
-  );
-
-  // Filtra sobre el término ya reposado (300 ms): antes se recorría el inventario
-  // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
-  // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
-  const productosCoincidentes = useMemo(() => {
-    const q = debouncedBuscarPacas.trim().toLowerCase();
-    if (!q) return productos;
-    return productos.filter(g =>
-      g.referencia?.toLowerCase().includes(q) ||
-      g.calidad?.toLowerCase().includes(q) ||
-      g.clasificacion?.toLowerCase().includes(q)
-    );
-  }, [productos, debouncedBuscarPacas]);
-
-  const productosVisibles = useMemo(
-    () => productosCoincidentes.slice(0, FILAS_PRODUCTOS_VISIBLES),
-    [productosCoincidentes]
-  );
-
-  // Lo elegido, con el producto al lado. Se mira SIEMPRE contra `productos`
-  // completo y no contra lo filtrado: si no, escribir en el buscador despues de
-  // elegir haria desaparecer del total lo que ya estaba pedido.
-  const gruposElegidos = useMemo(
-    () => productos
-      .map(g => ({ ...g, ...grupoSel[claveStock(g.referencia, g.calidad)] }))
-      .filter(g => (parseInt(g.cantidad, 10) || 0) > 0),
-    [productos, grupoSel]
-  );
-
-  // LAS PACAS CONCRETAS, derivadas de las cantidades.
-  //
-  // El endpoint de ventas vende pacas con nombre y apellido, asi que de cada
-  // producto se toman las N primeras por id: el mismo criterio que usa el
-  // servidor al despachar (`ORDER BY id`), o sea que se vende lo que llego
-  // antes. Es lo unico que esta pantalla decide por su cuenta, y por eso se
-  // deriva aqui y no se guarda: nunca puede quedar desfasado de las cantidades.
-  const pacasSeleccionadas = useMemo(
-    () => gruposElegidos.flatMap(g =>
-      g.ids.slice(0, parseInt(g.cantidad, 10) || 0).map(id => ({
-        id,
-        referencia: g.referencia,
-        calidad: g.calidad,
-        clasificacion: g.clasificacion,
-        precio_venta: parseMonto(g.precio),
-      }))
-    ),
-    [gruposElegidos]
-  );
 
   /**
    * Exporta a Excel TODAS las ventas que cumplen los filtros, no sólo la página
