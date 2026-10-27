@@ -4,14 +4,20 @@ import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 import { despachosApi, pacasApi, transportesApi, clientesApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus } from 'lucide-react';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus, LayoutGrid, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
 import { formatCOP, parseMonto } from '../lib/money';
 // La promocion gana sobre el precio de lista, y se resuelve con el MISMO
 // helper que las hojas de Excel y el inventario: tres sitios decidiendo por
 // su cuenta que precio vale es como acaban cobrando cifras distintas.
-import { promoDeLinea } from '../lib/entregables';
+import { nuevoLibro, descargar, hojaDespachoGeneral } from '../lib/entregables';
 import { descargarExcel } from '../lib/descargar';
+// El agrupado de existencias, compartido con la pantalla de Ventas.
+import { agruparStock, claveStock } from '../lib/stock';
+// Pegar desde una hoja de calculo, que es de donde sale la tanda de
+// despachos del dia. Lo delicado —decidir si la primera fila son rotulos—
+// vive en ese archivo y es el mismo que usan los contenedores.
+import { leerDespachosPegados, CAMPOS_DESPACHO, normPegado } from '../lib/pegarLineas';
 
 const formatCurrency = formatCOP;
 
@@ -70,6 +76,16 @@ const TIPOS_TRANSPORTE_BASE = [
   { value: 'flota',          label: 'Flota / intermunicipal' },
   { value: 'contenedor',     label: 'Contenedor' },
 ];
+
+// Los tres datos de transporte que en esta operacion se deciden POR CLIENTE,
+// con los valores que de verdad se usan. Son listas CERRADAS: estos tres viajan
+// al Excel que lee la bodega y a la etiqueta del paquete, y un
+// "interapidisimo" mal escrito una vez es una transportadora nueva para
+// siempre. El tipo de despacho si se amplia sin tocar codigo, desde el catalogo
+// de transportes que ella ya administra en esta misma pantalla.
+const TIPOS_DESPACHO = ['domicilio', 'recogida'];
+const TRANSPORTADORAS = ['envia', 'interrapidisimo', 'camion'];
+const FLETES = ['contraentrega', 'contado'];
 
 const etiquetaTransporte = (v) => {
   if (!v) return '—';
@@ -580,24 +596,25 @@ export default function Despachos() {
   // aprobarla y despacharla: tres pantallas para una venta de treinta segundos.
   // Esto crea la venta, el despacho y la deuda en cartera de una vez, igual que
   // el flujo por cotizacion (ver POST /despachos/directo).
-  const LINEA_VACIA = { referencia: '', calidad: '', cantidad: '', precio_unitario: '' };
+  const LINEA_VACIA = { referencia: '', calidad: '', cantidad: '', precio_unitario: '', descuento_unitario: '' };
   const [directoOpen, setDirectoOpen]   = useState(false);
   const [clientes, setClientes]         = useState([]);
   const [inventario, setInventario]     = useState([]);
   const [creandoDirecto, setCreandoDirecto] = useState(false);
-  const [directo, setDirecto] = useState({
-    cliente_id: '', lineas: [{ ...LINEA_VACIA }],
+  // `fecha` arranca en hoy pero se puede mover atras: la mercancia salio el
+  // viernes y esto se teclea el lunes. Sin ese campo habria que mentirle la
+  // fecha al sistema —y con ella a la cartera— o corregirla despues a mano.
+  const DIRECTO_VACIO = () => ({
+    cliente_id: '', lineas: [{ ...LINEA_VACIA }], fecha: hoy(),
     destinatario: '', ciudad_entrega: '', direccion_entrega: '', celular: '',
-    tipo_transporte: '', abono: '', metodo_pago: '', notas: '',
+    tipo_transporte: '', transportadora: '', fletes: '',
+    abono: '', metodo_pago: '', notas: '',
   });
+  const [directo, setDirecto] = useState(DIRECTO_VACIO());
 
-  const abrirDirecto = async () => {
-    setDirecto({
-      cliente_id: '', lineas: [{ ...LINEA_VACIA }],
-      destinatario: '', ciudad_entrega: '', direccion_entrega: '', celular: '',
-      tipo_transporte: '', abono: '', metodo_pago: '', notas: '',
-    });
-    setDirectoOpen(true);
+  // Clientes e inventario los necesitan las DOS puertas —el despacho de uno y
+  // la rejilla de varios—, asi que se cargan con la misma funcion.
+  const cargarParaDespachar = async () => {
     try {
       const [cls, inv] = await Promise.all([clientesApi.getAll(), pacasApi.getInventario()]);
       setClientes(Array.isArray(cls) ? cls : (cls?.data || []));
@@ -607,35 +624,16 @@ export default function Despachos() {
     }
   };
 
-  // Lo disponible, agrupado por referencia + calidad. El endpoint agrupa TAMBIEN
-  // por contenedor, asi que una misma referencia llega repartida en varias filas
-  // y hay que sumarla: si no, la pantalla ofreceria menos de lo que hay.
-  const stockDirecto = useMemo(() => {
-    const m = new Map();
-    for (const f of inventario) {
-      const disp = parseInt(f.disponibles) || 0;
-      if (disp <= 0) continue;
-      const ref = String(f.referencia || '').trim();
-      const cal = String(f.calidad || '').trim();
-      if (!ref) continue;
-      const k = `${ref.toLowerCase()}|${cal.toLowerCase()}`;
-      const ya = m.get(k);
-      // El precio de HOY: la promocion si la hay, y si no el de lista. Se toma
-      // el de la primera fila con precio; en un grupo con precios mezclados es
-      // una sugerencia, y por eso la casilla se puede cambiar a mano.
-      const promo = promoDeLinea(f);
-      const lista = parseFloat(f.precio_unitario);
-      const precio = promo != null ? promo : (Number.isFinite(lista) ? lista : null);
-      if (ya) {
-        ya.disponibles += disp;
-        if (ya.precio == null) ya.precio = precio;
-      } else {
-        m.set(k, { referencia: ref, calidad: cal, disponibles: disp, precio });
-      }
-    }
-    return [...m.values()].sort((a, b) =>
-      a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es'));
-  }, [inventario]);
+  const abrirDirecto = async () => {
+    setDirecto(DIRECTO_VACIO());
+    setDirectoOpen(true);
+    await cargarParaDespachar();
+  };
+
+  // Lo disponible, agrupado por referencia + calidad. Lo hace lib/stock.js, que
+  // es el mismo agrupado que usa el formulario de Ventas: cuando cada pantalla
+  // lo hacia por su cuenta, una ofrecia existencias que la otra no veia.
+  const stockDirecto = useMemo(() => agruparStock(inventario), [inventario]);
 
   const refsDirecto = useMemo(
     () => [...new Set(stockDirecto.map((x) => x.referencia))], [stockDirecto]);
@@ -664,8 +662,13 @@ export default function Despachos() {
     return { ...d, lineas };
   });
 
+  // Lo que de verdad se le cobra: precio MENOS descuento, por unidad. Es la
+  // misma cuenta que hace el servidor, y es la que acaba en la cartera.
+  const netoLinea = (l) => Math.max(0, (parseMonto(l.precio_unitario) || 0) - (parseMonto(l.descuento_unitario) || 0));
   const totalDirecto = directo.lineas.reduce((sum, l) =>
-    sum + (parseInt(l.cantidad) || 0) * (parseMonto(l.precio_unitario) || 0), 0);
+    sum + (parseInt(l.cantidad) || 0) * netoLinea(l), 0);
+  const descuentoDirecto = directo.lineas.reduce((sum, l) =>
+    sum + (parseInt(l.cantidad) || 0) * (parseMonto(l.descuento_unitario) || 0), 0);
 
   // Lo que impide crear el despacho, dicho en palabras. Se calcula aqui y se
   // ensena en el formulario: un boton apagado sin decir por que es una pared.
@@ -680,6 +683,14 @@ export default function Despachos() {
       if (!l.referencia) faltas.push(`Linea ${n}: falta la referencia`);
       if (cant <= 0) faltas.push(`Linea ${n}: falta la cantidad`);
       if (!(parseMonto(l.precio_unitario) > 0)) faltas.push(`Linea ${n}: falta el precio`);
+      // Un descuento mayor que el precio dejaria la linea en negativo y el
+      // cliente acabaria con plata a favor por una paca que se llevo. El
+      // servidor tambien lo rechaza; aqui se dice antes de enviar.
+      const dcto = parseMonto(l.descuento_unitario) || 0;
+      if (dcto < 0) faltas.push(`Linea ${n}: el descuento no puede ser negativo`);
+      if (dcto > 0 && dcto > (parseMonto(l.precio_unitario) || 0)) {
+        faltas.push(`Linea ${n}: el descuento es mayor que el precio`);
+      }
       const hay = l.referencia ? hayDe(l.referencia, l.calidad) : null;
       const disp = hay?.disponibles || 0;
       if (l.referencia && cant > disp) {
@@ -702,10 +713,14 @@ export default function Despachos() {
             referencia: l.referencia, calidad: l.calidad,
             cantidad: parseInt(l.cantidad) || 0,
             precio_unitario: parseMonto(l.precio_unitario),
+            descuento_unitario: parseMonto(l.descuento_unitario) || 0,
           })),
+        fecha: directo.fecha || undefined,
         destinatario: directo.destinatario, ciudad_entrega: directo.ciudad_entrega,
         direccion_entrega: directo.direccion_entrega, celular: directo.celular,
-        tipo_transporte: directo.tipo_transporte, notas: directo.notas,
+        tipo_transporte: directo.tipo_transporte,
+        transportadora: directo.transportadora, fletes: directo.fletes,
+        notas: directo.notas,
         abono: parseMonto(directo.abono) || 0, metodo_pago: directo.metodo_pago,
       });
       addToast(r.mensaje || `Despacho ${r.numero} creado`, 'success');
@@ -717,6 +732,398 @@ export default function Despachos() {
       setCreandoDirecto(false);
     }
   };
+
+  // ══ VARIOS DESPACHOS A LA VEZ ═══════════════════════════════════
+  //
+  // Ir cliente por cliente es lo que hace que capturar aquí sea más lento que
+  // capturar en el Excel del que salen los datos. La tanda del día ya existe en
+  // una hoja de cálculo: esta rejilla la recibe pegada y la parte en despachos
+  // sola, agrupando por cliente.
+  //
+  // UN RENGLÓN = UNA LÍNEA, NO UN DESPACHO. Cinco referencias para la misma
+  // persona son cinco renglones y UN despacho, igual que en la hoja: nadie
+  // repite el nombre cinco veces. Los tres datos de transporte se deciden por
+  // cliente, así que basta escribirlos en el primer renglón de cada uno.
+  //
+  // Se crea TODO O NADA (POST /despachos/directo/lote, una sola transacción):
+  // media tanda cargada es peor que ninguna, porque nadie sabe qué mitad quedó.
+  const LINEA_LOTE = {
+    cliente: '', referencia: '', calidad: '', cantidad: '',
+    precio_unitario: '', descuento_unitario: '',
+    tipo_transporte: '', transportadora: '', fletes: '',
+  };
+  const FILAS_LOTE_INICIALES = 6;
+  const [loteOpen, setLoteOpen]       = useState(false);
+  const [creandoLote, setCreandoLote] = useState(false);
+  const [lote, setLote] = useState({ fecha: hoy(), lineas: [] });
+
+  const abrirLote = async () => {
+    setLote({
+      fecha: hoy(),
+      lineas: Array.from({ length: FILAS_LOTE_INICIALES }, () => ({ ...LINEA_LOTE })),
+    });
+    setLoteOpen(true);
+    await cargarParaDespachar();
+  };
+
+  // Mismo gesto que en el despacho de uno: al elegir referencia se sugiere el
+  // precio de hoy y, si sólo hay una calidad con existencias, se escoge sola.
+  const setLineaLote = (i, campo, valor) => setLote((L) => {
+    const lineas = [...L.lineas];
+    const linea = { ...lineas[i], [campo]: valor };
+    if (campo === 'referencia') {
+      const cals = calidadesDe(valor);
+      if (cals.length === 1) linea.calidad = cals[0];
+    }
+    if (campo === 'referencia' || campo === 'calidad') {
+      const hay = hayDe(linea.referencia, linea.calidad);
+      if (hay?.precio != null && !linea.precio_unitario) linea.precio_unitario = String(hay.precio);
+    }
+    lineas[i] = linea;
+    return { ...L, lineas };
+  });
+
+  // Los clientes por nombre. Se guarda la LISTA y no el primero que aparezca:
+  // si hay dos personas con el mismo nombre, elegir una a espaldas de quien
+  // pega le cargaría la deuda al cliente equivocado.
+  const clientesPorNombre = useMemo(() => {
+    const m = new Map();
+    for (const c of clientes) {
+      const k = normPegado(c.nombre);
+      if (!k) continue;
+      m.set(k, [...(m.get(k) || []), c]);
+    }
+    return m;
+  }, [clientes]);
+
+  // 'vacio' | 'ambiguo' | null (no existe) | el cliente
+  const resolverCliente = (nombre) => {
+    const k = normPegado(nombre);
+    if (!k) return 'vacio';
+    const hallados = clientesPorNombre.get(k);
+    if (!hallados) return null;
+    return hallados.length > 1 ? 'ambiguo' : hallados[0];
+  };
+
+  const lineasUtilesLote = (L = lote) => L.lineas.filter(
+    (l) => l.cliente || l.referencia || l.cantidad || l.precio_unitario);
+
+  // Pegar desde la hoja de cálculo, a partir de la fila donde está el cursor.
+  // Si lo pegado no es un bloque —una sola celda— no se toca nada y el campo se
+  // comporta como siempre.
+  const pegarEnLote = (iDesde) => (e) => {
+    const bloque = leerDespachosPegados(e.clipboardData?.getData('text/plain') || '');
+    if (!bloque) return;
+    e.preventDefault();
+    setLote((L) => {
+      const lineas = [...L.lineas];
+      // El cliente se ARRASTRA hacia abajo mientras los renglones vengan sin
+      // nombre, que es como está escrita la hoja de verdad.
+      let arrastrado = lineas[iDesde]?.cliente || '';
+      bloque.lineas.forEach((p, k) => {
+        const i = iDesde + k;
+        while (lineas.length <= i) lineas.push({ ...LINEA_LOTE });
+        const cliente = p.cliente || arrastrado;
+        arrastrado = cliente;
+        lineas[i] = { ...LINEA_LOTE, ...p, cliente };
+      });
+      return { ...L, lineas };
+    });
+    const sinCliente = bloque.lineas.filter((p) => p.cliente && !resolverCliente(p.cliente)).length;
+    addToast(
+      `${bloque.lineas.length} línea(s) pegada(s)`
+      + (sinCliente ? ` · ${sinCliente} con un cliente que no está en la lista` : ''),
+      sinCliente ? 'warning' : 'success');
+  };
+
+  // La tanda repartida en despachos: uno por cliente.
+  const despachosDelLote = useMemo(() => {
+    const porCliente = new Map();
+    lineasUtilesLote().forEach((l, i) => {
+      const k = normPegado(l.cliente);
+      if (!porCliente.has(k)) porCliente.set(k, { nombre: l.cliente, lineas: [], transporte: {} });
+      const g = porCliente.get(k);
+      g.lineas.push({ ...l, fila: i + 1 });
+      // Los tres de transporte son por cliente: gana el primer renglón que los
+      // traiga, para no obligar a repetirlos en cada línea.
+      for (const campo of ['tipo_transporte', 'transportadora', 'fletes']) {
+        if (!g.transporte[campo] && l[campo]) g.transporte[campo] = l[campo];
+      }
+    });
+    return [...porCliente.values()];
+  }, [lote.lineas, clientesPorNombre]);
+
+  const totalLote = lineasUtilesLote().reduce(
+    (sum, l) => sum + (parseInt(l.cantidad) || 0) * netoLinea(l), 0);
+
+  const problemasLote = () => {
+    const faltas = [];
+    const utiles = lineasUtilesLote();
+    if (!utiles.length) return ['No hay ninguna línea'];
+
+    // Lo que se pide SUMANDO TODAS LAS FILAS. Dos clientes pidiendo cuatro cada
+    // uno de algo que tiene seis unidades pasa cada fila por separado y revienta
+    // el lote entero al enviarlo; aquí se ve antes.
+    const pedido = new Map();
+
+    utiles.forEach((l, i) => {
+      const n = i + 1;
+      const cant = parseInt(l.cantidad) || 0;
+      const cli = resolverCliente(l.cliente);
+      if (cli === 'vacio') faltas.push(`Fila ${n}: falta el cliente`);
+      else if (cli === 'ambiguo') faltas.push(`Fila ${n}: hay más de un cliente llamado «${l.cliente}»`);
+      else if (!cli) faltas.push(`Fila ${n}: «${l.cliente}» no está en los clientes`);
+
+      if (!l.referencia) faltas.push(`Fila ${n}: falta la referencia`);
+      else if (!hayDe(l.referencia, l.calidad)) {
+        faltas.push(`Fila ${n}: «${l.referencia}${l.calidad ? ' / ' + l.calidad : ''}» no tiene existencias`);
+      }
+      if (cant <= 0) faltas.push(`Fila ${n}: falta la cantidad`);
+      if (!(parseMonto(l.precio_unitario) > 0)) faltas.push(`Fila ${n}: falta el precio`);
+      const dcto = parseMonto(l.descuento_unitario) || 0;
+      if (dcto < 0) faltas.push(`Fila ${n}: el descuento no puede ser negativo`);
+      if (dcto > 0 && dcto > (parseMonto(l.precio_unitario) || 0)) {
+        faltas.push(`Fila ${n}: el descuento es mayor que el precio`);
+      }
+      if (l.referencia && cant > 0) {
+        const k = claveStock(l.referencia, l.calidad);
+        pedido.set(k, (pedido.get(k) || 0) + cant);
+      }
+    });
+
+    for (const [k, cant] of pedido) {
+      const g = stockDirecto.find((x) => claveStock(x.referencia, x.calidad) === k);
+      const disp = g?.disponibles || 0;
+      if (cant > disp) {
+        const nombre = g ? `${g.referencia}${g.calidad ? ' / ' + g.calidad : ''}` : k.replace('|', ' / ');
+        faltas.push(`En todo el lote pides ${cant} de ${nombre} y hay ${disp}`);
+      }
+    }
+    return faltas;
+  };
+
+  const crearLote = async () => {
+    const faltas = problemasLote();
+    if (faltas.length) { addToast(faltas[0], 'warning'); return; }
+    try {
+      setCreandoLote(true);
+      const payload = despachosDelLote.map((g) => {
+        const cli = resolverCliente(g.nombre);
+        return {
+          cliente_id: cli.id,
+          // Viaja el nombre para que, si el servidor rechaza una fila, el aviso
+          // diga de quién era y no sólo «despacho 8 de 15».
+          cliente_nombre: g.nombre,
+          fecha: lote.fecha || undefined,
+          tipo_transporte: g.transporte.tipo_transporte || null,
+          transportadora: g.transporte.transportadora || null,
+          fletes: g.transporte.fletes || null,
+          lineas: g.lineas
+            .filter((l) => l.referencia && (parseInt(l.cantidad) || 0) > 0)
+            .map((l) => ({
+              referencia: l.referencia, calidad: l.calidad,
+              cantidad: parseInt(l.cantidad) || 0,
+              precio_unitario: parseMonto(l.precio_unitario),
+              descuento_unitario: parseMonto(l.descuento_unitario) || 0,
+            })),
+        };
+      });
+      const r = await despachosApi.crearDirectoLote(payload);
+      addToast(r.mensaje || `${r.creados} despachos creados`, 'success');
+      setLoteOpen(false);
+      loadDespachos();
+    } catch (err) {
+      addToast(err.message || 'No se pudo crear el lote', 'error');
+    } finally {
+      setCreandoLote(false);
+    }
+  };
+
+  // ══ CONFIRMAR LA SALIDA DE TODOS A LA VEZ ═══════════════════════
+  //
+  // La bodega se recorre UNA vez. Confirmar despacho por despacho obliga a
+  // abrir, marcar y cerrar quince veces la misma pantalla para una sola vuelta
+  // por la bodega, y a descargar quince papeles para un solo viaje.
+  //
+  // Lo que se marca y se desmarca es lo mismo que antes —unidad por unidad—,
+  // sólo que ahora están todos los despachos juntos. Lo que se desmarca NO sale
+  // y su despacho queda parcial, igual que en la vista de uno.
+  const [salidaOpen, setSalidaOpen]         = useState(false);
+  const [salidaCargando, setSalidaCargando] = useState(false);
+  const [salidaEnviando, setSalidaEnviando] = useState(false);
+  const [salidaLista, setSalidaLista]       = useState([]);
+  const [salidaSel, setSalidaSel]           = useState({});
+  const [salidaFecha, setSalidaFecha]       = useState(hoy());
+
+  // «domicilio» y «recogida» son las dos de esta operación; el catálogo de
+  // transportes administrable se suma detrás, sin repetir.
+  const opcionesTipoDespacho = useMemo(() => {
+    const vistos = new Set();
+    const out = [];
+    for (const v of [...TIPOS_DESPACHO, ...(transportes || []).map((t) => t.nombre)]) {
+      const k = normPegado(v);
+      if (!k || vistos.has(k)) continue;
+      vistos.add(k);
+      out.push({ value: v, label: v });
+    }
+    return out;
+  }, [transportes]);
+
+  const pendientesDe = (d) => (d.items || []).filter((i) => i.paca_estado === 'vendida');
+
+  const abrirSalidaGeneral = async () => {
+    setSalidaOpen(true);
+    setSalidaCargando(true);
+    setSalidaFecha(hoy());
+    setSalidaLista([]);
+    setSalidaSel({});
+    try {
+      // El inventario entra para poder poner el COSTO en el Excel de bodega, y
+      // los clientes para la ciudad y la dirección cuando el despacho no las
+      // lleva escritas.
+      await cargarParaDespachar();
+      const r = await Promise.allSettled((despachos || []).map((d) => despachosApi.getOne(d.id)));
+      const completos = r.filter((x) => x.status === 'fulfilled').map((x) => x.value);
+      const conPendientes = completos.filter((d) => pendientesDe(d).length > 0);
+      const sel = {};
+      for (const d of conPendientes) for (const i of pendientesDe(d)) sel[i.paca_id] = true;
+      setSalidaLista(conPendientes);
+      setSalidaSel(sel);
+      const fallidos = r.length - completos.length;
+      if (fallidos) addToast(`No pude leer ${fallidos} despacho(s); no aparecen en la lista`, 'warning');
+    } finally {
+      setSalidaCargando(false);
+    }
+  };
+
+  const marcarDespacho = (d, valor) => setSalidaSel((s) => {
+    const next = { ...s };
+    for (const i of pendientesDe(d)) next[i.paca_id] = valor;
+    return next;
+  });
+
+  const idsMarcados = (d) => pendientesDe(d).filter((i) => salidaSel[i.paca_id]).map((i) => Number(i.paca_id));
+  const totalMarcado = salidaLista.reduce((s, d) => s + idsMarcados(d).length, 0);
+
+  // ── El Excel del despacho ───────────────────────────────────────
+  //
+  // Sale del MISMO molde que el general (`hojaDespachoGeneral`), se pida de
+  // todos o de uno solo: el papel que recibe la bodega tiene que verse igual en
+  // los dos casos, o se lee de dos maneras distintas.
+  const costoPorClave = useMemo(() => {
+    const m = new Map();
+    for (const f of inventario) {
+      const k = claveStock(f.referencia, f.calidad);
+      const c = parseFloat(f?.precio_minimo);
+      if (!Number.isFinite(c) || c <= 0) continue;
+      if (!m.has(k)) m.set(k, c);
+      // Dos costos distintos para el mismo producto: se deja EN BLANCO. Un
+      // costo que no es el que dice ser es peor que ninguno.
+      else if (m.get(k) !== c) m.set(k, null);
+    }
+    return m;
+  }, [inventario]);
+
+  const paraHojaDespacho = (d, pacaIds) => {
+    const cli = (clientes || []).find((c) => c.id === d.cliente_id);
+    const items = (d.items || []).filter((i) => !pacaIds || pacaIds.includes(Number(i.paca_id)));
+    const grupos = new Map();
+    for (const it of items) {
+      const k = claveStock(it.referencia, it.calidad);
+      if (!grupos.has(k)) {
+        grupos.set(k, {
+          referencia: it.referencia || '', calidad: it.calidad || '',
+          costo: costoPorClave.get(k) ?? null, precio: null, cantidad: 0, primera: true,
+        });
+      }
+      const g = grupos.get(k);
+      g.cantidad++;
+      const neto = (parseFloat(it.precio_unitario) || 0) - (parseFloat(it.descuento_unitario) || 0);
+      // Precios distintos dentro del mismo producto: columna en blanco, no uno
+      // de los dos. La hoja la lee alguien que no puede comprobarlo.
+      if (g.primera) { g.precio = neto; g.primera = false; }
+      else if (g.precio !== neto) g.precio = null;
+    }
+    return {
+      nombre: d.destinatario || d.cliente_nombre || '',
+      ciudad: d.ciudad_entrega || cli?.ciudad || d.cliente_ciudad || '',
+      direccion: d.direccion_entrega || cli?.direccion || d.cliente_direccion || '',
+      celular: d.celular || cli?.telefono || d.cliente_telefono || '',
+      tipo_transporte: etiquetaTransporte(d.tipo_transporte),
+      transportadora: d.transportadora || '',
+      fletes: d.fletes || '',
+      grupos: [...grupos.values()].sort((a, b) =>
+        a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es')),
+    };
+  };
+
+  const excelDespachos = async (lista, meta, archivo) => {
+    const wb = nuevoLibro();
+    hojaDespachoGeneral(wb, lista.map(({ d, pacaIds }) => paraHojaDespacho(d, pacaIds)), [], meta);
+    await descargar(wb, archivo);
+  };
+
+  const excelDeLaSalida = async () => {
+    const lista = salidaLista
+      .map((d) => ({ d, pacaIds: idsMarcados(d) }))
+      .filter((x) => x.pacaIds.length);
+    if (!lista.length) { addToast('No hay nada marcado', 'warning'); return; }
+    await excelDespachos(lista,
+      { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, totales: null },
+      'Despacho_General');
+  };
+
+  const excelDeUno = async (d) => {
+    const pacaIds = idsMarcados(d);
+    if (!pacaIds.length) { addToast(`No hay nada marcado en ${d.numero}`, 'warning'); return; }
+    await excelDespachos([{ d, pacaIds }],
+      { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, numero: d.numero },
+      `Despacho_${d.numero}`);
+  };
+
+  const confirmarSalidaGeneral = async () => {
+    const lista = salidaLista
+      .map((d) => ({ d, pacaIds: idsMarcados(d) }))
+      .filter((x) => x.pacaIds.length);
+    if (!lista.length) { addToast('Marca al menos una unidad', 'warning'); return; }
+
+    const parciales = lista.filter((x) => x.pacaIds.length < pendientesDe(x.d).length);
+    const ok = await confirm({
+      title: `¿Sacar ${totalMarcado} unidad(es) de bodega?`,
+      message: `Se confirma la salida de ${lista.length} despacho(s) con fecha ${salidaFecha}.`
+        + (parciales.length
+          ? ` ${parciales.length} queda(n) parcial(es): lo que dejaste sin marcar NO sale y sigue pendiente.`
+          : ''),
+      confirmText: 'Sí, confirmar la salida',
+    });
+    if (!ok) return;
+
+    try {
+      setSalidaEnviando(true);
+      const r = await despachosApi.confirmarLote(
+        lista.map(({ d, pacaIds }) => ({ id: d.id, paca_ids: pacaIds })),
+        salidaFecha);
+      addToast(r.mensaje || `${r.unidades} unidad(es) salieron`, 'success');
+      // El papel de la bodega se descarga con lo que ACABA de salir, que es lo
+      // que hay que ir a buscar. Si falla la descarga la salida ya está hecha y
+      // no se deshace: se avisa y se puede volver a bajar.
+      try {
+        await excelDespachos(lista,
+          { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, totales: null },
+          'Despacho_General');
+      } catch {
+        addToast('La salida quedó registrada, pero no pude generar el Excel', 'warning');
+      }
+      setSalidaOpen(false);
+      loadDespachos();
+      if (vistaActiva === 'despachados' || despachados.length > 0) loadDespachados();
+    } catch (err) {
+      addToast(err.message || 'No se pudo confirmar la salida', 'error');
+    } finally {
+      setSalidaEnviando(false);
+    }
+  };
+
   const [submitting, setSubmitting]             = useState(false);
   const [entrega, setEntrega]                   = useState({ tipo_transporte: '', destinatario: '', direccion_entrega: '', ciudad_entrega: '', celular: '' });
 
@@ -819,7 +1226,7 @@ export default function Despachos() {
         celular:           entrega.celular || null,
       });
       addToast(
-        `${result.pacas_vendidas} unidad(es) despachada(s)${result.pacas_pendientes ? ` · ${result.pacas_pendientes} pendiente(s)` : ''}`,
+        `${result.pacas_despachadas} unidad(es) despachada(s)${result.pacas_pendientes ? ` · ${result.pacas_pendientes} pendiente(s)` : ''}`,
         'success'
       );
       setConfirmModalOpen(false);
@@ -982,11 +1389,31 @@ export default function Despachos() {
                   value={search} onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30" />
               </div>
-              <button type="button" onClick={abrirDirecto}
-                title="Vender y despachar mercancía disponible sin pasar por una cotización"
-                className="flex-shrink-0 flex items-center justify-center gap-2 px-5 py-3 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-[0.98] transition-all duration-150">
-                <Plus size={17} aria-hidden="true" /> Nuevo despacho
-              </button>
+              <div className="flex-shrink-0 flex flex-wrap gap-2">
+                <button type="button" onClick={abrirDirecto}
+                  title="Vender y despachar mercancía disponible sin pasar por una cotización"
+                  className="flex items-center justify-center gap-2 px-5 py-3 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-[0.98] transition-all duration-150">
+                  <Plus size={17} aria-hidden="true" /> Nuevo despacho
+                </button>
+                <button type="button" onClick={abrirLote}
+                  title="Pegar la tanda del día desde una hoja de cálculo y crear todos los despachos de una"
+                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-secondary/40 text-secondary text-sm font-semibold hover:bg-secondary/5 active:scale-[0.98] transition-all duration-150">
+                  <LayoutGrid size={16} aria-hidden="true" /> Varios a la vez
+                </button>
+                {/* El botón grande: una vuelta por la bodega, un papel y una
+                    salida para todos los despachos que estén pendientes. */}
+                <button type="button" onClick={abrirSalidaGeneral}
+                  disabled={!despachos.length}
+                  title={despachos.length
+                    ? 'Confirmar la salida de todos los despachos pendientes de una vez'
+                    : 'No hay despachos pendientes de salir'}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                  <Truck size={16} aria-hidden="true" /> Despachar todo
+                  {despachos.length > 0 && (
+                    <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/20">{despachos.length}</span>
+                  )}
+                </button>
+              </div>
             </div>
 
             <Card padding={false}>
@@ -1431,18 +1858,30 @@ export default function Despachos() {
       <Modal isOpen={directoOpen} onClose={() => setDirectoOpen(false)}
              title="Nuevo despacho (sin cotización)" size="xl">
         <div className="space-y-5">
-          <div>
-            <label htmlFor="dir-cliente" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">Cliente *</label>
-            <BuscadorLista id="dir-cliente"
-              value={directo.cliente_id}
-              onChange={(v) => setDirecto((d) => ({ ...d, cliente_id: v }))}
-              opcionVacia="Elige el cliente"
-              opciones={clientes.map((c) => ({
-                value: String(c.id),
-                label: c.nombre,
-                detalle: c.ciudad || '',
-              }))}
-              className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3">
+            <div>
+              <label htmlFor="dir-cliente" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">Cliente *</label>
+              <BuscadorLista id="dir-cliente"
+                value={directo.cliente_id}
+                onChange={(v) => setDirecto((d) => ({ ...d, cliente_id: v }))}
+                opcionVacia="Elige el cliente"
+                opciones={clientes.map((c) => ({
+                  value: String(c.id),
+                  label: c.nombre,
+                  detalle: c.ciudad || '',
+                }))}
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+            </div>
+            <div>
+              <label htmlFor="dir-fecha" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">Fecha</label>
+              {/* Se puede poner una fecha de atrás: la mercancía salió el
+                  viernes y esto se teclea el lunes. Es la fecha de la venta y
+                  del movimiento de cartera, no sólo un rótulo. */}
+              <input id="dir-fecha" type="date"
+                value={directo.fecha}
+                onChange={(e) => setDirecto((d) => ({ ...d, fecha: e.target.value }))}
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+            </div>
           </div>
 
           {/* ── Las líneas ──────────────────────────────── */}
@@ -1457,10 +1896,11 @@ export default function Despachos() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-primary/[0.03] text-[10px] font-bold text-muted uppercase tracking-wider">
-                    <th className="px-2 py-2 text-left w-[30%]">Referencia *</th>
-                    <th className="px-2 py-2 text-left w-[20%]">Calidad</th>
-                    <th className="px-2 py-2 text-center w-[13%]">Cant. *</th>
-                    <th className="px-2 py-2 text-right w-[19%]">Precio *</th>
+                    <th className="px-2 py-2 text-left w-[25%]">Referencia *</th>
+                    <th className="px-2 py-2 text-left w-[15%]">Calidad</th>
+                    <th className="px-2 py-2 text-center w-[11%]">Cant. *</th>
+                    <th className="px-2 py-2 text-right w-[16%]">Precio *</th>
+                    <th className="px-2 py-2 text-right w-[15%]">Dcto. c/u</th>
                     <th className="px-2 py-2 text-right w-[14%]">Subtotal</th>
                     <th className="px-2 py-2 w-[4%]"><span className="sr-only">Quitar</span></th>
                   </tr>
@@ -1471,6 +1911,8 @@ export default function Despachos() {
                     const disp = hay?.disponibles || 0;
                     const cant = parseInt(l.cantidad) || 0;
                     const excede = Boolean(l.referencia) && cant > disp;
+                    const dcto = parseMonto(l.descuento_unitario) || 0;
+                    const dctoExcede = dcto > 0 && dcto > (parseMonto(l.precio_unitario) || 0);
                     return (
                       <tr key={i} className={excede ? 'bg-warning/[0.07]' : ''}>
                         <td className="px-2 py-1.5">
@@ -1509,9 +1951,27 @@ export default function Despachos() {
                             onChange={(e) => setLinea(i, 'precio_unitario', e.target.value)}
                             className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs text-right font-mono" />
                         </td>
+                        <td className="px-2 py-1.5">
+                          {/* EL DESCUENTO VA POR UNIDAD, como en la cotización:
+                              lo que se rebaja es «esta paca te la dejo en cien
+                              mil menos», no un porcentaje del despacho. Se
+                              guarda aparte del precio para que dentro de seis
+                              meses se siga viendo a cuánto estaba en lista. */}
+                          <CampoMonto decimales={0} placeholder="0"
+                            value={l.descuento_unitario}
+                            onChange={(e) => setLinea(i, 'descuento_unitario', e.target.value)}
+                            aria-label={`Descuento por unidad de la línea ${i + 1}`}
+                            className={`w-full px-2 py-1.5 rounded-lg border bg-surface text-xs text-right font-mono ${
+                              dctoExcede ? 'border-error text-error' : 'border-border'}`} />
+                          {dctoExcede && (
+                            <p className="text-[9px] mt-0.5 text-right leading-none text-error font-bold">
+                              mayor que el precio
+                            </p>
+                          )}
+                        </td>
                         <td className="px-2 py-1.5 text-right font-mono text-secondary font-semibold">
-                          {cant > 0 && parseMonto(l.precio_unitario) > 0
-                            ? formatCOP(cant * parseMonto(l.precio_unitario))
+                          {cant > 0 && netoLinea(l) > 0
+                            ? formatCOP(cant * netoLinea(l))
                             : <span className="text-muted/40">—</span>}
                         </td>
                         <td className="px-2 py-1.5 text-right">
@@ -1553,11 +2013,31 @@ export default function Despachos() {
               <input type="text" placeholder="Celular" aria-label="Celular"
                 value={directo.celular} onChange={(e) => setDirecto((d) => ({ ...d, celular: e.target.value }))}
                 className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              {/* Los tres datos de transporte. Van con BuscadorLista y no con
+                  un <input list> porque este módulo ya arrastra un bug de
+                  datalist, y porque la lista cerrada es lo correcto aquí: estos
+                  tres valores viajan al Excel que lee la bodega y a la etiqueta
+                  del paquete, y «interapidisimo» mal escrito una vez es una
+                  transportadora nueva para siempre. El tipo de despacho sí se
+                  amplía sin tocar código, desde «Administrar la lista de
+                  transportes», que es el catálogo que ella ya administra. */}
               <BuscadorLista
                 value={directo.tipo_transporte}
                 onChange={(v) => setDirecto((d) => ({ ...d, tipo_transporte: v }))}
-                opcionVacia="Transporte"
-                opciones={(transportes || []).map((t) => ({ value: t.nombre, label: t.nombre }))}
+                opcionVacia="Tipo de despacho"
+                opciones={opcionesTipoDespacho}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <BuscadorLista
+                value={directo.transportadora}
+                onChange={(v) => setDirecto((d) => ({ ...d, transportadora: v }))}
+                opcionVacia="Transportadora"
+                opciones={TRANSPORTADORAS.map((t) => ({ value: t, label: t }))}
+                className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
+              <BuscadorLista
+                value={directo.fletes}
+                onChange={(v) => setDirecto((d) => ({ ...d, fletes: v }))}
+                opcionVacia="Fletes"
+                opciones={FLETES.map((f) => ({ value: f, label: f }))}
                 className="px-3 py-2 rounded-xl border border-border bg-surface text-sm" />
               <input type="text" placeholder="Notas" aria-label="Notas del despacho"
                 value={directo.notas} onChange={(e) => setDirecto((d) => ({ ...d, notas: e.target.value }))}
@@ -1728,6 +2208,386 @@ export default function Despachos() {
               Cerrar
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* ══ VARIOS DESPACHOS A LA VEZ ═══════════════════════════════
+          La tanda del día ya existe en una hoja de cálculo. Aquí se pega y se
+          parte en despachos sola, agrupando por cliente. Un renglón es una
+          LÍNEA, no un despacho: cinco referencias para la misma persona son
+          cinco renglones y un solo despacho. */}
+      <Modal isOpen={loteOpen} onClose={() => setLoteOpen(false)}
+             title="Varios despachos a la vez" size="xl">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label htmlFor="lote-fecha" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+                Fecha de todos
+              </label>
+              <input id="lote-fecha" type="date"
+                value={lote.fecha}
+                onChange={(e) => setLote((L) => ({ ...L, fecha: e.target.value }))}
+                className="px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+            </div>
+            <p className="flex-1 min-w-[16rem] text-[11px] text-muted leading-snug">
+              <strong className="text-primary">Pega desde Excel</strong> en cualquier casilla y las
+              filas se llenan solas desde ahí. El orden sin rótulos es{' '}
+              {CAMPOS_DESPACHO.map((c) => c.rotulo).join(' · ')}. Si un renglón
+              viene sin cliente, se le pone el del renglón de arriba.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-border/60 overflow-x-auto">
+            <table className="w-full text-xs min-w-[64rem]">
+              <thead>
+                <tr className="bg-primary/[0.03] text-[10px] font-bold text-muted uppercase tracking-wider">
+                  <th className="px-2 py-2 text-left w-[17%]">Cliente *</th>
+                  <th className="px-2 py-2 text-left w-[17%]">Referencia *</th>
+                  <th className="px-2 py-2 text-left w-[10%]">Calidad</th>
+                  <th className="px-2 py-2 text-center w-[7%]">Cant. *</th>
+                  <th className="px-2 py-2 text-right w-[11%]">Precio *</th>
+                  <th className="px-2 py-2 text-right w-[10%]">Dcto. c/u</th>
+                  <th className="px-2 py-2 text-left w-[10%]">Tipo</th>
+                  <th className="px-2 py-2 text-left w-[10%]">Transp.</th>
+                  <th className="px-2 py-2 text-left w-[9%]">Fletes</th>
+                  <th className="px-2 py-2 w-[3%]"><span className="sr-only">Quitar</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {lote.lineas.map((l, i) => {
+                  const cli = resolverCliente(l.cliente);
+                  const clienteMal = cli !== 'vacio' && (cli === 'ambiguo' || !cli);
+                  const hay = l.referencia ? hayDe(l.referencia, l.calidad) : null;
+                  const disp = hay?.disponibles || 0;
+                  const cant = parseInt(l.cantidad) || 0;
+                  const excede = Boolean(l.referencia) && cant > disp;
+                  const dcto = parseMonto(l.descuento_unitario) || 0;
+                  const dctoExcede = dcto > 0 && dcto > (parseMonto(l.precio_unitario) || 0);
+                  return (
+                    /* El onPaste va en la FILA: pegar en cualquiera de sus
+                       casillas llena desde esta fila hacia abajo, que es lo que
+                       uno espera al pegar en una hoja de cálculo. */
+                    <tr key={i} onPaste={pegarEnLote(i)}
+                        className={clienteMal || excede || dctoExcede ? 'bg-warning/[0.07]' : ''}>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.cliente}
+                          onChange={(v) => setLineaLote(i, 'cliente', v)}
+                          opciones={clientes.map((c) => ({ value: c.nombre, label: c.nombre, detalle: c.ciudad || '' }))}
+                          placeholder="Cliente"
+                          anchoLista={260}
+                          className={`w-full px-2 py-1.5 rounded-lg border bg-surface text-xs ${
+                            clienteMal ? 'border-error' : 'border-border'}`} />
+                        {/* Se dice QUÉ pasa con ese nombre. Un nombre pegado que
+                            no casa con ningún cliente no se sustituye por el más
+                            parecido: cargarle la deuda al cliente equivocado no
+                            se descubre hasta que él la reclama. */}
+                        {clienteMal && (
+                          <p className="text-[9px] mt-0.5 leading-none text-error font-bold">
+                            {cli === 'ambiguo' ? 'hay varios con ese nombre' : 'no está en los clientes'}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.referencia}
+                          onChange={(v) => setLineaLote(i, 'referencia', v)}
+                          opciones={refsDirecto.map((r) => ({ value: r, label: r }))}
+                          placeholder="Referencia"
+                          anchoLista={260}
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.calidad}
+                          onChange={(v) => setLineaLote(i, 'calidad', v)}
+                          opciones={calidadesDe(l.referencia).map((q) => ({ value: q, label: q || '—' }))}
+                          placeholder="Calidad"
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <CampoMonto decimales={0} placeholder="0"
+                          value={l.cantidad}
+                          onChange={(e) => setLineaLote(i, 'cantidad', e.target.value)}
+                          aria-label={`Cantidad de la fila ${i + 1}`}
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs text-center font-mono" />
+                        {l.referencia && (
+                          <p className={`text-[9px] mt-0.5 text-center leading-none ${excede ? 'text-warning font-bold' : 'text-muted'}`}>
+                            hay {disp}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <CampoMonto decimales={0} placeholder="0"
+                          value={l.precio_unitario}
+                          onChange={(e) => setLineaLote(i, 'precio_unitario', e.target.value)}
+                          aria-label={`Precio de la fila ${i + 1}`}
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs text-right font-mono" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <CampoMonto decimales={0} placeholder="0"
+                          value={l.descuento_unitario}
+                          onChange={(e) => setLineaLote(i, 'descuento_unitario', e.target.value)}
+                          aria-label={`Descuento por unidad de la fila ${i + 1}`}
+                          className={`w-full px-2 py-1.5 rounded-lg border bg-surface text-xs text-right font-mono ${
+                            dctoExcede ? 'border-error text-error' : 'border-border'}`} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.tipo_transporte}
+                          onChange={(v) => setLineaLote(i, 'tipo_transporte', v)}
+                          opciones={opcionesTipoDespacho}
+                          placeholder="Tipo"
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.transportadora}
+                          onChange={(v) => setLineaLote(i, 'transportadora', v)}
+                          opciones={TRANSPORTADORAS.map((t) => ({ value: t, label: t }))}
+                          placeholder="Transp."
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <BuscadorLista
+                          value={l.fletes}
+                          onChange={(v) => setLineaLote(i, 'fletes', v)}
+                          opciones={FLETES.map((f) => ({ value: f, label: f }))}
+                          placeholder="Fletes"
+                          className="w-full px-2 py-1.5 rounded-lg border border-border bg-surface text-xs" />
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {lote.lineas.length > 1 && (
+                          <button type="button"
+                            onClick={() => setLote((L) => ({ ...L, lineas: L.lineas.filter((_, j) => j !== i) }))}
+                            aria-label={`Quitar la fila ${i + 1}`}
+                            className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10">
+                            <X size={13} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button"
+              onClick={() => setLote((L) => ({
+                ...L, lineas: [...L.lineas, ...Array.from({ length: 5 }, () => ({ ...LINEA_LOTE }))],
+              }))}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5">
+              <Plus size={13} /> 5 filas más
+            </button>
+            <button type="button"
+              onClick={() => setLote((L) => ({
+                ...L, lineas: Array.from({ length: FILAS_LOTE_INICIALES }, () => ({ ...LINEA_LOTE })),
+              }))}
+              className="px-3 py-2 rounded-lg border border-border text-muted text-xs font-semibold hover:text-primary hover:bg-primary/5">
+              Vaciar la rejilla
+            </button>
+          </div>
+
+          {/* En qué se va a convertir la rejilla. Es la comprobación que
+              importa: lo que se crea son DESPACHOS, no filas, y agrupar por
+              cliente es la única decisión que esta pantalla toma sola. */}
+          {despachosDelLote.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-primary/[0.02] p-3">
+              <p className="text-[11px] font-bold text-muted uppercase tracking-wider mb-2">
+                Van a quedar {despachosDelLote.length} despacho(s)
+              </p>
+              <ul className="space-y-1">
+                {despachosDelLote.map((g, i) => {
+                  const unidades = g.lineas.reduce((n, l) => n + (parseInt(l.cantidad) || 0), 0);
+                  const plata = g.lineas.reduce((n, l) => n + (parseInt(l.cantidad) || 0) * netoLinea(l), 0);
+                  return (
+                    <li key={i} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-primary font-semibold">{g.nombre || <em className="text-error">sin cliente</em>}</span>
+                      <span className="flex-shrink-0 text-muted">
+                        {g.lineas.length} línea(s) · {unidades} unidad(es)
+                        {g.transporte.tipo_transporte ? ` · ${g.transporte.tipo_transporte}` : ''}
+                        {g.transporte.transportadora ? ` · ${g.transporte.transportadora}` : ''}
+                        {g.transporte.fletes ? ` · ${g.transporte.fletes}` : ''}
+                      </span>
+                      <span className="flex-shrink-0 font-mono font-semibold text-secondary">{formatCurrency(plata)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {(() => {
+            const faltas = problemasLote();
+            const vacia = lineasUtilesLote().length === 0;
+            return (
+              <>
+                {!vacia && faltas.length > 0 && (
+                  <ul className="rounded-xl border border-warning/40 bg-warning/[0.07] px-4 py-3 text-xs text-warning space-y-0.5">
+                    {faltas.slice(0, 5).map((f, i) => <li key={i}>· {f}</li>)}
+                    {faltas.length > 5 && <li className="text-muted">y {faltas.length - 5} más…</li>}
+                  </ul>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border/40">
+                  <div>
+                    <p className="text-sm font-bold text-primary">{formatCurrency(totalLote)}</p>
+                    <p className="text-[11px] text-muted">
+                      {lineasUtilesLote().length} línea(s) en {despachosDelLote.length} despacho(s).
+                      Se crean todos o ninguno.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setLoteOpen(false)}
+                      className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary text-sm font-medium">
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={crearLote}
+                      disabled={creandoLote || vacia || faltas.length > 0}
+                      className="flex items-center gap-2 px-5 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all">
+                      {creandoLote ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      {creandoLote ? 'Creando…' : `Crear ${despachosDelLote.length || ''} despacho(s)`}
+                    </button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      </Modal>
+
+      {/* ══ CONFIRMAR LA SALIDA DE TODOS ════════════════════════════
+          La bodega se recorre UNA vez. Marcar y desmarcar es lo mismo que en la
+          vista de un solo despacho; la diferencia es que están todos juntos y
+          salen de una. Lo que se desmarca NO sale y su despacho queda
+          parcial. */}
+      <Modal isOpen={salidaOpen} onClose={() => setSalidaOpen(false)}
+             title="Confirmar salida de bodega" size="xl">
+        <div className="space-y-4">
+          {salidaCargando ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-muted text-sm">
+              <Loader2 size={18} className="animate-spin" /> Leyendo los despachos pendientes…
+            </div>
+          ) : salidaLista.length === 0 ? (
+            <EmptyState icon={Truck} title="No hay nada que sacar"
+              description="Ninguno de los despachos pendientes tiene unidades esperando salida." />
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label htmlFor="salida-fecha" className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+                    Fecha de salida
+                  </label>
+                  {/* La mercancía pudo salir el viernes y esto registrarse el
+                      lunes. Sin este campo habría que mentirle la fecha al
+                      sistema o corregirla después a mano. */}
+                  <input id="salida-fecha" type="date"
+                    value={salidaFecha}
+                    onChange={(e) => setSalidaFecha(e.target.value)}
+                    className="px-4 py-2.5 rounded-xl border border-border bg-surface text-sm" />
+                </div>
+                <div className="flex gap-2">
+                  <button type="button"
+                    onClick={() => { const n = {}; for (const d of salidaLista) for (const i of pendientesDe(d)) n[i.paca_id] = true; setSalidaSel(n); }}
+                    className="px-3 py-2 rounded-lg border border-border text-xs font-semibold text-muted hover:text-primary hover:bg-primary/5">
+                    Marcar todo
+                  </button>
+                  <button type="button"
+                    onClick={() => setSalidaSel({})}
+                    className="px-3 py-2 rounded-lg border border-border text-xs font-semibold text-muted hover:text-primary hover:bg-primary/5">
+                    Desmarcar todo
+                  </button>
+                </div>
+                <p className="flex-1 min-w-[14rem] text-[11px] text-muted leading-snug">
+                  Al confirmar se descarga el Excel de bodega con todo lo que sale.
+                  Cada despacho puede bajarse aparte con su propio botón.
+                </p>
+              </div>
+
+              <div className="max-h-[26rem] overflow-y-auto space-y-3 pr-1">
+                {salidaLista.map((d) => {
+                  const pend = pendientesDe(d);
+                  const marcados = idsMarcados(d);
+                  const todos = marcados.length === pend.length;
+                  return (
+                    <div key={d.id} className={`rounded-xl border overflow-hidden ${
+                      marcados.length ? 'border-success/40' : 'border-border/60'}`}>
+                      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-primary/[0.03]">
+                        <input type="checkbox"
+                          checked={todos}
+                          ref={(el) => { if (el) el.indeterminate = marcados.length > 0 && !todos; }}
+                          onChange={(e) => marcarDespacho(d, e.target.checked)}
+                          aria-label={`Marcar todas las unidades del despacho ${d.numero}`}
+                          className="w-4 h-4 accent-success flex-shrink-0" />
+                        <span className="font-mono text-xs font-bold text-primary">{d.numero}</span>
+                        <span className="text-sm text-primary truncate flex-1 min-w-0">{d.cliente_nombre}</span>
+                        <span className="text-[11px] text-muted flex-shrink-0">
+                          {marcados.length} de {pend.length}
+                          {marcados.length > 0 && marcados.length < pend.length && (
+                            <strong className="text-warning"> · queda parcial</strong>
+                          )}
+                        </span>
+                        <button type="button" onClick={() => excelDeUno(d)}
+                          disabled={!marcados.length}
+                          title={`Descargar sólo el Excel de ${d.numero}`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-[11px] font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+                          <FileSpreadsheet size={12} /> Excel
+                        </button>
+                      </div>
+                      <div className="p-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {pend.map((item) => (
+                          <label key={item.paca_id}
+                            className={`flex items-center gap-2 px-2 py-2 rounded-lg border cursor-pointer transition-colors ${
+                              salidaSel[item.paca_id]
+                                ? 'border-success/40 bg-success/5'
+                                : 'border-border/50 bg-surface'}`}>
+                            <input type="checkbox"
+                              checked={!!salidaSel[item.paca_id]}
+                              onChange={(e) => setSalidaSel((x) => ({ ...x, [item.paca_id]: e.target.checked }))}
+                              className="w-4 h-4 accent-success flex-shrink-0" />
+                            <span className="flex-1 min-w-0 text-xs text-primary truncate">
+                              {item.referencia}{item.calidad ? ` / ${item.calidad}` : ''}
+                            </span>
+                            <span className="text-[11px] font-mono text-secondary flex-shrink-0">
+                              {formatCurrency((parseFloat(item.precio_unitario) || 0) - (parseFloat(item.descuento_unitario) || 0))}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border/40">
+                <div>
+                  <p className="text-sm font-bold text-primary">{totalMarcado} unidad(es) van a salir</p>
+                  <p className="text-[11px] text-muted">
+                    de {salidaLista.reduce((n, d) => n + pendientesDe(d).length, 0)} pendientes,
+                    en {salidaLista.filter((d) => idsMarcados(d).length).length} despacho(s)
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={excelDeLaSalida}
+                    disabled={!totalMarcado}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <FileSpreadsheet size={15} /> Excel general
+                  </button>
+                  <button type="button" onClick={() => setSalidaOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary text-sm font-medium">
+                    Cancelar
+                  </button>
+                  <button type="button" onClick={confirmarSalidaGeneral}
+                    disabled={salidaEnviando || !totalMarcado}
+                    className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all">
+                    {salidaEnviando ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
+                    {salidaEnviando ? 'Confirmando…' : 'Confirmar la salida'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </Layout>
