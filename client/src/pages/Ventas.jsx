@@ -1,9 +1,11 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+// `Fragment` con nombre y no <>…</>: la fila de la venta y la de su desglose
+// son dos <tr> hermanos que necesitan UNA key, y la forma corta no admite key.
+import { useEffect, useState, useRef, useMemo, Fragment } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
-import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
+import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X, ChevronRight } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 // autoTable se usaba en descargarPDF sin importarlo: el botón "Descargar PDF"
@@ -222,6 +224,29 @@ export default function Ventas() {
   const [pacasDisponibles, setPacasDisponibles] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
+  // ── QUÉ VENTAS ESTÁN DESGLOSADAS ────────────────────────────────
+  //
+  // La venta de Felipe Herrera son SEIS pacas distintas y la lista enseñaba
+  // 8.300.000 y nada más: para saber qué se había llevado había que abrir la
+  // venta, y desde la lista no había manera de verlo.
+  //
+  // Se despliega en su sitio en vez de llevar a otra pantalla porque lo que se
+  // quiere es COMPARAR —ver las seis y seguir viendo las de abajo—, y eso se
+  // pierde al navegar. El total se queda arriba: la fila sigue diciendo lo que
+  // decía, y debajo aparece de qué está hecho.
+  //
+  // Un Set y no un booleano por fila: se pueden tener varias abiertas a la vez,
+  // que es como se compara una venta con otra.
+  const [ventasAbiertas, setVentasAbiertas] = useState(() => new Set());
+
+  const claveVenta = (v) => `${v.origen || 'sistema'}-${v.id}`;
+
+  const alternarVenta = (v) => setVentasAbiertas((abiertas) => {
+    const siguiente = new Set(abiertas);
+    const k = claveVenta(v);
+    if (siguiente.has(k)) siguiente.delete(k); else siguiente.add(k);
+    return siguiente;
+  });
   const [despachoModalOpen, setDespachoModalOpen] = useState(false);
   const [despachoData, setDespachoData] = useState(null);
   const [filtroVista, setFiltroVista] = useState('disponible'); // 'disponible' = ventas registradas | 'reservada' | 'cartera'
@@ -549,9 +574,14 @@ export default function Ventas() {
     () => gruposElegidos.flatMap(g =>
       g.ids.slice(0, parseInt(g.cantidad, 10) || 0).map(id => ({
         id,
+        // LOS CUATRO CAMPOS DE LA PACA, no tres. `categoria` faltaba, y es la
+        // que dice si lo que sale es de verano o de invierno: sin ella el
+        // comprobante que se baja al terminar la venta salía con esa columna en
+        // blanco mientras el inventario sí la sabía.
+        categoria: g.categoria,
+        clasificacion: g.clasificacion,
         referencia: g.referencia,
         calidad: g.calidad,
-        clasificacion: g.clasificacion,
         precio_venta: parseMonto(g.precio),
       }))
     ),
@@ -575,7 +605,22 @@ export default function Ventas() {
     descargarExcel(buffer, nombreArchivo);
   };
 
-  const descargarExcel = async (data) => {
+  /**
+   * El comprobante de UNA venta, en Excel.
+   *
+   * SE LLAMA ASI Y NO `descargarExcel` POR UN BUG QUE DURO MESES: ese nombre
+   * es el del ayudante importado de lib/descargar —el que monta el enlace y
+   * libera la URL—, y un const con el mismo nombre dentro del componente lo
+   * tapaba. `descargarLibro` llamaba a `descargarExcel(buffer, nombre)`
+   * creyendo hablar con el import y acababa aqui, con un buffer donde se
+   * esperaba una venta: `data.pacas.forEach` sobre algo que no tiene pacas.
+   * El Excel de una venta no bajaba por ninguno de los dos caminos, y el
+   * unico rastro era un toast de «Error al descargar».
+   *
+   * Ni el linter ni el build ven esto: son dos ambitos distintos, y para
+   * JavaScript tapar un import con un const local es legal.
+   */
+  const comprobanteExcelDeVenta = async (data) => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Comercio Global Logístico';
     wb.created = new Date();
@@ -601,8 +646,12 @@ export default function Ventas() {
     ws.getCell('B6').value = data.uuid?.slice(0, 8).toUpperCase();
     
     // Encabezados
+    // LOS CUATRO CAMPOS DE LA PACA. Con «Clasificación» y «Referencia» a secas
+    // no se sabe si la blusa supreme que se vendió era de verano o de invierno,
+    // y son justo los cuatro con los que trabajan el inventario, la matriz, las
+    // promociones y el despacho.
     const headersRow = 8;
-    ['Clasificación', 'Referencia', 'Precio Unitario'].forEach((h, i) => {
+    ['Categoría', 'Clasificación', 'Referencia', 'Calidad', 'Precio Unitario'].forEach((h, i) => {
       const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
       cell.value = h;
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -611,25 +660,29 @@ export default function Ventas() {
     
     // Datos de pacas
     let row = 9;
-    data.pacas.forEach(paca => {
-      ws.getCell(`A${row}`).value = paca.clasificacion;
-      ws.getCell(`B${row}`).value = paca.referencia;
-      ws.getCell(`C${row}`).value = parseMonto(paca.precio_venta);
-      ws.getCell(`C${row}`).numFmt = '$#,##0.00';
+    (data.pacas || []).forEach(paca => {
+      ws.getCell(`A${row}`).value = paca.categoria || '';
+      ws.getCell(`B${row}`).value = paca.clasificacion || '';
+      ws.getCell(`C${row}`).value = paca.referencia || '';
+      ws.getCell(`D${row}`).value = paca.calidad || '';
+      ws.getCell(`E${row}`).value = parseMonto(paca.precio_venta);
+      ws.getCell(`E${row}`).numFmt = '$#,##0';
       row++;
     });
-    
+
     // Total
     ws.getCell(`A${row}`).value = 'TOTAL';
     ws.getCell(`A${row}`).font = { bold: true };
-    ws.getCell(`C${row}`).value = data.total;
-    ws.getCell(`C${row}`).numFmt = '$#,##0.00';
-    ws.getCell(`C${row}`).font = { bold: true };
-    
+    ws.getCell(`E${row}`).value = parseMonto(data.total);
+    ws.getCell(`E${row}`).numFmt = '$#,##0';
+    ws.getCell(`E${row}`).font = { bold: true };
+
     // Ajustar anchos
-    ws.getColumn(1).width = 25;
-    ws.getColumn(2).width = 15;
-    ws.getColumn(3).width = 18;
+    ws.getColumn(1).width = 14;
+    ws.getColumn(2).width = 16;
+    ws.getColumn(3).width = 26;
+    ws.getColumn(4).width = 16;
+    ws.getColumn(5).width = 18;
 
     await descargarLibro(wb, `Venta_${data.uuid?.slice(0, 8) || 'sin-folio'}_${hoy()}.xlsx`);
 
@@ -656,18 +709,35 @@ export default function Ventas() {
     doc.text(`Fecha: ${formatDate(data.fecha)}`, 20, 56);
     doc.text(`Tipo de Pago: ${data.tipo_pago === 'contado' ? 'Contado' : 'Crédito'}`, 20, 62);
     
-    // Tabla de productos
-    const tableData = data.pacas.map(p => [p.clasificacion, p.referencia, formatCurrency(p.precio_venta)]);
-    tableData.push(['TOTAL', '', formatCurrency(data.total)]);
+    // Tabla de productos, con los CUATRO campos de la paca.
+    //
+    // La referencia se lleva el ancho que le sobra a las demás porque es la
+    // columna larga —«blusa vestido jean», «buzo con capota»— y es la que se
+    // lee primero para reconocer lo que salió.
+    const tableData = (data.pacas || []).map(p => [
+      p.categoria || '—',
+      p.clasificacion || '—',
+      p.referencia || '—',
+      p.calidad || '—',
+      formatCurrency(parseMonto(p.precio_venta)),
+    ]);
+    tableData.push(['TOTAL', '', '', '', formatCurrency(parseMonto(data.total))]);
 
     autoTable(doc, {
       startY: 75,
-      head: [['Clasificación', 'Referencia', 'Precio']],
+      head: [['Categoría', 'Clasificación', 'Referencia', 'Calidad', 'Precio']],
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [26, 26, 46] },
       footStyles: { fillColor: [26, 26, 46], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 9 }
+      styles: { fontSize: 8, cellPadding: 1.8 },
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 30, halign: 'right' },
+      },
     });
     
     doc.save(`Venta_${data.uuid?.slice(0, 8) || 'sin-folio'}_${hoy()}.pdf`);
@@ -715,7 +785,8 @@ export default function Ventas() {
       const ws = wb.addWorksheet('Ventas');
       ws.properties.tabColor = '0f172a';
 
-      ws.mergeCells('A1:E1');
+      // Nueve columnas desde que el archivo lleva un renglón por item.
+      ws.mergeCells('A1:I1');
       ws.getCell('A1').value = '🌐 Comercio Global Logístico — Ventas';
       ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
@@ -730,7 +801,7 @@ export default function Ventas() {
         montoMin ? `mínimo ${formatCurrency(parseMonto(montoMin))}` : null,
         montoMax ? `máximo ${formatCurrency(parseMonto(montoMax))}` : null,
       ].filter(Boolean);
-      ws.mergeCells('A2:E2');
+      ws.mergeCells('A2:I2');
       const textoFiltros = detalleFiltros.length
         ? `Filtros: ${detalleFiltros.join(' · ')}`
         : 'Todas las ventas registradas';
@@ -739,11 +810,24 @@ export default function Ventas() {
         : textoFiltros;
       ws.getCell('A2').font = { italic: true, size: 10, bold: incompleto };
 
+      // ── UN RENGLÓN POR ITEM, NO UNO POR VENTA ──────────────────
+      //
+      // El archivo traía una línea por venta con su total. La venta de Felipe
+      // Herrera son SEIS pacas distintas y en el Excel era «8.300.000» a secas:
+      // no se podía filtrar por calidad, ni sumar por referencia, ni saber qué
+      // salió. Un total es lo que se pone cuando ya se tiene el detalle, no en
+      // su lugar.
+      //
+      // Cada renglón vale lo que vale SU paca, así que la columna suma el total
+      // de verdad y nada se cuenta dos veces. Las líneas de los libros se quedan
+      // como estaban —un renglón de libro YA ES un producto— con los cuatro
+      // campos en blanco: no se sabe su categoría, y escribir una supuesta sería
+      // inventarla.
       const headersRow = 4;
-      // Las mismas columnas que la pantalla, y por el mismo motivo: «Folio» no
-      // identifica nada desde que el listado junta dos tablas, y «Estado» salia
-      // vacio en casi todas las filas. El concepto es lo que dice el libro.
-      ['Fecha', 'Cliente', 'Concepto', 'Pago', 'Total'].forEach((h, i) => {
+      const COLS = ['Fecha', 'Cliente', 'Concepto', 'Categoría', 'Clasificación',
+        'Referencia', 'Calidad', 'Pago', 'Valor'];
+      const COL = Object.fromEntries(COLS.map((h, i) => [h, String.fromCharCode(65 + i)]));
+      COLS.forEach((h, i) => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -752,33 +836,68 @@ export default function Ventas() {
 
       let row = headersRow + 1;
       let total = 0;
-      filas.forEach(v => {
-        ws.getCell(`A${row}`).value = formatDate(v.fecha);
-        ws.getCell(`B${row}`).value = v.cliente_nombre || getClienteNombre(v.cliente_id);
-        ws.getCell(`C${row}`).value = v.concepto || '';
-        // VACIO CUANDO NO SE SABE. Esto decía «Crédito» en cuanto tipo_pago no
-        // fuera exactamente 'contado', y en los libros ese dato no existe: el
-        // archivo afirmaba que miles de ventas fueron a crédito sin que nadie lo
-        // hubiera dicho nunca.
-        ws.getCell(`D${row}`).value = v.tipo_pago
-          ? (v.tipo_pago === 'contado' ? 'Contado' : 'Crédito')
-          : '';
-        ws.getCell(`E${row}`).value = parseMonto(v.total);
-        ws.getCell(`E${row}`).numFmt = '$#,##0';
-        total += parseMonto(v.total);
+      let renglones = 0;
+
+      // VACIO CUANDO NO SE SABE. Esto decía «Crédito» en cuanto tipo_pago no
+      // fuera exactamente 'contado', y en los libros ese dato no existe: el
+      // archivo afirmaba que miles de ventas fueron a crédito sin que nadie lo
+      // hubiera dicho nunca.
+      const comoPago = (t) => (t ? (t === 'contado' ? 'Contado' : 'Crédito') : '');
+
+      const escribir = (v, { concepto, paca, valor }) => {
+        ws.getCell(`${COL['Fecha']}${row}`).value = formatDate(v.fecha);
+        ws.getCell(`${COL['Cliente']}${row}`).value = v.cliente_nombre || getClienteNombre(v.cliente_id);
+        ws.getCell(`${COL['Concepto']}${row}`).value = concepto || '';
+        ws.getCell(`${COL['Categoría']}${row}`).value = paca?.categoria || '';
+        ws.getCell(`${COL['Clasificación']}${row}`).value = paca?.clasificacion || '';
+        ws.getCell(`${COL['Referencia']}${row}`).value = paca?.referencia || '';
+        ws.getCell(`${COL['Calidad']}${row}`).value = paca?.calidad || '';
+        ws.getCell(`${COL['Pago']}${row}`).value = comoPago(v.tipo_pago);
+        ws.getCell(`${COL['Valor']}${row}`).value = valor;
+        ws.getCell(`${COL['Valor']}${row}`).numFmt = '$#,##0';
+        total += valor;
+        renglones++;
         row++;
+      };
+
+      filas.forEach(v => {
+        const items = Array.isArray(v.detalles) ? v.detalles : [];
+        if (!items.length) {
+          escribir(v, { concepto: v.concepto, paca: null, valor: parseMonto(v.total) });
+          return;
+        }
+        let suma = 0;
+        items.forEach((d) => {
+          const valor = parseMonto(d.precio_unitario);
+          suma += valor;
+          escribir(v, { concepto: '', paca: d, valor });
+        });
+        // Si las pacas no suman el total guardado, la diferencia se escribe como
+        // lo que es y con su nombre. Repartirla entre las pacas cambiaría
+        // precios que alguien escribió; callarla dejaría la columna sumando algo
+        // distinto del total de la venta.
+        const guardado = parseMonto(v.total);
+        if (Math.round(guardado) !== Math.round(suma)) {
+          escribir(v, {
+            concepto: `Diferencia entre el total guardado (${formatCurrency(guardado)}) y sus pacas`,
+            paca: null,
+            valor: guardado - suma,
+          });
+        }
       });
 
-      // El TOTAL se corre a la D y la cifra a la E: la tabla tiene cinco
-      // columnas desde que se quitaron Folio y Estado, y en la F quedaba
-      // flotando al lado de una columna vacia.
-      ws.getCell(`D${row}`).value = 'TOTAL';
-      ws.getCell(`D${row}`).font = { bold: true };
-      ws.getCell(`E${row}`).value = total;
-      ws.getCell(`E${row}`).numFmt = '$#,##0';
-      ws.getCell(`E${row}`).font = { bold: true };
+      ws.getCell(`${COL['Pago']}${row}`).value = 'TOTAL';
+      ws.getCell(`${COL['Pago']}${row}`).font = { bold: true };
+      ws.getCell(`${COL['Valor']}${row}`).value = total;
+      ws.getCell(`${COL['Valor']}${row}`).numFmt = '$#,##0';
+      ws.getCell(`${COL['Valor']}${row}`).font = { bold: true };
 
-      [14, 30, 38, 12, 18].forEach((ancho, i) => { ws.getColumn(i + 1).width = ancho; });
+      // Un filtro en la cabecera: con los cuatro campos de la paca en columnas,
+      // lo primero que se quiere es ver sólo una calidad o una referencia.
+      ws.autoFilter = { from: `A${headersRow}`, to: `${COL['Valor']}${row - 1}` };
+
+      [14, 26, 34, 13, 15, 24, 15, 11, 16]
+        .forEach((ancho, i) => { ws.getColumn(i + 1).width = ancho; });
 
       await descargarLibro(wb, `Ventas_${hoy()}.xlsx`);
       if (incompleto) {
@@ -787,7 +906,7 @@ export default function Ventas() {
           'error'
         );
       } else {
-        addToast(`Excel descargado — ${filas.length} venta(s)`, 'success');
+        addToast(`Excel descargado — ${renglones} renglón(es) de ${filas.length} venta(s)`, 'success');
       }
     } catch (err) {
       addToast('Error al exportar: ' + err.message, 'error');
@@ -878,7 +997,7 @@ export default function Ventas() {
       const ws = wb.addWorksheet('Venta');
       ws.properties.tabColor = '0f172a';
       
-      ws.mergeCells('A1:E1');
+      ws.mergeCells('A1:F1');
       ws.getCell('A1').value = '🌐 Comercio Global Logístico - Comprobante de Venta';
       ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
@@ -895,8 +1014,12 @@ export default function Ventas() {
       ws.getCell('A6').value = 'Tipo de Pago:';
       ws.getCell('B6').value = venta.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
 
+      // FUERA «PESO (KG)». La pantalla pintaba esa columna, el servidor no
+      // mandaba el campo y las 209 pacas lo tienen escrito en 0.00: sólo podía
+      // salir vacía o con un cero que no es un peso. En su sitio van las dos
+      // que faltaban de verdad, categoría y calidad.
       const headersRow = 8;
-      ['Cantidad', 'Clasificación', 'Referencia', 'Peso (kg)', 'Precio Unitario'].forEach((h, i) => {
+      ['Cant.', 'Categoría', 'Clasificación', 'Referencia', 'Calidad', 'Precio Unitario'].forEach((h, i) => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -907,26 +1030,40 @@ export default function Ventas() {
       let total = 0;
       (ventaDetalle.detalles || []).forEach(paca => {
         ws.getCell(`A${row}`).value = 1;
-        ws.getCell(`B${row}`).value = paca.clasificacion || '';
-        ws.getCell(`C${row}`).value = paca.referencia || '';
-        ws.getCell(`D${row}`).value = paca.peso || '';
-        ws.getCell(`E${row}`).value = parseMonto(paca.precio_unitario);
-        ws.getCell(`E${row}`).numFmt = '$#,##0.00';
+        ws.getCell(`B${row}`).value = paca.categoria || '';
+        ws.getCell(`C${row}`).value = paca.clasificacion || '';
+        ws.getCell(`D${row}`).value = paca.referencia || '';
+        ws.getCell(`E${row}`).value = paca.calidad || '';
+        ws.getCell(`F${row}`).value = parseMonto(paca.precio_unitario);
+        ws.getCell(`F${row}`).numFmt = '$#,##0';
         total += parseMonto(paca.precio_unitario);
         row++;
       });
-      
+
       ws.getCell(`A${row}`).value = 'TOTAL';
       ws.getCell(`A${row}`).font = { bold: true };
-      ws.getCell(`E${row}`).value = total;
-      ws.getCell(`E${row}`).numFmt = '$#,##0.00';
-      ws.getCell(`E${row}`).font = { bold: true };
-      
-      ws.getColumn(1).width = 10;
-      ws.getColumn(2).width = 20;
-      ws.getColumn(3).width = 12;
-      ws.getColumn(4).width = 12;
-      ws.getColumn(5).width = 18;
+      ws.getCell(`F${row}`).value = total;
+      ws.getCell(`F${row}`).numFmt = '$#,##0';
+      ws.getCell(`F${row}`).font = { bold: true };
+
+      // Si los items no suman el total guardado de la venta, se DICE. Dejar que
+      // el pie diga 8.300.000 cuando los renglones dan otra cosa es justo el
+      // documento que nadie puede desmentir después.
+      const guardado = parseMonto(ventaDetalle.total ?? venta.total);
+      if (guardado > 0 && Math.round(guardado) !== Math.round(total)) {
+        row++;
+        ws.mergeCells(`A${row}:F${row}`);
+        ws.getCell(`A${row}`).value = `Atención: la venta está guardada por `
+          + `${formatCurrency(guardado)} y sus renglones suman ${formatCurrency(total)}.`;
+        ws.getCell(`A${row}`).font = { italic: true, bold: true, color: { argb: 'B45309' } };
+      }
+
+      ws.getColumn(1).width = 8;
+      ws.getColumn(2).width = 14;
+      ws.getColumn(3).width = 16;
+      ws.getColumn(4).width = 26;
+      ws.getColumn(5).width = 16;
+      ws.getColumn(6).width = 18;
 
       await descargarLibro(wb, `Venta_${venta.uuid?.slice(0, 8) || venta.id}_${venta.fecha}.xlsx`);
 
@@ -1155,14 +1292,49 @@ export default function Ventas() {
                           // corrige en la cartera del cliente, que es donde vive,
                           // y ahi se enlaza.
                           const delSistema = venta.origen !== 'cartera';
+                          const items = Array.isArray(venta.detalles) ? venta.detalles : [];
+                          const abierta = ventasAbiertas.has(claveVenta(venta));
+                          const idDesglose = `desglose-${claveVenta(venta)}`;
                           return (
-                            <tr key={`${venta.origen || 'sistema'}-${venta.id}`} className="hover:bg-primary/5 transition-colors">
+                            <Fragment key={claveVenta(venta)}>
+                            <tr className={`transition-colors ${abierta ? 'bg-primary/5' : 'hover:bg-primary/5'}`}>
                               <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(venta.fecha)}</td>
                               <td className="px-4 py-3 text-sm text-primary font-medium">
                                 <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{nombreDeVenta(venta)}</RefLink>
                               </td>
-                              <td className="px-4 py-3 text-xs text-muted max-w-xs truncate" title={venta.concepto || ''}>
-                                {venta.concepto || (delSistema ? 'venta con pacas del sistema' : '—')}
+                              <td className="px-4 py-3 text-xs text-muted max-w-xs" title={venta.concepto || ''}>
+                                {/* UNA VENTA DE VARIAS PACAS DICE DE CUÁNTAS, y se abre.
+                                    «venta con pacas del sistema» no decía nada: ni
+                                    cuántas, ni cuáles, ni que hubiera algo que mirar.
+                                    El botón es un <button> de verdad -no una fila
+                                    pulsable- para que se alcance con el tabulador y
+                                    para que el lector de pantalla anuncie si está
+                                    abierto; el galón se ve siempre, porque en la
+                                    tableta no hay ratón que haga aparecer nada. */}
+                                {items.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => alternarVenta(venta)}
+                                    aria-expanded={abierta}
+                                    aria-controls={idDesglose}
+                                    className="inline-flex items-center gap-1.5 -mx-2 px-2 py-2 rounded-lg
+                                               text-xs font-medium text-secondary hover:bg-secondary/10"
+                                  >
+                                    <ChevronRight
+                                      size={14}
+                                      aria-hidden="true"
+                                      className={`transition-transform ${abierta ? 'rotate-90' : ''}`}
+                                    />
+                                    {items.length} paca{items.length === 1 ? '' : 's'}
+                                    <span className="text-muted font-normal">
+                                      {abierta ? '· plegar' : '· ver cuáles'}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <span className="block truncate">
+                                    {venta.concepto || (delSistema ? 'venta sin detalle guardado' : '—')}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3">
                                 {venta.tipo_pago
@@ -1200,6 +1372,75 @@ export default function Ventas() {
                                 )}
                               </td>
                             </tr>
+
+                            {/* EL DESGLOSE. Una tabla dentro de la celda y no
+                                seis filas más de la tabla de arriba: así las
+                                columnas del desglose pueden ser las suyas
+                                -categoría, clasificación, referencia, calidad-
+                                sin tener que caber en las de la lista.
+
+                                Los subtotales se suman y se comparan con el
+                                total guardado. Si no cuadran se DICE, en vez de
+                                enseñar un pie que nadie puede desmentir. */}
+                            {abierta && items.length > 0 && (() => {
+                              const suma = items.reduce((t, i) => t + parseMonto(i.precio_unitario), 0);
+                              const guardado = parseMonto(venta.total);
+                              const cuadra = Math.round(suma) === Math.round(guardado);
+                              return (
+                                <tr id={idDesglose} className="bg-primary/5">
+                                  <td colSpan={6} className="px-4 pb-4 pt-0">
+                                    <div className="rounded-xl border border-border bg-surface overflow-hidden">
+                                      <table className="w-full text-xs">
+                                        <caption className="sr-only">
+                                          Las {items.length} pacas de la venta de {nombreDeVenta(venta)}
+                                        </caption>
+                                        <thead className="bg-primary/5">
+                                          <tr className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                                            <th scope="col" className="px-3 py-2 text-left">Categoría</th>
+                                            <th scope="col" className="px-3 py-2 text-left">Clasificación</th>
+                                            <th scope="col" className="px-3 py-2 text-left">Referencia</th>
+                                            <th scope="col" className="px-3 py-2 text-left">Calidad</th>
+                                            <th scope="col" className="px-3 py-2 text-right">Precio</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-border/60">
+                                          {items.map((i) => (
+                                            <tr key={i.paca_id}>
+                                              <td className="px-3 py-2 text-muted capitalize">{i.categoria || '—'}</td>
+                                              <td className="px-3 py-2 text-muted capitalize">{i.clasificacion || '—'}</td>
+                                              <td className="px-3 py-2 text-primary capitalize">{i.referencia || '—'}</td>
+                                              <td className="px-3 py-2 text-muted capitalize">{i.calidad || '—'}</td>
+                                              <td className="px-3 py-2 text-right tabular-nums text-primary">
+                                                {formatCurrency(parseMonto(i.precio_unitario))}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="bg-primary/5 font-semibold">
+                                            <td colSpan={4} className="px-3 py-2 text-muted uppercase text-[11px] tracking-wider">
+                                              Suma de las {items.length} pacas
+                                            </td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-secondary">
+                                              {formatCurrency(suma)}
+                                            </td>
+                                          </tr>
+                                          {!cuadra && (
+                                            <tr>
+                                              <td colSpan={5} className="px-3 py-2 text-[11px] text-warning font-semibold">
+                                                La venta está guardada por {formatCurrency(guardado)} y sus pacas
+                                                suman {formatCurrency(suma)}.
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </tfoot>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })()}
+                            </Fragment>
                           );
                         })
                       )}
@@ -1532,7 +1773,7 @@ export default function Ventas() {
             <div className="flex flex-col sm:flex-row gap-3 pt-4">
               <Button
                 onClick={async () => {
-                  try { await descargarExcel(despachoData); }
+                  try { await comprobanteExcelDeVenta(despachoData); }
                   catch (err) { addToast('No se pudo generar el Excel: ' + err.message, 'error'); }
                 }}
                 variant="secondary"

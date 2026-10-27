@@ -67,6 +67,28 @@ export default [
       // caza es ésta, del plugin de React.
       'react/jsx-no-undef': 'error',
 
+      // ── TAPAR UN IMPORT CON UN NOMBRE LOCAL: error ─────────────
+      //
+      // Esta se monta porque cazó un bug que llevaba meses vivo. En Ventas.jsx
+      // se importaba `descargarExcel(blob, nombre)` de lib/descargar —el que
+      // monta el enlace y libera la URL— y más abajo había un
+      // `const descargarExcel = async (data) => {…}` que construye un
+      // comprobante. Dentro del componente el const TAPA al import, así que
+      // `descargarLibro` llamaba a `descargarExcel(buffer, nombre)` creyendo
+      // hablar con el import y acababa en el otro, con un buffer donde se
+      // esperaba una venta: `data.pacas.forEach` sobre algo sin pacas. El Excel
+      // de una venta no bajaba por ninguno de los dos caminos, y el único
+      // rastro era un toast de «Error al descargar».
+      //
+      // Lo comprobé en vivo con un archivo de dos líneas: con la regla, error;
+      // sin ella, nada. El build tampoco lo ve: para JavaScript tapar un import
+      // con un const local es perfectamente legal.
+      //
+      // En todo el frontend sólo hay cinco archivos que la incumplen, y están
+      // más abajo con nombre y apellido para no tocarlos hoy. La regla protege
+      // desde ya todo lo que se escriba de nuevo, que es de lo que se trata.
+      'no-shadow': 'error',
+
       // ── POR QUÉ ESTA VA EN AVISO Y NO EN ERROR ─────────────────
       //
       // Es la regla que ve el crash de Ventas, pero ve además otras noventa
@@ -139,6 +161,33 @@ export default [
       'no-unused-vars': 'warn',
       'no-empty': 'off',
     },
+  },
+
+  // ── LOS CINCO QUE YA TAPABAN UN NOMBRE, EN AVISO ────────────────
+  //
+  // `no-shadow` es error en todo lo demás. Aquí baja a aviso porque estos
+  // sombreados son de antes y ninguno es el caso peligroso —ninguno tapa un
+  // import—: son variables locales que repiten el nombre de otra de fuera, y
+  // arreglarlos es tocar cuatro archivos grandes sin que nadie lo haya pedido.
+  //
+  // La lista va con nombre y apellido a propósito, y no como un `'no-shadow':
+  // 'warn'` global: así un archivo nuevo no se cuela en la excepción y esto se
+  // puede ir vaciando de uno en uno.
+  //
+  //   BuscadorLista.jsx   `elegida` (2)
+  //   TableSkeleton.jsx   `_`
+  //   lib/entregables.js  `paraOrdenar`
+  //   Contenedores.jsx    `soloLectura`, `totalPacas`
+  //   Pacas.jsx           `clientes`
+  {
+    files: [
+      'src/components/common/BuscadorLista.jsx',
+      'src/components/common/TableSkeleton.jsx',
+      'src/lib/entregables.js',
+      'src/pages/Contenedores.jsx',
+      'src/pages/Pacas.jsx',
+    ],
+    rules: { 'no-shadow': 'warn' },
   },
 
   // ── Los archivos de configuración ───────────────────────────────
