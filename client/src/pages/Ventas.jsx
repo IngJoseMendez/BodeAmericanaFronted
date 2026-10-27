@@ -225,14 +225,9 @@ export default function Ventas() {
   const [despachoModalOpen, setDespachoModalOpen] = useState(false);
   const [despachoData, setDespachoData] = useState(null);
   const [filtroVista, setFiltroVista] = useState('disponible'); // 'disponible' = ventas registradas | 'reservada' | 'cartera'
-  // Las ventas que sólo existen como renglón de cartera. Las trae su propio
-  // endpoint porque no son filas de `ventas`: ver GET /ventas/cartera.
-  const [ventasCartera, setVentasCartera] = useState([]);
-  const [carteraTotal, setCarteraTotal] = useState(0);
-  const [carteraMonto, setCarteraMonto] = useState(0);
-  const [carteraRango, setCarteraRango] = useState({ desde: null, hasta: null });
-  const [carteraPaginas, setCarteraPaginas] = useState(1);
-  const [cargandoCartera, setCargandoCartera] = useState(false);
+  // El resumen que manda el listado: cuánto suma TODO lo que cumple el filtro
+  // -no la página- y de cuántas de esas ventas se puede calcular margen.
+  const [resumenVentas, setResumenVentas] = useState({ monto: 0, conCosto: 0, desde: null, hasta: null });
   const [reservasActivas, setReservasActivas] = useState([]);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [reservaForm, setReservaForm] = useState({ cliente_id: '', cantidad: 1, notas: '', dias_expiracion: 7 });
@@ -285,14 +280,6 @@ export default function Ventas() {
     loadVentas(pagina);
   }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax]);
 
-  // La pestaña de cartera se pide sólo cuando se mira, y se vuelve a pedir al
-  // cambiar la página o los filtros. Son 7.977 renglones: traerlos al abrir la
-  // pantalla sería hacer esperar a quien venía a registrar una venta.
-  useEffect(() => {
-    if (filtroVista === 'cartera') loadVentasCartera(pagina);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroVista, pagina, debouncedBusqueda, filtroFechaInicio, filtroFechaFin]);
-
   // Al borrar la única venta de la última página quedaba una tabla vacía con el
   // paginador marcando una página que ya no existe.
   useEffect(() => {
@@ -322,6 +309,12 @@ export default function Ventas() {
       if (miPeticion !== peticionVentasRef.current) return;   // llegó tarde: ya hay otra consulta
       const data = response.data || response;
       setVentas(Array.isArray(data) ? data : []);
+      setResumenVentas({
+        monto: Number(response?.monto_total) || 0,
+        conCosto: Number(response?.con_costo) || 0,
+        desde: response?.desde || null,
+        hasta: response?.hasta || null,
+      });
       setTotalPaginas(response.total_paginas || 1);
       setTotalVentas(response.total ?? (Array.isArray(data) ? data.length : 0));
       // No se reescribe `pagina` desde la respuesta: el estado ya es la fuente de
@@ -334,29 +327,6 @@ export default function Ventas() {
       if (miPeticion === peticionVentasRef.current) setLoading(false);
     }
 };
-
-  // Mismos filtros que la lista de ventas: la misma búsqueda y el mismo rango
-  // de fechas tienen que querer decir lo mismo en las dos pestañas.
-  const loadVentasCartera = async (page = pagina) => {
-    try {
-      setCargandoCartera(true);
-      const r = await ventasApi.getCartera({
-        pagina: page, limite: 20,
-        buscar: debouncedBusqueda || undefined,
-        fecha_inicio: filtroFechaInicio || undefined,
-        fecha_fin: filtroFechaFin || undefined,
-      });
-      setVentasCartera(Array.isArray(r?.data) ? r.data : []);
-      setCarteraTotal(r?.total || 0);
-      setCarteraMonto(r?.monto_total || 0);
-      setCarteraRango({ desde: r?.desde || null, hasta: r?.hasta || null });
-      setCarteraPaginas(r?.total_paginas || 1);
-    } catch (err) {
-      addToast('No pude leer las ventas de cartera: ' + err.message, 'error');
-    } finally {
-      setCargandoCartera(false);
-    }
-  };
 
   const loadReservas = async () => {
     try {
@@ -745,7 +715,7 @@ export default function Ventas() {
       const ws = wb.addWorksheet('Ventas');
       ws.properties.tabColor = '0f172a';
 
-      ws.mergeCells('A1:F1');
+      ws.mergeCells('A1:E1');
       ws.getCell('A1').value = '🌐 Comercio Global Logístico — Ventas';
       ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FFFFFF' } };
       ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0f172a' } };
@@ -760,7 +730,7 @@ export default function Ventas() {
         montoMin ? `mínimo ${formatCurrency(parseMonto(montoMin))}` : null,
         montoMax ? `máximo ${formatCurrency(parseMonto(montoMax))}` : null,
       ].filter(Boolean);
-      ws.mergeCells('A2:F2');
+      ws.mergeCells('A2:E2');
       const textoFiltros = detalleFiltros.length
         ? `Filtros: ${detalleFiltros.join(' · ')}`
         : 'Todas las ventas registradas';
@@ -770,7 +740,10 @@ export default function Ventas() {
       ws.getCell('A2').font = { italic: true, size: 10, bold: incompleto };
 
       const headersRow = 4;
-      ['Folio', 'Fecha', 'Cliente', 'Tipo de pago', 'Estado', 'Total'].forEach((h, i) => {
+      // Las mismas columnas que la pantalla, y por el mismo motivo: «Folio» no
+      // identifica nada desde que el listado junta dos tablas, y «Estado» salia
+      // vacio en casi todas las filas. El concepto es lo que dice el libro.
+      ['Fecha', 'Cliente', 'Concepto', 'Pago', 'Total'].forEach((h, i) => {
         const cell = ws.getCell(`${String.fromCharCode(65 + i)}${headersRow}`);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -780,24 +753,32 @@ export default function Ventas() {
       let row = headersRow + 1;
       let total = 0;
       filas.forEach(v => {
-        ws.getCell(`A${row}`).value = v.uuid?.slice(0, 8).toUpperCase() || `#${v.id}`;
-        ws.getCell(`B${row}`).value = formatDate(v.fecha);
-        ws.getCell(`C${row}`).value = v.cliente_nombre || getClienteNombre(v.cliente_id);
-        ws.getCell(`D${row}`).value = v.tipo_pago === 'contado' ? 'Contado' : 'Crédito';
-        ws.getCell(`E${row}`).value = v.estado || '';
-        ws.getCell(`F${row}`).value = parseMonto(v.total);
-        ws.getCell(`F${row}`).numFmt = '$#,##0';
+        ws.getCell(`A${row}`).value = formatDate(v.fecha);
+        ws.getCell(`B${row}`).value = v.cliente_nombre || getClienteNombre(v.cliente_id);
+        ws.getCell(`C${row}`).value = v.concepto || '';
+        // VACIO CUANDO NO SE SABE. Esto decía «Crédito» en cuanto tipo_pago no
+        // fuera exactamente 'contado', y en los libros ese dato no existe: el
+        // archivo afirmaba que miles de ventas fueron a crédito sin que nadie lo
+        // hubiera dicho nunca.
+        ws.getCell(`D${row}`).value = v.tipo_pago
+          ? (v.tipo_pago === 'contado' ? 'Contado' : 'Crédito')
+          : '';
+        ws.getCell(`E${row}`).value = parseMonto(v.total);
+        ws.getCell(`E${row}`).numFmt = '$#,##0';
         total += parseMonto(v.total);
         row++;
       });
 
-      ws.getCell(`E${row}`).value = 'TOTAL';
+      // El TOTAL se corre a la D y la cifra a la E: la tabla tiene cinco
+      // columnas desde que se quitaron Folio y Estado, y en la F quedaba
+      // flotando al lado de una columna vacia.
+      ws.getCell(`D${row}`).value = 'TOTAL';
+      ws.getCell(`D${row}`).font = { bold: true };
+      ws.getCell(`E${row}`).value = total;
+      ws.getCell(`E${row}`).numFmt = '$#,##0';
       ws.getCell(`E${row}`).font = { bold: true };
-      ws.getCell(`F${row}`).value = total;
-      ws.getCell(`F${row}`).numFmt = '$#,##0';
-      ws.getCell(`F${row}`).font = { bold: true };
 
-      [14, 14, 32, 14, 14, 18].forEach((ancho, i) => { ws.getColumn(i + 1).width = ancho; });
+      [14, 30, 38, 12, 18].forEach((ancho, i) => { ws.getColumn(i + 1).width = ancho; });
 
       await descargarLibro(wb, `Ventas_${hoy()}.xlsx`);
       if (incompleto) {
@@ -959,17 +940,8 @@ export default function Ventas() {
 
   const nombreDeVenta = (venta) => venta.cliente_nombre || getClienteNombre(venta.cliente_id);
 
-  // La variante estaba fija en "disponible": una venta anulada se pintaba con el
-  // mismo verde que una vigente.
-  const badgeEstadoVenta = (estado) => {
-    const e = String(estado || '').toLowerCase();
-    if (e === 'anulada' || e === 'cancelada') return 'inactivo';
-    if (e === 'pendiente') return 'separada';
-    return 'disponible';
-  };
-
   // Flechas izquierda/derecha entre pestañas, como espera un lector de pantalla.
-  const VISTAS = ['disponible', 'reservada', 'cartera'];
+  const VISTAS = ['disponible', 'reservada'];
   const navegarPestanas = (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     e.preventDefault();
@@ -1036,129 +1008,7 @@ export default function Ventas() {
           >
             Reservas ({reservasActivas.length})
           </button>
-          {/* Tercera pestaña. Va en gris y no en el color de las ventas a
-              propósito: lo de aquí no tiene mercancía detrás en el sistema y no
-              se puede leer como una venta más. */}
-          <button
-            role="tab"
-            id="tab-cartera"
-            aria-selected={filtroVista === 'cartera'}
-            aria-controls="panel-cartera"
-            tabIndex={filtroVista === 'cartera' ? 0 : -1}
-            onClick={() => setFiltroVista('cartera')}
-            onKeyDown={navegarPestanas}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-              filtroVista === 'cartera'
-                ? 'bg-muted text-white'
-                : 'text-muted hover:bg-primary/10'
-            }`}
-          >
-            Ventas en cartera{carteraTotal ? ` (${carteraTotal.toLocaleString('es-CO')})` : ''}
-          </button>
         </div>
-
-        {/* ── Vista de las ventas que sólo están en la cartera ────── */}
-        {filtroVista === 'cartera' && (
-          <div id="panel-cartera" role="tabpanel" aria-labelledby="tab-cartera" className="space-y-4">
-            <div className="p-3 rounded-xl border border-border bg-primary/[0.02] text-xs text-muted leading-snug">
-              <strong className="text-primary">Qué es esto.</strong> Ventas que entraron
-              como renglón de la cartera del cliente —los libros de Excel que se
-              migraron, y cualquier deuda tecleada a mano—, no por la pantalla de
-              Ventas ni por un despacho. No tienen pacas detrás en el sistema, así
-              que <strong className="text-primary">no suman al total de ventas registradas</strong>:
-              no hay costo ni margen que calcularles. Están aquí para poder verlas.
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Card><CardBody className="p-4">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">En cartera</p>
-                <p className="text-xl font-display font-bold text-primary tabular-nums">{formatCurrency(carteraMonto)}</p>
-                <p className="text-xs text-muted">
-                  {carteraTotal.toLocaleString('es-CO')} movimiento(s)
-                  {carteraRango.desde ? ` · ${formatDate(carteraRango.desde)} a ${formatDate(carteraRango.hasta)}` : ''}
-                </p>
-              </CardBody></Card>
-              <Card><CardBody className="p-4">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">Registradas aquí</p>
-                <p className="text-xl font-display font-bold text-primary tabular-nums">{totalVentas.toLocaleString('es-CO')}</p>
-                <p className="text-xs text-muted">ventas con pacas en el sistema</p>
-              </CardBody></Card>
-              <Card><CardBody className="p-4">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">Las dos cosas</p>
-                <p className="text-xl font-display font-bold text-primary tabular-nums">
-                  {(carteraTotal + totalVentas).toLocaleString('es-CO')}
-                </p>
-                <p className="text-xs text-muted">movimientos de venta en total</p>
-              </CardBody></Card>
-            </div>
-
-            <Card padding={false}>
-              <div className="overflow-x-auto">
-                {cargandoCartera ? (
-                  <TableSkeleton cols={5} rows={6} />
-                ) : ventasCartera.length === 0 ? (
-                  <EmptyState icon={FileText} title="No hay ventas en cartera"
-                    description={hayFiltros
-                      ? 'Ninguna coincide con los filtros puestos arriba.'
-                      : 'Toda la cartera tiene su venta registrada en el sistema.'} />
-                ) : (
-                  <table className="w-full">
-                    <caption className="sr-only">Ventas que sólo existen como movimiento de cartera</caption>
-                    <thead className="bg-primary/3 border-b border-border/50">
-                      <tr>
-                        {['Fecha', 'Cliente', 'Concepto', 'Origen', 'Monto'].map(h => (
-                          <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {ventasCartera.map(m => (
-                        <tr key={m.id} className="hover:bg-primary/[0.02]">
-                          <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(m.fecha)}</td>
-                          <td className="px-4 py-3 text-sm text-primary">
-                            {m.cliente_nombre || <span className="text-muted">—</span>}
-                            {/* Una cartera dada por perdida se dice aquí también:
-                                esa plata está en la lista pero no se espera. */}
-                            {m.cartera_inactiva && (
-                              <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-muted/15 text-muted">
-                                dada por perdida
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted max-w-xs truncate" title={m.descripcion || ''}>
-                            {m.descripcion || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted font-mono whitespace-nowrap">
-                            {m.referencia || (m.es_legacy ? 'legado' : 'a mano')}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-primary tabular-nums whitespace-nowrap">
-                            {formatCurrency(m.monto)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </Card>
-
-            {carteraPaginas > 1 && (
-              <div className="flex items-center justify-between gap-3">
-                <button type="button" onClick={() => setPagina(p => Math.max(1, p - 1))}
-                  disabled={pagina <= 1}
-                  className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary disabled:opacity-40">
-                  Anterior
-                </button>
-                <span className="text-xs text-muted">Página {pagina} de {carteraPaginas}</span>
-                <button type="button" onClick={() => setPagina(p => Math.min(carteraPaginas, p + 1))}
-                  disabled={pagina >= carteraPaginas}
-                  className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary disabled:opacity-40">
-                  Siguiente
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Vista de Ventas registradas */}
         {filtroVista === 'disponible' && (
@@ -1267,12 +1117,15 @@ export default function Ventas() {
                     </caption>
                     <thead className="bg-primary/5 border-b border-border/50">
                       <tr>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">ID</th>
+                        {/* Fuera la columna ID: el listado junta dos tablas y sus
+                            numeros se pisan, asi que un «#5» ya no identificaba
+                            nada. El concepto ocupa su sitio, que es lo que de
+                            verdad se busca al revisar un mes. */}
                         <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Fecha</th>
                         <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Cliente</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Tipo Pago</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Total</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Estado</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Concepto</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">Pago</th>
+                        <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Total</th>
                         <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">Acciones</th>
                       </tr>
                     </thead>
@@ -1280,7 +1133,7 @@ export default function Ventas() {
                       {loading ? (
                         <TableSkeleton cols={7} rows={6} />
                       ) : ventasFiltradas.length === 0 ? (
-                        <tr><td colSpan={7}>
+                        <tr><td colSpan={6}>
                           <EmptyState
                             title={hayFiltros ? 'Sin resultados' : 'Sin ventas'}
                             description={hayFiltros
@@ -1290,36 +1143,60 @@ export default function Ventas() {
                           />
                         </td></tr>
                       ) : (
-                        ventasFiltradas.map((venta) => (
-                          <tr key={venta.id} className="hover:bg-primary/5 transition-colors">
-                            <td className="px-4 py-3 text-sm text-muted font-mono">#{venta.id}</td>
-                            <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(venta.fecha)}</td>
-                            <td className="px-4 py-3 text-sm text-primary font-medium">
-                              <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{nombreDeVenta(venta)}</RefLink>
-                            </td>
-                            <td className="px-4 py-3"><Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge></td>
-                            <td className="px-4 py-3 text-sm text-primary font-medium whitespace-nowrap">{formatCurrency(venta.total)}</td>
-                            <td className="px-4 py-3"><Badge variant={badgeEstadoVenta(venta.estado)}>{venta.estado || 'registrada'}</Badge></td>
-                            <td className="px-4 py-3 text-right flex gap-1 justify-end">
-                              <button
-                                onClick={() => descargarExcelVenta(venta)}
-                                className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10"
-                                title="Descargar Excel"
-                                aria-label={`Descargar el Excel de la venta #${venta.id} de ${nombreDeVenta(venta)}`}
-                              >
-                                <FileSpreadsheet size={16} aria-hidden="true" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(venta.id)}
-                                className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10"
-                                title="Eliminar venta"
-                                aria-label={`Eliminar la venta #${venta.id} de ${nombreDeVenta(venta)}`}
-                              >
-                                <Trash2 size={16} aria-hidden="true" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                        ventasFiltradas.map((venta) => {
+                          // Una venta de los libros no tiene detalle que abrir ni
+                          // pacas que devolver al inventario, asi que no se le
+                          // ofrecen esas acciones. Lo que se corrige de ella se
+                          // corrige en la cartera del cliente, que es donde vive,
+                          // y ahi se enlaza.
+                          const delSistema = venta.origen !== 'cartera';
+                          return (
+                            <tr key={`${venta.origen || 'sistema'}-${venta.id}`} className="hover:bg-primary/5 transition-colors">
+                              <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(venta.fecha)}</td>
+                              <td className="px-4 py-3 text-sm text-primary font-medium">
+                                <RefLink to="/cartera" id={venta.cliente_id} title="Ver cartera del cliente">{nombreDeVenta(venta)}</RefLink>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-muted max-w-xs truncate" title={venta.concepto || ''}>
+                                {venta.concepto || (delSistema ? 'venta con pacas del sistema' : '—')}
+                              </td>
+                              <td className="px-4 py-3">
+                                {venta.tipo_pago
+                                  ? <Badge variant={venta.tipo_pago}>{venta.tipo_pago}</Badge>
+                                  : <span className="text-xs text-muted">—</span>}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-primary font-medium text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(venta.total)}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                {delSistema ? (
+                                  <div className="flex gap-1 justify-end">
+                                    <button
+                                      onClick={() => descargarExcelVenta(venta)}
+                                      className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10"
+                                      title="Descargar Excel"
+                                      aria-label={`Descargar el Excel de la venta de ${nombreDeVenta(venta)}`}
+                                    >
+                                      <FileSpreadsheet size={16} aria-hidden="true" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(venta.id)}
+                                      className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10"
+                                      title="Eliminar venta"
+                                      aria-label={`Eliminar la venta de ${nombreDeVenta(venta)}`}
+                                    >
+                                      <Trash2 size={16} aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <RefLink to="/cartera" id={venta.cliente_id}
+                                    title="Ver esta venta en la cartera del cliente" className="text-xs">
+                                    en su cartera
+                                  </RefLink>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
 </tbody>
                   </table>

@@ -1639,12 +1639,27 @@ export default function InteligenciaDeNegocio() {
                             <td className="py-2 text-right tabular-nums">{r.pacas_vendidas}</td>
                             <td className="py-2 text-right tabular-nums">{formatCurrency(r.costo_total)}</td>
                             <td className="py-2 text-right tabular-nums">{formatCurrency(r.ingresos_ventas)}</td>
-                            <td className={`py-2 text-right tabular-nums font-semibold ${r.ganancia_bruta >= 0 ? 'text-success' : 'text-accent'}`}>
-                              {formatCurrency(r.ganancia_bruta)}
-                            </td>
-                            <td className={`py-2 text-right tabular-nums font-bold ${r.roi_porcentaje >= 0 ? 'text-success' : 'text-accent'}`}>
-                              {r.roi_porcentaje}%
-                            </td>
+                            {/* SIN VENTAS NO HAY GANANCIA NI ROI, y se dice así.
+                                El servidor manda null y no un número cuando de
+                                ese contenedor todavía no ha salido ninguna paca.
+                                Pintarlo como -100% decía que el contenedor
+                                perdió toda la inversión, cuando lo que pasa es
+                                que la mercancía sigue en la bodega esperando. */}
+                            {r.roi_porcentaje == null ? (
+                              <td colSpan={2} className="py-2 text-right text-xs text-muted italic">
+                                sin vender todavía
+                                {r.pacas_disponibles > 0 && ` · ${r.pacas_disponibles} disponibles`}
+                              </td>
+                            ) : (
+                              <>
+                                <td className={`py-2 text-right tabular-nums font-semibold ${r.ganancia_bruta >= 0 ? 'text-success' : 'text-accent'}`}>
+                                  {formatCurrency(r.ganancia_bruta)}
+                                </td>
+                                <td className={`py-2 text-right tabular-nums font-bold ${r.roi_porcentaje >= 0 ? 'text-success' : 'text-accent'}`}>
+                                  {r.roi_porcentaje}%
+                                </td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>

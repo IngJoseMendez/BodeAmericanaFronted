@@ -100,6 +100,66 @@ export default function Reportes() {
     }
   };
 
+  // LAS CIFRAS QUE DE VERDAD SE ENSENAN, con el legado ya puesto donde toca.
+  //
+  // `monto_total_ventas` es solo lo registrado en el sistema, y hoy eso es
+  // cero: todo lo vendido en nueve anos entro por los libros de Excel. Leer esa
+  // cifra a secas ponia $0 en la tarjeta de Monto Total con 57 ventas del mes
+  // debajo. Aqui se arma una sola vez lo que la pantalla y el Excel usan, para
+  // que el papel y la pantalla no puedan decir cosas distintas.
+  //
+  // Lo que NO se toca: ganancia y pacas vendidas. Las dos salen de la paca y su
+  // costo, y un renglon de los libros no tiene paca detras. Se quedan con su
+  // cifra del sistema y la tarjeta lo dice, que es muy distinto de inventarlas.
+  const cifras = (() => {
+    const r = reporteMensual?.resumen_ejecutivo || {};
+    const sistema = Number(r.monto_total_ventas) || 0;
+    const legado = Number(r.monto_ventas_cartera) || 0;
+    return {
+      // UNA venta es UNA venta, venga de donde venga: la cifra va junta.
+      nVentas: (Number(r.total_ventas) || 0) + (Number(r.total_ventas_cartera) || 0),
+      monto: sistema + legado,
+      // De cuántas de esas ventas se puede calcular costo y margen. Es lo único
+      // que hay que separar, y se usa para declarar el alcance de la ganancia,
+      // no para partir la lista de ventas en dos.
+      conCosto: Number(r.total_ventas) || 0,
+    };
+  })();
+
+  // LAS VENTAS DEL MES, las dos clases en una sola lista y ordenadas por fecha.
+  //
+  // La tabla leia `reporteMensual.ventas` -las filas de la tabla `ventas`- y
+  // salia en blanco debajo de una cifra que si existia: en octubre hay 57
+  // ventas por 119.580.000, todas en los libros. Se juntan aqui, con `origen`
+  // en cada fila para que se pueda decir de donde sale cada una, y la misma
+  // lista alimenta la pantalla y el Excel: asi el papel no puede decir una cosa
+  // y la pantalla otra.
+  const ventasDelMes = (() => {
+    const delSistema = (reporteMensual?.ventas || []).map((v, i) => ({
+      clave: `s${v.id ?? i}`,
+      origen: 'sistema',
+      fecha: v.fecha,
+      cliente_id: v.cliente_id,
+      cliente_nombre: v.cliente_nombre || '',
+      cliente_telefono: v.cliente_telefono || '',
+      concepto: '',
+      monto: Number(v.total) || 0,
+    }));
+    const deLosLibros = (reporteMensual?.ventas_cartera || []).map((m, i) => ({
+      clave: `c${m.id ?? i}`,
+      origen: 'cartera',
+      fecha: m.fecha,
+      cliente_id: m.cliente_id,
+      cliente_nombre: m.cliente_nombre || '',
+      cliente_telefono: m.cliente_telefono || '',
+      concepto: m.descripcion || '',
+      monto: Number(m.monto) || 0,
+    }));
+    // Por fecha descendente, que es como se lee un mes: lo último primero.
+    return [...delSistema, ...deLosLibros]
+      .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  })();
+
   const downloadExcel = async () => {
     if (!reporteMensual) return;
     setLoadingGeneral(true);
@@ -193,7 +253,11 @@ export default function Reportes() {
       ws2.properties.tabColor = successColor;
       
       // Header
-      const ventasHeaders = ['Fecha', 'Factura', 'Cliente', 'Teléfono', 'Tipo de Pago', 'Total'];
+      // «Concepto» y «Origen» en vez de «Factura» y «Tipo de pago»: un renglón
+      // de los libros no tiene número de factura ni tipo de pago, y las dos
+      // columnas salían vacías en todas las filas. El concepto sí trae lo que
+      // dice el libro («MIXTA VERANO S/V»), que es lo que se busca al revisar.
+      const ventasHeaders = ['Fecha', 'Cliente', 'Teléfono', 'Concepto', 'Origen', 'Total'];
       ws2.addTable({
         name: 'VentasTable',
         ref: 'A1',
@@ -203,13 +267,13 @@ export default function Reportes() {
           showRowStripes: false,
         },
         columns: ventasHeaders.map(h => ({ name: h, filterButton: false })),
-        rows: (reporteMensual.ventas || []).map(v => [
-          new Date(v.fecha).toLocaleDateString('es-MX'),
-          v.uuid?.slice(0, 8).toUpperCase(),
+        rows: ventasDelMes.map(v => [
+          String(v.fecha).slice(0, 10),
           v.cliente_nombre,
           v.cliente_telefono || '-',
-          v.tipo_pago?.toUpperCase(),
-          parseFloat(v.total)
+          v.concepto || '-',
+          v.origen === 'cartera' ? 'libro de Excel' : 'sistema',
+          v.monto
         ])
       });
       
@@ -493,22 +557,38 @@ export default function Reportes() {
                   <div className="p-3 sm:p-4 bg-success/10 rounded-xl text-center min-w-0">
                     {/* total_ventas es el NÚMERO de ventas, no un importe: el
                         tooltip lo mostraba como "$12" pesos. */}
-                    <p className="text-lg sm:text-2xl font-display text-success truncate" title={String(reporteMensual.resumen_ejecutivo?.total_ventas || 0)}>
-                      {reporteMensual.resumen_ejecutivo?.total_ventas || 0}
+                    <p className="text-lg sm:text-2xl font-display text-success truncate" title={String(cifras.nVentas)}>
+                      {cifras.nVentas}
                     </p>
                     <p className="text-[10px] sm:text-xs text-muted truncate">Ventas</p>
+
                   </div>
                   <div className="p-3 sm:p-4 bg-primary/10 rounded-xl text-center min-w-0">
-                    <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.monto_total_ventas)}>
-                      {formatCurrency(reporteMensual.resumen_ejecutivo?.monto_total_ventas)}
+                    <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(cifras.monto)}>
+                      {formatCurrency(cifras.monto)}
                     </p>
                     <p className="text-[10px] sm:text-xs text-muted truncate">Monto Total</p>
+
                   </div>
                   <div className="p-3 sm:p-4 bg-secondary/15 rounded-xl text-center min-w-0">
                     <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}>
                       {formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}
                     </p>
                     <p className="text-[10px] sm:text-xs text-muted truncate">Ganancia</p>
+                    {/* EL ALCANCE DE LA CIFRA, no su origen.
+                        Al lado de un Monto Total que cuenta todas las ventas,
+                        una ganancia en cero se lee como «vendió sin ganar nada».
+                        La ganancia sale del costo de la paca, y las ventas que
+                        se cargaron del Excel no traen costo, así que de ellas no
+                        hay margen que calcular. Decir de cuántas ventas sale es
+                        la forma honesta: la cifra es cierta y se sabe qué cubre.
+                        Inventar el costo que falta sería mucho peor. */}
+                    {cifras.conCosto < cifras.nVentas && (
+                      <p className="text-[9px] text-muted/80 truncate"
+                         title={`La ganancia se calcula con el costo de las pacas. ${cifras.conCosto} de las ${cifras.nVentas} ventas del mes tienen ese costo registrado; las demás se cargaron del Excel sin él.`}>
+                        de {cifras.conCosto} de {cifras.nVentas} ventas
+                      </p>
+                    )}
                   </div>
                   <div className="p-3 sm:p-4 bg-accent/10 rounded-xl text-center min-w-0">
                     <p className="text-lg sm:text-2xl font-display text-accent truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.saldo_cartera)}>
@@ -527,35 +607,60 @@ export default function Reportes() {
                       {reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0}
                     </p>
                     <p className="text-[10px] sm:text-xs text-muted truncate">Pacas Vendidas</p>
+                    {cifras.conCosto < cifras.nVentas && (
+                      <p className="text-[9px] text-muted/80 truncate"
+                         title="Cuenta las pacas que salieron del inventario del sistema. Las ventas cargadas del Excel son líneas de venta, no cantidades: sólo unas pocas dicen cuántas unidades fueron.">
+                        de {cifras.conCosto} de {cifras.nVentas} ventas
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {/* Detalles */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
                   <div>
-                    <h4 className="font-medium text-primary mb-2">Ventas del Mes</h4>
+                    <h4 className="font-medium text-primary mb-2">
+                      Ventas del Mes
+                      <span className="ml-2 text-xs font-normal text-muted">({ventasDelMes.length})</span>
+                    </h4>
                     <div className="max-h-48 overflow-y-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 sticky top-0">
                           <tr>
                             <th className="px-2 py-1 text-left">Fecha</th>
                             <th className="px-2 py-1 text-left">Cliente</th>
+                            <th className="px-2 py-1 text-left">Concepto</th>
                             <th className="px-2 py-1 text-right">Monto</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {reporteMensual.ventas?.slice(0, 10).map((v, i) => (
-                            <tr key={i}>
-                              <td className="px-2 py-1">{new Date(v.fecha).toLocaleDateString('es-MX')}</td>
+                          {ventasDelMes.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="px-2 py-4 text-center text-muted">
+                                No hay ventas en el mes.
+                              </td>
+                            </tr>
+                          )}
+                          {ventasDelMes.slice(0, 15).map((v) => (
+                            <tr key={v.clave}>
+                              <td className="px-2 py-1 whitespace-nowrap">{String(v.fecha).slice(0, 10)}</td>
                               <td className="px-2 py-1">
                                 <RefLink to="/cartera" id={v.cliente_id} title="Ver cartera del cliente" icon={false}>{v.cliente_nombre}</RefLink>
                               </td>
-                              <td className="px-2 py-1 text-right">{formatCurrency(v.total)}</td>
+                              <td className="px-2 py-1 text-xs text-muted max-w-[14rem] truncate" title={v.concepto}>
+                                {v.concepto || (v.origen === 'sistema' ? 'venta del sistema' : '—')}
+                              </td>
+                              <td className="px-2 py-1 text-right whitespace-nowrap">{formatCurrency(v.monto)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    {ventasDelMes.length > 15 && (
+                      <p className="text-[11px] text-muted mt-1">
+                        se muestran las 15 más recientes de {ventasDelMes.length}; el Excel trae todas
+                      </p>
+                    )}
                   </div>
 
                   <div>

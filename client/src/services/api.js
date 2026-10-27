@@ -220,11 +220,6 @@ export const ventasApi = {
   delete(id) {
     return api.delete(`/ventas/${id}`);
   },
-  // Las ventas que solo existen como renglon de cartera: no son filas de
-  // `ventas`, asi que tienen su propio endpoint. Ver GET /ventas/cartera.
-  getCartera(params = {}) {
-    return api.get(`/ventas/cartera${qs(params)}`);
-  },
   getReporte(params = {}) {
     return api.get(`/ventas/reporte${qs(params)}`);
   },
