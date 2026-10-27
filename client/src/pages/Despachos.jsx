@@ -4,13 +4,12 @@ import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 import { despachosApi, pacasApi, transportesApi, clientesApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus, LayoutGrid, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus, LayoutGrid, FileText, Loader2 } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
 import { formatCOP, parseMonto } from '../lib/money';
 // La promocion gana sobre el precio de lista, y se resuelve con el MISMO
 // helper que las hojas de Excel y el inventario: tres sitios decidiendo por
 // su cuenta que precio vale es como acaban cobrando cifras distintas.
-import { nuevoLibro, descargar, hojaDespachoGeneral } from '../lib/entregables';
 import { descargarExcel } from '../lib/descargar';
 // El papel que se lleva a la bodega va en PDF y no en Excel: se imprime y se
 // camina con el, no se edita. Ver lib/despachoPdf.js, que explica por que esta
@@ -98,125 +97,6 @@ const etiquetaTransporte = (v) => {
   // Valor escrito a mano: se muestra tal cual, legible.
   return String(v).replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
 };
-
-// ── Excel para la BODEGA ────────────────────────────────────────────
-// No lleva precios: es la orden de alistamiento. Agrupa por referencia y
-// calidad con la cantidad a sacar, y arriba los datos de entrega.
-async function exportarExcelBodega(despacho) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'Comercio Global Logístico';
-  wb.created = new Date();
-
-  const PRIMARY = '0f172a';
-  const SUCCESS = '16a34a';
-  const WHITE   = 'ffffff';
-  const LIGHT   = 'f1f5f9';
-
-  const ws = wb.addWorksheet('Alistamiento bodega');
-  ws.properties.tabColor = { argb: SUCCESS };
-
-  const items = despacho.items || [];
-
-  // Título
-  ws.mergeCells('A1:D1');
-  const t = ws.getCell('A1');
-  t.value = `ORDEN DE ALISTAMIENTO — ${despacho.numero || ''}`;
-  t.font = { size: 14, bold: true, color: { argb: WHITE } };
-  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
-  t.alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(1).height = 30;
-
-  // Datos de entrega
-  const datos = [
-    ['Cliente',      despacho.destinatario || despacho.cliente_nombre || '—'],
-    ['Ciudad',       despacho.ciudad_entrega || despacho.cliente_ciudad || '—'],
-    ['Dirección',    despacho.direccion_entrega || despacho.cliente_direccion || '—'],
-    ['Celular',      despacho.celular || despacho.cliente_telefono || '—'],
-    ['Transporte',   etiquetaTransporte(despacho.tipo_transporte)],
-    ['Fecha',        new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })],
-  ];
-  let row = 3;
-  datos.forEach(([k, v]) => {
-    ws.getCell(`A${row}`).value = k.toUpperCase();
-    ws.getCell(`A${row}`).font = { bold: true, size: 9, color: { argb: '64748b' } };
-    ws.mergeCells(`B${row}:D${row}`);
-    ws.getCell(`B${row}`).value = v;
-    ws.getCell(`B${row}`).font = { bold: true, size: 11, color: { argb: PRIMARY } };
-    ws.getRow(row).height = 20;
-    row++;
-  });
-
-  // Agrupado por referencia + calidad: a la bodega le importa cuántas sacar.
-  row += 1;
-  const grupos = new Map();
-  for (const it of items) {
-    const ref = it.referencia || '—';
-    const cal = it.calidad || '—';
-    const k = `${ref}||${cal}`;
-    if (!grupos.has(k)) grupos.set(k, { referencia: ref, calidad: cal, cantidad: 0 });
-    grupos.get(k).cantidad++;
-  }
-  const filas = [...grupos.values()].sort(
-    (a, b) => a.referencia.localeCompare(b.referencia, 'es') || a.calidad.localeCompare(b.calidad, 'es')
-  );
-
-  const headers = ['#', 'Referencia', 'Calidad', 'Cantidad'];
-  const hr = ws.getRow(row);
-  hr.height = 26;
-  headers.forEach((h, ci) => {
-    const c = hr.getCell(ci + 1);
-    c.value = h;
-    c.font = { bold: true, size: 11, color: { argb: WHITE } };
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
-    c.alignment = { horizontal: ci === 3 ? 'center' : ci === 0 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 || ci === 2 ? 1 : 0 };
-  });
-  row++;
-
-  filas.forEach((f, i) => {
-    const r = ws.getRow(row);
-    r.height = 24;
-    const bg = i % 2 === 0 ? LIGHT : WHITE;
-    [i + 1, f.referencia, f.calidad, f.cantidad].forEach((val, ci) => {
-      const c = r.getCell(ci + 1);
-      c.value = val;
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-      c.alignment = { horizontal: ci === 3 || ci === 0 ? 'center' : 'left', vertical: 'middle', indent: ci === 1 || ci === 2 ? 1 : 0 };
-      c.font = ci === 3
-        ? { bold: true, size: 13, color: { argb: PRIMARY } }
-        : { size: 11, color: { argb: PRIMARY } };
-    });
-    row++;
-  });
-
-  // Totalizado
-  const tr = ws.getRow(row);
-  tr.height = 28;
-  ws.mergeCells(`A${row}:C${row}`);
-  const lbl = tr.getCell(1);
-  lbl.value = 'TOTAL UNIDADES A DESPACHAR';
-  lbl.font = { bold: true, size: 12, color: { argb: WHITE } };
-  lbl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUCCESS } };
-  lbl.alignment = { horizontal: 'right', vertical: 'middle', indent: 1 };
-  const val = tr.getCell(4);
-  val.value = items.length;
-  val.font = { bold: true, size: 15, color: { argb: WHITE } };
-  val.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SUCCESS } };
-  val.alignment = { horizontal: 'center', vertical: 'middle' };
-
-  // Espacio para firmas de quien alista y quien recibe
-  row += 2;
-  ws.getCell(`A${row}`).value = 'Alistado por: ____________________';
-  ws.getCell(`C${row}`).value = 'Recibido por: ____________________';
-  [`A${row}`, `C${row}`].forEach(ref => { ws.getCell(ref).font = { size: 10, color: { argb: '64748b' } }; });
-
-  ws.getColumn(1).width = 6;
-  ws.getColumn(2).width = 32;
-  ws.getColumn(3).width = 22;
-  ws.getColumn(4).width = 14;
-
-  const buffer = await wb.xlsx.writeBuffer();
-  descargarExcel(buffer, `Bodega_${despacho.numero || 'despacho'}_${hoy()}.xlsx`);
-}
 
 async function exportarExcel(despacho) {
   const wb = new ExcelJS.Workbook();
@@ -1009,11 +889,17 @@ export default function Despachos() {
   const idsMarcados = (d) => pendientesDe(d).filter((i) => salidaSel[i.paca_id]).map((i) => Number(i.paca_id));
   const totalMarcado = salidaLista.reduce((s, d) => s + idsMarcados(d).length, 0);
 
-  // ── El Excel del despacho ───────────────────────────────────────
+  // ── El papel del despacho ───────────────────────────────────────
   //
-  // Sale del MISMO molde que el general (`hojaDespachoGeneral`), se pida de
-  // todos o de uno solo: el papel que recibe la bodega tiene que verse igual en
-  // los dos casos, o se lee de dos maneras distintas.
+  // Va en PDF y no en Excel: se imprime y se camina con él en la mano. El
+  // diseño vive en lib/despachoPdf.js, que es el MISMO que se baja desde
+  // Entregables, y está partido en «recoger» y «empacar» porque son dos
+  // trabajos distintos.
+  //
+  // El costo se calcula aquí pero NO sale en el papel: un papel de bodega con
+  // costos es lo que la separación entre «bodega» e «internos» existe para
+  // evitar. Se conserva porque la hoja de Excel de Entregables sí lo lleva y
+  // comparte esta forma de los datos.
   const costoPorClave = useMemo(() => {
     const m = new Map();
     for (const f of inventario) {
@@ -1061,15 +947,9 @@ export default function Despachos() {
     };
   };
 
-  const excelDespachos = async (lista, meta, archivo) => {
-    const wb = nuevoLibro();
-    hojaDespachoGeneral(wb, lista.map(({ d, pacaIds }) => paraHojaDespacho(d, pacaIds)), [], meta);
-    await descargar(wb, archivo);
-  };
+  // ── Las tres puertas por las que se baja el papel ───────────────
 
-  // EL PAPEL DE LA BODEGA, EN PDF. El Excel se queda para quien lo quiera tal
-  // cual, pero este es el que se imprime: un Excel de doce columnas se lee mal
-  // en papel y pagina donde quiere.
+  // Todo lo marcado, en un solo papel. Es el de la vuelta por la bodega.
   const pdfDeLaSalida = () => {
     const lista = salidaLista
       .map((d) => ({ d, pacaIds: idsMarcados(d) }))
@@ -1080,6 +960,7 @@ export default function Despachos() {
       { titulo: 'DESPACHO', fecha: salidaFecha }, 'Despacho_General');
   };
 
+  // Uno solo, desde la vista de salida: lo marcado de ese despacho.
   const pdfDeUno = (d) => {
     const pacaIds = idsMarcados(d);
     if (!pacaIds.length) { addToast(`No hay nada marcado en ${d.numero}`, 'warning'); return; }
@@ -1087,21 +968,12 @@ export default function Despachos() {
       { titulo: d.numero, fecha: salidaFecha }, `Despacho_${d.numero}`);
   };
 
-  const excelDeLaSalida = async () => {
-    const lista = salidaLista
-      .map((d) => ({ d, pacaIds: idsMarcados(d) }))
-      .filter((x) => x.pacaIds.length);
-    if (!lista.length) { addToast('No hay nada marcado', 'warning'); return; }
-    await excelDespachos(lista,
-      { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, totales: null },
-      'Despacho_General');
-  };
-
-  const excelDeUno = async (d) => {
-    const pacaIds = idsMarcados(d);
-    if (!pacaIds.length) { addToast(`No hay nada marcado en ${d.numero}`, 'warning'); return; }
-    await excelDespachos([{ d, pacaIds }],
-      { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, numero: d.numero },
+  // Uno solo, desde su detalle: todas sus unidades, porque alli no hay nada
+  // marcado. `pacaIds` en null significa «todas».
+  const pdfDeUnDespacho = (d) => {
+    if (!d) return;
+    exportarPDFDespacho([paraHojaDespacho(d, null)], [],
+      { titulo: d.numero, fecha: String(d.fecha_salida || d.fecha || '').slice(0, 10) },
       `Despacho_${d.numero}`);
   };
 
@@ -1129,14 +1001,15 @@ export default function Despachos() {
         salidaFecha);
       addToast(r.mensaje || `${r.unidades} unidad(es) salieron`, 'success');
       // El papel de la bodega se descarga con lo que ACABA de salir, que es lo
-      // que hay que ir a buscar. Si falla la descarga la salida ya está hecha y
-      // no se deshace: se avisa y se puede volver a bajar.
+      // que hay que ir a buscar. EN PDF: esto se imprime y se camina con él en
+      // la mano. Si falla la descarga la salida ya está hecha y no se deshace:
+      // se avisa y se puede volver a bajar con el botón.
       try {
-        await excelDespachos(lista,
-          { titulo: 'DESPACHO(GENERAL)', fecha: salidaFecha, totales: null },
-          'Despacho_General');
+        exportarPDFDespacho(
+          lista.map(({ d, pacaIds }) => paraHojaDespacho(d, pacaIds)), [],
+          { titulo: 'DESPACHO', fecha: salidaFecha }, 'Despacho_General');
       } catch {
-        addToast('La salida quedó registrada, pero no pude generar el Excel', 'warning');
+        addToast('La salida quedó registrada, pero no pude generar el PDF', 'warning');
       }
       setSalidaOpen(false);
       loadDespachos();
@@ -1255,14 +1128,21 @@ export default function Despachos() {
       );
       setConfirmModalOpen(false);
 
-      // Recargar despacho completo y exportar Excel solo con las unidades recién despachadas
+      // Se recarga el despacho y se baja el papel de BODEGA con lo que acaba de
+      // salir. Antes bajaba el «Excel cliente», que lleva precios y es otro
+      // documento: lo que acompaña a la mercancía es el papel de la bodega.
+      // El del cliente sigue a un botón de distancia en el detalle.
       const updated = await despachosApi.getOne(selectedDespacho.id);
       setSelectedDespacho(updated);
-      const despachoSalida = {
-        ...updated,
-        items: (updated.items || []).filter(i => pacaIds.includes(Number(i.paca_id))),
-      };
-      await exportarExcel(despachoSalida);
+      try {
+        exportarPDFDespacho([paraHojaDespacho(updated, pacaIds)], [],
+          // `hoy()`: esta confirmación no manda fecha al servidor, así que el
+          // servidor pone la de hoy y el papel tiene que decir lo mismo.
+          { titulo: updated.numero, fecha: hoy() },
+          `Despacho_${updated.numero}`);
+      } catch {
+        addToast('La salida quedó registrada, pero no pude generar el PDF', 'warning');
+      }
 
       if (result.pacas_pendientes === 0) {
         setViewModalOpen(false);
@@ -1700,10 +1580,15 @@ export default function Despachos() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
                   <Download size={13} /> Excel cliente
                 </button>
-                <button onClick={() => exportarExcelBodega(selectedDespacho)}
-                  title="Orden de alistamiento para la bodega: referencia, calidad y cantidad, sin precios"
+                {/* EL PAPEL DE BODEGA, EN PDF. Era un Excel con la misma forma
+                    apretada que el general, y es el mismo papel: se imprime y
+                    se camina con él. El «Excel cliente» de al lado se queda en
+                    Excel porque es otro documento: lleva precios y se le manda
+                    al cliente. */}
+                <button onClick={() => pdfDeUnDespacho(selectedDespacho)}
+                  title="El papel de bodega, para imprimir: qué recoger y cómo empacarlo"
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-success/40 text-success hover:bg-success/10 text-xs font-semibold transition-colors">
-                  <Download size={13} /> Excel bodega
+                  <FileText size={13} /> PDF bodega
                 </button>
                 <button onClick={handleImprimir}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-xs font-medium transition-colors">
@@ -2581,12 +2466,7 @@ export default function Despachos() {
                           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-[11px] font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
                           <FileText size={12} /> PDF
                         </button>
-                        <button type="button" onClick={() => excelDeUno(d)}
-                          disabled={!marcados.length}
-                          title={`Descargar sólo el Excel de ${d.numero}`}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-[11px] font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
-                          <FileSpreadsheet size={12} /> Excel
-                        </button>
+
                       </div>
                       <div className="p-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         {pend.map((item) => (
@@ -2630,11 +2510,7 @@ export default function Despachos() {
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-secondary/40 text-sm font-semibold text-secondary hover:bg-secondary/5 disabled:opacity-40 disabled:cursor-not-allowed">
                     <FileText size={15} /> PDF de bodega
                   </button>
-                  <button type="button" onClick={excelDeLaSalida}
-                    disabled={!totalMarcado}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed">
-                    <FileSpreadsheet size={15} /> Excel
-                  </button>
+
                   <button type="button" onClick={() => setSalidaOpen(false)}
                     className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary text-sm font-medium">
                     Cancelar
