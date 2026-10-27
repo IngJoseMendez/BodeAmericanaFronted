@@ -1549,7 +1549,7 @@ export default function Contenedores() {
 
     // Una hoja por proveedor con el detalle
     full.proveedores_mercancia.forEach((prov, pi) => {
-      const sheetName = (prov.proveedor_nombre || `Proveedor ${pi+1}`).substring(0, 30).replace(/[*?:/\\\[\]]/g, ' ');
+      const sheetName = (prov.proveedor_nombre || `Proveedor ${pi+1}`).substring(0, 30).replace(/[*?:/\\[\]]/g, ' ');
       const ws = wb.addWorksheet(sheetName);
       ws.properties.tabColor = { argb: blue };
       const moneda = prov.moneda || 'USD';

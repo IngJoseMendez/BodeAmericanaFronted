@@ -7,3 +7,7 @@ dist-ssr/
 .env.test.local
 .env.production.local
 .env.local
+
+# PDFs que dejan las comprobaciones al generarlos. Son papeles de prueba,
+# no del proyecto.
+*.pdf

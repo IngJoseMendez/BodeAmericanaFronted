@@ -825,7 +825,12 @@ export default function Ventas() {
       }
       addToast(`${pacasSeleccionadas.length} reserva(s) creada(s)`, 'success');
       setReservaModalOpen(false);
-      setPacasSeleccionadas([]);
+      // `setPacasSeleccionadas` ya no existe: lo elegido se guarda POR PRODUCTO
+      // desde que el modal pasó a pedir cantidades. Esta línea quedó viva tras
+      // ese cambio y reventaba al crear una reserva -no al construir, porque un
+      // identificador libre en un callback sólo falla cuando se ejecuta-. La
+      // encontró el linter con `no-undef`, que es justo para lo que se montó.
+      setGrupoSel({});
       loadPacasDisponibles();
       // El contador de la pestaña "Reservas" se quedaba viejo hasta recargar.
       loadReservas();
