@@ -12,6 +12,9 @@ import autoTable from 'jspdf-autotable';
 import { hoy, formatFechaCorta } from '../lib/fecha';
 import { parseMonto, formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
+// El mismo agrupado que usa el despacho directo. Si cada pantalla agrupara
+// a su manera, una ofreceria existencias que la otra no ve.
+import { agruparPacas, preciosDeHoy, claveStock } from '../lib/stock';
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -205,7 +208,15 @@ export default function Ventas() {
   const [formData, setFormData] = useState({
     cliente_id: '', tipo_pago: 'contado', fecha: hoy()
   });
-  const [pacasSeleccionadas, setPacasSeleccionadas] = useState([]);
+  // Lo elegido se guarda POR PRODUCTO —clave referencia|calidad— con su
+  // cantidad y su precio, no como una lista de pacas. Las pacas concretas se
+  // derivan de aqui al enviar (ver `pacasSeleccionadas`), que es lo que
+  // permite escribir «3» en vez de marcar tres casillas.
+  const [grupoSel, setGrupoSel] = useState({});
+  // El inventario agregado se trae solo por los precios de PROMOCION: no
+  // viajan en la fila de la paca, y sin esto se cobraria el precio de lista
+  // de algo que esta rebajado.
+  const [inventario, setInventario] = useState([]);
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [pacasDisponibles, setPacasDisponibles] = useState([]);
@@ -213,7 +224,15 @@ export default function Ventas() {
   const [buscarPacas, setBuscarPacas] = useState('');
   const [despachoModalOpen, setDespachoModalOpen] = useState(false);
   const [despachoData, setDespachoData] = useState(null);
-  const [filtroVista, setFiltroVista] = useState('disponible'); // 'disponible' = ventas registradas | 'reservada'
+  const [filtroVista, setFiltroVista] = useState('disponible'); // 'disponible' = ventas registradas | 'reservada' | 'cartera'
+  // Las ventas que sólo existen como renglón de cartera. Las trae su propio
+  // endpoint porque no son filas de `ventas`: ver GET /ventas/cartera.
+  const [ventasCartera, setVentasCartera] = useState([]);
+  const [carteraTotal, setCarteraTotal] = useState(0);
+  const [carteraMonto, setCarteraMonto] = useState(0);
+  const [carteraRango, setCarteraRango] = useState({ desde: null, hasta: null });
+  const [carteraPaginas, setCarteraPaginas] = useState(1);
+  const [cargandoCartera, setCargandoCartera] = useState(false);
   const [reservasActivas, setReservasActivas] = useState([]);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [reservaForm, setReservaForm] = useState({ cliente_id: '', cantidad: 1, notas: '', dias_expiracion: 7 });
@@ -266,6 +285,14 @@ export default function Ventas() {
     loadVentas(pagina);
   }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax]);
 
+  // La pestaña de cartera se pide sólo cuando se mira, y se vuelve a pedir al
+  // cambiar la página o los filtros. Son 7.977 renglones: traerlos al abrir la
+  // pantalla sería hacer esperar a quien venía a registrar una venta.
+  useEffect(() => {
+    if (filtroVista === 'cartera') loadVentasCartera(pagina);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroVista, pagina, debouncedBusqueda, filtroFechaInicio, filtroFechaFin]);
+
   // Al borrar la única venta de la última página quedaba una tabla vacía con el
   // paginador marcando una página que ya no existe.
   useEffect(() => {
@@ -308,6 +335,29 @@ export default function Ventas() {
     }
 };
 
+  // Mismos filtros que la lista de ventas: la misma búsqueda y el mismo rango
+  // de fechas tienen que querer decir lo mismo en las dos pestañas.
+  const loadVentasCartera = async (page = pagina) => {
+    try {
+      setCargandoCartera(true);
+      const r = await ventasApi.getCartera({
+        pagina: page, limite: 20,
+        buscar: debouncedBusqueda || undefined,
+        fecha_inicio: filtroFechaInicio || undefined,
+        fecha_fin: filtroFechaFin || undefined,
+      });
+      setVentasCartera(Array.isArray(r?.data) ? r.data : []);
+      setCarteraTotal(r?.total || 0);
+      setCarteraMonto(r?.monto_total || 0);
+      setCarteraRango({ desde: r?.desde || null, hasta: r?.hasta || null });
+      setCarteraPaginas(r?.total_paginas || 1);
+    } catch (err) {
+      addToast('No pude leer las ventas de cartera: ' + err.message, 'error');
+    } finally {
+      setCargandoCartera(false);
+    }
+  };
+
   const loadReservas = async () => {
     try {
       const respuesta = await reservasApi.getAll({ estado: 'activa' });
@@ -332,12 +382,15 @@ export default function Ventas() {
 
   const openModal = async () => {
     try {
-      const [pacasRes, clientesRes] = await Promise.all([
+      const [pacasRes, clientesRes, invRes] = await Promise.all([
         // Sin `limite` el backend devuelve sólo las 50 primeras pacas: el
         // buscador del modal filtra en el navegador, así que una paca fuera de
         // esas 50 no aparecía por más que se escribiera su referencia.
         pacasApi.getAll({ estado: 'disponible', limite: 2000 }),
-        clientesApi.getAll({ estado: 'activo' })
+        clientesApi.getAll({ estado: 'activo' }),
+        // Si esta llamada falla la venta se puede hacer igual: se pierde el
+        // precio de promoción, que la casilla deja corregir a mano.
+        pacasApi.getInventario().catch(() => []),
       ]);
       const pacasData = pacasRes.data || pacasRes;
       const clientesData = clientesRes.data || clientesRes;
@@ -350,7 +403,8 @@ export default function Ventas() {
         tipo_pago: 'contado',
         fecha: hoy()
       });
-      setPacasSeleccionadas([]);
+      setInventario(Array.isArray(invRes) ? invRes : []);
+      setGrupoSel({});
       setBuscarPacas('');
       setError('');
       setModalOpen(true);
@@ -359,25 +413,36 @@ export default function Ventas() {
     }
   };
 
-  const togglePaca = (paca) => {
-    const exists = pacasSeleccionadas.find(p => p.id === paca.id);
-    if (exists) {
-      setPacasSeleccionadas(pacasSeleccionadas.filter(p => p.id !== paca.id));
-    } else {
-      // El precio llega de la API como cadena (y a veces como null): normalizarlo
-      // aquí evita que el <input> pase de no controlado a controlado y que el
-      // total de la venta salga NaN.
-      setPacasSeleccionadas([...pacasSeleccionadas, { ...paca, precio_venta: parseMonto(paca.precio_venta) }]);
-    }
+  // Cambiar la cantidad de un producto. El precio se rellena con el de hoy la
+  // primera vez que se pide algo de esa fila, y desde ahi se puede corregir:
+  // es el mismo gesto del despacho directo.
+  //
+  // La cantidad se RECORTA a lo que hay. Dejar escribir 10 de un producto del
+  // que quedan 4 no ayuda a nadie: el servidor rechazaria la venta entera al
+  // final, cuando ya se eligio cliente, fecha y seis productos mas.
+  const setCantidad = (g, valor) => {
+    const k = claveStock(g.referencia, g.calidad);
+    const pedido = parseInt(valor, 10) || 0;
+    const cantidad = Math.max(0, Math.min(pedido, g.disponibles));
+    setGrupoSel((prev) => {
+      if (cantidad <= 0) {
+        const { [k]: _fuera, ...resto } = prev;
+        return resto;
+      }
+      const ya = prev[k];
+      return {
+        ...prev,
+        // `precio` vacio cuando el grupo mezcla precios: se deja EN BLANCO y la
+        // pantalla lo marca, en vez de proponer uno de los dos como si fuera el
+        // bueno. Ver `agruparPacas` en lib/stock.js.
+        [k]: { cantidad, precio: ya?.precio ?? (g.precio != null ? String(g.precio) : '') },
+      };
+    });
   };
 
-  const updatePrecio = (pacaId, precio) => {
-    // parseFloat('') es NaN y contaminaba el total de la venta: si el usuario
-    // borra el campo se guarda 0, no NaN.
-    const valor = parseMonto(precio);
-    setPacasSeleccionadas(pacasSeleccionadas.map(p =>
-      p.id === pacaId ? { ...p, precio_venta: valor } : p
-    ));
+  const setPrecioGrupo = (g, precio) => {
+    const k = claveStock(g.referencia, g.calidad);
+    setGrupoSel((prev) => (prev[k] ? { ...prev, [k]: { ...prev[k], precio } } : prev));
   };
 
   const handleSubmit = async (e) => {
@@ -390,13 +455,13 @@ export default function Ventas() {
       return;
     }
     if (pacasSeleccionadas.length === 0) {
-      setError('Selecciona al menos una paca');
+      setError('Pon una cantidad en al menos un producto');
       return;
     }
-    // Una paca sin precio saldría vendida en cero sin que nadie se entere.
-    const sinPrecio = pacasSeleccionadas.filter(p => !(parseMonto(p.precio_venta) > 0));
+    // Un producto sin precio saldría vendido en cero sin que nadie se entere.
+    const sinPrecio = gruposElegidos.filter(g => !(parseMonto(g.precio) > 0));
     if (sinPrecio.length > 0) {
-      setError(`${sinPrecio.length} paca(s) sin precio. Escribe el precio de venta antes de confirmar.`);
+      setError(`Falta el precio de ${sinPrecio.map(g => g.referencia).join(', ')}.`);
       return;
     }
 
@@ -426,7 +491,7 @@ export default function Ventas() {
       setModalOpen(false);
       // Reset del formulario tras la venta
       setFormData({ cliente_id: '', tipo_pago: 'contado', fecha: hoy() });
-      setPacasSeleccionadas([]);
+      setGrupoSel({});
       // La venta recién creada es la más reciente y vive en la página 1: recargar
       // la página 5 dejaba al usuario sin ver lo que acababa de registrar.
       if (pagina === 1) loadVentas(1); else setPagina(1);
@@ -455,7 +520,8 @@ export default function Ventas() {
     }
   };
 
-  const totalVenta = pacasSeleccionadas.reduce((sum, p) => sum + parseMonto(p.precio_venta), 0);
+  const totalVenta = gruposElegidos.reduce(
+    (sum, g) => sum + (parseInt(g.cantidad, 10) || 0) * parseMonto(g.precio), 0);
 
   const formatCurrency = formatCOP;
 
@@ -570,30 +636,66 @@ export default function Ventas() {
     addToast('PDF descargado', 'success');
   };
 
+  // ── Lo disponible, por producto ────────────────────────────────
+  //
+  // Una fila por referencia + calidad, en orden alfabético, con lo que hay y el
+  // precio de hoy. De 206 casillas se pasa a unas sesenta filas, que es el
+  // numero de productos distintos que de verdad tiene la bodega.
+  // Tope de filas pintadas. Son unos sesenta productos hoy, pero la bodega
+  // crece y una tabla de mil filas en una tableta se arrastra.
+  const FILAS_PRODUCTOS_VISIBLES = 150;
+
+  const productos = useMemo(
+    () => agruparPacas(pacasDisponibles, preciosDeHoy(inventario)),
+    [pacasDisponibles, inventario]
+  );
+
   // Filtra sobre el término ya reposado (300 ms): antes se recorría el inventario
   // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
   // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
-  const FILAS_PACAS_VISIBLES = 150;
-  const pacasCoincidentes = useMemo(() => {
+  const productosCoincidentes = useMemo(() => {
     const q = debouncedBuscarPacas.trim().toLowerCase();
-    if (!q) return pacasDisponibles;
-    return pacasDisponibles.filter(p =>
-      p.clasificacion?.toLowerCase().includes(q) ||
-      p.referencia?.toLowerCase().includes(q) ||
-      p.uuid?.toLowerCase().includes(q)
+    if (!q) return productos;
+    return productos.filter(g =>
+      g.referencia?.toLowerCase().includes(q) ||
+      g.calidad?.toLowerCase().includes(q) ||
+      g.clasificacion?.toLowerCase().includes(q)
     );
-  }, [pacasDisponibles, debouncedBuscarPacas]);
+  }, [productos, debouncedBuscarPacas]);
 
-  const filteredPacas = useMemo(
-    () => pacasCoincidentes.slice(0, FILAS_PACAS_VISIBLES),
-    [pacasCoincidentes]
+  const productosVisibles = useMemo(
+    () => productosCoincidentes.slice(0, FILAS_PRODUCTOS_VISIBLES),
+    [productosCoincidentes]
   );
 
-  // Buscar la paca seleccionada con find() dentro del map era O(pacas × elegidas)
-  // en cada tecleo; el mapa resuelve cada fila en un solo acceso.
-  const seleccionPorId = useMemo(
-    () => new Map(pacasSeleccionadas.map(p => [p.id, p])),
-    [pacasSeleccionadas]
+  // Lo elegido, con el producto al lado. Se mira SIEMPRE contra `productos`
+  // completo y no contra lo filtrado: si no, escribir en el buscador despues de
+  // elegir haria desaparecer del total lo que ya estaba pedido.
+  const gruposElegidos = useMemo(
+    () => productos
+      .map(g => ({ ...g, ...grupoSel[claveStock(g.referencia, g.calidad)] }))
+      .filter(g => (parseInt(g.cantidad, 10) || 0) > 0),
+    [productos, grupoSel]
+  );
+
+  // LAS PACAS CONCRETAS, derivadas de las cantidades.
+  //
+  // El endpoint de ventas vende pacas con nombre y apellido, asi que de cada
+  // producto se toman las N primeras por id: el mismo criterio que usa el
+  // servidor al despachar (`ORDER BY id`), o sea que se vende lo que llego
+  // antes. Es lo unico que esta pantalla decide por su cuenta, y por eso se
+  // deriva aqui y no se guarda: nunca puede quedar desfasado de las cantidades.
+  const pacasSeleccionadas = useMemo(
+    () => gruposElegidos.flatMap(g =>
+      g.ids.slice(0, parseInt(g.cantidad, 10) || 0).map(id => ({
+        id,
+        referencia: g.referencia,
+        calidad: g.calidad,
+        clasificacion: g.clasificacion,
+        precio_venta: parseMonto(g.precio),
+      }))
+    ),
+    [gruposElegidos]
   );
 
   /**
@@ -861,7 +963,7 @@ export default function Ventas() {
   };
 
   // Flechas izquierda/derecha entre pestañas, como espera un lector de pantalla.
-  const VISTAS = ['disponible', 'reservada'];
+  const VISTAS = ['disponible', 'reservada', 'cartera'];
   const navegarPestanas = (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     e.preventDefault();
@@ -928,7 +1030,129 @@ export default function Ventas() {
           >
             Reservas ({reservasActivas.length})
           </button>
+          {/* Tercera pestaña. Va en gris y no en el color de las ventas a
+              propósito: lo de aquí no tiene mercancía detrás en el sistema y no
+              se puede leer como una venta más. */}
+          <button
+            role="tab"
+            id="tab-cartera"
+            aria-selected={filtroVista === 'cartera'}
+            aria-controls="panel-cartera"
+            tabIndex={filtroVista === 'cartera' ? 0 : -1}
+            onClick={() => setFiltroVista('cartera')}
+            onKeyDown={navegarPestanas}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              filtroVista === 'cartera'
+                ? 'bg-muted text-white'
+                : 'text-muted hover:bg-primary/10'
+            }`}
+          >
+            Ventas en cartera{carteraTotal ? ` (${carteraTotal.toLocaleString('es-CO')})` : ''}
+          </button>
         </div>
+
+        {/* ── Vista de las ventas que sólo están en la cartera ────── */}
+        {filtroVista === 'cartera' && (
+          <div id="panel-cartera" role="tabpanel" aria-labelledby="tab-cartera" className="space-y-4">
+            <div className="p-3 rounded-xl border border-border bg-primary/[0.02] text-xs text-muted leading-snug">
+              <strong className="text-primary">Qué es esto.</strong> Ventas que entraron
+              como renglón de la cartera del cliente —los libros de Excel que se
+              migraron, y cualquier deuda tecleada a mano—, no por la pantalla de
+              Ventas ni por un despacho. No tienen pacas detrás en el sistema, así
+              que <strong className="text-primary">no suman al total de ventas registradas</strong>:
+              no hay costo ni margen que calcularles. Están aquí para poder verlas.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Card><CardBody className="p-4">
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">En cartera</p>
+                <p className="text-xl font-display font-bold text-primary tabular-nums">{formatCurrency(carteraMonto)}</p>
+                <p className="text-xs text-muted">
+                  {carteraTotal.toLocaleString('es-CO')} movimiento(s)
+                  {carteraRango.desde ? ` · ${formatDate(carteraRango.desde)} a ${formatDate(carteraRango.hasta)}` : ''}
+                </p>
+              </CardBody></Card>
+              <Card><CardBody className="p-4">
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">Registradas aquí</p>
+                <p className="text-xl font-display font-bold text-primary tabular-nums">{totalVentas.toLocaleString('es-CO')}</p>
+                <p className="text-xs text-muted">ventas con pacas en el sistema</p>
+              </CardBody></Card>
+              <Card><CardBody className="p-4">
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">Las dos cosas</p>
+                <p className="text-xl font-display font-bold text-primary tabular-nums">
+                  {(carteraTotal + totalVentas).toLocaleString('es-CO')}
+                </p>
+                <p className="text-xs text-muted">movimientos de venta en total</p>
+              </CardBody></Card>
+            </div>
+
+            <Card padding={false}>
+              <div className="overflow-x-auto">
+                {cargandoCartera ? (
+                  <TableSkeleton cols={5} rows={6} />
+                ) : ventasCartera.length === 0 ? (
+                  <EmptyState icon={FileText} title="No hay ventas en cartera"
+                    description={hayFiltros
+                      ? 'Ninguna coincide con los filtros puestos arriba.'
+                      : 'Toda la cartera tiene su venta registrada en el sistema.'} />
+                ) : (
+                  <table className="w-full">
+                    <caption className="sr-only">Ventas que sólo existen como movimiento de cartera</caption>
+                    <thead className="bg-primary/3 border-b border-border/50">
+                      <tr>
+                        {['Fecha', 'Cliente', 'Concepto', 'Origen', 'Monto'].map(h => (
+                          <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {ventasCartera.map(m => (
+                        <tr key={m.id} className="hover:bg-primary/[0.02]">
+                          <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">{formatDate(m.fecha)}</td>
+                          <td className="px-4 py-3 text-sm text-primary">
+                            {m.cliente_nombre || <span className="text-muted">—</span>}
+                            {/* Una cartera dada por perdida se dice aquí también:
+                                esa plata está en la lista pero no se espera. */}
+                            {m.cartera_inactiva && (
+                              <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-muted/15 text-muted">
+                                dada por perdida
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted max-w-xs truncate" title={m.descripcion || ''}>
+                            {m.descripcion || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted font-mono whitespace-nowrap">
+                            {m.referencia || (m.es_legacy ? 'legado' : 'a mano')}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-mono font-semibold text-primary tabular-nums whitespace-nowrap">
+                            {formatCurrency(m.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </Card>
+
+            {carteraPaginas > 1 && (
+              <div className="flex items-center justify-between gap-3">
+                <button type="button" onClick={() => setPagina(p => Math.max(1, p - 1))}
+                  disabled={pagina <= 1}
+                  className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary disabled:opacity-40">
+                  Anterior
+                </button>
+                <span className="text-xs text-muted">Página {pagina} de {carteraPaginas}</span>
+                <button type="button" onClick={() => setPagina(p => Math.min(carteraPaginas, p + 1))}
+                  disabled={pagina >= carteraPaginas}
+                  className="px-4 py-2 rounded-xl border border-border text-sm text-muted hover:text-primary disabled:opacity-40">
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Vista de Ventas registradas */}
         {filtroVista === 'disponible' && (
@@ -1222,76 +1446,110 @@ export default function Ventas() {
 
           <div className="border-t border-border/50 pt-4">
             <label htmlFor="buscar-pacas" className="block text-sm font-medium text-primary mb-2">
-              Seleccionar pacas
+              Qué se vende
             </label>
             <input
               id="buscar-pacas"
               type="text"
-              placeholder="Filtrar por clasificación, referencia o código"
+              placeholder="Filtrar por referencia, calidad o clasificación"
               value={buscarPacas}
               onChange={(e) => setBuscarPacas(e.target.value)}
               className="w-full mb-2 px-3 py-2 rounded-lg border border-border bg-surface text-primary placeholder-muted"
             />
             <p className="text-xs text-muted mb-3" role="status" aria-live="polite">
-              {pacasCoincidentes.length === 0
+              {productosCoincidentes.length === 0
                 ? (buscarPacas
-                    ? 'Ninguna paca disponible coincide con la búsqueda.'
-                    : 'No hay pacas disponibles en el inventario.')
-                : `${pacasCoincidentes.length} paca(s) disponibles${
-                    pacasCoincidentes.length > FILAS_PACAS_VISIBLES
-                      ? ` — se muestran las primeras ${FILAS_PACAS_VISIBLES}; afina la búsqueda para ver el resto.`
+                    ? 'Ningún producto disponible coincide con la búsqueda.'
+                    : 'No hay nada disponible en el inventario.')
+                : `${productosCoincidentes.length} producto(s) con existencias${
+                    productosCoincidentes.length > FILAS_PRODUCTOS_VISIBLES
+                      ? ` — se muestran los primeros ${FILAS_PRODUCTOS_VISIBLES}; afina la búsqueda para ver el resto.`
                       : '.'
                   }`}
               {totalPacasDisponibles > pacasDisponibles.length &&
-                ` (de ${totalPacasDisponibles} en inventario)`}
+                ` (de ${totalPacasDisponibles} unidades en inventario)`}
             </p>
 
-            <div className="max-h-64 overflow-y-auto border border-border rounded-lg">
+            <div className="max-h-72 overflow-y-auto border border-border rounded-lg">
               <table className="w-full text-sm">
-                <caption className="sr-only">Pacas disponibles para agregar a la venta</caption>
+                <caption className="sr-only">
+                  Productos disponibles. Escribe cuántas unidades se venden de cada uno.
+                </caption>
                 <thead className="bg-primary/5 sticky top-0">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 text-left"><span className="sr-only">Incluir</span></th>
-                    <th scope="col" className="px-3 py-2 text-left">Clasificación</th>
+                  <tr className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                    <th scope="col" className="px-2 py-2 text-center w-[11%]">Hay</th>
                     <th scope="col" className="px-3 py-2 text-left">Referencia</th>
-                    <th scope="col" className="px-3 py-2 text-right">Precio</th>
+                    <th scope="col" className="px-2 py-2 text-left w-[15%]">Calidad</th>
+                    <th scope="col" className="px-2 py-2 text-center w-[13%]">Cantidad</th>
+                    <th scope="col" className="px-2 py-2 text-right w-[18%]">Precio c/u</th>
+                    <th scope="col" className="px-2 py-2 text-right w-[16%]">Subtotal</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {filteredPacas.length === 0 && (
+                  {productosVisibles.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-muted">
-                        No hay pacas disponibles que coincidan.
+                      <td colSpan={6} className="px-3 py-6 text-center text-muted">
+                        No hay productos disponibles que coincidan.
                       </td>
                     </tr>
                   )}
-                  {filteredPacas.map(paca => {
-                    const selected = seleccionPorId.get(paca.id);
-                    const etiquetaPaca = `${paca.clasificacion || 'Paca'} ${paca.referencia || ''}`.trim();
+                  {productosVisibles.map(g => {
+                    const elegido = grupoSel[claveStock(g.referencia, g.calidad)];
+                    const cant = parseInt(elegido?.cantidad, 10) || 0;
+                    const precio = parseMonto(elegido?.precio);
+                    const etiqueta = `${g.referencia}${g.calidad ? ' / ' + g.calidad : ''}`;
                     return (
-                      <tr key={paca.id} className={selected ? 'bg-secondary/10' : ''}>
-                        <td className="px-3 py-2">
+                      <tr key={claveStock(g.referencia, g.calidad)} className={cant > 0 ? 'bg-secondary/10' : ''}>
+                        <td className="px-2 py-2 text-center font-mono text-xs text-muted tabular-nums">
+                          {g.disponibles}
+                        </td>
+                        <td className="px-3 py-2 text-primary">{g.referencia}</td>
+                        <td className="px-2 py-2 text-muted">{g.calidad || '—'}</td>
+                        <td className="px-2 py-2">
+                          {/* Tope en `max`: pedir más de lo que hay lo rechazaría
+                              el servidor al final, cuando ya se eligió cliente,
+                              fecha y seis productos más. */}
                           <input
-                            type="checkbox"
-                            checked={!!selected}
-                            onChange={() => togglePaca(paca)}
-                            aria-label={`Agregar a la venta la paca ${etiquetaPaca}`}
-                            className="rounded border-border"
+                            type="number"
+                            min="0"
+                            max={g.disponibles}
+                            step="1"
+                            inputMode="numeric"
+                            value={elegido?.cantidad ?? ''}
+                            onChange={(e) => setCantidad(g, e.target.value)}
+                            placeholder="0"
+                            aria-label={`Cuántas unidades de ${etiqueta} se venden`}
+                            className="w-full px-2 py-2 rounded border border-border bg-surface text-primary text-center font-mono tabular-nums"
                           />
                         </td>
-                        <td className="px-3 py-2 text-primary">{paca.clasificacion}</td>
-                        <td className="px-3 py-2 text-primary">{paca.referencia}</td>
-                        <td className="px-3 py-2 text-right">
-                          {selected ? (
-                            <CampoMonto
-                              value={selected.precio_venta ?? ''}
-                              onChange={(e) => updatePrecio(paca.id, e.target.value)}
-                              aria-label={`Precio de venta de la paca ${etiquetaPaca}`}
-                              className="w-24 text-right px-2 py-1 rounded border border-border bg-surface text-primary tabular-nums"
-                            />
+                        <td className="px-2 py-2 text-right">
+                          {cant > 0 ? (
+                            <>
+                              <CampoMonto
+                                value={elegido?.precio ?? ''}
+                                onChange={(e) => setPrecioGrupo(g, e.target.value)}
+                                aria-label={`Precio de venta de ${etiqueta}`}
+                                className="w-full text-right px-2 py-2 rounded border border-border bg-surface text-primary tabular-nums"
+                              />
+                              {/* El grupo mezcla precios: la casilla nace VACÍA y
+                                  se dice por qué. Proponer uno de los dos sería
+                                  cobrar un precio que nadie escribió. */}
+                              {g.mezclado && (
+                                <p className="text-[9px] mt-0.5 leading-none text-warning font-semibold">
+                                  precios distintos
+                                </p>
+                              )}
+                            </>
                           ) : (
-                            formatCurrency(paca.precio_venta)
+                            <span className="text-muted tabular-nums">
+                              {g.precio != null ? formatCurrency(g.precio) : '—'}
+                            </span>
                           )}
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono font-semibold text-secondary tabular-nums">
+                          {cant > 0 && precio > 0
+                            ? formatCurrency(cant * precio)
+                            : <span className="text-muted/40">—</span>}
                         </td>
                       </tr>
                     );
@@ -1302,7 +1560,10 @@ export default function Ventas() {
           </div>
 
           <div className="flex items-center justify-between gap-3 p-4 bg-primary/5 rounded-lg">
-            <span className="text-sm text-muted">Total ({pacasSeleccionadas.length} pacas)</span>
+            <span className="text-sm text-muted">
+              Total ({gruposElegidos.length} producto{gruposElegidos.length === 1 ? '' : 's'}
+              {', '}{pacasSeleccionadas.length} unidad{pacasSeleccionadas.length === 1 ? '' : 'es'})
+            </span>
             <span className="text-xl font-display text-primary" aria-live="polite">{formatCurrency(totalVenta)}</span>
           </div>
 
@@ -1316,7 +1577,7 @@ export default function Ventas() {
       </Modal>
 
       {/* Modal de Despacho Post-Venta */}
-      <Modal isOpen={despachoModalOpen} onClose={() => { setDespachoModalOpen(false); setPacasSeleccionadas([]); }} title="Comprobante de Venta" size="lg">
+      <Modal isOpen={despachoModalOpen} onClose={() => { setDespachoModalOpen(false); setGrupoSel({}); }} title="Comprobante de Venta" size="lg">
         {despachoData && (
           <div className="space-y-6">
             {/* Encabezado */}
