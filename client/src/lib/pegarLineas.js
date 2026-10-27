@@ -38,15 +38,44 @@ export const CAMPOS_PEGADO = [
 // pegar en la pantalla dé la vuelta completa sin tocar nada.
 const ORDEN_POR_POSICION = ['categoria', 'clasificacion', 'referencia', 'calidad', 'cantidad', 'costo_unitario'];
 
-const campoDelRotulo = (celda) => {
+// Los campos de una LINEA DE DESPACHO y cómo los llama una hoja de cálculo.
+// Son otros porque la hoja es otra: aquí cada renglón dice a QUIÉN se le
+// despacha, y lleva los tres datos de transporte que en esta operación se
+// deciden por cliente, no por despacho.
+//
+// Un renglón sin cliente hereda el del renglón de arriba, igual que en una hoja
+// de cálculo de verdad: nadie repite el nombre en las cinco referencias que le
+// van a la misma persona. Eso lo resuelve la pantalla, no esto.
+export const CAMPOS_DESPACHO = [
+  { campo: 'cliente',             rotulo: 'Cliente',     alias: ['cliente', 'nombre'] },
+  { campo: 'referencia',          rotulo: 'Referencia',  alias: ['referencia', 'producto', 'descripcion'] },
+  { campo: 'calidad',             rotulo: 'Calidad',     alias: ['calidad'] },
+  { campo: 'cantidad',            rotulo: 'Cantidad',    alias: ['cantidad', 'cant', 'can', 'unidades', 'pacas'] },
+  { campo: 'precio_unitario',     rotulo: 'Precio',      alias: ['precio', 'precio unitario', 'valor'] },
+  { campo: 'descuento_unitario',  rotulo: 'Descuento',   alias: ['descuento', 'dcto', 'rebaja'] },
+  { campo: 'tipo_transporte',     rotulo: 'Transporte',  alias: ['tipo transporte', 'tipo de transporte', 'transporte', 'despacho'] },
+  { campo: 'transportadora',      rotulo: 'Transportadora', alias: ['transportadora', 'transp'] },
+  { campo: 'fletes',              rotulo: 'Fletes',      alias: ['fletes', 'flete'] },
+];
+
+const ORDEN_DESPACHO = CAMPOS_DESPACHO.map((c) => c.campo);
+
+// Qué campos son números en cada juego. Se declara aquí y no se adivina por el
+// nombre: `cantidad` y `precio` hay que leerlos con numeroPegado y el resto hay
+// que dejarlos tal cual, y esa decisión no debe depender de una subcadena.
+const NUMERICOS = new Set(['cantidad', 'costo_unitario', 'precio_unitario', 'descuento_unitario']);
+
+const hacerCampoDelRotulo = (campos) => (celda) => {
   const t = normPegado(celda);
   if (!t) return '';
   // Primero igualdad exacta: "costo" y "costo unitario" comparten trozo, y por
   // inclusión ganaría el alias más corto que se mirara antes.
-  const exacto = CAMPOS_PEGADO.find((c) => c.alias.includes(t));
+  const exacto = campos.find((c) => c.alias.includes(t));
   if (exacto) return exacto.campo;
-  return CAMPOS_PEGADO.find((c) => c.alias.some((a) => t.includes(a)))?.campo || '';
+  return campos.find((c) => c.alias.some((a) => t.includes(a)))?.campo || '';
 };
+
+const campoDelRotulo = hacerCampoDelRotulo(CAMPOS_PEGADO);
 
 /**
  * Lee lo que hay en el portapapeles.
@@ -59,6 +88,23 @@ const campoDelRotulo = (celda) => {
  * @returns {{columnas: string[], cuerpo: string[][], cabeceraDetectada: boolean}|null}
  */
 export function leerBloquePegado(texto) {
+  return leerBloqueCon(texto, CAMPOS_PEGADO, ORDEN_POR_POSICION);
+}
+
+/**
+ * Lo mismo, para un juego de campos cualquiera.
+ *
+ * Existe porque hay DOS hojas que se pegan —las líneas de un contenedor y las
+ * de un lote de despachos— y la parte delicada es la misma en las dos: decidir
+ * si la primera fila son rótulos, sin comerse una línea de datos creyendo que
+ * lo era. Duplicarla habría dejado dos reglas distintas para la misma duda.
+ *
+ * @param {string} texto lo que entrega `clipboardData.getData('text/plain')`
+ * @param {{campo: string, alias: string[]}[]} campos
+ * @param {string[]} ordenPorPosicion qué campo es cada columna cuando no hay rótulos
+ * @returns {{columnas: string[], cuerpo: string[][], cabeceraDetectada: boolean}|null}
+ */
+export function leerBloqueCon(texto, campos, ordenPorPosicion) {
   const crudo = String(texto ?? '');
   if (!crudo.includes('\t') && !crudo.includes('\n')) return null;
 
@@ -70,17 +116,43 @@ export function leerBloquePegado(texto) {
   // ¿La primera fila son rótulos? Hacen falta DOS aciertos: con uno solo, una
   // fila de datos cuyo primer valor fuera "verano" se tragaría como cabecera y
   // se perdería una línea entera sin que nadie lo notara.
-  const rotulos = filas[0].map(campoDelRotulo);
+  const delRotulo = hacerCampoDelRotulo(campos);
+  const rotulos = filas[0].map(delRotulo);
   const cabeceraDetectada = rotulos.filter(Boolean).length >= 2;
   const cuerpo = cabeceraDetectada ? filas.slice(1) : filas;
   if (!cuerpo.length) return null;
 
   const ancho = Math.max(...cuerpo.map((f) => f.length));
   const columnas = Array.from({ length: ancho }, (_, i) => (
-    cabeceraDetectada ? (rotulos[i] || '') : (ORDEN_POR_POSICION[i] || '')
+    cabeceraDetectada ? (rotulos[i] || '') : (ordenPorPosicion[i] || '')
   ));
 
   return { columnas, cuerpo, cabeceraDetectada };
+}
+
+/**
+ * Un bloque de líneas de DESPACHO, ya repartido en campos.
+ *
+ * No cruza nada contra el catálogo ni contra el inventario: eso lo hace la
+ * pantalla, que es la que sabe qué clientes hay y qué existencias quedan. Aquí
+ * sólo se parte el texto y se leen los números. Lo que no se reconozca viaja
+ * tal cual, para que se vea en la previsualización antes de aplicarse.
+ */
+export function leerDespachosPegados(texto) {
+  const bloque = leerBloqueCon(texto, CAMPOS_DESPACHO, ORDEN_DESPACHO);
+  if (!bloque) return null;
+  const indices = [...bloque.columnas.entries()].filter(([, campo]) => campo);
+  const lineas = bloque.cuerpo.map((celdas) => {
+    const linea = {};
+    for (const c of CAMPOS_DESPACHO) linea[c.campo] = '';
+    for (const [i, campo] of indices) {
+      linea[campo] = NUMERICOS.has(campo)
+        ? numeroPegado(celdas[i])
+        : String(celdas[i] ?? '').trim();
+    }
+    return linea;
+  });
+  return { ...bloque, lineas };
 }
 
 /**
