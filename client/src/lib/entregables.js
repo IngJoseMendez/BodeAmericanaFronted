@@ -1444,7 +1444,7 @@ export function hojaInventarioInterno(wb, filas) {
     // Un producto cuyas pacas no entraron todas al mismo costo no tiene UN
     // costo por unidad, así que la casilla se queda vacía. Las dos de total
     // siguen siendo exactas: se suman línea por línea antes de juntarlas.
-    if (g.costo == null || g.precio == null) {
+    if (g.costo == null || (g.precio == null && !g.sinLista)) {
       sinUnitario++;
       for (const i of [4, 5]) {
         if (r.getCell(i).value === '') r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fef3c7' } };
@@ -1515,7 +1515,7 @@ export function agruparPorProducto(filas) {
     const efectivo = precioDeLinea(f);
     const g = m.get(clave) || {
       referencia: f.referencia || '', calidad: f.calidad || '',
-      disponibles: 0, costoTotal: 0, precioTotal: 0,
+      disponibles: 0, costoTotal: 0, precioTotal: 0, conStock: 0, nacidasRebajadas: 0,
       costos: new Set(), precios: new Set(), promos: new Set(),
     };
     g.disponibles += d;
@@ -1525,8 +1525,15 @@ export function agruparPorProducto(filas) {
     // tienen existencias: una fila en cero no aporta plata a ningún total y su
     // costo no debería poder vaciar la casilla de las que sí hay.
     if (d > 0) {
+      g.conStock++;
       g.costos.add(Math.round(costo));
-      g.precios.add(Math.round(num(f.precio_unitario)));
+      // EL PRECIO DE LISTA DE UNA PACA NACIDA REBAJADA NO EXISTE: su
+      // `precio_unitario` ES la rebaja. Se guarda null y la columna PRECIO
+      // queda vacía, igual que la columna ORIGINAL de la MATRIZ. Guardar la
+      // cifra aquí la pintaba dos veces, en gris bajo PRECIO y en negrita bajo
+      // PROMO, y eso se lee como una rebaja que no rebaja nada.
+      if (f.tiene_promocion) { g.nacidasRebajadas++; g.precios.add(null); }
+      else g.precios.add(Math.round(num(f.precio_unitario)));
       g.promos.add(promo == null ? null : Math.round(promo));
     }
     m.set(clave, g);
@@ -1537,6 +1544,11 @@ export function agruparPorProducto(filas) {
     costo: unico(g.costos) || null,
     precio: unico(g.precios),
     promo: unico(g.promos),
+    // `precio` puede salir vacío por DOS razones distintas y la hoja las
+    // explica distinto: porque no hay precio de lista que enseñar (esto), o
+    // porque el producto entró en varios contenedores a precios que no
+    // coinciden (lo otro, que sí lleva aviso en amarillo).
+    sinLista: g.conStock > 0 && g.nacidasRebajadas === g.conStock,
   })).sort(porReferencia);
 }
 

@@ -10,9 +10,9 @@ import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2, LayoutGrid }
 import { parseMonto } from '../lib/money';
 import { useAuth } from '../context/AuthContext';
 import {
-  nuevoLibro, descargar, int,
+  nuevoLibro, descargar, int, costoDeLinea,
   hojaDespachoBodega, hojaSeparadasBodega, hojaInventarioBodega, hojaMatrizClientes,
-  hojaFaltantes,
+  hojaFaltantes, hojaConteoBodega, hojaDespachoGeneral,
   hojaListaPreciosClientes, hojaCotizacionCliente, hojaCarteraCliente,
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
   hojaPreciosInternos, hojaUtilidadContenedor,
@@ -53,7 +53,8 @@ export default function Entregables() {
   // no esté en esta lista, así que una hoja que se genera pero no se registra se
   // crea y se elimina acto seguido — sin error, sin aviso y sin hoja.
   const [hojasSel, setHojasSel] = useState({
-    bodega: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
+    bodega: ['DESPACHO(GENERAL)', 'DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'CONTEO(BODEGA)',
+      'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
     internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT']
   });
 
@@ -108,6 +109,24 @@ export default function Entregables() {
   const clientePorNombre = (nombre) =>
     (datos?.clientes || []).find(c => norm(c.nombre).toLowerCase() === norm(nombre).toLowerCase());
 
+  // El costo de un producto, cruzando el inventario por referencia + calidad.
+  // Si el mismo producto llegó en dos contenedores a costos distintos no se
+  // escoge uno: se devuelve null y la columna sale en blanco.
+  const costoDelProducto = (referencia, calidad) => {
+    const ref = norm(referencia).toLowerCase();
+    const cal = norm(calidad).toLowerCase();
+    let visto = null;
+    for (const f of (datos?.inventario || [])) {
+      if (norm(f.referencia).toLowerCase() !== ref) continue;
+      if (norm(f.calidad).toLowerCase() !== cal) continue;
+      const c = costoDeLinea(f);
+      if (!c) continue;
+      if (visto === null) visto = c;
+      else if (visto !== c) return null;
+    }
+    return visto;
+  };
+
   // Despachos pendientes de salir, agrupados por referencia + calidad.
   const armarDespachos = async () => {
     const pendientes = (datos.despachos || []).filter(d => d.estado === 'en_proceso');
@@ -121,8 +140,18 @@ export default function Entregables() {
         if (!grupos.has(k)) grupos.set(k, {
           clasificacion: it.clasificacion || '', categoria: it.categoria || '',
           referencia: it.referencia || '', calidad: it.calidad || '', cantidad: 0,
+          // COSTO sale del inventario, cruzando por referencia + calidad; PRECIO
+          // es el neto de la línea, precio menos descuento, que es lo que de
+          // verdad se le cobra. Los dos quedan en null cuando no son únicos: la
+          // hoja los pinta en blanco, porque una cifra que no es la que dice ser
+          // la lee alguien que no puede comprobarla.
+          costo: costoDelProducto(it.referencia, it.calidad), precio: null, primera: true,
         });
-        grupos.get(k).cantidad++;
+        const g = grupos.get(k);
+        g.cantidad++;
+        const neto = (parseFloat(it.precio_unitario) || 0) - (parseFloat(it.descuento_unitario) || 0);
+        if (g.primera) { g.precio = neto; g.primera = false; }
+        else if (g.precio !== neto) g.precio = null;
       }
       const cli = clientePorNombre(full.cliente_nombre);
       out.push({
@@ -130,7 +159,13 @@ export default function Entregables() {
         ciudad: full.ciudad_entrega || cli?.ciudad || '',
         direccion: full.direccion_entrega || cli?.direccion || '',
         celular: full.celular || cli?.telefono || '',
+        // `transporte` lo lee DESPACHO(BODEGA) y `tipo_transporte`
+        // DESPACHO(GENERAL): el mismo dato con los dos nombres, para no tener
+        // que tocar la hoja vieja.
         transporte: full.tipo_transporte || '',
+        tipo_transporte: full.tipo_transporte || '',
+        transportadora: full.transportadora || '',
+        fletes: full.fletes || '',
         grupos: [...grupos.values()],
       });
     }
@@ -186,8 +221,23 @@ export default function Entregables() {
   };
 
   const genBodega = async (wb) => {
-    hojaDespachoBodega(wb, await armarDespachos(), { totales: totalesBodega() });
-    hojaSeparadasBodega(wb, armarSeparadas());
+    // Se arma UNA vez y se usa en las dos hojas de despacho: cada llamada a
+    // `armarDespachos` pide los items de cada despacho al servidor.
+    const pendientes = await armarDespachos();
+    const separadas = armarSeparadas();
+
+    // DESPACHO(GENERAL) es la hoja con la forma del Excel que ella lleva a
+    // mano: todos los clientes seguidos en un solo bloque y lo apartado abajo,
+    // cliente por cliente. Va PRIMERA porque es la que se imprime y se lleva a
+    // la bodega. DESPACHO(BODEGA) se queda porque es la que trae categoría y
+    // clasificación, que esta no lleva.
+    hojaDespachoGeneral(wb, pendientes,
+      separadas.map(c => ({ ...c, tipo_transporte: c.transporte || '' })),
+      { titulo: 'DESPACHO(GENERAL)', totales: totalesBodega() });
+    hojaDespachoBodega(wb, pendientes, { totales: totalesBodega() });
+    hojaSeparadasBodega(wb, separadas);
+    // La hoja para contar a mano: referencia, calidad y un casillero vacío.
+    hojaConteoBodega(wb, datos.inventario || []);
     hojaInventarioBodega(wb, datos.inventario || []);
     hojaMatrizClientes(wb, datos.inventario || [], datos.comprometidas || []);
 
@@ -320,7 +370,8 @@ export default function Entregables() {
       // costo ni margen. Meterla en 'internos' la escondería además de la
       // vendedora, que es justo quien llama a los clientes; por la misma razón la
       // pantalla /faltantes se registró sin <SoloAdmin>.
-      hojas: ['DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
+      hojas: ['DESPACHO(GENERAL)', 'DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'CONTEO(BODEGA)',
+        'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
       gen: genBodega, archivo: 'Entregables_Bodega',
     },
     {
@@ -359,7 +410,7 @@ export default function Entregables() {
     //
     // Excepción conocida y anterior a esto: MATRIZ se declara en el grupo y el
     // PDF tampoco la conoce. Queda anotado para que no se lea como un olvido de
-    // este cambio.
+    // este cambio. DESPACHO(GENERAL) y CONTEO(BODEGA) sí tienen su bloque allí.
     //
     // A `faltantes` se le pasa el ARREGLO de dentro de la respuesta, o null si
     // la consulta se cayó. Ese null no es descuido: es lo que le permite al PDF

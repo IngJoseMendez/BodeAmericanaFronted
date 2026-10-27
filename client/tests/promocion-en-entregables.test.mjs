@@ -72,18 +72,40 @@ const i = (r, c) => { const x = interno.getCell(r, c).value; return x == null ||
 const filaCab = 2;
 
 console.log('\n── INVENTARIO(INTERNO): PROMO y el valor del inventario ──');
-ok('encabezados con PROMO al lado de PRECIO',
-  Array.from({ length: 10 }, (_, k) => i(filaCab, k + 1)),
-  ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'DISP', 'COSTO TOTAL', 'PRECIO TOTAL']);
-ok('sin promo: PROMO vacío', i(filaCab + 1, 7), '');
-ok('con promo: la rebaja en su columna', i(filaCab + 2, 7), 1300000);
-ok('el de lista se conserva al lado', i(filaCab + 2, 6), 1600000);
+// La disposición que pidió la dueña: una línea por producto, en orden
+// alfabético por referencia, y PROMO encima del precio como en la MATRIZ.
+//   1 DISPONIBLES · 2 REFERENCIA · 3 CALIDAD · 4 COSTO
+//   5 PRECIO · 6 PROMO · 7 COSTO TOTAL · 8 PRECIO TOTAL
+ok('encabezados: PROMO al lado de PRECIO y DISPONIBLES de primera',
+  Array.from({ length: 8 }, (_, k) => i(filaCab, k + 1)),
+  ['DISPONIBLES', 'REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'PROMO', 'COSTO TOTAL', 'PRECIO TOTAL']);
+
+// Se busca cada producto por su REFERENCIA y no por su número de fila: la hoja
+// ordena alfabéticamente, así que atarse a la posición es atarse a que nadie
+// renombre nunca un producto.
+const filaDe = (referencia) => {
+  for (let f = filaCab + 1; f <= filaCab + 6; f++) {
+    if (String(i(f, 2)).toLowerCase() === referencia) return f;
+  }
+  throw new Error(`no encontré la fila de «${referencia}» en INVENTARIO(INTERNO)`);
+};
+const sinPromo = filaDe('blusa');            // 5 × 2.300.000, sin rebaja
+const conPromo = filaDe('blusa camiseta');   // 3 × 1.300.000 de promoción
+const yaRebajada = filaDe('jeans mujer');    // 2 × 1.600.000, nació rebajada
+
+ok('sin promo: PROMO vacío', i(sinPromo, 6), '');
+ok('con promo: la rebaja en su columna', i(conPromo, 6), 1300000);
+ok('el de lista se conserva al lado', i(conPromo, 5), 1600000);
+// Una paca nacida ya rebajada no tiene precio de lista que enseñar al lado:
+// repetir la cifra bajo los dos rótulos se lee como que la rebaja no rebaja.
+ok('nacida rebajada: PROMO su precio y PRECIO vacío', [i(yaRebajada, 6), i(yaRebajada, 5)], [1600000, '']);
 // 3 disponibles × 1.300.000 de promoción = 3.900.000, no 4.800.000 al de lista.
-ok('PRECIO TOTAL se valora con la rebaja', i(filaCab + 2, 10), 3900000);
-ok('sin promo se valora con el de lista', i(filaCab + 1, 10), 2300000 * 5);
+ok('PRECIO TOTAL se valora con la rebaja', i(conPromo, 8), 3900000);
+ok('sin promo se valora con el de lista', i(sinPromo, 8), 2300000 * 5);
 // TOTAL: 5×2.300.000 + 3×1.300.000 + 2×1.600.000 = 11.500.000 + 3.900.000 + 3.200.000
-ok('el TOTAL suma con las rebajas puestas', i(filaCab + 4, 10), 18600000);
-ok('y sigue contando las pacas', i(filaCab + 4, 8), 10);
+const filaTotal = filaCab + 4;
+ok('el TOTAL suma con las rebajas puestas', i(filaTotal, 8), 18600000);
+ok('y sigue contando las pacas', i(filaTotal, 1), 10);
 
 console.log(malos
   ? `\n${malos} PRUEBA(S) FALLIDA(S)`

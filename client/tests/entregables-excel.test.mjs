@@ -247,14 +247,31 @@ try {
     ok.push('MATRIZ: el rotulo sigue siendo el de su plantilla');
   }
 
+  // INVENTARIO(INTERNO) tiene otra disposicion desde que se rehizo a peticion
+  // de la dueña: DISPONIBLES, REFERENCIA, CALIDAD, COSTO(4), PRECIO, PROMO,
+  // COSTO TOTAL, PRECIO TOTAL. Y ordena alfabeticamente por referencia, que la
+  // MATRIZ no, asi que se cruza POR REFERENCIA y no por numero de fila.
   const hojaI = releido.getWorksheet('INVENTARIO(INTERNO)');
   let cab = null;
-  hojaI.eachRow((row, n) => { if (row.getCell(1).value === 'CATEGORIA') cab = n; });
-  const enInterno = [1, 2, 3].map((i) => hojaI.getRow(cab + i).getCell(5).value);
-  if (JSON.stringify(enInterno) !== JSON.stringify(enMatriz)) {
-    fallos.push('INVENTARIO(INTERNO) no coincide con MATRIZ: ' + JSON.stringify(enInterno));
+  hojaI.eachRow((row, n) => { if (row.getCell(1).value === 'DISPONIBLES') cab = n; });
+  if (!cab) {
+    fallos.push('INVENTARIO(INTERNO): no encontre la fila de encabezados (DISPONIBLES)');
   } else {
-    ok.push('INVENTARIO(INTERNO) y MATRIZ ensenan el mismo costo por linea');
+    const costoPorRef = new Map();
+    hojaI.eachRow((row, n) => {
+      if (n <= cab) return;
+      const ref = String(row.getCell(2).value ?? '').toLowerCase();
+      if (ref && ref !== 'total') costoPorRef.set(ref, row.getCell(4).value);
+    });
+    // El mismo orden en el que estan las tres lineas de la MATRIZ.
+    const enInterno = ['mixta invierno', 'chaqueta', 'shorts']
+      .map((r) => (costoPorRef.has(r) ? costoPorRef.get(r) : `FALTA ${r}`));
+    if (JSON.stringify(enInterno) !== JSON.stringify(enMatriz)) {
+      fallos.push('INVENTARIO(INTERNO) no coincide con MATRIZ: ' + JSON.stringify(enInterno)
+        + ' contra ' + JSON.stringify(enMatriz));
+    } else {
+      ok.push('INVENTARIO(INTERNO) y MATRIZ ensenan el mismo costo por linea');
+    }
   }
 } catch (err) {
   fallos.push('costo por linea: ' + err.message);
