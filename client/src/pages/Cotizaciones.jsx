@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto, BuscadorLista } from '../components/common';
+import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto, BuscadorLista, FlujoVenta } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
@@ -664,7 +664,7 @@ export default function Cotizaciones() {
         };
       });
 
-      await cotizacionesApi.create({
+      const creada = await cotizacionesApi.create({
         cliente_id: formData.cliente_id,
         vendedor_id: usuario?.id,
         validez_dias: formData.validez_dias,
@@ -681,13 +681,29 @@ export default function Cotizaciones() {
         detalles,
       });
       
-      addToast('Cotización creada', 'success');
       setModalOpen(false);
       loadCotizaciones();
+
+      // EL PASO SIGUIENTE, AQUI MISMO. Antes esto cerraba el modal y dejaba a la
+      // usuaria mirando la lista: para despachar habia que pulsar la cotizacion,
+      // convertirla, irse a Despachos, buscarla y confirmar la salida. Siete
+      // gestos para una cosa que es una sola. Ahora el panel dice que se hizo y
+      // ofrece lo que sigue, con «Despues» siempre a la vista.
+      const cli = clientes.find((c) => String(c.id) === String(formData.cliente_id));
+      setFlujo([{
+        id: creada?.id,
+        numero: creada?.numero,
+        cliente: cli?.nombre || '',
+        unidades: detalles.reduce((s, d) => s + (parseInt(d.cantidad, 10) || 0), 0),
+        total: Number(creada?.total) || 0,
+      }]);
     } catch (err) {
       addToast(err.message, 'error');
     }
   };
+
+  // Las cotizaciones que el panel de flujo esta acompanando. null = cerrado.
+  const [flujo, setFlujo] = useState(null);
 
   const handleAprobar = async (id) => {
     try {
@@ -1537,6 +1553,23 @@ export default function Cotizaciones() {
           </div>
         </div>
       </Modal>
+      {/* EL PASO SIGUIENTE, SIN IRSE A BUSCARLO.
+          No es un asistente que te lleve de pantalla en pantalla: el flujo no
+          siempre es seguido -una cotización espera días el sí del cliente- y
+          saltar de pantalla pierde la lista que se venía trabajando. Lo que
+          hace es traer el paso siguiente aquí, con «Después» siempre a la
+          vista. Ver components/common/FlujoVenta.jsx. */}
+      <Modal isOpen={Boolean(flujo)} onClose={() => setFlujo(null)}
+             title="Qué sigue" size="lg">
+        {flujo && (
+          <FlujoVenta
+            cotizaciones={flujo}
+            onCerrar={() => setFlujo(null)}
+            onCambio={loadCotizaciones}
+          />
+        )}
+      </Modal>
+
     </Layout>
   );
 }

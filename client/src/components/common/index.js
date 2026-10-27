@@ -13,3 +13,4 @@ export { PreviewProvider, usePreview } from './PreviewProvider';
 export { SelectorTransporte } from './SelectorTransporte';
 export { BuscadorLista } from './BuscadorLista';
 export { CampoMonto } from './CampoMonto';
+export { FlujoVenta } from './FlujoVenta';

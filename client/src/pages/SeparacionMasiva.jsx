@@ -36,7 +36,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { useToast, useConfirm } from '../components/common';
+import { useToast, useConfirm, Modal, FlujoVenta } from '../components/common';
 import {
   clientesApi, cotizacionesApi, listaPreciosApi, matrizApi, pacasApi, preciosApi,
   preciosPromocionApi, transportesApi,
@@ -146,6 +146,23 @@ export default function SeparacionMasiva() {
   const [problemasSueltos, setProblemasSueltos] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [ultimoEnvio, setUltimoEnvio] = useState(null);
+  // Las cotizaciones que el panel de flujo esta acompanando. null = cerrado.
+  // Se llena con lo que devuelve el servidor, no con lo que se le mando: si una
+  // no se pudo crear, no tiene que aparecer como si existiera.
+  const [flujo, setFlujo] = useState(null);
+
+  // Lo que devuelve el servidor, en la forma que espera FlujoVenta. Los dos
+  // caminos -con reparto y sin el- devuelven la misma lista `creadas`, asi que
+  // la conversion es una.
+  const paraElFlujo = (creadas) => (creadas || [])
+    .map((c) => ({
+      id: c.cotizacion_id ?? c.id,
+      numero: c.numero,
+      cliente: c.cliente || c.cliente_nombre || '',
+      unidades: Number(c.unidades) || 0,
+      total: Number(c.total) || 0,
+    }))
+    .filter((c) => c.id);
   const [generandoMatriz, setGenerandoMatriz] = useState(false);
   const [borradorRecuperado, setBorradorRecuperado] = useState(null);
   const [estadoGuardado, setEstadoGuardado] = useState('');
@@ -2003,6 +2020,11 @@ export default function SeparacionMasiva() {
           numero: r?.reparto?.numero || repartoRef.current.numero || null,
         });
         limpiarTodo();
+        // EL PASO SIGUIENTE, ENCIMA. Quince cotizaciones significaban quince
+        // viajes a Cotizaciones y quince mas a Despachos. En lote son dos
+        // pulsaciones, y «Despues» sigue ahi para cuando el cliente aun no ha
+        // dicho que si.
+        if (creadas.length) setFlujo(paraElFlujo(creadas));
         await cargarFaltantes();
       } else {
         // ── PLAN B: el servidor del reparto no está ───────────────────────────
@@ -2071,6 +2093,7 @@ export default function SeparacionMasiva() {
           numero: null,
         });
         limpiarTodo();
+        if (creadas.length) setFlujo(paraElFlujo(creadas));
       }
 
       // El stock cambió: lo que se acaba de apartar ya no está disponible.
@@ -2274,6 +2297,23 @@ export default function SeparacionMasiva() {
           onCrear={crearCotizaciones}
         />
       )}
+      {/* EL PASO SIGUIENTE, SIN SALIR DE LA MATRIZ.
+          Aquí la lista ES el trabajo: sacar a la usuaria de la pantalla para
+          despachar le haría perder el reparto que acaba de armar. El panel
+          ofrece vender y despachar las N de una, y confirmar la salida de las N
+          de una, con los endpoints de lote que ya existen. Lo que falle se
+          nombra y no tumba a los demás. */}
+      <Modal isOpen={Boolean(flujo)} onClose={() => setFlujo(null)}
+             title="Qué sigue" size="lg">
+        {flujo && (
+          <FlujoVenta
+            cotizaciones={flujo}
+            onCerrar={() => setFlujo(null)}
+            onCambio={() => { cargarFaltantes(); }}
+          />
+        )}
+      </Modal>
+
     </Layout>
   );
 }
