@@ -170,6 +170,70 @@ function contadores(ws, fila, pares, colInicio = 8) {
 const COLS_BODEGA = ['CATEGORIA', 'CLASIFICACION', 'REFERENCIA', 'CALIDAD', 'CAN', 'NOMBRE', 'CIUDAD', 'DIRECCION', 'CELULAR', 'TRANSP.'];
 const ANCHOS_BODEGA = [18, 16, 24, 14, 7, 26, 16, 32, 14, 12];
 
+// Las columnas del Excel que la dueña le pasa a la bodega, en su orden (ver
+// `Despacho Bodega.xlsx`): primero QUÉ hay que sacar, luego PARA QUIÉN, y al
+// final CÓMO sale. Los tres últimos son por cliente y hasta ahora se escribían
+// a mano en el Excel después de generarlo.
+const COLS_DESPACHO = ['REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'CAN', 'NOMBRE',
+  'CIUDAD', 'DIRECCION', 'CELULAR', 'TIPO TRANSPORTE', 'TRANSP.', 'FLETES'];
+const ANCHOS_DESPACHO = [26, 15, 13, 13, 6, 26, 15, 30, 14, 17, 17, 15];
+
+/**
+ * CONTEO(BODEGA) — la hoja para contar a mano.
+ *
+ * Sólo tres columnas: qué es, de qué calidad, y un casillero EN BLANCO para
+ * escribir cuántas hay. Nada más, y a propósito: es la hoja que alguien se
+ * lleva a la bodega a contar, y cualquier cifra impresa al lado del casillero
+ * —el físico, el disponible, la que sea— deja de ser un conteo y pasa a ser una
+ * confirmación. Se copia el número que ya está y nadie cuenta nada.
+ *
+ * El TOTAL de abajo sí es una fórmula viva: cuando alguien pasa los conteos al
+ * Excel, la suma sale sola y se compara de un golpe contra el inventario del
+ * sistema, sin sumar a mano doscientas filas.
+ */
+export function hojaConteoBodega(wb, filas) {
+  const ws = wb.addWorksheet('CONTEO(BODEGA)');
+  [34, 18, 14].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  let fila = titulo(ws, `CONTEO FÍSICO — ${hoyStr()}`, 3);
+  fila = cabecera(ws, fila, ['REFERENCIA', 'CALIDAD', 'CANTIDAD']);
+  const primera = fila;
+
+  // Una línea por producto y en orden alfabético, que es como se recorre una
+  // bodega con la hoja en la mano. Agrupado igual que el inventario interno: el
+  // mismo producto en dos contenedores es UNA fila que contar, no dos.
+  const grupos = agruparPorProducto(filas);
+  for (const g of grupos) {
+    const r = ws.getRow(fila);
+    r.height = 20;
+    r.getCell(1).value = g.referencia || '';
+    r.getCell(2).value = g.calidad || '';
+    [1, 2].forEach((i) => {
+      r.getCell(i).font = { size: 10 };
+      r.getCell(i).alignment = { vertical: 'middle' };
+    });
+    // El casillero: vacío y con borde, para que se vea dónde se escribe.
+    const c = r.getCell(3);
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    const linea = { style: 'thin', color: { argb: 'cbd5e1' } };
+    c.border = { top: linea, left: linea, bottom: linea, right: linea };
+    zebra(ws, fila, 2);
+    fila++;
+  }
+
+  const t = ws.getRow(fila);
+  t.height = 22;
+  ws.mergeCells(fila, 1, fila, 2);
+  t.getCell(1).value = `TOTAL CONTADO   (${grupos.length} productos)`;
+  t.getCell(3).value = { formula: `SUM(C${primera}:C${fila - 1})` };
+  for (let i = 1; i <= 3; i++) {
+    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    t.getCell(i).alignment = { horizontal: i === 3 ? 'center' : 'right', vertical: 'middle' };
+  }
+  return ws;
+}
+
 /**
  * DESPACHO(BODEGA) — una fila por referencia/calidad de cada despacho,
  * con los datos de entrega del cliente repetidos, tal como en el original.
@@ -224,6 +288,124 @@ export function hojaDespachoBodega(wb, despachos, { totales } = {}) {
     t.getCell(i).alignment = { horizontal: i === 5 ? 'center' : 'right' };
   });
   t.height = 22;
+  return ws;
+}
+
+/**
+ * LA HOJA QUE SE LE ENTREGA A LA BODEGA — UNA SOLA, CON TODOS LOS CLIENTES.
+ *
+ * Tiene la forma exacta del Excel que la dueña lleva a mano (`Despacho
+ * Bodega.xlsx`, hoja OCT14D144): los contadores arriba a la derecha, el bloque
+ * DESPACHAR con todos los clientes seguidos, y debajo el bloque SEPARAR con un
+ * sub-bloque por cliente y su propio total.
+ *
+ * TODO VA EN UNA HOJA, NO EN UNA POR CLIENTE. Quien trabaja con esto recorre la
+ * bodega una vez y va sacando; con quince pestañas tendría que recorrerla
+ * quince veces. Por eso el bloque de arriba mezcla clientes a propósito: está
+ * ordenado por lo que hay que ir a buscar, no por a quién se le entrega. El
+ * nombre viaja en cada renglón para saber de quién es cada paca.
+ *
+ * LO QUE SE SEPARA VA APARTE Y SÍ POR CLIENTE, porque es lo contrario: no sale
+ * hoy, se aparta y se marca con el nombre encima.
+ *
+ * @param despachos  [{ nombre, ciudad, direccion, celular, tipo_transporte,
+ *                      transportadora, fletes, grupos: [{referencia, calidad,
+ *                      costo, precio, cantidad}] }]
+ * @param separadas  lo mismo, para el bloque de abajo
+ * @param meta       { titulo, fecha, numero, totales }
+ */
+export function hojaDespachoGeneral(wb, despachos, separadas = [], meta = {}) {
+  const nombreHoja = String(meta.titulo || `DESPACHO ${hoyStr()}`).slice(0, 31);
+  const ws = wb.addWorksheet(nombreHoja);
+  ANCHOS_DESPACHO.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  ws.getCell('A1').value = 'FECHA';
+  ws.getCell('A1').font = { bold: true, size: 10 };
+  ws.getCell('B1').value = meta.fecha || hoyStr();
+  if (meta.numero) {
+    ws.getCell('C1').value = meta.numero;
+    ws.getCell('C1').font = { bold: true, size: 11, color: { argb: ACCENT } };
+  }
+  if (meta.totales) {
+    const t = meta.totales;
+    contadores(ws, 1, [
+      ['VIENEN', t.vienen], ['SALEN', t.salen], ['QUEDAN', t.quedan],
+      ['SEPARADAS', t.separadas], ['DISPONIBLES', t.disponibles],
+    ], COLS_DESPACHO.length - 1);
+  }
+
+  const pintar = (fila, g, d) => {
+    const r = ws.getRow(fila);
+    r.height = 18;
+    [g.referencia, g.calidad, num(g.costo) || '', num(g.precio) || '', int(g.cantidad),
+      d.nombre, d.ciudad, d.direccion, d.celular,
+      d.tipo_transporte, d.transportadora, d.fletes].forEach((v, i) => {
+      const c = r.getCell(i + 1);
+      c.value = v ?? '';
+      c.font = { size: 10 };
+      c.alignment = { horizontal: i === 4 ? 'center' : 'left', vertical: 'middle' };
+      // El dinero va formateado pero se entrega crudo, como en toda la casa.
+      if (i === 2 || i === 3) { c.numFmt = '$#,##0'; c.alignment = { horizontal: 'right', vertical: 'middle' }; }
+      // Los tres de transporte, en mayúsculas y grises: son instrucción, no dato
+      // del producto, y en la hoja original se leen de un golpe por el color.
+      if (i >= 9) c.font = { size: 9, color: { argb: '475569' } };
+    });
+    zebra(ws, fila, COLS_DESPACHO.length);
+    return int(g.cantidad);
+  };
+
+  const barra = (fila, texto, cantidad, color) => {
+    const r = ws.getRow(fila);
+    r.height = 22;
+    ws.mergeCells(fila, 1, fila, 4);
+    r.getCell(1).value = texto;
+    r.getCell(5).value = cantidad;
+    for (let i = 1; i <= COLS_DESPACHO.length; i++) {
+      r.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+      r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      r.getCell(i).alignment = { horizontal: i === 5 ? 'center' : 'left', vertical: 'middle' };
+    }
+  };
+
+  // ── DESPACHAR ──
+  let fila = 7;
+  const totalSalen = despachos.reduce((s, d) => s + d.grupos.reduce((s2, g) => s2 + int(g.cantidad), 0), 0);
+  barra(fila, 'DESPACHAR', totalSalen, ACCENT);
+  fila++;
+  fila = cabecera(ws, fila, COLS_DESPACHO);
+  for (const d of despachos) {
+    for (const g of d.grupos) { pintar(fila, g, d); fila++; }
+  }
+  if (!despachos.length) {
+    ws.getCell(fila, 1).value = 'No hay nada que despachar.';
+    ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: '94a3b8' } };
+    fila++;
+  }
+  barra(fila, 'TOTAL A DESPACHAR', totalSalen, INK);
+  fila += 3;
+
+  // ── SEPARAR ──
+  if (separadas.length) {
+    const totalSep = separadas.reduce((s, c) => s + c.grupos.reduce((s2, g) => s2 + int(g.cantidad), 0), 0);
+    barra(fila, 'SEPARAR', totalSep, 'd97706');
+    fila += 2;
+    for (const c of separadas) {
+      fila = cabecera(ws, fila, COLS_DESPACHO);
+      let sub = 0;
+      for (const g of c.grupos) { sub += pintar(fila, g, c); fila++; }
+      const r = ws.getRow(fila);
+      r.height = 20;
+      ws.mergeCells(fila, 1, fila, 4);
+      r.getCell(1).value = `TOTAL ${c.nombre || ''}`;
+      r.getCell(5).value = sub;
+      for (let i = 1; i <= 5; i++) {
+        r.getCell(i).font = { bold: true, size: 10, color: { argb: '92400e' } };
+        r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fde68a' } };
+        r.getCell(i).alignment = { horizontal: i === 5 ? 'center' : 'right', vertical: 'middle' };
+      }
+      fila += 2;
+    }
+  }
   return ws;
 }
 
