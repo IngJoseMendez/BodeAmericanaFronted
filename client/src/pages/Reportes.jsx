@@ -225,7 +225,10 @@ export default function Reportes() {
           color: successColor },
         { label: 'Saldo Cartera', value: fmt(reporteMensual.resumen_ejecutivo?.saldo_cartera), color: accentColor },
         { label: 'Clientes Nuevos', value: reporteMensual.resumen_ejecutivo?.clientes_nuevos || 0, color: secondaryColor },
-        { label: 'Pacas Vendidas', value: reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0, color: secondaryColor },
+        // Las unidades del mes, las mismas que la tarjeta. Decia «Pacas
+        // Vendidas» y leia las del inventario del sistema: 0 en el Excel que se
+        // archiva, al lado de una tabla con 57 ventas.
+        { label: 'Unidades Vendidas', value: cifras.unidades, color: secondaryColor },
       ];
       
       let kpiRow = 5;
