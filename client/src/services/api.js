@@ -184,6 +184,13 @@ export const pacasApi = {
   getInventario(params = {}) {
     return api.get(`/pacas/inventario${qs(params)}`);
   },
+  // Los valores que existen de cada filtro y cuántas unidades daría elegir
+  // cada uno. Se le pasan los filtros ya puestos: cada lista se cuenta con los
+  // de las OTRAS dimensiones y sin el suyo, que es lo que evita que la pantalla
+  // ofrezca combinaciones que no devuelven nada.
+  getOpciones(params = {}) {
+    return api.get(`/pacas/opciones${qs(params)}`);
+  },
   getComprometidas(params = {}) {
     return api.get(`/pacas/comprometidas${qs(params)}`);
   },

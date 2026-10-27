@@ -3,7 +3,11 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista } from '../components/common';
 import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { PACA_ESTADOS } from '../types';
+// `PACA_ESTADOS` ya no se importa: los estados que se ofrecen salen ahora de
+// /pacas/opciones, o sea de los que de verdad hay en la bodega. La lista fija
+// ofrecía los seis estados posibles del sistema aunque cuatro de ellos no
+// tuvieran ni una paca, y elegir uno de esos dejaba la tabla vacía sin decir
+// que nunca iba a tener nada.
 import { Plus, Search, Edit2, Trash2, Hash, Grid, List, ChevronRight, ChevronLeft, Package, Eye, Link, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 // El mínimo por línea sale del mismo helper que las hojas de Excel y el PDF:
@@ -33,7 +37,52 @@ const RAYA_CABECERA = { boxShadow: 'inset 0 -1px 0 var(--color-border)' };
 // El rotulo de las pacas que no tienen categoria. No es una categoria de
 // verdad, asi que no se puede mandar al servidor como filtro: ese caso se
 // resuelve aqui, sobre lo que ya llego.
-const SIN_CATEGORIA = 'Sin categoría';
+// ── «SIN DATO» ES UN VALOR, Y SE PUEDE PEDIR ──────────────────────
+//
+// Hay 3 pacas sin proveedor escrito y 3 cuyo lote no tiene contenedor: son
+// justo las que hay que revisar. Este es el valor con el que se piden, y lo
+// entiende el servidor (`utils/filtrosPacas.js`). No puede ser la cadena vacía
+// porque eso ya significa «sin filtro», que es lo contrario.
+//
+// Antes esto era `SIN_CATEGORIA = 'Sin categoría'` y se filtraba EN EL
+// NAVEGADOR, en tres sitios distintos, porque el servidor no sabía pedirlo. Ya
+// sabe, así que los tres se van: lo que se ve, lo que se exporta y lo que dice
+// la cabecera vuelven a salir de la misma consulta.
+const SIN_DATO = '__vacio__';
+
+/** Cómo se llama en pantalla un valor que no está escrito. */
+const ROTULO_SIN_DATO = {
+  contenedor: 'Sin contenedor',
+  proveedor: 'Sin proveedor',
+  categoria: 'Sin categoría',
+  clasificacion: 'Sin clasificación',
+  referencia: 'Sin referencia',
+  calidad: 'Sin calidad',
+  estado: 'Sin estado',
+};
+
+// ── LOS SIETE FILTROS, EN EL ORDEN EN QUE SE PIENSA ───────────────
+//
+// Una paca se busca por siete cosas y la pantalla dejaba elegir dos: estado y
+// clasificación. Las otras cinco había que acertarlas escribiendo en una caja
+// de texto, y una caja de texto no sabe que «premium» es una calidad.
+//
+// El orden no es alfabético, es el de la bodega: primero DE DÓNDE vino
+// -contenedor, proveedor-, después QUÉ ES -temporada, clasificación,
+// referencia, calidad- y al final EN QUÉ ESTÁ. Es como se describe una paca en
+// voz alta.
+//
+// `rotulo` no repite el nombre de la columna de la base cuando el de la casa es
+// otro: la columna se llama `categoria` y en la bodega eso es la TEMPORADA.
+const FILTROS_PACA = [
+  { clave: 'contenedor', rotulo: 'Contenedor', todos: 'Todos los contenedores' },
+  { clave: 'proveedor', rotulo: 'Proveedor', todos: 'Todos los proveedores' },
+  { clave: 'categoria', rotulo: 'Temporada', todos: 'Las dos temporadas' },
+  { clave: 'clasificacion', rotulo: 'Clasificación', todos: 'Todas las clasificaciones' },
+  { clave: 'referencia', rotulo: 'Referencia', todos: 'Todas las referencias' },
+  { clave: 'calidad', rotulo: 'Calidad', todos: 'Todas las calidades' },
+  { clave: 'estado', rotulo: 'Estado', todos: 'Todos los estados' },
+];
 
 // ── LOS RÓTULOS DE LAS COLUMNAS, LARGOS Y CORTOS ──────────────────
 //
@@ -75,7 +124,10 @@ const ROTULOS = {
 // la busqueda vacia, sin estado, sin categoria, en la pagina 1 y en la vista
 // que no era. En sessionStorage y no en localStorage a proposito: un filtro es
 // de la sesion de trabajo de hoy, no una preferencia para siempre.
-const CLAVE_FILTROS = 'inventario.filtros.v1';
+// v2: con cuatro filtros mas. Subir el numero y no reutilizar la clave es a
+// proposito: una sesion guardada con la forma vieja no puede dejar la pantalla
+// con cuatro filtros a medio leer.
+const CLAVE_FILTROS = 'inventario.filtros.v2';
 
 const leerFiltros = () => {
   try { return JSON.parse(sessionStorage.getItem(CLAVE_FILTROS)) || {}; }
@@ -126,6 +178,23 @@ export default function Pacas() {
   const [filtroEstado, setFiltroEstado] = useState(() => leerFiltros().estado || '');
   const [filtroTipo, setFiltroTipo] = useState(() => leerFiltros().tipo || '');
   const [filtroCategoria, setFiltroCategoria] = useState(() => leerFiltros().categoria || '');
+  const [filtroReferencia, setFiltroReferencia] = useState(() => leerFiltros().referencia || '');
+  const [filtroCalidad, setFiltroCalidad] = useState(() => leerFiltros().calidad || '');
+  const [filtroContenedor, setFiltroContenedor] = useState(() => leerFiltros().contenedor || '');
+  const [filtroProveedor, setFiltroProveedor] = useState(() => leerFiltros().proveedor || '');
+
+  // ── LAS OPCIONES DE CADA DESPLEGABLE, CON SUS CUENTAS ───────────
+  //
+  // Vienen del servidor y no de las filas que haya en pantalla: la tabla está
+  // paginada, así que sacar las opciones de ella ofrecería las referencias de
+  // la página 1 y ninguna más.
+  //
+  // Cada lista se cuenta con los filtros de las OTRAS dimensiones puestos y sin
+  // el suyo. Es lo que evita los callejones sin salida: puesta la temporada de
+  // invierno, las referencias bajan de 49 a 16 y ninguna opción de ninguna
+  // lista puede dar cero resultados.
+  const [opcionesFiltro, setOpcionesFiltro] = useState(null);
+  const [unidadesConFiltros, setUnidadesConFiltros] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
@@ -180,6 +249,69 @@ export default function Pacas() {
 
   const debouncedSearch = useDebounce(search, 300);
 
+  // ── LOS PARÁMETROS SE ARMAN UNA VEZ ─────────────────────────────
+  //
+  // Esto estaba escrito a mano en CUATRO sitios —la carga agrupada, la carga de
+  // la lista, y las dos exportaciones— y las cuatro copias ya habían derivado:
+  // de ahí venía que el chip dijera «Filtrado por: Verano» y el Excel bajara
+  // con el inventario entero. Con cuatro filtros más serían cuatro copias de
+  // once líneas, y volvería a pasar.
+  //
+  // Lo que se ve, lo que se exporta y lo que dice la cabecera salen ahora de
+  // aquí, así que no pueden discrepar.
+  const filtrosActuales = {
+    estado: filtroEstado,
+    tipo: filtroTipo,
+    categoria: filtroCategoria,
+    referencia: filtroReferencia,
+    calidad: filtroCalidad,
+    contenedor: filtroContenedor,
+    proveedor: filtroProveedor,
+  };
+
+  const paramsFiltros = (extra = {}) => {
+    const params = { ...extra };
+    for (const [clave, valor] of Object.entries(filtrosActuales)) {
+      if (valor) params[clave] = valor;
+    }
+    if (debouncedSearch) params.buscar = debouncedSearch;
+    return params;
+  };
+
+  // Lo que hay puesto, para los chips y para el botón de limpiar.
+  const filtrosPuestos = FILTROS_PACA
+    .map((f) => ({ ...f, valor: filtrosActuales[f.clave === 'clasificacion' ? 'tipo' : f.clave] }))
+    .filter((f) => f.valor);
+
+  const ponerFiltro = (clave, valor) => {
+    const set = {
+      estado: setFiltroEstado,
+      clasificacion: setFiltroTipo,
+      categoria: setFiltroCategoria,
+      referencia: setFiltroReferencia,
+      calidad: setFiltroCalidad,
+      contenedor: setFiltroContenedor,
+      proveedor: setFiltroProveedor,
+    }[clave];
+    if (set) set(valor);
+  };
+
+  const limpiarFiltrosPaca = () => {
+    for (const f of FILTROS_PACA) ponerFiltro(f.clave, '');
+    setSearch('');
+  };
+
+  /** Las opciones de un filtro, como las quiere BuscadorLista. */
+  const opcionesDe = (clave) => (opcionesFiltro?.[clave] || []).map((o) => ({
+    value: o.valor,
+    label: o.valor === SIN_DATO ? (ROTULO_SIN_DATO[clave] || 'Sin dato') : o.valor,
+    // La cuenta va en `detalle` y no pegada a la etiqueta: así no se busca
+    // dentro del número —teclear «4» no puede encontrar todas las referencias
+    // que tengan un 4 en su cuenta— y no se queda escrita en el campo cerrado,
+    // donde envejecería en cuanto otro cliente pida lo mismo.
+    detalle: `${o.unidades} unidad${o.unidades === 1 ? '' : 'es'}`,
+  }));
+
   // Firma de los filtros. Antes había DOS efectos encadenados sobre los mismos
   // filtros: uno hacía setPagina(1) y otro cargaba los datos con `pagina` entre
   // sus dependencias. Estando en la página 3, cambiar un filtro disparaba una
@@ -188,16 +320,45 @@ export default function Pacas() {
   // que podía ser la obsoleta. Ahora el reset ocurre dentro del mismo efecto,
   // antes de pedir nada, y cada carga descarta su respuesta si ya no es la
   // vigente (bandera de cancelación por número de carga).
-  const filtrosKey = `${filtroEstado}|${filtroTipo}|${filtroCategoria}|${debouncedSearch}|${limite}`;
+  const filtrosKey = `${filtroEstado}|${filtroTipo}|${filtroCategoria}|${filtroReferencia}`
+    + `|${filtroCalidad}|${filtroContenedor}|${filtroProveedor}|${debouncedSearch}|${limite}`;
 
   useEffect(() => {
     try {
       sessionStorage.setItem(CLAVE_FILTROS, JSON.stringify({
         search, estado: filtroEstado, tipo: filtroTipo, categoria: filtroCategoria,
+        referencia: filtroReferencia, calidad: filtroCalidad,
+        contenedor: filtroContenedor, proveedor: filtroProveedor,
         pagina, limite, agrupada: vistaAgrupada, cortos: rotulosCortos,
       }));
     } catch { /* sin memoria de sesion se sigue funcionando igual */ }
-  }, [search, filtroEstado, filtroTipo, filtroCategoria, pagina, limite, vistaAgrupada, rotulosCortos]);
+  }, [search, filtroEstado, filtroTipo, filtroCategoria, filtroReferencia, filtroCalidad,
+    filtroContenedor, filtroProveedor, pagina, limite, vistaAgrupada, rotulosCortos]);
+  // ── LAS OPCIONES SE VUELVEN A CONTAR AL CAMBIAR UN FILTRO ───────
+  //
+  // Depende de `filtrosKey`, que es la firma de los siete filtros más la
+  // búsqueda: así se pide una vez por cambio y no una por cada `useState` que
+  // se mueva. `pagina` NO entra, a propósito: las opciones son del inventario
+  // entero, no de la página que se esté mirando.
+  //
+  // Si falla, las listas se quedan como estaban en vez de vaciarse: un
+  // desplegable vacío parece que no hay nada, y lo que no hay es respuesta.
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      try {
+        const r = await pacasApi.getOpciones(paramsFiltros());
+        if (!vigente) return;
+        setOpcionesFiltro(r.opciones || null);
+        setUnidadesConFiltros(typeof r.total === 'number' ? r.total : null);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => { vigente = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtrosKey]);
+
   const filtrosPrevRef  = useRef(filtrosKey);
   const cargaPacasRef    = useRef(0);
   const cargaAgrupadoRef = useRef(0);
@@ -215,7 +376,8 @@ export default function Pacas() {
 
   useEffect(() => {
     loadInventarioAgrupado();
-  }, [filtroEstado, filtroTipo, filtroCategoria, debouncedSearch]);
+  }, [filtroEstado, filtroTipo, filtroCategoria, filtroReferencia, filtroCalidad,
+    filtroContenedor, filtroProveedor, debouncedSearch]);
 
   useEffect(() => {
     loadLotes();
@@ -226,16 +388,7 @@ export default function Pacas() {
     const miCarga = ++cargaAgrupadoRef.current;
     try {
       setLoadingAgrupado(true);
-      const params = {};
-      if (filtroEstado)    params.estado = filtroEstado;
-      if (filtroTipo)      params.tipo   = filtroTipo;
-      if (debouncedSearch) params.buscar = debouncedSearch;
-      // La categoria se filtraba SOLO en el navegador y solo sobre la tabla
-      // agrupada: el chip decia "Filtrado por: Verano", cambiabas a Lista y
-      // salia todo, y el Excel se descargaba entero. Lo que se descarga tiene
-      // que ser lo que se ve.
-      if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
-      const data = await pacasApi.getInventario(params);
+      const data = await pacasApi.getInventario(paramsFiltros());
       if (miCarga !== cargaAgrupadoRef.current) return; // respuesta vieja: ya hay otra carga en curso
       setInventarioAgrupado(data);
     } catch (err) {
@@ -289,11 +442,7 @@ export default function Pacas() {
     const miCarga = ++cargaPacasRef.current;
     try {
       setLoading(true);
-      const params = { pagina, limite };
-      if (filtroEstado) params.estado = filtroEstado;
-      if (filtroTipo) params.tipo = filtroTipo;
-      if (debouncedSearch) params.buscar = debouncedSearch;
-      if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
+      const params = paramsFiltros({ pagina, limite });
 
       // Las tarjetas de resumen se calculan sobre el inventario agrupado, así que
       // ya no hace falta pedir /pacas/resumen en cada carga.
@@ -472,28 +621,14 @@ export default function Pacas() {
   // filtro de categoria, asi que con el chip "Filtrado por: Verano" puesto el
   // Excel salia con el inventario entero.
   const fetchInventarioActual = async () => {
-    const params = { limite: 10000 };
-    if (filtroEstado) params.estado = filtroEstado;
-    if (filtroTipo) params.tipo = filtroTipo;
-    if (debouncedSearch) params.buscar = debouncedSearch;
-    if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
-
-    const res = await pacasApi.getAll(params);
+    const res = await pacasApi.getAll(paramsFiltros({ limite: 10000 }));
     return res.data || res;
   };
 
-  const fetchInventarioAgrupadoActual = async () => {
-    const params = {};
-    if (filtroEstado)    params.estado = filtroEstado;
-    if (filtroTipo)      params.tipo   = filtroTipo;
-    if (debouncedSearch) params.buscar = debouncedSearch;
-    if (filtroCategoria && filtroCategoria !== SIN_CATEGORIA) params.categoria = filtroCategoria;
-    const filas = await pacasApi.getInventario(params);
-    // «Sin categoria» no es una categoria que el servidor pueda filtrar.
-    return filtroCategoria === SIN_CATEGORIA
-      ? filas.filter((r) => !(r.categoria || '').trim())
-      : filas;
-  };
+  // Ya no filtra nada por su cuenta. «Sin categoría» era el único caso que el
+  // servidor no sabía pedir, y ahora lo pide como `__vacio__`: lo que se
+  // descarga vuelve a salir de la misma consulta que lo que se ve.
+  const fetchInventarioAgrupadoActual = () => pacasApi.getInventario(paramsFiltros());
 
   const exportarInventarioExcel = async () => {
     try {
@@ -1022,7 +1157,7 @@ export default function Pacas() {
   const resumenCategorias = useMemo(() => {
     const acc = {};
     for (const row of inventarioAgrupado) {
-      const key = (row.categoria || '').trim() || SIN_CATEGORIA;
+      const key = (row.categoria || '').trim() || SIN_DATO;
       if (!acc[key]) acc[key] = { categoria: key, fisico: 0, disponibles: 0, separadas: 0, despachadas: 0 };
       acc[key].fisico      += parseInt(row.fisico) || 0;
       acc[key].disponibles += parseInt(row.disponibles) || 0;
@@ -1032,12 +1167,12 @@ export default function Pacas() {
     return Object.values(acc).sort((a, b) => b.fisico - a.fisico);
   }, [inventarioAgrupado]);
 
-  // El filtro por categoría YA lo aplica el servidor, y por eso lo respetan
-  // también la vista Lista y las exportaciones. Aquí sólo queda el caso de
-  // «Sin categoría», que no es una categoría que se pueda pedir por nombre.
-  const filasInventario = filtroCategoria === SIN_CATEGORIA
-    ? inventarioAgrupado.filter(r => !(r.categoria || '').trim())
-    : inventarioAgrupado;
+  // LA PANTALLA YA NO FILTRA NADA. El servidor aplica los siete, «sin
+  // categoría» incluido, así que la tabla, la vista Lista y los dos Excel
+  // vuelven a salir de la misma consulta. Esto era el último sitio donde el
+  // navegador quitaba filas por su cuenta, y era el que hacía que la cabecera
+  // contara una cosa y la tabla enseñara otra.
+  const filasInventario = inventarioAgrupado;
 
   // `pacas` es la PÁGINA actual de /pacas (como mucho `limite` filas), así que
   // con 4.000 pacas y límite 50 la cabecera decía "50 unidades". Y en la vista
@@ -1056,6 +1191,11 @@ export default function Pacas() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {resumenCategorias.map((r) => {
             const activa = filtroCategoria === r.categoria;
+            // `r.categoria` puede ser el centinela `__vacio__`, que es lo que
+            // entiende el servidor y lo que NO se le ensena a nadie.
+            const nombre = r.categoria === SIN_DATO
+              ? ROTULO_SIN_DATO.categoria
+              : r.categoria;
             return (
               <Card
                 key={r.categoria}
@@ -1065,7 +1205,7 @@ export default function Pacas() {
                 role="button"
                 tabIndex={0}
                 aria-pressed={activa}
-                aria-label={`Filtrar por categoría ${r.categoria}: ${r.fisico} en bodega, ${r.separadas} separadas, ${r.disponibles} disponibles, ${r.despachadas} ya despachadas`}
+                aria-label={`Filtrar por ${nombre}: ${r.fisico} en bodega, ${r.separadas} separadas, ${r.disponibles} disponibles, ${r.despachadas} ya despachadas`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -1079,7 +1219,7 @@ export default function Pacas() {
                     {/* break-words y no truncate: la tarjeta es ademas el boton de filtrar,
                         y con `truncate` se filtraba por algo que en la tableta no se
                         podia leer —el title no existe sin raton—. */}
-                    <span className="font-medium text-sm capitalize break-words leading-tight">{r.categoria}</span>
+                    <span className="font-medium text-sm capitalize break-words leading-tight">{nombre}</span>
                   </div>
                   {/* EL ULTIMO NUMERO SE LLAMA FISICO, NO "TOTAL".
                       Decia "Total" y era `fisico`, que EXCLUYE las despachadas.
@@ -1114,34 +1254,125 @@ export default function Pacas() {
           })}
         </div>
 
-        {filtroCategoria && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted">Filtrado por categoría:</span>
-            <button
-              onClick={() => setFiltroCategoria('')}
-              className="inline-flex items-center gap-1.5 bg-secondary/10 text-secondary font-semibold px-2.5 py-1 rounded-full hover:bg-secondary/20 transition-colors capitalize"
-            >
-              {filtroCategoria} <X size={13} />
-            </button>
-          </div>
-        )}
+        {/* ── BUSCAR PACAS ──────────────────────────────────────────
+            Una paca tiene siete cosas por las que se la busca y aquí sólo se
+            podían elegir dos: estado y clasificación. Las otras cinco había que
+            acertarlas escribiendo, y una caja de texto no sabe que «premium» es
+            una calidad y «C626» un contenedor.
 
-        {/* Filtros */}
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
-            {/* El placeholder desaparece al escribir: sin aria-label el lector de
-                pantalla anunciaba solo "campo de texto". */}
-            <input
-              id="pacas-buscar"
-              type="text"
-              aria-label="Buscar unidades por referencia, calidad, clasificación, UUID o notas"
-              placeholder="Buscar referencia, calidad, clasificación, UUID o notas…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
-            />
-          </div>
+            Al lado de cada opción va cuántas unidades daría elegirla, y las
+            listas se recuentan con los demás filtros puestos: así ninguna
+            opción ofrecida devuelve cero resultados. */}
+        <Card>
+          <CardBody>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-3">
+              <h2 className="font-display text-base text-primary">Buscar pacas</h2>
+              <p className="text-xs text-muted" role="status" aria-live="polite">
+                {unidadesConFiltros == null
+                  ? 'contando…'
+                  : `${unidadesConFiltros.toLocaleString('es-CO')} unidad${unidadesConFiltros === 1 ? '' : 'es'} con estos filtros`}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {FILTROS_PACA.map((f) => {
+                const valor = f.clave === 'clasificacion' ? filtroTipo : filtrosActuales[f.clave];
+                return (
+                  <div key={f.clave}>
+                    <label htmlFor={`filtro-${f.clave}`}
+                      className="block text-xs font-medium text-muted mb-1">
+                      {f.rotulo}
+                    </label>
+                    <BuscadorLista
+                      id={`filtro-${f.clave}`}
+                      value={valor || ''}
+                      onChange={(v) => ponerFiltro(f.clave, v)}
+                      opcionVacia={f.todos}
+                      placeholder={f.todos}
+                      opciones={opcionesDe(f.clave)}
+                      aria-label={f.rotulo}
+                      anchoLista={280}
+                      className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface"
+                    />
+                  </div>
+                );
+              })}
+
+              {/* LO ÚNICO QUE UN DESPLEGABLE NO PUEDE HACER. Buscar una unidad
+                  concreta por su UUID, o por algo que alguien dejó escrito en
+                  las notas: eso no es una lista de valores, es texto libre. El
+                  resto de los campos también los busca, por si se llega
+                  escribiendo en vez de eligiendo. */}
+              <div>
+                <label htmlFor="pacas-buscar" className="block text-xs font-medium text-muted mb-1">
+                  Texto libre
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
+                  <input
+                    id="pacas-buscar"
+                    type="text"
+                    aria-label="Buscar por UUID, notas o cualquiera de los campos"
+                    placeholder="UUID, notas…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* LO QUE HAY PUESTO, A LA VISTA Y CON SU PROPIA ×. Con siete
+                desplegables es muy fácil dejarse uno marcado y no entender por
+                qué la tabla está casi vacía; aquí se ve de un golpe y se quita
+                de uno en uno sin tener que buscar cuál era. */}
+            {(filtrosPuestos.length > 0 || search) && (
+              <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border/50">
+                <span className="text-xs text-muted">Filtrado por:</span>
+                {filtrosPuestos.map((f) => (
+                  <button
+                    key={f.clave}
+                    type="button"
+                    onClick={() => ponerFiltro(f.clave, '')}
+                    aria-label={`Quitar el filtro de ${f.rotulo}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs
+                               bg-secondary/10 text-secondary font-semibold hover:bg-secondary/20
+                               transition-colors capitalize"
+                  >
+                    <span className="font-normal normal-case text-secondary/70">{f.rotulo}:</span>
+                    {f.valor === SIN_DATO ? (ROTULO_SIN_DATO[f.clave] || 'Sin dato') : f.valor}
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                ))}
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    aria-label="Quitar la búsqueda de texto"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs
+                               bg-secondary/10 text-secondary font-semibold hover:bg-secondary/20 transition-colors"
+                  >
+                    <span className="font-normal text-secondary/70">Texto:</span>
+                    “{search}”
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={limpiarFiltrosPaca}
+                  className="ml-auto text-xs text-muted hover:text-primary underline underline-offset-2 px-2 py-1.5"
+                >
+                  Quitar todos
+                </button>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* ── CÓMO SE VE, Y QUÉ SE HACE ──────────────────────────────
+            Separado de los filtros a propósito: buscar y hacer son dos cosas
+            distintas, y estaban las nueve en la misma línea. */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
           <div className="flex gap-2 flex-wrap items-center">
             {/* En pantallas pequeñas el rótulo se oculta y solo queda el icono:
                 aria-label + aria-pressed dejan claro cuál vista está activa. */}
@@ -1183,28 +1414,10 @@ export default function Pacas() {
             >
               {rotulosCortos ? 'Cols. cortas' : 'Cols. completas'}
             </button>
-            <BuscadorLista
-              value={filtroEstado}
-              onChange={(valorElegido) => setFiltroEstado(valorElegido)}
-              opcionVacia="Todos los estados"
-              placeholder="Todos los estados"
-              opciones={[
-                ...PACA_ESTADOS.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) })),
-              ]}
-              aria-label="Filtrar por estado"
-              className="px-4 py-3 rounded-xl border border-border bg-surface"
-            />
-            <BuscadorLista
-              value={filtroTipo}
-              onChange={(valorElegido) => setFiltroTipo(valorElegido)}
-              opcionVacia="Todas las clasificaciones"
-              placeholder="Todas las clasificaciones"
-              opciones={[
-                ...tiposList.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) })),
-              ]}
-              aria-label="Filtrar por clasificación"
-              className="px-4 py-3 rounded-xl border border-border bg-surface"
-            />
+            {/* Los desplegables de ESTADO y CLASIFICACIÓN estaban aquí, en la
+                fila de los botones. Se han ido arriba, al panel de buscar, con
+                los otros cinco: dejarlos aquí serían dos controles para el
+                mismo filtro, y el de aquí no sabría las cuentas. */}
             <Button onClick={exportarInventarioExcel} variant="outline" disabled={exporting}>
               <Download size={16} className="mr-1" /> Excel
             </Button>

@@ -5,7 +5,8 @@
 // sobre el precio escrito en la paca, y que un grupo con precios mezclados
 // salga SIN precio en vez de con uno de los dos.
 import assert from 'node:assert/strict';
-import { agruparStock, agruparPacas, preciosDeHoy, claveStock } from '../src/lib/stock.js';
+import { agruparStock, agruparPacas, preciosDeHoy, claveStock,
+  filtrarGrupos, facetasDeGrupos, DIMENSIONES_PRODUCTO } from '../src/lib/stock.js';
 
 // ── agruparStock ──────────────────────────────────────────────────
 {
@@ -89,6 +90,58 @@ import { agruparStock, agruparPacas, preciosDeHoy, claveStock } from '../src/lib
   ]);
   assert.equal(g.length, 1, 'no se duplica por mayúsculas ni espacios');
   assert.equal(g[0].disponibles, 2);
+}
+
+// ── filtrarGrupos y facetasDeGrupos ──────────────────────────────
+//
+// Lo que se vigila: que las listas de los desplegables de la venta no tengan
+// callejones sin salida. Si una opcion ofrecida devuelve cero productos, la
+// pantalla se queda vacia y no hay nada que explique por que.
+{
+  const g = [
+    { categoria: 'verano',   clasificacion: 'mujer', referencia: 'blusa',     calidad: 'supreme',  disponibles: 3 },
+    { categoria: 'verano',   clasificacion: 'mixta', referencia: 'deportivo', calidad: 'supreme',  disponibles: 2 },
+    { categoria: 'invierno', clasificacion: 'mixta', referencia: 'buzo',      calidad: 'diamante', disponibles: 5 },
+    { categoria: 'invierno', clasificacion: 'mixta', referencia: 'buzo',      calidad: 'supreme',  disponibles: 1 },
+  ];
+
+  assert.deepEqual(DIMENSIONES_PRODUCTO, ['categoria', 'clasificacion', 'referencia', 'calidad'],
+    'son los cuatro campos de la paca; contenedor y proveedor NO, porque una '
+    + 'referencia esta repartida en varios contenedores y la venta toma las primeras por id');
+
+  // Filtrar cruza los campos con AND, y no distingue mayusculas.
+  assert.equal(filtrarGrupos(g, { categoria: 'invierno', calidad: 'supreme' }).length, 1);
+  assert.equal(filtrarGrupos(g, { categoria: 'INVIERNO' }).length, 2, 'las mayusculas no cuentan');
+  assert.equal(filtrarGrupos(g, {}).length, 4, 'sin filtros no quita nada');
+
+  // Las cuentas son de UNIDADES, no de grupos: «buzo» son dos grupos y seis pacas.
+  const todo = facetasDeGrupos(g, {});
+  assert.deepEqual(todo.referencia.find((o) => o.valor === 'buzo'), { valor: 'buzo', unidades: 6 });
+
+  // Cada dimension se cuenta SIN su propio filtro.
+  const conInvierno = facetasDeGrupos(g, { categoria: 'invierno' });
+  assert.equal(conInvierno.categoria.length, 2,
+    'la lista de temporadas se cuenta sin el filtro de temporada, o no se podria cambiar');
+  assert.deepEqual(conInvierno.referencia.map((o) => o.valor), ['buzo'],
+    'las referencias si se reducen a las que tienen algo de invierno');
+  assert.deepEqual(conInvierno.calidad, [
+    { valor: 'diamante', unidades: 5 },
+    { valor: 'supreme', unidades: 1 },
+  ], 'la calidad cuenta solo lo de invierno');
+
+  // NINGUNA opcion ofrecida puede devolver cero.
+  for (const [dim, opciones] of Object.entries(conInvierno)) {
+    for (const o of opciones) {
+      assert.ok(o.unidades > 0, `${dim}=${o.valor} se ofrece con cero unidades`);
+      const quedan = filtrarGrupos(g, { categoria: 'invierno', [dim]: o.valor });
+      assert.ok(quedan.length > 0, `elegir ${dim}=${o.valor} deja la pantalla vacia`);
+    }
+  }
+
+  // Un producto sin ese campo escrito no se ofrece como opcion vacia.
+  const conHueco = facetasDeGrupos(
+    [{ categoria: '', clasificacion: 'mixta', referencia: 'x', calidad: 'a', disponibles: 1 }], {});
+  assert.deepEqual(conHueco.categoria, [], 'un campo en blanco no es una opcion');
 }
 
 console.log('stock.check: todo bien');

@@ -138,3 +138,62 @@ export function preciosDeHoy(filasInventario) {
   }
   return m;
 }
+
+// ── FILTRAR LO DISPONIBLE POR LOS CAMPOS DE LA PACA ───────────────
+//
+// La pantalla de venta tenía una caja de texto y nada más: para encontrar
+// «mixta invierno diamante» había que acordarse de cómo estaba escrita. Estos
+// cuatro campos son los que de verdad describen un producto, y son los mismos
+// que usa el inventario, así que lo que se elige aquí significa lo mismo allá.
+//
+// SON SÓLO CUATRO, Y NO SIETE. El inventario filtra además por contenedor y por
+// proveedor, y aquí no: una misma referencia está repartida en varios
+// contenedores, y la venta toma las primeras pacas por id. Filtrar por
+// contenedor dejaría elegir «tres de lo del C626» y vendería tres pacas que
+// pueden ser de otro. Más vale no ofrecerlo que ofrecerlo mintiendo.
+export const DIMENSIONES_PRODUCTO = ['categoria', 'clasificacion', 'referencia', 'calidad'];
+
+const coincideDim = (grupo, dim, valor) =>
+  !valor || txt(grupo[dim]).toLowerCase() === txt(valor).toLowerCase();
+
+/**
+ * Los grupos que cumplen los filtros.
+ *
+ * @param {object} filtros  { categoria, clasificacion, referencia, calidad }
+ * @param {string} [excepto] dimensión a ignorar, para contar las opciones de
+ *   ESA dimensión con los demás filtros puestos.
+ */
+export function filtrarGrupos(grupos, filtros = {}, { excepto = null } = {}) {
+  return (grupos || []).filter((g) => DIMENSIONES_PRODUCTO
+    .every((dim) => dim === excepto || coincideDim(g, dim, filtros[dim])));
+}
+
+/**
+ * Las opciones de cada desplegable, con cuántas UNIDADES daría elegir cada una.
+ *
+ * Cada dimensión se cuenta con los filtros de las OTRAS puestos y sin el suyo,
+ * igual que en el inventario. Es lo que hace que ninguna opción ofrecida
+ * devuelva cero: elegida la temporada de invierno, la lista de referencias sólo
+ * trae las que tienen algo de invierno disponible.
+ *
+ * Sin el «sin el suyo», la lista de calidades se contaría con la calidad ya
+ * elegida y saldría una sola opción: no habría forma de cambiar de calidad sin
+ * limpiar el filtro primero.
+ *
+ * @returns {{[dim: string]: {valor: string, unidades: number}[]}}
+ */
+export function facetasDeGrupos(grupos, filtros = {}) {
+  const salida = {};
+  for (const dim of DIMENSIONES_PRODUCTO) {
+    const cuenta = new Map();
+    for (const g of filtrarGrupos(grupos, filtros, { excepto: dim })) {
+      const valor = txt(g[dim]);
+      if (!valor) continue;   // un producto sin ese campo no se ofrece como opción
+      cuenta.set(valor, (cuenta.get(valor) || 0) + (parseInt(g.disponibles, 10) || 0));
+    }
+    salida[dim] = [...cuenta.entries()]
+      .map(([valor, unidades]) => ({ valor, unidades }))
+      .sort((a, b) => a.valor.localeCompare(b.valor, 'es', { sensitivity: 'base' }));
+  }
+  return salida;
+}

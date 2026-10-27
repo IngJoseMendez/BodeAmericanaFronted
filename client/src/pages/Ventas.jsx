@@ -2,7 +2,7 @@
 // son dos <tr> hermanos que necesitan UNA key, y la forma corta no admite key.
 import { useEffect, useState, useRef, useMemo, Fragment } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto } from '../components/common';
+import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
 import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X, ChevronRight } from 'lucide-react';
@@ -16,7 +16,19 @@ import { parseMonto, formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 // El mismo agrupado que usa el despacho directo. Si cada pantalla agrupara
 // a su manera, una ofreceria existencias que la otra no ve.
-import { agruparPacas, preciosDeHoy, claveStock } from '../lib/stock';
+import {
+  agruparPacas, preciosDeHoy, claveStock,
+  filtrarGrupos, facetasDeGrupos, DIMENSIONES_PRODUCTO,
+} from '../lib/stock';
+
+// Los rótulos de los cuatro filtros del selector de productos. `categoria` se
+// llama TEMPORADA en la bodega, y es como hay que escribirlo en la pantalla.
+const FILTROS_PRODUCTO = [
+  { dim: 'categoria', rotulo: 'Temporada', todos: 'Las dos' },
+  { dim: 'clasificacion', rotulo: 'Clasificación', todos: 'Todas' },
+  { dim: 'referencia', rotulo: 'Referencia', todos: 'Todas' },
+  { dim: 'calidad', rotulo: 'Calidad', todos: 'Todas' },
+];
 
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -224,6 +236,20 @@ export default function Ventas() {
   const [pacasDisponibles, setPacasDisponibles] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [buscarPacas, setBuscarPacas] = useState('');
+  // ── LOS CUATRO CAMPOS POR LOS QUE SE ESCOGE UN PRODUCTO ─────────
+  //
+  // Aquí sólo había una caja de texto: para encontrar «mixta invierno
+  // diamante» había que acordarse de cómo estaba escrita, y de que no se
+  // llamaba «mixta de invierno». Son los mismos cuatro campos que el
+  // inventario, así que lo que se elige aquí significa lo mismo allá.
+  //
+  // Se filtra en el navegador y no en el servidor porque el stock disponible ya
+  // está todo cargado: pedirlo otra vez por cada filtro sería una petición para
+  // volver a recibir lo que ya está en memoria.
+  const [filtrosProd, setFiltrosProd] = useState({});
+
+  const ponerFiltroProd = (dim, valor) =>
+    setFiltrosProd((f) => ({ ...f, [dim]: valor }));
   // ── QUÉ VENTAS ESTÁN DESGLOSADAS ────────────────────────────────
   //
   // La venta de Felipe Herrera son SEIS pacas distintas y la lista enseñaba
@@ -401,6 +427,7 @@ export default function Ventas() {
       setInventario(Array.isArray(invRes) ? invRes : []);
       setGrupoSel({});
       setBuscarPacas('');
+      setFiltrosProd({});
       setError('');
       setModalOpen(true);
     } catch (err) {
@@ -539,14 +566,30 @@ export default function Ventas() {
   // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
   // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
   const productosCoincidentes = useMemo(() => {
+    // Primero los desplegables -comparación exacta- y después el texto. Al
+    // revés da lo mismo, pero así el texto trabaja sobre mucho menos.
+    const porFiltros = filtrarGrupos(productos, filtrosProd);
     const q = debouncedBuscarPacas.trim().toLowerCase();
-    if (!q) return productos;
-    return productos.filter(g =>
+    if (!q) return porFiltros;
+    return porFiltros.filter(g =>
       g.referencia?.toLowerCase().includes(q) ||
       g.calidad?.toLowerCase().includes(q) ||
-      g.clasificacion?.toLowerCase().includes(q)
+      g.clasificacion?.toLowerCase().includes(q) ||
+      g.categoria?.toLowerCase().includes(q)
     );
-  }, [productos, debouncedBuscarPacas]);
+  }, [productos, filtrosProd, debouncedBuscarPacas]);
+
+  // Las opciones de cada desplegable, contadas sobre lo que de verdad hay
+  // disponible y con los OTROS filtros puestos: así ninguna opción ofrecida
+  // deja la tabla vacía.
+  const facetasProd = useMemo(
+    () => facetasDeGrupos(productos, filtrosProd),
+    [productos, filtrosProd]
+  );
+
+  const filtrosProdPuestos = DIMENSIONES_PRODUCTO
+    .map((dim) => ({ dim, valor: filtrosProd[dim] }))
+    .filter((f) => f.valor);
 
   const productosVisibles = useMemo(
     () => productosCoincidentes.slice(0, FILAS_PRODUCTOS_VISIBLES),
@@ -1577,14 +1620,74 @@ export default function Ventas() {
             <label htmlFor="buscar-pacas" className="block text-sm font-medium text-primary mb-2">
               Qué se vende
             </label>
+            {/* ── LOS CUATRO CAMPOS DE LA PACA, PARA ESCOGER ──────────
+                Aquí sólo había una caja de texto. Con sesenta productos
+                distintos eso obliga a acordarse de cómo está escrito cada uno;
+                un desplegable los enseña, y al lado dice cuántas unidades hay.
+
+                Las listas se recuentan con los demás filtros puestos, así que
+                ninguna opción ofrecida deja la tabla vacía. */}
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 mb-2">
+              {FILTROS_PRODUCTO.map((f) => (
+                <div key={f.dim}>
+                  <label htmlFor={`filtro-prod-${f.dim}`}
+                    className="block text-[11px] font-medium text-muted mb-1">
+                    {f.rotulo}
+                  </label>
+                  <BuscadorLista
+                    id={`filtro-prod-${f.dim}`}
+                    value={filtrosProd[f.dim] || ''}
+                    onChange={(v) => ponerFiltroProd(f.dim, v)}
+                    opcionVacia={f.todos}
+                    placeholder={f.todos}
+                    opciones={(facetasProd[f.dim] || []).map((o) => ({
+                      value: o.valor,
+                      label: o.valor,
+                      detalle: `${o.unidades} disponible${o.unidades === 1 ? '' : 's'}`,
+                    }))}
+                    aria-label={f.rotulo}
+                    anchoLista={260}
+                    className="w-full px-2 py-2 rounded-lg border border-border bg-surface text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+
             <input
               id="buscar-pacas"
               type="text"
-              placeholder="Filtrar por referencia, calidad o clasificación"
+              placeholder="O escribe parte del nombre"
               value={buscarPacas}
               onChange={(e) => setBuscarPacas(e.target.value)}
               className="w-full mb-2 px-3 py-2 rounded-lg border border-border bg-surface text-primary placeholder-muted"
             />
+
+            {/* Lo que hay puesto, con su × cada uno: con cuatro desplegables es
+                fácil dejarse uno marcado y no entender por qué falta un
+                producto que se sabe que está en la bodega. */}
+            {(filtrosProdPuestos.length > 0 || buscarPacas) && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                {filtrosProdPuestos.map((f) => (
+                  <button
+                    key={f.dim}
+                    type="button"
+                    onClick={() => ponerFiltroProd(f.dim, '')}
+                    aria-label={`Quitar el filtro de ${f.dim}`}
+                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-full text-xs
+                               bg-secondary/10 text-secondary font-medium hover:bg-secondary/20 capitalize"
+                  >
+                    {f.valor} <X size={12} aria-hidden="true" />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { setFiltrosProd({}); setBuscarPacas(''); }}
+                  className="text-xs text-muted hover:text-primary underline underline-offset-2 px-2 py-1.5"
+                >
+                  Quitar todos
+                </button>
+              </div>
+            )}
             <p className="text-xs text-muted mb-3" role="status" aria-live="polite">
               {productosCoincidentes.length === 0
                 ? (buscarPacas
