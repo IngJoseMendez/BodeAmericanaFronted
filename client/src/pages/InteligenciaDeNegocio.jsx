@@ -767,6 +767,15 @@ export default function InteligenciaDeNegocio() {
 
   const [rotacion, setRotacion] = useState(null);
   const [clientesScore, setClientesScore] = useState(null);
+  // Qué categoría se está mirando en el ranking. null = todas. Las cuatro
+  // tarjetas de arriba son los botones que lo cambian: sin esto, un ocasional
+  // -que por definición es de los que menos compran- no entraba nunca en el
+  // top 20 por monto y no había forma de llegar a él.
+  const [catCliente, setCatCliente] = useState(null);
+  // El ranking, con el filtro de categoría puesto. Se calcula aquí y no dentro
+  // del JSX para que la cabecera pueda decir cuántos hay antes de pintarlos.
+  const clientesRanking = (clientesScore?.clientes || [])
+    .filter((c) => !catCliente || c.categoria === catCliente);
   const [contenedores, setContenedores] = useState(null);
   const [ventas, setVentas] = useState(null);
   const [predicciones, setPredicciones] = useState(null);
@@ -801,7 +810,10 @@ export default function InteligenciaDeNegocio() {
     // llegó y se dice en pantalla qué faltó.
     const fuentes = [
       { etiqueta: 'Rotación',       set: setRotacion,        pedir: () => analyticsApi.getRotacion() },
-      { etiqueta: 'Clientes',       set: setClientesScore,   pedir: () => analyticsApi.getClientesScore() },
+      // Los 98, no los 50 de por defecto: con el tope, los de menos monto no
+      // llegaban ni al navegador y la tarjeta de «Ocasionales» contaba gente
+      // que no estaba en la lista.
+      { etiqueta: 'Clientes',       set: setClientesScore,   pedir: () => analyticsApi.getClientesScore({ limite: 300 }) },
       { etiqueta: 'Contenedores',   set: setContenedores,    pedir: () => analyticsApi.getContenedores() },
       { etiqueta: 'Ventas',         set: setVentas,          pedir: () => analyticsApi.getVentas({ periodo, dias: 30 }), dependeDelPeriodo: true },
       { etiqueta: 'Predicciones',   set: setPredicciones,    pedir: () => analyticsApi.getPredicciones() },
@@ -1196,35 +1208,40 @@ export default function InteligenciaDeNegocio() {
         {/* Clientes */}
         {activeTab === 'clientes' && (
           <div className="space-y-6">
+            {/* LAS CUATRO TARJETAS SON BOTONES. Decían «14 ocasionales» y no
+                había manera de verlos: la tabla de abajo enseña el top por
+                monto, y un ocasional es justo de los que menos compran. Se
+                pulsa una y el ranking se queda con esa categoría; se vuelve a
+                pulsar y salen todos. */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                icon={Star}
-                label="VIP"
-                value={clientesScore?.distribucion?.VIP || 0}
-                subtext="score 80-100"
-                color="success"
-              />
-              <MetricCard
-                icon={Users}
-                label="Frecuentes"
-                value={clientesScore?.distribucion?.Frecuente || 0}
-                subtext="score 60-79"
-                color="info"
-              />
-              <MetricCard
-                icon={Clock}
-                label="Ocasionales"
-                value={clientesScore?.distribucion?.Ocasional || 0}
-                subtext="score 35-59"
-                color="warning"
-              />
-              <MetricCard
-                icon={AlertTriangle}
-                label="Riesgosos"
-                value={clientesScore?.distribucion?.Riesgoso || 0}
-                subtext="score < 35"
-                color="accent"
-              />
+              {[
+                { cat: 'VIP',       icon: Star,          label: 'VIP',         subtext: 'score 80-100', color: 'success' },
+                { cat: 'Frecuente', icon: Users,         label: 'Frecuentes',  subtext: 'score 60-79',  color: 'info' },
+                { cat: 'Ocasional', icon: Clock,         label: 'Ocasionales', subtext: 'score 35-59',  color: 'warning' },
+                { cat: 'Riesgoso',  icon: AlertTriangle, label: 'Riesgosos',   subtext: 'score < 35',   color: 'accent' },
+              ].map((t) => {
+                const activa = catCliente === t.cat;
+                const cuantos = clientesScore?.distribucion?.[t.cat] || 0;
+                return (
+                  <button key={t.cat} type="button"
+                    onClick={() => setCatCliente(activa ? null : t.cat)}
+                    aria-pressed={activa}
+                    title={cuantos
+                      ? `Ver los ${cuantos} clientes ${t.label.toLowerCase()}`
+                      : `No hay clientes ${t.label.toLowerCase()}`}
+                    className={`text-left rounded-2xl transition-all duration-150 ${
+                      activa ? 'ring-2 ring-secondary ring-offset-2 ring-offset-bg' : 'hover:opacity-90'
+                    }`}>
+                    <MetricCard
+                      icon={t.icon}
+                      label={t.label}
+                      value={cuantos}
+                      subtext={activa ? 'viendo estos' : t.subtext}
+                      color={t.color}
+                    />
+                  </button>
+                );
+              })}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1266,7 +1283,26 @@ export default function InteligenciaDeNegocio() {
 
             <Card>
               <CardBody>
-                <h3 className="font-display text-lg mb-4">Ranking de Clientes</h3>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <h3 className="font-display text-lg">
+                    Ranking de Clientes
+                    {catCliente && <span className="ml-2 text-sm font-normal text-muted">· {catCliente}</span>}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs text-muted">
+                    <span>
+                      {clientesRanking.length === 0
+                        ? 'ninguno'
+                        : `${clientesRanking.length} cliente(s)`}
+                      {clientesRanking.length > 40 && ' — se muestran los 40 primeros'}
+                    </span>
+                    {catCliente && (
+                      <button type="button" onClick={() => setCatCliente(null)}
+                        className="font-semibold text-secondary hover:underline underline-offset-2">
+                        ver todos
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-primary/5">
@@ -1280,7 +1316,7 @@ export default function InteligenciaDeNegocio() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {clientesScore?.clientes?.slice(0, 20).map((cliente, i) => (
+                      {clientesRanking.slice(0, 40).map((cliente, i) => (
                         <tr key={i} className="hover:bg-primary/5">
                           <td className="px-4 py-2 font-medium">
                             <RefLink to="/cartera" id={cliente.id} title="Ver cartera del cliente" icon={false}>{cliente.nombre}</RefLink>

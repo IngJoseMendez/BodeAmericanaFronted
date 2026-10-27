@@ -123,6 +123,12 @@ export default function Reportes() {
       // que hay que separar, y se usa para declarar el alcance de la ganancia,
       // no para partir la lista de ventas en dos.
       conCosto: Number(r.total_ventas) || 0,
+      // Las unidades del mes, contando las de los libros.
+      unidades: Number(r.unidades_vendidas) || 0,
+      // Y lo de siempre, para las tres tarjetas de «Reportes generales».
+      histUnidades: Number(r.historico?.unidades) || 0,
+      histMonto: Number(r.historico?.monto) || 0,
+      histConCosto: Number(r.historico?.con_costo) || 0,
     };
   })();
 
@@ -636,20 +642,21 @@ export default function Reportes() {
                     <p className="text-[10px] sm:text-xs text-muted truncate">Clientes Nuevos</p>
                   </div>
                   <div className="p-3 sm:p-4 bg-warning/10 rounded-xl text-center min-w-0">
-                    <p className="text-lg sm:text-2xl font-display text-warning truncate" title={String(reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0)}>
-                      {reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0}
+                    <p className="text-lg sm:text-2xl font-display text-warning truncate" title={String(cifras.unidades)}>
+                      {cifras.unidades}
                     </p>
-                    <p className="text-[10px] sm:text-xs text-muted truncate">Pacas Vendidas</p>
-                    {/* ESTE CERO SÍ ES VERDAD: cuenta las pacas que salieron del
-                        inventario, y no ha salido ninguna. Lo que hacía falta era
-                        decir qué cuenta, porque al lado de 57 ventas un cero se
-                        lee como un error. Las ventas de los libros son líneas,
-                        no cantidades: de 7.817 sólo 240 dicen cuántas unidades
-                        fueron, así que no se pueden sumar aquí. */}
-                    {!reporteMensual.resumen_ejecutivo?.pacas_vendidas && (
+                    <p className="text-[10px] sm:text-xs text-muted truncate">Unidades Vendidas</p>
+                    {/* LAS UNIDADES SÍ SE PUEDEN SABER, y antes ponía una raya
+                        diciendo que no. Un renglón de los libros es una paca -la
+                        mediana del renglón y la de una paca son las dos
+                        1.600.000- y los que llevan varias lo dicen: «MIXTA
+                        VERANO PREMIUM x10». De ahí salen. Lo que no se puede
+                        saber de ellas es el costo, y eso lo dice la tarjeta de
+                        ganancia, no esta. */}
+                    {cifras.conCosto < cifras.nVentas && (
                       <p className="text-[9px] text-muted/80 truncate"
-                         title="Cuenta las pacas que salieron del inventario del sistema. Las ventas cargadas de los libros son líneas de venta, no cantidades de pacas, así que no suman aquí.">
-                        ninguna salió del inventario
+                         title="Las de los libros se cuentan como una paca por renglón, salvo las que dicen cuántas («x10»). Se comprueba dividiendo el monto entre las unidades: tiene que dar un precio de paca.">
+                        derivadas de los libros
                       </p>
                     )}
                   </div>
@@ -757,18 +764,25 @@ export default function Reportes() {
             <CardBody className="min-w-0">
               <div className="flex items-center gap-3 mb-2">
                 <Package className="w-5 h-5 text-success flex-shrink-0" />
-                <h4 className="font-medium text-primary truncate">Pacas Vendidas</h4>
+                <h4 className="font-medium text-primary truncate">Unidades Vendidas</h4>
               </div>
               {/* "—" mientras carga o si la consulta falló: un 0 aquí se lee como
                   "no se vendió nada", que no es lo mismo que "no se pudo consultar". */}
+              {/* LAS UNIDADES DE SIEMPRE, no las del sistema. Esta tarjeta
+                  leía la lista de pacas vendidas por el sistema, que está
+                  vacía, así que marcaba 0 con nueve años de ventas en la base.
+                  Un renglón de los libros es una paca y los que llevan varias
+                  lo dicen; de ahí salen las 8.076. */}
               <p
                 className="text-xl sm:text-2xl font-display text-primary truncate"
-                title={loading || fallosListas?.pacas ? 'Dato no disponible' : String(pacasVendidas.length)}
+                title={loading ? 'Cargando…' : `${cifras.histUnidades} unidades vendidas en total`}
               >
-                {loading || fallosListas?.pacas ? '—' : pacasVendidas.length}
+                {loading ? '—' : cifras.histUnidades.toLocaleString('es-CO')}
               </p>
-              {!loading && fallosListas?.pacas && (
-                <p className="text-[10px] text-muted mt-0.5">No se pudo consultar</p>
+              {!loading && pacasVendidas.length > 0 && (
+                <p className="text-[10px] text-muted mt-0.5">
+                  {pacasVendidas.length} del inventario del sistema
+                </p>
               )}
             </CardBody>
           </Card>
@@ -779,22 +793,16 @@ export default function Reportes() {
                 <TrendingUp className="w-5 h-5 text-secondary flex-shrink-0" />
                 <h4 className="font-medium text-primary truncate">Total Vendido</h4>
               </div>
+              {/* EL TOTAL VENDIDO SÍ SE SABE, y antes ponía una raya. Son los
+                  16.947.771.681 de los nueve años, de los cuales 16.741.274.500
+                  son mercancía y el resto fletes y saldos de arrastre. Lo que no
+                  se sabe es el costo, y eso lo dice la tarjeta de al lado. */}
               <p
                 className="text-xl sm:text-2xl font-display text-primary truncate"
-                title={loading || fallosListas?.pacas
-                  ? 'Dato no disponible'
-                  : sinPacasVendidas
-                    ? 'Cuenta lo vendido de las pacas registradas en el sistema. Este mes no ha salido ninguna del inventario; lo vendido del mes está en «Monto Total», arriba.'
-                    : formatCurrency(totalVendido)}
+                title={loading ? 'Cargando…' : formatCurrency(cifras.histMonto)}
               >
-                {loading || fallosListas?.pacas || sinPacasVendidas ? '—' : formatCurrency(totalVendido)}
+                {loading ? '—' : formatCurrency(cifras.histMonto)}
               </p>
-              {!loading && fallosListas?.pacas && (
-                <p className="text-[10px] text-muted mt-0.5">No se pudo consultar</p>
-              )}
-              {!loading && !fallosListas?.pacas && sinPacasVendidas && (
-                <p className="text-[10px] text-muted mt-0.5">ninguna paca salió del inventario</p>
-              )}
             </CardBody>
           </Card>
 
@@ -804,12 +812,17 @@ export default function Reportes() {
                 <TrendingUp className="w-5 h-5 text-success flex-shrink-0" />
                 <h4 className="font-medium text-primary truncate">Ganancia Neta</h4>
               </div>
+              {/* ESTA SÍ SE QUEDA CON LA RAYA, y es la única. El monto y las
+                  unidades se derivan de los libros; el COSTO no está escrito en
+                  ninguna parte de ellos, así que no hay margen que calcular.
+                  «Ganamos cero» y «no sabemos cuánto ganamos» son cosas
+                  distintas. */}
               <p
                 className="text-xl sm:text-2xl font-display text-success truncate"
                 title={loading || fallosListas?.ganancia
                   ? 'Dato no disponible'
                   : sinGanancia
-                    ? 'La ganancia se calcula con el costo de la paca. Ninguna venta de este mes lo tiene registrado, así que no hay ganancia que calcular. No significa que se haya ganado cero.'
+                    ? `De las ${cifras.histConCosto} ventas con costo registrado. Los libros de Excel no traen el costo de la mercancía, así que de esas ventas no hay ganancia que calcular.`
                     : formatCurrency(totalGanancia)}
               >
                 {loading || fallosListas?.ganancia || sinGanancia ? '—' : formatCurrency(totalGanancia)}
@@ -818,7 +831,7 @@ export default function Reportes() {
                 <p className="text-[10px] text-muted mt-0.5">No se pudo consultar</p>
               )}
               {!loading && !fallosListas?.ganancia && sinGanancia && (
-                <p className="text-[10px] text-muted mt-0.5">sin costo registrado</p>
+                <p className="text-[10px] text-muted mt-0.5">los libros no traen el costo</p>
               )}
             </CardBody>
           </Card>
