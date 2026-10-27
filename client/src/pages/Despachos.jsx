@@ -1434,7 +1434,22 @@ export default function Despachos() {
                         <EmptyState icon={Truck} title="Sin despachos pendientes" description="Todos los despachos han sido confirmados o no hay despachos activos" />
                       </td></tr>
                     ) : filtered.map(d => (
-                      <tr key={d.id} className="hover:bg-primary/3 transition-colors duration-150 bg-warning/3">
+                      /* LA FILA ENTERA ABRE EL DESPACHO, no sólo el ojito. Un
+                         objetivo de 28 píxeles en una tableta es un objetivo
+                         que se falla; la fila mide seiscientos. El ojito se
+                         queda porque es la pista de que hay algo que abrir, y
+                         los botones de dentro paran la propagación para que
+                         pulsarlos no abra además el detalle.
+
+                         role y tabIndex para que también se llegue con el
+                         teclado: una fila con onClick y sin ellos es un botón
+                         que el lector de pantalla no anuncia. */
+                      <tr key={d.id}
+                          onClick={() => openView(d)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openView(d); } }}
+                          role="button" tabIndex={0}
+                          aria-label={`Ver el despacho ${d.numero} de ${d.cliente_nombre || ''}`}
+                          className="hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary cursor-pointer transition-colors duration-150 bg-warning/3">
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-primary">
                           <RefLink to="/cartera" id={d.cliente_id} title="Ver cartera del cliente">{d.cliente_nombre}</RefLink>
@@ -1511,7 +1526,12 @@ export default function Despachos() {
                       </thead>
                       <tbody className="divide-y divide-border/30">
                         {items.map(d => (
-                          <tr key={d.id} className="hover:bg-success/3 transition-colors duration-150">
+                          <tr key={d.id}
+                              onClick={() => openView(d)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openView(d); } }}
+                              role="button" tabIndex={0}
+                              aria-label={`Ver el despacho ${d.numero} de ${d.cliente_nombre || ''}`}
+                              className="hover:bg-success/5 focus-visible:bg-success/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary cursor-pointer transition-colors duration-150">
                             <td className="px-4 py-3 font-mono text-xs font-semibold text-primary">{d.numero}</td>
                             <td className="px-4 py-3">
                               {d.cotizacion_numero
@@ -2216,8 +2236,11 @@ export default function Despachos() {
           parte en despachos sola, agrupando por cliente. Un renglón es una
           LÍNEA, no un despacho: cinco referencias para la misma persona son
           cinco renglones y un solo despacho. */}
+      {/* `full` y no `xl`: son diez columnas, y en max-w-4xl las palabras se
+          parten a mitad. Esta rejilla es una hoja de cálculo, y una hoja de
+          cálculo necesita ancho. */}
       <Modal isOpen={loteOpen} onClose={() => setLoteOpen(false)}
-             title="Varios despachos a la vez" size="xl">
+             title="Varios despachos a la vez" size="full">
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>

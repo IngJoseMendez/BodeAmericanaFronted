@@ -11,7 +11,7 @@ import {
   TrendingUp, Users, Package, Package2, Zap, AlertTriangle, CheckCircle, Clock,
   DollarSign, ShoppingCart, ArrowUp, ArrowDown, Brain, Target, Award,
   BarChart3, RefreshCw, Filter, Star, Info, Calendar, Database, TrendingDown,
-  Minus, Sparkles, ChevronDown, ChevronUp, HelpCircle
+  Minus, Sparkles, ChevronDown, ChevronUp, HelpCircle, UserX,
 } from 'lucide-react';
 
 const formatCurrency = formatCOP;
@@ -31,7 +31,11 @@ const SCORE_COLORS = {
   VIP: '#16a34a',
   Frecuente: '#3b82f6',
   Ocasional: '#d97706',
-  Riesgoso: '#ef4444'
+  Riesgoso: '#ef4444',
+  // Gris y no rojo: una ficha sin movimientos no es un problema, es un hueco.
+  // Pintarla del color del riesgo es lo que hacía que «Riesgoso» no significara
+  // nada: eran once fichas vacías metidas con los morosos de verdad.
+  'Sin actividad': '#94a3b8',
 };
 
 const ROTACION_COLORS = {
@@ -561,7 +565,9 @@ function MetricCard({ icon: Icon, label, value, subtext, color = 'primary', tren
     success: 'bg-success/10 text-success',
     accent: 'bg-accent/10 text-accent',
     warning: 'bg-warning/10 text-warning',
-    info: 'bg-blue-100 text-blue-700'
+    info: 'bg-blue-100 text-blue-700',
+    // Para lo que no es bueno ni malo, sólo vacío: una ficha sin movimientos.
+    muted: 'bg-muted/15 text-muted',
   };
 
   return (
@@ -669,7 +675,8 @@ function ClientesScoreChart({ data }) {
     { name: 'VIP', value: data?.VIP || 0, color: SCORE_COLORS.VIP },
     { name: 'Frecuente', value: data?.Frecuente || 0, color: SCORE_COLORS.Frecuente },
     { name: 'Ocasional', value: data?.Ocasional || 0, color: SCORE_COLORS.Ocasional },
-    { name: 'Riesgoso', value: data?.Riesgoso || 0, color: SCORE_COLORS.Riesgoso }
+    { name: 'Riesgoso', value: data?.Riesgoso || 0, color: SCORE_COLORS.Riesgoso },
+    { name: 'Sin actividad', value: data?.['Sin actividad'] || 0, color: SCORE_COLORS['Sin actividad'] },
   ].filter(d => d.value > 0);
 
   if (chartData.length === 0) {
@@ -1213,12 +1220,15 @@ export default function InteligenciaDeNegocio() {
                 monto, y un ocasional es justo de los que menos compran. Se
                 pulsa una y el ranking se queda con esa categoría; se vuelve a
                 pulsar y salen todos. */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               {[
                 { cat: 'VIP',       icon: Star,          label: 'VIP',         subtext: 'score 80-100', color: 'success' },
                 { cat: 'Frecuente', icon: Users,         label: 'Frecuentes',  subtext: 'score 60-79',  color: 'info' },
                 { cat: 'Ocasional', icon: Clock,         label: 'Ocasionales', subtext: 'score 35-59',  color: 'warning' },
                 { cat: 'Riesgoso',  icon: AlertTriangle, label: 'Riesgosos',   subtext: 'score < 35',   color: 'accent' },
+                // Fichas abiertas sin ni un movimiento. No deben nada: no hay
+                // nada que puntuar, y por eso no llevan score.
+                { cat: 'Sin actividad', icon: UserX,         label: 'Sin actividad', subtext: 'sin movimientos', color: 'muted' },
               ].map((t) => {
                 const activa = catCliente === t.cat;
                 const cuantos = clientesScore?.distribucion?.[t.cat] || 0;
@@ -1325,21 +1335,29 @@ export default function InteligenciaDeNegocio() {
                           <td className="px-4 py-2 text-right">{cliente.total_compras}</td>
                           <td className="px-4 py-2 text-right font-medium">{formatCurrency(cliente.monto_total)}</td>
                           <td className="px-4 py-2 text-center">
-                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
-                              cliente.score >= 80 ? 'bg-success/20 text-success' :
-                              cliente.score >= 60 ? 'bg-blue-100 text-blue-700' :
-                              cliente.score >= 35 ? 'bg-warning/20 text-warning' :
-                              'bg-accent/20 text-accent'
-                            }`}>
-                              {cliente.score}
-                            </span>
+                            {/* Una ficha sin movimientos no tiene score 0: no
+                                tiene score. Un cero en rojo al lado de un
+                                moroso de verdad los iguala, y no son lo mismo. */}
+                            {cliente.categoria === 'Sin actividad' ? (
+                              <span className="text-xs text-muted" title="Sin movimientos: no hay nada que puntuar">—</span>
+                            ) : (
+                              <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+                                cliente.score >= 80 ? 'bg-success/20 text-success' :
+                                cliente.score >= 60 ? 'bg-blue-100 text-blue-700' :
+                                cliente.score >= 35 ? 'bg-warning/20 text-warning' :
+                                'bg-accent/20 text-accent'
+                              }`}>
+                                {cliente.score}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-2 text-center">
                             <Badge
                               variant={
                                 cliente.categoria === 'VIP' ? 'success' :
                                 cliente.categoria === 'Frecuente' ? 'info' :
-                                cliente.categoria === 'Ocasional' ? 'warning' : 'error'
+                                cliente.categoria === 'Ocasional' ? 'warning' :
+                                cliente.categoria === 'Sin actividad' ? 'inactivo' : 'error'
                               }
                             >
                               {cliente.categoria}
