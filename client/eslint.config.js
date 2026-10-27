@@ -53,8 +53,19 @@ export default [
 
       // ── LO QUE ROMPE LA PANTALLA: error ────────────────────────
       //
-      // Un identificador que no existe. Es el que habría cazado `FileText`.
+      // Un identificador que no existe.
       'no-undef': 'error',
+
+      // Y ESTA ES LA QUE DE VERDAD HACÍA FALTA, aprendida a base de fallar dos
+      // veces: `no-undef` NO VE LOS NOMBRES DE COMPONENTES JSX. Un
+      // `<FileText />` sin importar le pasa por delante sin decir nada, porque
+      // para el núcleo de ESLint eso no es una referencia a variable.
+      //
+      // Lo comprobé en vivo: puse `<ChevronLeft />` sin importarlo y el linter
+      // dio cero errores. O sea que la configuración de hace una hora NO habría
+      // cazado el `FileText` por el que se montó todo esto. La regla que sí lo
+      // caza es ésta, del plugin de React.
+      'react/jsx-no-undef': 'error',
 
       // ── POR QUÉ ESTA VA EN AVISO Y NO EN ERROR ─────────────────
       //

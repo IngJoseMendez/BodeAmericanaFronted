@@ -364,8 +364,10 @@ export const authApi = {
 };
 
 export const reportesApi = {
-  getMensual() {
-    return api.get('/reportes/mensual');
+  // `anio` y `mes` opcionales. Sin ellos, el mes en curso, como antes.
+  // Con `anio` solo, el ano entero. Ver getPeriodo() en el servidor.
+  getMensual(params = {}) {
+    return api.get(`/reportes/mensual${qs(params)}`);
   },
   getMesActual() {
     return api.get('/reportes/mes-actual');

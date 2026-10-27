@@ -3,7 +3,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast, Badge, TableSkeleton, RefLink } from '../components/common';
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
 import ExcelJS from 'exceljs';
-import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw, AlertTriangle } from 'lucide-react';
+import { FileText, Calendar, TrendingUp, Users, Package, Download, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
@@ -14,6 +14,18 @@ const formatCurrency = formatCOP;
 // abajo reventaban la pantalla entera.
 const comoLista = (v) => (Array.isArray(v) ? v : []);
 
+const MESES_NOMBRE = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+// Desde 2017, que es el año de la venta más antigua que hay en los libros, hasta
+// el actual. Escrito así y no «los últimos diez años»: el día que la base tenga
+// algo de 2016 habrá que mover este número, y es mejor que esté a la vista.
+const PRIMER_ANIO = 2017;
+const ANIOS = Array.from(
+  { length: new Date().getFullYear() - PRIMER_ANIO + 1 },
+  (_, i) => new Date().getFullYear() - i,
+);
+
 export default function Reportes() {
   const [loading, setLoading] = useState(true);
   const [loadingGeneral, setLoadingGeneral] = useState(false);
@@ -21,6 +33,15 @@ export default function Reportes() {
   const [mesActual, setMesActual] = useState(null);
   const [pacasVendidas, setPacasVendidas] = useState([]);
   const [ganancias, setGanancias] = useState([]);
+  // EL PERIODO QUE SE ESTÁ MIRANDO. `mes` en null = el año entero.
+  //
+  // Arranca en el mes de hoy, que es lo que el reporte enseñaba siempre, y
+  // desde ahí se puede ir hacia atrás. Lo guarda la pantalla y no el servidor:
+  // el servidor sólo responde lo que se le pregunta.
+  const [periodo, setPeriodo] = useState(() => {
+    const h = new Date();
+    return { anio: h.getFullYear(), mes: h.getMonth() + 1 };
+  });
   const [deudores, setDeudores] = useState([]);
   const [error, setError] = useState(null);
   // Qué listados secundarios no llegaron. Se guardan aparte del error general
@@ -28,9 +49,13 @@ export default function Reportes() {
   const [fallosListas, setFallosListas] = useState(null);
   const { addToast } = useToast();
 
+  // Al cambiar de mes o de año se vuelve a pedir. `loadReportes` se deja fuera
+  // de las dependencias a propósito: se redefine en cada render y meterla haría
+  // un bucle infinito de peticiones.
   useEffect(() => {
     loadReportes();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodo.anio, periodo.mes]);
 
   const loadReportes = async () => {
     setLoading(true);
@@ -45,7 +70,7 @@ export default function Reportes() {
       // secundario (por ejemplo /cartera/deudores) para tapar con una pantalla de
       // error el reporte del mes completo y dejar el botón de Excel inservible.
       const [reporteRes, mesRes, pacasRes, gananciaRes, deudoresRes] = await Promise.allSettled([
-        reportesApi.getMensual(),
+        reportesApi.getMensual({ anio: periodo.anio, mes: periodo.mes ?? undefined }),
         reportesApi.getMesActual(),
         dashboardApi.getPacasVendidas({}),
         dashboardApi.getGanancia({}),
@@ -111,6 +136,21 @@ export default function Reportes() {
   // Lo que NO se toca: ganancia y pacas vendidas. Las dos salen de la paca y su
   // costo, y un renglon de los libros no tiene paca detras. Se quedan con su
   // cifra del sistema y la tarjeta lo dice, que es muy distinto de inventarlas.
+  // Mes anterior y siguiente, cruzando el año solo. Con el año entero puesto,
+  // las flechas mueven de año.
+  const moverPeriodo = (paso) => setPeriodo((p) => {
+    if (p.mes == null) return { anio: p.anio + paso, mes: null };
+    const total = (p.anio * 12) + (p.mes - 1) + paso;
+    return { anio: Math.floor(total / 12), mes: (total % 12) + 1 };
+  });
+
+  // No se deja ir al futuro: un reporte de un mes que no ha pasado es una
+  // pantalla de ceros que parece un error.
+  const hoyRef = new Date();
+  const haySiguiente = periodo.mes == null
+    ? periodo.anio < hoyRef.getFullYear()
+    : (periodo.anio * 12 + periodo.mes) < (hoyRef.getFullYear() * 12 + hoyRef.getMonth() + 1);
+
   const cifras = (() => {
     const r = reporteMensual?.resumen_ejecutivo || {};
     const sistema = Number(r.monto_total_ventas) || 0;
@@ -548,7 +588,57 @@ export default function Reportes() {
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                {/* EL PERIODO SE ELIGE. El reporte era siempre el mes en curso,
+                    y con nueve años cargados eso deja fuera 2017 a 2025 y los
+                    nueve meses anteriores de 2026: casi todo lo que hay.
+
+                    Flechas para el mes anterior y el siguiente -que es como se
+                    revisa un histórico, mes a mes hacia atrás- y los dos
+                    desplegables para saltar directo. «Todo el año» está porque
+                    comparar años es otra pregunta distinta. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 rounded-xl border border-border p-1">
+                    <button type="button" onClick={() => moverPeriodo(-1)}
+                      title={periodo.mes == null ? 'Año anterior' : 'Mes anterior'}
+                      aria-label={periodo.mes == null ? 'Año anterior' : 'Mes anterior'}
+                      className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5">
+                      <ChevronLeft size={16} aria-hidden="true" />
+                    </button>
+
+                    <select
+                      value={periodo.mes ?? 'anio'}
+                      onChange={(e) => setPeriodo((p) => ({
+                        ...p, mes: e.target.value === 'anio' ? null : Number(e.target.value),
+                      }))}
+                      aria-label="Mes del reporte"
+                      className="px-2 py-1.5 rounded-lg bg-surface text-sm text-primary border-0 focus:outline-none focus:ring-2 focus:ring-secondary/30 capitalize"
+                    >
+                      <option value="anio">Todo el año</option>
+                      {MESES_NOMBRE.map((n, i) => (
+                        <option key={n} value={i + 1}>{n}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={periodo.anio}
+                      onChange={(e) => setPeriodo((p) => ({ ...p, anio: Number(e.target.value) }))}
+                      aria-label="Año del reporte"
+                      className="px-2 py-1.5 rounded-lg bg-surface text-sm text-primary border-0 focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                    >
+                      {ANIOS.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+
+                    <button type="button" onClick={() => moverPeriodo(1)}
+                      disabled={!haySiguiente}
+                      title={haySiguiente
+                        ? (periodo.mes == null ? 'Año siguiente' : 'Mes siguiente')
+                        : 'Ya estás en el período más reciente'}
+                      aria-label={periodo.mes == null ? 'Año siguiente' : 'Mes siguiente'}
+                      className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-30 disabled:cursor-not-allowed">
+                      <ChevronRight size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+
                   <Button
                     variant="secondary"
                     onClick={downloadExcel}
@@ -846,7 +936,7 @@ export default function Reportes() {
             <CardBody>
               <div className="flex items-center gap-3 mb-4">
                 <Package className="w-5 h-5 text-primary" />
-                <h3 className="font-display text-lg text-primary">Pacas Vendidas</h3>
+                <h3 className="font-display text-lg text-primary">Pacas del inventario</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -864,7 +954,19 @@ export default function Reportes() {
                     ) : fallosListas?.pacas ? (
                       <tr><td colSpan={4} className="px-3 py-4 text-center text-error">No se pudo consultar este listado</td></tr>
                     ) : pacasVendidas.length === 0 ? (
-                      <tr><td colSpan={4} className="px-3 py-4 text-center text-muted">Sin datos</td></tr>
+                      /* «Sin datos» a secas se lee como un error. Esta tabla
+                         lista las pacas que salieron del INVENTARIO DEL SISTEMA,
+                         con su clasificación y su precio, y sólo puede hacerlo
+                         con las que el sistema registró: una venta de los libros
+                         de Excel no tiene paca detrás. Decirlo es la diferencia
+                         entre «está roto» y «todavía no hay». */
+                      <tr><td colSpan={4} className="px-3 py-6 text-center">
+                        <p className="text-sm text-muted">Ninguna paca del inventario salió en este período.</p>
+                        <p className="text-xs text-muted/80 mt-1">
+                          Las ventas cargadas de los libros no tienen paca detrás, así que no
+                          aparecen aquí. Lo vendido del período está arriba, en «Monto Total».
+                        </p>
+                      </td></tr>
                     ) : (
                       pacasVendidas.slice(0, 10).map((p, i) => (
                         <tr key={i}>
