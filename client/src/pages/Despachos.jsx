@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 import { despachosApi, pacasApi, transportesApi, clientesApi } from '../services/api';
-import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus, LayoutGrid, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Truck, Eye, CheckCircle, X, Clock, Package, Search, AlertTriangle, Download, Printer, Users, Pencil, Check, Plus, LayoutGrid, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { hoy, formatFecha } from '../lib/fecha';
 import { formatCOP, parseMonto } from '../lib/money';
 // La promocion gana sobre el precio de lista, y se resuelve con el MISMO
@@ -12,6 +12,10 @@ import { formatCOP, parseMonto } from '../lib/money';
 // su cuenta que precio vale es como acaban cobrando cifras distintas.
 import { nuevoLibro, descargar, hojaDespachoGeneral } from '../lib/entregables';
 import { descargarExcel } from '../lib/descargar';
+// El papel que se lleva a la bodega va en PDF y no en Excel: se imprime y se
+// camina con el, no se edita. Ver lib/despachoPdf.js, que explica por que esta
+// partido en «recoger» y «empacar».
+import { exportarPDFDespacho } from '../lib/despachoPdf';
 // El agrupado de existencias, compartido con la pantalla de Ventas.
 import { agruparStock, claveStock } from '../lib/stock';
 // Pegar desde una hoja de calculo, que es de donde sale la tanda de
@@ -1061,6 +1065,26 @@ export default function Despachos() {
     const wb = nuevoLibro();
     hojaDespachoGeneral(wb, lista.map(({ d, pacaIds }) => paraHojaDespacho(d, pacaIds)), [], meta);
     await descargar(wb, archivo);
+  };
+
+  // EL PAPEL DE LA BODEGA, EN PDF. El Excel se queda para quien lo quiera tal
+  // cual, pero este es el que se imprime: un Excel de doce columnas se lee mal
+  // en papel y pagina donde quiere.
+  const pdfDeLaSalida = () => {
+    const lista = salidaLista
+      .map((d) => ({ d, pacaIds: idsMarcados(d) }))
+      .filter((x) => x.pacaIds.length);
+    if (!lista.length) { addToast('No hay nada marcado', 'warning'); return; }
+    exportarPDFDespacho(
+      lista.map(({ d, pacaIds }) => paraHojaDespacho(d, pacaIds)), [],
+      { titulo: 'DESPACHO', fecha: salidaFecha }, 'Despacho_General');
+  };
+
+  const pdfDeUno = (d) => {
+    const pacaIds = idsMarcados(d);
+    if (!pacaIds.length) { addToast(`No hay nada marcado en ${d.numero}`, 'warning'); return; }
+    exportarPDFDespacho([paraHojaDespacho(d, pacaIds)], [],
+      { titulo: d.numero, fecha: salidaFecha }, `Despacho_${d.numero}`);
   };
 
   const excelDeLaSalida = async () => {
@@ -2551,6 +2575,12 @@ export default function Despachos() {
                             <strong className="text-warning"> · queda parcial</strong>
                           )}
                         </span>
+                        <button type="button" onClick={() => pdfDeUno(d)}
+                          disabled={!marcados.length}
+                          title={`Descargar el papel de bodega de ${d.numero}, para imprimir`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-[11px] font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+                          <FileText size={12} /> PDF
+                        </button>
                         <button type="button" onClick={() => excelDeUno(d)}
                           disabled={!marcados.length}
                           title={`Descargar sólo el Excel de ${d.numero}`}
@@ -2592,10 +2622,18 @@ export default function Despachos() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {/* PDF primero: es el que se imprime y se lleva a la bodega.
+                      El Excel se queda para quien lo quiera tal cual. */}
+                  <button type="button" onClick={pdfDeLaSalida}
+                    disabled={!totalMarcado}
+                    title="El papel de bodega, para imprimir: qué recoger y cómo empacarlo"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-secondary/40 text-sm font-semibold text-secondary hover:bg-secondary/5 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <FileText size={15} /> PDF de bodega
+                  </button>
                   <button type="button" onClick={excelDeLaSalida}
                     disabled={!totalMarcado}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted hover:text-primary hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed">
-                    <FileSpreadsheet size={15} /> Excel general
+                    <FileSpreadsheet size={15} /> Excel
                   </button>
                   <button type="button" onClick={() => setSalidaOpen(false)}
                     className="px-4 py-2 rounded-xl border border-border text-muted hover:text-primary text-sm font-medium">

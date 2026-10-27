@@ -12,6 +12,9 @@ import autoTable from 'jspdf-autotable';
 // se lo calculara por su cuenta, el papel y el libro acabarían enseñando cifras
 // distintas del mismo inventario y nadie sabría cuál creer.
 import { agruparPorProducto } from './entregables.js';
+// El papel de bodega, en su diseño de verdad: partido en «recoger» y
+// «empacar». Ver lib/despachoPdf.js.
+import { seccionRecoger, seccionEmpacar, seccionSeparar } from './despachoPdf.js';
 
 const formatNum = (v) => (parseInt(v) || 0).toLocaleString('es-CO');
 const formatCOP = (v) => '$' + (parseFloat(v) || 0).toLocaleString('es-CO');
@@ -39,67 +42,21 @@ export async function exportarPDFBodega(sel, data, totales, fileName) {
 
   // DESPACHO(GENERAL) — el papel que se lleva a la bodega.
   //
-  // Va PRIMERO porque es con el que se recorre la bodega: todos los clientes
-  // seguidos, ordenado por lo que hay que ir a buscar y no por a quien se le
-  // entrega, con el nombre en cada renglon. Es la misma forma que la hoja de
-  // Excel del mismo nombre; en papel el bloque de separadas va detras.
+  // Las secciones salen de lib/despachoPdf.js, que es el MISMO diseño que se
+  // baja suelto desde la pantalla de Despachos. Antes estaba escrito aquí
+  // aparte, con doce columnas a cuerpo 7 que repetían ciudad, dirección y
+  // celular en cada renglón del mismo cliente: con el bloque duplicado, el día
+  // que se arregle un ancho en un sitio el otro se queda como estaba y nadie se
+  // entera hasta compararlos encima de la mesa.
   if (sel.includes('DESPACHO(GENERAL)')) {
     const salen = (data.despachos || []).reduce(
       (n, d) => n + d.grupos.reduce((m, g) => m + (parseInt(g.cantidad) || 0), 0), 0);
     addTitle(`DESPACHAR - ${salen} unidad(es)`);
-    const rows = [];
-    for (const d of (data.despachos || [])) {
-      for (const g of d.grupos) {
-        rows.push([
-          g.referencia || '', g.calidad || '',
-          // Vacio, no un cero, cuando el costo o el precio no son unicos. Un
-          // cero en papel se lee como «no cuesta nada».
-          g.costo != null ? formatCOP(g.costo) : '',
-          g.precio != null ? formatCOP(g.precio) : '',
-          g.cantidad,
-          d.nombre || '', d.ciudad || '', d.direccion || '', d.celular || '',
-          d.tipo_transporte || d.transporte || '', d.transportadora || '', d.fletes || '',
-        ]);
-      }
-    }
-    autoTable(doc, {
-      startY: 60,
-      head: [['REFERENCIA', 'CALIDAD', 'COSTO', 'PRECIO', 'CAN', 'NOMBRE',
-        'CIUDAD', 'DIRECCION', 'CELULAR', 'TIPO', 'TRANSP.', 'FLETES']],
-      body: rows.length ? rows : [['No hay nada que despachar.', '', '', '', '', '', '', '', '', '', '', '']],
-      foot: [['TOTAL A DESPACHAR', '', '', '', salen, '', '', '', '', '', '', '']],
-      theme: 'grid',
-      styles: { fontSize: 7 },
-      headStyles: { fillColor: [99, 102, 241] },
-      footStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
-      columnStyles: { 4: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-    });
-
-    // Lo apartado va aparte y SI por cliente, porque es lo contrario: no sale
-    // hoy, se aparta y se marca con el nombre encima.
-    if ((data.separadas || []).length) {
-      const rowsSep = [];
-      for (const c of data.separadas) {
-        let primera = true;
-        for (const g of c.grupos) {
-          rowsSep.push([
-            primera ? (c.nombre || '') : '',
-            g.referencia || '', g.calidad || '', g.cantidad,
-          ]);
-          primera = false;
-        }
-      }
-      addTitle('SEPARAR');
-      autoTable(doc, {
-        startY: 60,
-        head: [['CLIENTE', 'REFERENCIA', 'CALIDAD', 'CANT']],
-        body: rowsSep,
-        theme: 'grid',
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [217, 119, 6] },
-        columnStyles: { 3: { halign: 'center' } },
-      });
-    }
+    const y = seccionRecoger(doc, data.despachos || [], { y: 60, margen: 40 });
+    seccionEmpacar(doc, data.despachos || [], { y, margen: 40 });
+    // Sin hoja nueva: aquí ya estamos dentro de un cuaderno que pagina solo.
+    seccionSeparar(doc, data.separadas || [], { margen: 40, hojaNueva: true });
+    pageAdded = true;
   }
 
   // CONTEO(BODEGA) — la hoja para contar a mano, y en papel es donde de verdad
