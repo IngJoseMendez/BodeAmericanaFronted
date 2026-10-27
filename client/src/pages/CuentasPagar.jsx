@@ -51,6 +51,12 @@ const equivalenteFactura = (f, monedaFactura) => {
   return tasa > 0 ? monto * tasa : 0;
 };
 
+// Una cuenta de un contenedor en «legado»: llegó antes del sistema, se
+// registró para dejar escrito lo que costó, y sus facturas se pagaron fuera. Se
+// decide por el estado del CONTENEDOR y no por el de la cuenta, porque la cuenta
+// nació «pendiente» como cualquier otra y nadie la va a ir a cerrar a mano.
+const esDeLegado = (c) => c?.contenedor_estado === 'legado';
+
 function EstadoBadge({ estado }) {
   const map = {
     pendiente: 'bg-warning/15 text-warning',
@@ -303,16 +309,27 @@ export default function CuentasPagar() {
     // eso se crea la estimación—, pero mezclada con las reales no había forma de
     // saber cuál era cuál, ni por qué un contenedor "debe" plata de mercancía
     // que no ha llegado.
+    //
+    // Y una cuenta de un contenedor LEGADO es lo contrario: una factura que
+    // existio de verdad y que se pagó hace tiempo, fuera del sistema. El
+    // contenedor llegó antes de que esto existiera y se registró para dejar
+    // escrito lo que costó, no para cobrarlo otra vez.
     if (!grupos[key]) grupos[key] = {
       label, cuentas: [], pendienteCOP: 0, pendienteUSD: 0, pagadas: 0,
+      legadoCOP: 0, legadoUSD: 0,
       esEstimacion: c.contenedor_estado === 'estimacion',
       deEstimacion: c.contenedor_origen === 'estimacion',
+      esLegado: c.contenedor_estado === 'legado',
     };
     grupos[key].cuentas.push(c);
     if (c.estado === 'pagada') grupos[key].pagadas++;
     else {
       const pen = parseFloat(c.total_factura) - parseFloat(c.total_abonado);
-      if (c.moneda === 'USD') grupos[key].pendienteUSD += pen;
+      // Lo del legado se cuenta aparte, no en el pendiente del grupo.
+      if (esDeLegado(c)) {
+        if (c.moneda === 'USD') grupos[key].legadoUSD += pen;
+        else grupos[key].legadoCOP += pen;
+      } else if (c.moneda === 'USD') grupos[key].pendienteUSD += pen;
       else grupos[key].pendienteCOP += pen;
     }
   });
@@ -334,12 +351,21 @@ export default function CuentasPagar() {
     ? (contenedores.find(c => String(c.id) === String(filtroContenedor))?.numero || `#${filtroContenedor}`)
     : null;
 
-  const totalPendienteCOP = cuentas.filter(c => c.estado !== 'pagada' && c.moneda === 'COP')
-    .reduce((s, c) => s + (parseFloat(c.total_factura) - parseFloat(c.total_abonado)), 0);
-  const totalPendienteUSD = cuentas.filter(c => c.estado !== 'pagada' && c.moneda === 'USD')
-    .reduce((s, c) => s + (parseFloat(c.total_factura) - parseFloat(c.total_abonado)), 0);
+  // LO DEL LEGADO NO ES PENDIENTE DE HOY, y por eso sale de los totales.
+  //
+  // Es la misma regla que la dueña pidió para la cartera: la cifra se ve, dice
+  // de qué es, y no se suma a lo que de verdad hay que pagar. C626 son diez
+  // facturas por 324.775.400 que llevaban meses infladando este número.
+  const saldoDe = (c) => (parseFloat(c.total_factura) || 0) - (parseFloat(c.total_abonado) || 0);
+  const vivas = cuentas.filter(c => c.estado !== 'pagada' && !esDeLegado(c));
+  const legadas = cuentas.filter(c => c.estado !== 'pagada' && esDeLegado(c));
+
+  const totalPendienteCOP = vivas.filter(c => c.moneda === 'COP').reduce((s, c) => s + saldoDe(c), 0);
+  const totalPendienteUSD = vivas.filter(c => c.moneda === 'USD').reduce((s, c) => s + saldoDe(c), 0);
+  const totalLegadoCOP    = legadas.filter(c => c.moneda === 'COP').reduce((s, c) => s + saldoDe(c), 0);
+  const totalLegadoUSD    = legadas.filter(c => c.moneda === 'USD').reduce((s, c) => s + saldoDe(c), 0);
   const pagadas = cuentas.filter(c => c.estado === 'pagada').length;
-  const pendientes = cuentas.filter(c => c.estado !== 'pagada').length;
+  const pendientes = vivas.length;
 
   const inpSm = 'w-full px-3 py-2 rounded-lg border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm';
   const inp = 'w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm';
@@ -356,6 +382,22 @@ export default function CuentasPagar() {
           <KpiCard label="Pagadas"        value={pagadas}    icon={CheckCircle} color="bg-success/70"  sub="completamente liquidadas" />
           <KpiCard label="Por liquidar"   value={pendientes} icon={Clock}        color="bg-accent/70"   sub="pendientes o parciales" />
         </div>
+
+        {/* Lo del legado, dicho en voz alta. Si no estuviera escrito aquí, la
+            única forma de saber por qué los totales no cuadran con la lista de
+            abajo sería sumar las filas a mano. */}
+        {legadas.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 rounded-xl border border-border bg-primary/[0.02] text-xs">
+            <span className="font-semibold text-muted uppercase tracking-wider">De contenedores legado</span>
+            {totalLegadoCOP > 0 && <span className="font-mono font-semibold text-primary tabular-nums">{formatCurrency(totalLegadoCOP, 'COP')}</span>}
+            {totalLegadoUSD > 0 && <span className="font-mono font-semibold text-primary tabular-nums">{formatCurrency(totalLegadoUSD, 'USD')}</span>}
+            <span className="text-muted">
+              en {legadas.length} factura(s) de contenedores que llegaron antes del sistema.
+              Se registraron para dejar escrito lo que costaron, ya se pagaron fuera, y
+              <strong className="text-primary"> no cuentan en los totales de arriba</strong>.
+            </span>
+          </div>
+        )}
 
         {/* Filtros */}
         <div className="flex flex-col lg:flex-row gap-3">
@@ -470,6 +512,12 @@ export default function CuentasPagar() {
                               <RefLink to="/contenedores" id={key} title="Ver contenedor"
                                 className="text-sm font-bold">Contenedor {grupo.label}</RefLink>
                             )}
+                            {grupo.esLegado && (
+                              <span title="El contenedor llegó antes del sistema: estas facturas se registraron para dejar escrito lo que costó y ya se pagaron fuera"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-muted/15 text-muted border border-border">
+                                Legado
+                              </span>
+                            )}
                             {grupo.esEstimacion ? (
                               <span title="Estas cuentas salen de una estimación: el proveedor todavía no ha facturado"
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60">
@@ -487,6 +535,15 @@ export default function CuentasPagar() {
                             </span>
                           </div>
                           <div className="flex items-center gap-4 text-xs font-semibold">
+                            {/* En un grupo legado la cifra NO se rotula
+                                «pendiente»: no se le debe a nadie hoy, es lo que
+                                costó el contenedor. */}
+                            {grupo.legadoUSD > 0 && (
+                              <span className="text-muted">{formatCurrency(grupo.legadoUSD, 'USD')} de legado</span>
+                            )}
+                            {grupo.legadoCOP > 0 && (
+                              <span className="text-muted">{formatCurrency(grupo.legadoCOP, 'COP')} de legado</span>
+                            )}
                             {grupo.pendienteUSD > 0 && (
                               <span className="text-warning">{formatCurrency(grupo.pendienteUSD, 'USD')} pendiente</span>
                             )}
