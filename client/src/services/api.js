@@ -220,6 +220,11 @@ export const ventasApi = {
   delete(id) {
     return api.delete(`/ventas/${id}`);
   },
+  // Las ventas que solo existen como renglon de cartera: no son filas de
+  // `ventas`, asi que tienen su propio endpoint. Ver GET /ventas/cartera.
+  getCartera(params = {}) {
+    return api.get(`/ventas/cartera${qs(params)}`);
+  },
   getReporte(params = {}) {
     return api.get(`/ventas/reporte${qs(params)}`);
   },
@@ -593,6 +598,16 @@ export const despachosApi = {
   // Despachar sin cotizacion detras: una venta de mostrador. Ver el comentario
   // de POST /despachos/directo en el servidor, que explica que deja escrito.
   crearDirecto(body) { return api.post('/despachos/directo', body); },
+  // VARIOS de un golpe, en UNA transaccion: o se crean todos o ninguno. Es lo
+  // que hay detras de la rejilla de pegar desde Excel. Media tanda cargada es
+  // peor que ninguna, porque nadie sabe que mitad quedo.
+  crearDirectoLote(despachos) { return api.post('/despachos/directo/lote', { despachos }); },
+  // La salida de varios despachos a la vez, tambien en UNA transaccion. Acepta
+  // `fecha_salida` porque la mercancia pudo salir el viernes y registrarse el
+  // lunes; ver POST /despachos/confirmar-lote.
+  confirmarLote(despachos, fecha_salida) {
+    return api.post('/despachos/confirmar-lote', { despachos, fecha_salida: fecha_salida || null });
+  },
 };
 
 export const preciosApi = {
