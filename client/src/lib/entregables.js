@@ -1318,6 +1318,29 @@ export function hojaCarteraInterna(wb, filas) {
     r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
     r.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right' };
   }
+  fila++;
+
+  // QUÉ ES, Y SOBRE TODO QUÉ NO ES, LA COLUMNA VENDIDO.
+  //
+  // Esta hoja sólo pinta a quien TODAVÍA DEBE algo: es una hoja de cartera, y
+  // un cliente en cero no tiene cartera. El efecto secundario es que su columna
+  // VENDIDO no es «todo lo que se ha vendido», sino «lo que se le vendió a la
+  // gente que aún debe», y la diferencia no es pequeña: hoy son 9.810 millones
+  // aquí contra 16.947 vendidos de verdad, porque los 60 clientes que compraron
+  // y pagaron todo —Gilma con 1.588 millones, Luis Figueroa con 1.183— no
+  // aparecen en ningún renglón.
+  //
+  // Se dice aquí porque es exactamente la pregunta que surge al comparar esta
+  // cifra con la de ventas, y sin la frase la única forma de resolverla es
+  // sentarse a sumar movimientos.
+  const nota = ws.getRow(fila);
+  ws.mergeCells(fila, 1, fila, 5);
+  nota.getCell(1).value = 'VENDIDO es lo que se le vendió a los clientes de esta lista, que son los que '
+    + 'todavía deben algo. NO es todo lo vendido: quien compró y pagó completo no sale aquí, porque '
+    + 'no tiene cartera. Para lo vendido, mira el informe de ventas.';
+  nota.getCell(1).font = { size: 9, italic: true, color: { argb: '64748b' } };
+  nota.getCell(1).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+  nota.height = 26;
   fila += 2;
 
   if (perdidas.length) {
