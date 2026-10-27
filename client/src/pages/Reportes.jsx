@@ -206,9 +206,17 @@ export default function Reportes() {
       
       // KPI Cards
       const kpis = [
-        { label: 'Total de Ventas', value: reporteMensual.resumen_ejecutivo?.total_ventas || 0, color: primaryColor },
-        { label: 'Monto Total', value: fmt(reporteMensual.resumen_ejecutivo?.monto_total_ventas), color: primaryColor },
-        { label: 'Ganancia del Mes', value: fmt(reporteMensual.resumen_ejecutivo?.total_ganancia), color: successColor },
+        // Las mismas cifras que la pantalla, del mismo sitio: cuando el Excel
+        // leia `total_ventas` y `monto_total_ventas` a secas, el archivo salia
+        // con 0 ventas por $0 debajo de una tabla con 57 filas.
+        { label: 'Total de Ventas', value: cifras.nVentas, color: primaryColor },
+        { label: 'Monto Total', value: fmt(cifras.monto), color: primaryColor },
+        // Y la ganancia con raya cuando no hay con que calcularla, igual que en
+        // pantalla: un $0 impreso en un reporte que alguien archiva es peor que
+        // en una tarjeta, porque sobrevive a la explicacion.
+        { label: 'Ganancia del Mes',
+          value: cifras.conCosto === 0 ? 'sin costo registrado' : fmt(reporteMensual.resumen_ejecutivo?.total_ganancia),
+          color: successColor },
         { label: 'Saldo Cartera', value: fmt(reporteMensual.resumen_ejecutivo?.saldo_cartera), color: accentColor },
         { label: 'Clientes Nuevos', value: reporteMensual.resumen_ejecutivo?.clientes_nuevos || 0, color: secondaryColor },
         { label: 'Pacas Vendidas', value: reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0, color: secondaryColor },
@@ -479,6 +487,14 @@ export default function Reportes() {
   const totalCosto = pacasVendidas.reduce((sum, p) => sum + parseFloat(p.costo_base || 0), 0);
   const totalGanancia = ganancias.reduce((sum, g) => sum + parseFloat(g.ganancia || 0), 0);
 
+  // SI NO HAY NINGUNA VENTA CON PACAS, estas dos cifras no son cero: no existen.
+  // Las dos salen del inventario del sistema -lo que se vendio de las pacas
+  // registradas-, y mientras no haya salido ninguna, un $0 aqui contradice al
+  // Monto Total de arriba, que cuenta todas las ventas del mes. Dos tarjetas con
+  // el mismo nombre diciendo cosas opuestas, y la de arriba es la buena.
+  const sinPacasVendidas = pacasVendidas.length === 0;
+  const sinGanancia = ganancias.length === 0;
+
   // Pantalla de error: sin ella se pintaban $0 en Total Vendido y Ganancia Neta,
   // que se leen como "este mes no se vendió nada".
   if (error) {
@@ -571,23 +587,40 @@ export default function Reportes() {
 
                   </div>
                   <div className="p-3 sm:p-4 bg-secondary/15 rounded-xl text-center min-w-0">
-                    <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}>
-                      {formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}
-                    </p>
-                    <p className="text-[10px] sm:text-xs text-muted truncate">Ganancia</p>
-                    {/* EL ALCANCE DE LA CIFRA, no su origen.
-                        Al lado de un Monto Total que cuenta todas las ventas,
-                        una ganancia en cero se lee como «vendió sin ganar nada».
-                        La ganancia sale del costo de la paca, y las ventas que
-                        se cargaron del Excel no traen costo, así que de ellas no
-                        hay margen que calcular. Decir de cuántas ventas sale es
-                        la forma honesta: la cifra es cierta y se sabe qué cubre.
-                        Inventar el costo que falta sería mucho peor. */}
-                    {cifras.conCosto < cifras.nVentas && (
-                      <p className="text-[9px] text-muted/80 truncate"
-                         title={`La ganancia se calcula con el costo de las pacas. ${cifras.conCosto} de las ${cifras.nVentas} ventas del mes tienen ese costo registrado; las demás se cargaron del Excel sin él.`}>
-                        de {cifras.conCosto} de {cifras.nVentas} ventas
-                      </p>
+                    {/* «GANAMOS CERO» Y «NO SABEMOS CUÁNTO GANAMOS» SON COSAS
+                        DISTINTAS, y la segunda se escribe con una raya.
+                        La ganancia sale del costo de la paca. Las ventas que se
+                        cargaron del Excel no traen costo, así que cuando ninguna
+                        venta del mes lo tiene, la suma recorre una lista vacía y
+                        da 0. Pintar $0 ahí diría que se vendieron 119 millones
+                        sin ganar un peso, que es una afirmación que nadie hizo.
+                        Cuando sí hay ventas con costo, la cifra se enseña y
+                        debajo se dice de cuántas sale. */}
+                    {cifras.conCosto === 0 ? (
+                      <>
+                        <p className="text-lg sm:text-2xl font-display text-muted truncate"
+                           title="Ninguna venta de este mes tiene el costo de la mercancía registrado, así que no hay ganancia que calcular. No significa que se haya ganado cero.">
+                          —
+                        </p>
+                        <p className="text-[10px] sm:text-xs text-muted truncate">Ganancia</p>
+                        <p className="text-[9px] text-muted/80 truncate"
+                           title="Las ventas cargadas de los libros de Excel no traen el costo de la mercancía. En cuanto se registre una venta por el sistema, aquí aparece su ganancia.">
+                          sin costo registrado
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-lg sm:text-2xl font-display text-primary truncate" title={formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}>
+                          {formatCurrency(reporteMensual.resumen_ejecutivo?.total_ganancia)}
+                        </p>
+                        <p className="text-[10px] sm:text-xs text-muted truncate">Ganancia</p>
+                        {cifras.conCosto < cifras.nVentas && (
+                          <p className="text-[9px] text-muted/80 truncate"
+                             title={`De las ${cifras.nVentas} ventas del mes, ${cifras.conCosto} tienen el costo de la mercancía registrado. La ganancia es la de esas; las demás se cargaron de los libros sin costo.`}>
+                            de {cifras.conCosto} venta{cifras.conCosto === 1 ? '' : 's'} con costo
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                   <div className="p-3 sm:p-4 bg-accent/10 rounded-xl text-center min-w-0">
@@ -607,10 +640,16 @@ export default function Reportes() {
                       {reporteMensual.resumen_ejecutivo?.pacas_vendidas || 0}
                     </p>
                     <p className="text-[10px] sm:text-xs text-muted truncate">Pacas Vendidas</p>
-                    {cifras.conCosto < cifras.nVentas && (
+                    {/* ESTE CERO SÍ ES VERDAD: cuenta las pacas que salieron del
+                        inventario, y no ha salido ninguna. Lo que hacía falta era
+                        decir qué cuenta, porque al lado de 57 ventas un cero se
+                        lee como un error. Las ventas de los libros son líneas,
+                        no cantidades: de 7.817 sólo 240 dicen cuántas unidades
+                        fueron, así que no se pueden sumar aquí. */}
+                    {!reporteMensual.resumen_ejecutivo?.pacas_vendidas && (
                       <p className="text-[9px] text-muted/80 truncate"
-                         title="Cuenta las pacas que salieron del inventario del sistema. Las ventas cargadas del Excel son líneas de venta, no cantidades: sólo unas pocas dicen cuántas unidades fueron.">
-                        de {cifras.conCosto} de {cifras.nVentas} ventas
+                         title="Cuenta las pacas que salieron del inventario del sistema. Las ventas cargadas de los libros son líneas de venta, no cantidades de pacas, así que no suman aquí.">
+                        ninguna salió del inventario
                       </p>
                     )}
                   </div>
@@ -742,12 +781,19 @@ export default function Reportes() {
               </div>
               <p
                 className="text-xl sm:text-2xl font-display text-primary truncate"
-                title={loading || fallosListas?.pacas ? 'Dato no disponible' : formatCurrency(totalVendido)}
+                title={loading || fallosListas?.pacas
+                  ? 'Dato no disponible'
+                  : sinPacasVendidas
+                    ? 'Cuenta lo vendido de las pacas registradas en el sistema. Este mes no ha salido ninguna del inventario; lo vendido del mes está en «Monto Total», arriba.'
+                    : formatCurrency(totalVendido)}
               >
-                {loading || fallosListas?.pacas ? '—' : formatCurrency(totalVendido)}
+                {loading || fallosListas?.pacas || sinPacasVendidas ? '—' : formatCurrency(totalVendido)}
               </p>
               {!loading && fallosListas?.pacas && (
                 <p className="text-[10px] text-muted mt-0.5">No se pudo consultar</p>
+              )}
+              {!loading && !fallosListas?.pacas && sinPacasVendidas && (
+                <p className="text-[10px] text-muted mt-0.5">ninguna paca salió del inventario</p>
               )}
             </CardBody>
           </Card>
@@ -760,12 +806,19 @@ export default function Reportes() {
               </div>
               <p
                 className="text-xl sm:text-2xl font-display text-success truncate"
-                title={loading || fallosListas?.ganancia ? 'Dato no disponible' : formatCurrency(totalGanancia)}
+                title={loading || fallosListas?.ganancia
+                  ? 'Dato no disponible'
+                  : sinGanancia
+                    ? 'La ganancia se calcula con el costo de la paca. Ninguna venta de este mes lo tiene registrado, así que no hay ganancia que calcular. No significa que se haya ganado cero.'
+                    : formatCurrency(totalGanancia)}
               >
-                {loading || fallosListas?.ganancia ? '—' : formatCurrency(totalGanancia)}
+                {loading || fallosListas?.ganancia || sinGanancia ? '—' : formatCurrency(totalGanancia)}
               </p>
               {!loading && fallosListas?.ganancia && (
                 <p className="text-[10px] text-muted mt-0.5">No se pudo consultar</p>
+              )}
+              {!loading && !fallosListas?.ganancia && sinGanancia && (
+                <p className="text-[10px] text-muted mt-0.5">sin costo registrado</p>
               )}
             </CardBody>
           </Card>
