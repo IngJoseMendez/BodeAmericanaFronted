@@ -197,3 +197,26 @@ export function facetasDeGrupos(grupos, filtros = {}) {
   }
   return salida;
 }
+
+/**
+ * Las claves (`claveStock`) que HOY tienen promoción corriendo.
+ *
+ * Hace falta porque LO QUE ESTÁ EN PROMOCIÓN NO LLEVA DESCUENTO ENCIMA: la
+ * promoción ya es el precio rebajado, y descontar dos veces regala mercancía.
+ * Es la misma regla que aplica la cotización, y sin esto la venta directa la
+ * aplicaría distinto.
+ *
+ * Se saca de las mismas filas de `GET /pacas/inventario` que `preciosDeHoy`,
+ * porque es el único sitio donde viaja la promoción: la fila de una paca no la
+ * trae.
+ */
+export function clavesEnPromocion(filasInventario) {
+  const claves = new Set();
+  for (const f of filasInventario || []) {
+    if (promoDeLinea(f) == null) continue;
+    const referencia = txt(f.referencia);
+    if (!referencia) continue;
+    claves.add(claveStock(referencia, txt(f.calidad)));
+  }
+  return claves;
+}

@@ -17,9 +17,15 @@ import { descargarExcel } from '../lib/descargar';
 // El mismo agrupado que usa el despacho directo. Si cada pantalla agrupara
 // a su manera, una ofreceria existencias que la otra no ve.
 import {
-  agruparPacas, preciosDeHoy, claveStock,
+  agruparPacas, preciosDeHoy, claveStock, clavesEnPromocion,
   filtrarGrupos, facetasDeGrupos, DIMENSIONES_PRODUCTO,
 } from '../lib/stock';
+// LA MISMA CUENTA DEL DESCUENTO QUE LA COTIZACION, importada y no copiada. Es
+// por unidad y topada al precio de cada paca, y si aqui se escribiera otra vez
+// acabaria dando otro numero: cotizar algo y venderlo directamente darian
+// totales distintos, y el cliente tendria un papel con una cifra y la cartera
+// con otra.
+import { precioConDescuento } from '../lib/cotizacion';
 
 // Los rótulos de los cuatro filtros del selector de productos. `categoria` se
 // llama TEMPORADA en la bodega, y es como hay que escribirlo en la pantalla.
@@ -248,6 +254,17 @@ export default function Ventas() {
   // volver a recibir lo que ya está en memoria.
   const [filtrosProd, setFiltrosProd] = useState({});
 
+  // ── DESCUENTO Y FLETE, COMO EN LA COTIZACION ────────────────────
+  //
+  // Una venta directa no podia llevar ninguno de los dos. Para dar un descuento
+  // habia que bajarle el precio a cada paca a mano, y despues nadie sabia si
+  // ese precio era el de verdad o el ya rebajado: se perdia el dato de cuanto se
+  // habia rebajado y de sobre que.
+  const [descuentoVenta, setDescuentoVenta] = useState('');
+  const [tipoDescuentoVenta, setTipoDescuentoVenta] = useState('valor_fijo');
+  const [fleteUnitario, setFleteUnitario] = useState('');
+  const [notasVenta, setNotasVenta] = useState('');
+
   const ponerFiltroProd = (dim, valor) =>
     setFiltrosProd((f) => ({ ...f, [dim]: valor }));
   // ── QUÉ VENTAS ESTÁN DESGLOSADAS ────────────────────────────────
@@ -285,12 +302,23 @@ export default function Ventas() {
       producto: [d.categoria, d.clasificacion, d.referencia, d.calidad].filter(Boolean).join(' / '),
       precio_original: parseMonto(d.precio_unitario),
       precio: String(Math.round(parseMonto(d.precio_unitario))),
+      // Lo que esta en promocion no recibe descuento: la promocion YA es el
+      // precio rebajado. Sin esto el cuadro ensenaria un total y el servidor
+      // guardaria otro.
+      es_promocion: Boolean(d.es_promocion),
     }));
     setCorrigiendo({
       venta,
       items,
       fecha: String(venta.fecha || '').slice(0, 10),
       tipo_pago: venta.tipo_pago || 'contado',
+      // El descuento y el flete QUE YA TIENE, no vacios: se viene a corregir, y
+      // una casilla vacia aqui significaria «ponlo en cero», que es un cambio
+      // que nadie pidio.
+      descuento: venta.descuento_valor > 0 ? String(Math.round(venta.descuento_valor)) : '',
+      tipo_descuento: venta.tipo_descuento || 'valor_fijo',
+      flete: venta.transporte_unitario > 0 ? String(Math.round(venta.transporte_unitario)) : '',
+      notas: venta.notas || '',
     });
   };
 
@@ -316,10 +344,31 @@ export default function Ventas() {
     setDescuentoPorPaca('');
   };
 
-  const totalCorreccion = (corrigiendo?.items || [])
-    .reduce((t, i) => t + parseMonto(i.precio), 0);
-  const totalOriginalCorreccion = (corrigiendo?.items || [])
-    .reduce((t, i) => t + i.precio_original, 0);
+  // LA MISMA CUENTA QUE AL CREAR Y QUE EN EL SERVIDOR: subtotal − descuento +
+  // flete, con el descuento por unidad y topado al precio de cada paca. Si aqui
+  // se calculara de otra forma, el cuadro ensenaria un total y la venta se
+  // guardaria con otro.
+  const cuentasCorreccion = (() => {
+    const items = corrigiendo?.items || [];
+    const subtotal = items.reduce((t, i) => t + parseMonto(i.precio), 0);
+    const descuento = items.reduce((t, i) => {
+      if (i.es_promocion) return t;
+      const precio = parseMonto(i.precio);
+      return t + (precio - precioConDescuento(
+        precio, parseMonto(corrigiendo?.descuento), corrigiendo?.tipo_descuento));
+    }, 0);
+    const fleteUnit = parseMonto(corrigiendo?.flete);
+    const fleteTotal = Math.round(fleteUnit * items.length);
+    return {
+      subtotal, descuento, fleteUnit, fleteTotal,
+      unidades: items.length,
+      total: subtotal - descuento + fleteTotal,
+    };
+  })();
+
+  const totalCorreccion = cuentasCorreccion.total;
+  // Lo que la venta vale HOY, para poder poner el antes al lado del despues.
+  const totalOriginalCorreccion = parseMonto(corrigiendo?.venta?.total);
 
   const guardarCorreccion = async () => {
     if (!corrigiendo || guardandoCorreccion) return;
@@ -334,6 +383,10 @@ export default function Ventas() {
         fecha: corrigiendo.fecha,
         tipo_pago: corrigiendo.tipo_pago,
         items: corrigiendo.items.map((i) => ({ paca_id: i.paca_id, precio_unitario: parseMonto(i.precio) })),
+        descuento: parseMonto(corrigiendo.descuento) || 0,
+        tipo_descuento: corrigiendo.tipo_descuento,
+        transporte_unitario: parseMonto(corrigiendo.flete) || 0,
+        notas: corrigiendo.notas,
       });
       // Se dice QUE cambio y en cuanto, no un «guardado» a secas: lo que se
       // acaba de mover es la deuda de un cliente.
@@ -518,6 +571,10 @@ export default function Ventas() {
       setGrupoSel({});
       setBuscarPacas('');
       setFiltrosProd({});
+      setDescuentoVenta('');
+      setTipoDescuentoVenta('valor_fijo');
+      setFleteUnitario('');
+      setNotasVenta('');
       setError('');
       setModalOpen(true);
     } catch (err) {
@@ -583,7 +640,18 @@ export default function Ventas() {
         cliente_id: parseInt(formData.cliente_id),
         tipo_pago: formData.tipo_pago,
         fecha: formData.fecha,
-        pacas: pacasSeleccionadas.map(p => ({ id: p.id, precio_venta: p.precio_venta }))
+        // `es_promocion` viaja porque el servidor recalcula el total y tiene que
+        // saber a qué paca NO aplicarle el descuento encima.
+        pacas: pacasSeleccionadas.map(p => ({
+          id: p.id, precio_venta: p.precio_venta, es_promocion: p.es_promocion,
+        })),
+        // Se manda lo que se TECLEÓ, no el descuento ya calculado: el total lo
+        // saca el servidor de los precios de las pacas. Lo que se calcula en
+        // pantalla es sólo para poder enseñarlo antes de guardar.
+        descuento: parseMonto(descuentoVenta) || 0,
+        tipo_descuento: tipoDescuentoVenta,
+        transporte_unitario: parseMonto(fleteUnitario) || 0,
+        notas: notasVenta.trim() || null,
       });
       
       const cliente = clientes.find(c => c.id === parseInt(formData.cliente_id));
@@ -652,6 +720,10 @@ export default function Ventas() {
     [pacasDisponibles, inventario]
   );
 
+  // Que productos tienen promocion corriendo hoy. La fila de una paca no trae
+  // la promocion: solo viaja en el inventario agrupado, que es de donde sale.
+  const promocionesHoy = useMemo(() => clavesEnPromocion(inventario), [inventario]);
+
   // Filtra sobre el término ya reposado (300 ms): antes se recorría el inventario
   // entero y se repintaba la tabla en cada tecla, y el `.includes()` sin
   // normalizar hacía que buscar "HOMBRE" no encontrara "hombre".
@@ -716,13 +788,45 @@ export default function Ventas() {
         referencia: g.referencia,
         calidad: g.calidad,
         precio_venta: parseMonto(g.precio),
+        // LO QUE ESTA EN PROMOCION NO LLEVA DESCUENTO ENCIMA: la promocion ya
+        // es el precio rebajado. Viaja al servidor porque es el servidor el que
+        // calcula el total, y sin este dato aplicaria el descuento dos veces.
+        es_promocion: promocionesHoy.has(claveStock(g.referencia, g.calidad)),
       }))
     ),
-    [gruposElegidos]
+    [gruposElegidos, promocionesHoy]
   );
 
-  const totalVenta = gruposElegidos.reduce(
-    (sum, g) => sum + (parseInt(g.cantidad, 10) || 0) * parseMonto(g.precio), 0);
+  // ── LAS CUENTAS DE LA VENTA ─────────────────────────────────────
+  //
+  // `subtotal - descuento + flete`, con el descuento POR UNIDAD y topado al
+  // precio de cada paca, y sin aplicarse a lo que ya esta en promocion. Es la
+  // misma cuenta que hace el servidor y la misma que hace la cotizacion:
+  // `precioConDescuento` viene de lib/cotizacion, no esta escrita aqui otra vez.
+  //
+  // Esto se calcula en pantalla SOLO para poder ensenarlo antes de guardar. El
+  // total que vale es el que devuelve el servidor, que lo recalcula de los
+  // precios de las pacas: la cuenta del dinero no puede vivir en el navegador.
+  const cuentasVenta = useMemo(() => {
+    const subtotal = pacasSeleccionadas.reduce((t, p) => t + parseMonto(p.precio_venta), 0);
+    const descuento = pacasSeleccionadas.reduce((t, p) => {
+      if (p.es_promocion) return t;
+      const precio = parseMonto(p.precio_venta);
+      return t + (precio - precioConDescuento(precio, parseMonto(descuentoVenta), tipoDescuentoVenta));
+    }, 0);
+    const unidades = pacasSeleccionadas.length;
+    const fleteUnit = parseMonto(fleteUnitario);
+    const fleteTotal = Math.round(fleteUnit * unidades);
+    return {
+      subtotal, descuento, unidades, fleteUnit, fleteTotal,
+      total: subtotal - descuento + fleteTotal,
+      enPromocion: pacasSeleccionadas.filter((p) => p.es_promocion).length,
+    };
+  }, [pacasSeleccionadas, descuentoVenta, tipoDescuentoVenta, fleteUnitario]);
+
+  // `totalVenta` se conserva con ese nombre porque la pantalla ya lo usaba en
+  // varios sitios; ahora es el total DE VERDAD, con descuento y flete dentro.
+  const totalVenta = cuentasVenta.total;
 
   const formatCurrency = formatCOP;
 
@@ -1896,12 +2000,136 @@ export default function Ventas() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 p-4 bg-primary/5 rounded-lg">
-            <span className="text-sm text-muted">
-              Total ({gruposElegidos.length} producto{gruposElegidos.length === 1 ? '' : 's'}
-              {', '}{pacasSeleccionadas.length} unidad{pacasSeleccionadas.length === 1 ? '' : 'es'})
-            </span>
-            <span className="text-xl font-display text-primary" aria-live="polite">{formatCurrency(totalVenta)}</span>
+          {/* ── DESCUENTO, FLETE Y NOTA ─────────────────────────────
+              Lo mismo que lleva una cotización, porque es lo mismo que pasa en
+              el mostrador. Sin esto, para dar un descuento había que bajarle el
+              precio a cada paca a mano, y después nadie sabía si ese precio era
+              el de verdad o el ya rebajado: se perdía cuánto se había rebajado
+              y sobre qué. */}
+          <div className="border-t border-border/50 pt-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="venta-tipo-descuento" className="block text-xs font-medium text-muted mb-1">
+                  Tipo de descuento
+                </label>
+                <Select
+                  id="venta-tipo-descuento"
+                  value={tipoDescuentoVenta}
+                  onChange={(e) => { setTipoDescuentoVenta(e.target.value); setDescuentoVenta(''); }}
+                  options={[
+                    { value: 'valor_fijo', label: 'Valor por paca' },
+                    { value: 'porcentaje', label: '% Porcentaje' },
+                  ]}
+                />
+              </div>
+              <div>
+                <label htmlFor="venta-descuento" className="block text-xs font-medium text-muted mb-1">
+                  {tipoDescuentoVenta === 'porcentaje' ? 'Descuento (%)' : 'Descuento por paca'}
+                </label>
+                {/* CampoMonto para el valor y un number para el porcentaje: un
+                    «10» con separador de miles no es un 10 por ciento. */}
+                {tipoDescuentoVenta === 'porcentaje' ? (
+                  <input
+                    id="venta-descuento"
+                    type="number" min="0" max="100" step="0.5" inputMode="decimal"
+                    value={descuentoVenta}
+                    onChange={(e) => setDescuentoVenta(e.target.value)}
+                    placeholder="Ej: 10"
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                  />
+                ) : (
+                  <CampoMonto
+                    id="venta-descuento"
+                    value={descuentoVenta}
+                    onChange={(e) => setDescuentoVenta(e.target.value)}
+                    placeholder="Ej: 100.000"
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                  />
+                )}
+              </div>
+              <div>
+                <label htmlFor="venta-flete" className="block text-xs font-medium text-muted mb-1">
+                  Flete por paca
+                </label>
+                <CampoMonto
+                  id="venta-flete"
+                  value={fleteUnitario}
+                  onChange={(e) => setFleteUnitario(e.target.value)}
+                  placeholder="Ej: 95.000"
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label htmlFor="venta-notas" className="block text-xs font-medium text-muted mb-1">
+                Nota (opcional)
+              </label>
+              <input
+                id="venta-notas"
+                type="text"
+                value={notasVenta}
+                onChange={(e) => setNotasVenta(e.target.value)}
+                placeholder="Lo que haga falta recordar de esta venta"
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary placeholder-muted"
+              />
+            </div>
+
+            {/* EL AVISO DE LA PROMOCIÓN. Si se pone un descuento y alguna paca
+                está en promoción, esa no lo recibe —la promoción YA es el
+                precio rebajado— y hay que decirlo, o el total parece mal
+                calculado. */}
+            {cuentasVenta.enPromocion > 0 && cuentasVenta.descuento > 0 && (
+              <p className="text-xs text-warning mt-2">
+                {cuentasVenta.enPromocion === 1
+                  ? 'Una paca está en promoción y no recibe el descuento'
+                  : `${cuentasVenta.enPromocion} pacas están en promoción y no reciben el descuento`}:
+                la promoción ya es el precio rebajado.
+              </p>
+            )}
+          </div>
+
+          {/* ── EL TOTAL, DESGLOSADO ────────────────────────────────
+              Las cuatro cifras y no sólo la última: con un descuento y un flete
+              dentro, un total a secas no se puede comprobar, y es la cifra que
+              se le va a cobrar a alguien. Las líneas que valen cero no se
+              pintan, para que el caso normal siga siendo una sola línea. */}
+          <div className="p-4 bg-primary/5 rounded-lg space-y-1.5">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted">
+                Subtotal ({gruposElegidos.length} producto{gruposElegidos.length === 1 ? '' : 's'}
+                {', '}{cuentasVenta.unidades} unidad{cuentasVenta.unidades === 1 ? '' : 'es'})
+              </span>
+              <span className="text-primary tabular-nums">{formatCurrency(cuentasVenta.subtotal)}</span>
+            </div>
+
+            {cuentasVenta.descuento > 0 && (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted">
+                  Descuento
+                  {tipoDescuentoVenta === 'porcentaje'
+                    ? ` (${parseMonto(descuentoVenta)}% por paca)`
+                    : ` (${formatCurrency(parseMonto(descuentoVenta))} por paca)`}
+                </span>
+                <span className="text-error tabular-nums">−{formatCurrency(cuentasVenta.descuento)}</span>
+              </div>
+            )}
+
+            {cuentasVenta.fleteTotal > 0 && (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted">
+                  Flete ({formatCurrency(cuentasVenta.fleteUnit)} × {cuentasVenta.unidades})
+                </span>
+                <span className="text-primary tabular-nums">+{formatCurrency(cuentasVenta.fleteTotal)}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-1.5 border-t border-border/50">
+              <span className="text-sm font-medium text-primary">Total</span>
+              <span className="text-xl font-display text-primary tabular-nums" aria-live="polite">
+                {formatCurrency(totalVenta)}
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap justify-end gap-2 pt-4">
@@ -1962,11 +2190,11 @@ export default function Ventas() {
                 equivocarse. */}
             <div className="flex flex-wrap items-end gap-2 p-3 rounded-xl bg-primary/5">
               <div className="flex-1 min-w-[180px]">
-                <label htmlFor="corregir-descuento" className="block text-xs font-medium text-muted mb-1">
-                  Bajarle lo mismo a todas
+                <label htmlFor="corregir-precios-todas" className="block text-xs font-medium text-muted mb-1">
+                  Corregir el precio de todas
                 </label>
                 <CampoMonto
-                  id="corregir-descuento"
+                  id="corregir-precios-todas"
                   value={descuentoPorPaca}
                   onChange={(e) => setDescuentoPorPaca(e.target.value)}
                   placeholder="100.000"
@@ -1974,8 +2202,88 @@ export default function Ventas() {
                 />
               </div>
               <Button type="button" variant="outline" onClick={aplicarDescuentoATodas}>
-                Aplicar a las {corrigiendo.items.length}
+                Bajar a las {corrigiendo.items.length}
               </Button>
+              {/* ESTO NO ES EL DESCUENTO, Y HAY QUE DECIRLO. Baja el PRECIO de
+                  cada paca, que es lo que se hace cuando el precio estaba mal
+                  escrito. Para un descuento está su casilla, abajo: así queda
+                  escrito cuánto se rebajó y sobre qué, en vez de desaparecer
+                  dentro de los precios. */}
+              <p className="w-full text-[11px] text-muted">
+                Baja el <strong>precio</strong> de cada paca, para cuando el precio estaba mal.
+                Si lo que falta es un <strong>descuento</strong>, usa su casilla de abajo: así queda
+                escrito cuánto se rebajó.
+              </p>
+            </div>
+
+            {/* ── DESCUENTO Y FLETE, LO MISMO QUE AL CREAR ──────────
+                Es el caso que pidió todo esto: «le hizo falta colocar el
+                descuento de 100.000 cada una». Aquí tiene su sitio propio, así
+                que queda escrito cuánto se rebajó y sobre qué, en vez de
+                desaparecer dentro de los precios de las pacas. */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="corregir-tipo-desc" className="block text-xs font-medium text-muted mb-1">
+                  Tipo de descuento
+                </label>
+                <Select
+                  id="corregir-tipo-desc"
+                  value={corrigiendo.tipo_descuento}
+                  onChange={(e) => setCorrigiendo((c) => ({ ...c, tipo_descuento: e.target.value, descuento: '' }))}
+                  options={[
+                    { value: 'valor_fijo', label: 'Valor por paca' },
+                    { value: 'porcentaje', label: '% Porcentaje' },
+                  ]}
+                />
+              </div>
+              <div>
+                <label htmlFor="corregir-desc" className="block text-xs font-medium text-muted mb-1">
+                  {corrigiendo.tipo_descuento === 'porcentaje' ? 'Descuento (%)' : 'Descuento por paca'}
+                </label>
+                {corrigiendo.tipo_descuento === 'porcentaje' ? (
+                  <input
+                    id="corregir-desc"
+                    type="number" min="0" max="100" step="0.5" inputMode="decimal"
+                    value={corrigiendo.descuento}
+                    onChange={(e) => setCorrigiendo((c) => ({ ...c, descuento: e.target.value }))}
+                    placeholder="Ej: 10"
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                  />
+                ) : (
+                  <CampoMonto
+                    id="corregir-desc"
+                    value={corrigiendo.descuento}
+                    onChange={(e) => setCorrigiendo((c) => ({ ...c, descuento: e.target.value }))}
+                    placeholder="Ej: 100.000"
+                    className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                  />
+                )}
+              </div>
+              <div>
+                <label htmlFor="corregir-flete" className="block text-xs font-medium text-muted mb-1">
+                  Flete por paca
+                </label>
+                <CampoMonto
+                  id="corregir-flete"
+                  value={corrigiendo.flete}
+                  onChange={(e) => setCorrigiendo((c) => ({ ...c, flete: e.target.value }))}
+                  placeholder="Ej: 95.000"
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="corregir-notas" className="block text-xs font-medium text-muted mb-1">
+                Nota (opcional)
+              </label>
+              <input
+                id="corregir-notas"
+                type="text"
+                value={corrigiendo.notas}
+                onChange={(e) => setCorrigiendo((c) => ({ ...c, notas: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary placeholder-muted"
+              />
             </div>
 
             <div className="border border-border rounded-xl overflow-hidden">
@@ -2011,8 +2319,43 @@ export default function Ventas() {
                   })}
                 </tbody>
                 <tfoot>
+                  {/* EL PIE ES EL SUBTOTAL, NO EL TOTAL. Con un descuento y un
+                      flete por debajo, poner «Total» en la suma de las pacas
+                      seria el numero equivocado con el rotulo mas convincente. */}
                   <tr className="bg-primary/5 font-semibold">
-                    <td className="px-3 py-2 text-muted uppercase text-[11px] tracking-wider">Total</td>
+                    <td className="px-3 py-2 text-muted uppercase text-[11px] tracking-wider">Subtotal</td>
+                    <td className="px-3 py-2 text-right text-muted tabular-nums">
+                      {formatCurrency(parseMonto(corrigiendo.venta.subtotal) || totalOriginalCorreccion)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-primary">
+                      {formatCurrency(cuentasCorreccion.subtotal)}
+                    </td>
+                  </tr>
+                  {cuentasCorreccion.descuento > 0 && (
+                    <tr>
+                      <td className="px-3 py-2 text-muted" colSpan={2}>
+                        Descuento
+                        {corrigiendo.tipo_descuento === 'porcentaje'
+                          ? ` (${parseMonto(corrigiendo.descuento)}% por paca)`
+                          : ` (${formatCurrency(parseMonto(corrigiendo.descuento))} por paca)`}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-error">
+                        −{formatCurrency(cuentasCorreccion.descuento)}
+                      </td>
+                    </tr>
+                  )}
+                  {cuentasCorreccion.fleteTotal > 0 && (
+                    <tr>
+                      <td className="px-3 py-2 text-muted" colSpan={2}>
+                        Flete ({formatCurrency(cuentasCorreccion.fleteUnit)} × {cuentasCorreccion.unidades})
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-primary">
+                        +{formatCurrency(cuentasCorreccion.fleteTotal)}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="bg-primary/5 font-bold border-t border-border">
+                    <td className="px-3 py-2 text-primary uppercase text-[11px] tracking-wider">Total</td>
                     <td className="px-3 py-2 text-right text-muted tabular-nums">
                       {formatCurrency(totalOriginalCorreccion)}
                     </td>
