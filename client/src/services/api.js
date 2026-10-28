@@ -224,6 +224,13 @@ export const ventasApi = {
   create(data) {
     return api.post('/ventas', data);
   },
+  // Corrige una venta ya creada: el precio de cada paca, la fecha y la forma de
+  // pago. `items` admite sólo las líneas que cambian, no hay que reenviar todas.
+  // Lo que NO corrige es qué pacas se vendieron: eso mueve inventario y para eso
+  // está borrar y volver a hacerla.
+  update(id, data) {
+    return api.put(`/ventas/${id}`, data);
+  },
   delete(id) {
     return api.delete(`/ventas/${id}`);
   },

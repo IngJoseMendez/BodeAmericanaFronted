@@ -5,7 +5,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
 import { PAGO_TIPOS } from '../types';
-import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X, ChevronRight } from 'lucide-react';
+import { Plus, Search, Trash2, User, Calendar, Download, FileSpreadsheet, FileText, X, ChevronRight, Pencil } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 // autoTable se usaba en descargarPDF sin importarlo: el botón "Descargar PDF"
@@ -264,6 +264,96 @@ export default function Ventas() {
   // Un Set y no un booleano por fila: se pueden tener varias abiertas a la vez,
   // que es como se compara una venta con otra.
   const [ventasAbiertas, setVentasAbiertas] = useState(() => new Set());
+
+  // ── CORREGIR UNA VENTA YA CREADA ────────────────────────────────
+  //
+  // El caso que lo pidio: se registraron varias ventas y se olvido el descuento
+  // de 100.000 de cada paca. Hasta ahora las dos salidas eran dejarla mal o
+  // BORRARLA y volverla a hacer, y borrar devuelve las pacas al inventario,
+  // quita el renglon de la cartera y pierde la fecha original. Equivocarse en un
+  // precio no deberia costar eso.
+  //
+  // `corrigiendo` guarda la venta que se esta corrigiendo y los precios
+  // tecleados. Se parte de los precios que YA tiene, no de casillas vacias: se
+  // viene a cambiar uno, no a escribirlos todos otra vez.
+  const [corrigiendo, setCorrigiendo] = useState(null);
+  const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
+
+  const abrirCorreccion = (venta) => {
+    const items = (venta.detalles || []).map((d) => ({
+      paca_id: d.paca_id,
+      producto: [d.categoria, d.clasificacion, d.referencia, d.calidad].filter(Boolean).join(' / '),
+      precio_original: parseMonto(d.precio_unitario),
+      precio: String(Math.round(parseMonto(d.precio_unitario))),
+    }));
+    setCorrigiendo({
+      venta,
+      items,
+      fecha: String(venta.fecha || '').slice(0, 10),
+      tipo_pago: venta.tipo_pago || 'contado',
+    });
+  };
+
+  const cambiarPrecioCorreccion = (pacaId, valor) => setCorrigiendo((c) => (!c ? c : {
+    ...c,
+    items: c.items.map((i) => (i.paca_id === pacaId ? { ...i, precio: valor } : i)),
+  }));
+
+  // EL ATAJO DEL CASO REAL. Restar lo mismo a mano en seis casillas es seis
+  // ocasiones de equivocarse; aqui se escribe una vez. No inventa nada: deja los
+  // precios escritos en las casillas, a la vista, y todavia hay que guardar.
+  const [descuentoPorPaca, setDescuentoPorPaca] = useState('');
+
+  const aplicarDescuentoATodas = () => {
+    const d = parseMonto(descuentoPorPaca);
+    if (!(d > 0)) { addToast('Escribe cuánto se le baja a cada paca', 'warning'); return; }
+    setCorrigiendo((c) => (!c ? c : {
+      ...c,
+      // Nunca por debajo de cero: un precio negativo lo rechazaria el servidor
+      // despues de haber borrado lo que habia escrito.
+      items: c.items.map((i) => ({ ...i, precio: String(Math.max(0, Math.round(parseMonto(i.precio) - d))) })),
+    }));
+    setDescuentoPorPaca('');
+  };
+
+  const totalCorreccion = (corrigiendo?.items || [])
+    .reduce((t, i) => t + parseMonto(i.precio), 0);
+  const totalOriginalCorreccion = (corrigiendo?.items || [])
+    .reduce((t, i) => t + i.precio_original, 0);
+
+  const guardarCorreccion = async () => {
+    if (!corrigiendo || guardandoCorreccion) return;
+    const malos = corrigiendo.items.filter((i) => !(parseMonto(i.precio) > 0));
+    if (malos.length) {
+      addToast(`Falta el precio de ${malos[0].producto || 'una paca'}`, 'error');
+      return;
+    }
+    try {
+      setGuardandoCorreccion(true);
+      const r = await ventasApi.update(corrigiendo.venta.id, {
+        fecha: corrigiendo.fecha,
+        tipo_pago: corrigiendo.tipo_pago,
+        items: corrigiendo.items.map((i) => ({ paca_id: i.paca_id, precio_unitario: parseMonto(i.precio) })),
+      });
+      // Se dice QUE cambio y en cuanto, no un «guardado» a secas: lo que se
+      // acaba de mover es la deuda de un cliente.
+      const dif = Number(r?.diferencia || 0);
+      addToast(dif === 0
+        ? 'Venta corregida'
+        : `Venta corregida: ${dif < 0 ? 'baja' : 'sube'} ${formatCurrency(Math.abs(dif))}`
+          + ` — ahora ${formatCurrency(r.total)}`, 'success');
+      if (r && r.cartera_actualizada === false) {
+        addToast('Ojo: esta venta no tenía renglón en la cartera, así que la deuda del cliente no cambió.', 'warning');
+      }
+      setCorrigiendo(null);
+      loadVentas();
+      loadPacasDisponibles();
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setGuardandoCorreccion(false);
+    }
+  };
 
   const claveVenta = (v) => `${v.origen || 'sistema'}-${v.id}`;
 
@@ -1390,6 +1480,21 @@ export default function Ventas() {
                               <td className="px-4 py-3 text-right">
                                 {delSistema ? (
                                   <div className="flex gap-1 justify-end">
+                                    {/* CORREGIR va antes de descargar y de borrar:
+                                        es lo que se hace cuando algo salió mal, y
+                                        hasta ahora la única salida era borrar la
+                                        venta entera. Sólo aparece si hay renglones
+                                        que corregir. */}
+                                    {items.length > 0 && (
+                                      <button
+                                        onClick={() => abrirCorreccion(venta)}
+                                        className="p-1.5 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10"
+                                        title="Corregir precios, fecha o forma de pago"
+                                        aria-label={`Corregir la venta de ${nombreDeVenta(venta)}`}
+                                      >
+                                        <Pencil size={16} aria-hidden="true" />
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => descargarExcelVenta(venta)}
                                       className="p-1.5 rounded-lg text-muted hover:text-success hover:bg-success/10"
@@ -1806,6 +1911,145 @@ export default function Ventas() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── CORREGIR UNA VENTA ───────────────────────────────────────
+          Enseña el antes y el después de cada precio y del total, porque lo que
+          se está moviendo es la deuda de un cliente y la cifra tiene que verse
+          antes de guardar, no después. */}
+      <Modal
+        isOpen={Boolean(corrigiendo)}
+        onClose={() => setCorrigiendo(null)}
+        title={corrigiendo ? `Corregir la venta de ${nombreDeVenta(corrigiendo.venta)}` : 'Corregir venta'}
+        size="lg"
+      >
+        {corrigiendo && (
+          <div className="space-y-4">
+            <p className="text-xs text-muted">
+              Se puede cambiar el precio de cada paca, la fecha y la forma de pago.
+              Para cambiar <strong>qué</strong> se vendió hay que borrar la venta y volver a
+              hacerla, porque eso mueve pacas del inventario. Queda escrito quién corrigió y qué cambió.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="corregir-fecha" className="block text-xs font-medium text-muted mb-1">
+                  Fecha
+                </label>
+                <input
+                  id="corregir-fecha"
+                  type="date"
+                  value={corrigiendo.fecha}
+                  onChange={(e) => setCorrigiendo((c) => ({ ...c, fecha: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary"
+                />
+              </div>
+              <div>
+                <label htmlFor="corregir-pago" className="block text-xs font-medium text-muted mb-1">
+                  Forma de pago
+                </label>
+                <Select
+                  id="corregir-pago"
+                  value={corrigiendo.tipo_pago}
+                  onChange={(e) => setCorrigiendo((c) => ({ ...c, tipo_pago: e.target.value }))}
+                  options={PAGO_TIPOS.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+                />
+              </div>
+            </div>
+
+            {/* El atajo del caso que lo pidió: el descuento de 100.000 por paca.
+                Restar lo mismo a mano en seis casillas es seis ocasiones de
+                equivocarse. */}
+            <div className="flex flex-wrap items-end gap-2 p-3 rounded-xl bg-primary/5">
+              <div className="flex-1 min-w-[180px]">
+                <label htmlFor="corregir-descuento" className="block text-xs font-medium text-muted mb-1">
+                  Bajarle lo mismo a todas
+                </label>
+                <CampoMonto
+                  id="corregir-descuento"
+                  value={descuentoPorPaca}
+                  onChange={(e) => setDescuentoPorPaca(e.target.value)}
+                  placeholder="100.000"
+                  className="w-full px-3 py-2.5 rounded-xl border border-border bg-surface text-primary tabular-nums"
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={aplicarDescuentoATodas}>
+                Aplicar a las {corrigiendo.items.length}
+              </Button>
+            </div>
+
+            <div className="border border-border rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Las pacas de la venta y su precio</caption>
+                <thead className="bg-primary/5">
+                  <tr className="text-[11px] font-bold text-muted uppercase tracking-wider">
+                    <th scope="col" className="px-3 py-2 text-left">Paca</th>
+                    <th scope="col" className="px-3 py-2 text-right w-32">Antes</th>
+                    <th scope="col" className="px-3 py-2 text-right w-40">Ahora</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {corrigiendo.items.map((i) => {
+                    const ahora = parseMonto(i.precio);
+                    const cambio = Math.round(ahora) !== Math.round(i.precio_original);
+                    return (
+                      <tr key={i.paca_id} className={cambio ? 'bg-secondary/5' : ''}>
+                        <td className="px-3 py-2 text-primary capitalize">{i.producto || `Paca ${i.paca_id}`}</td>
+                        <td className="px-3 py-2 text-right text-muted tabular-nums">
+                          {formatCurrency(i.precio_original)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <CampoMonto
+                            value={i.precio}
+                            onChange={(e) => cambiarPrecioCorreccion(i.paca_id, e.target.value)}
+                            aria-label={`Precio de ${i.producto || i.paca_id}`}
+                            className="w-full text-right px-2 py-2 rounded border border-border bg-surface text-primary tabular-nums"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-primary/5 font-semibold">
+                    <td className="px-3 py-2 text-muted uppercase text-[11px] tracking-wider">Total</td>
+                    <td className="px-3 py-2 text-right text-muted tabular-nums">
+                      {formatCurrency(totalOriginalCorreccion)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-secondary">
+                      {formatCurrency(totalCorreccion)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* LA DIFERENCIA, DICHA EN VOZ ALTA. Es lo que va a cambiar en la
+                cartera del cliente, y es el número que hay que mirar. */}
+            {Math.round(totalCorreccion) !== Math.round(totalOriginalCorreccion) && (
+              <p className="text-sm font-semibold text-primary">
+                La deuda de {nombreDeVenta(corrigiendo.venta)}{' '}
+                {totalCorreccion < totalOriginalCorreccion ? 'baja' : 'sube'}{' '}
+                {formatCurrency(Math.abs(totalCorreccion - totalOriginalCorreccion))}.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button type="button" variant="outline" onClick={() => setCorrigiendo(null)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={guardarCorreccion}
+                disabled={guardandoCorreccion
+                  || Math.round(totalCorreccion) === Math.round(totalOriginalCorreccion)}
+              >
+                {guardandoCorreccion ? 'Guardando…' : 'Guardar la corrección'}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal de Despacho Post-Venta */}
