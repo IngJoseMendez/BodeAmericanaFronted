@@ -124,7 +124,11 @@ function matchCompra(m, q) {
   const ql = q.toLowerCase().trim();
   const qd = _digits(q);
   const fechaStr = `${String(m.fecha || '')} ${m.fecha ? formatFechaCorta(m.fecha) : ''}`.toLowerCase();
-  if ([m.descripcion, m.referencia, m.cotizacion_numero, fechaStr].some(v => _txt(v).includes(ql))) return true;
+  // `concepto_pacas` es lo que se llevo en una venta del sistema -«1 mixta
+  // verano supreme»-. Sin esto, buscar «mixta» encontraba las compras del Excel
+  // viejo y NO las del sistema, que es justo al contrario de lo que se espera.
+  if ([m.descripcion, m.concepto_pacas, m.referencia, m.cotizacion_numero, fechaStr]
+    .some(v => _txt(v).includes(ql))) return true;
   if (qd && _digits(m.monto).includes(qd)) return true;
   return false;
 }
@@ -1469,13 +1473,37 @@ export default function Cartera() {
                         <tr key={m.id}>
                           <td className="px-3 py-2 whitespace-nowrap">{formatFechaCorta(m.fecha)}</td>
                           <td className="px-3 py-2">
-                            {/* Un movimiento del Excel trae el nombre del producto escrito a
-                                mano; uno del sistema trae el número de la venta. Ninguno de
-                                los dos se deja en blanco: una fila sin concepto en una lista
-                                de compras parece un error de carga. */}
-                            <span className="break-words">
-                              {String(m.descripcion || '').split(' [')[0] || 'Compra anterior al sistema'}
-                            </span>
+                            {/* QUÉ SE LLEVÓ, DE VERDAD.
+                                Aquí se pintaba `m.descripcion` y nada más. Una venta hecha en
+                                el sistema NO tiene descripción —su detalle son pacas—, así que
+                                caía en el texto de respaldo y una venta de ayer salía rotulada
+                                «Compra anterior al sistema»: el monto correcto y el concepto
+                                equivocado. La dueña preguntó de dónde había salido eso.
+
+                                Ahora el servidor manda las pacas de cada venta, y el respaldo
+                                sólo se usa cuando de verdad no se sabe qué se llevó —una
+                                compra del Excel viejo sin concepto escrito—. */}
+                            {m.detalles?.length ? (
+                              <div className="space-y-0.5">
+                                {m.detalles.map((d, i) => (
+                                  <p key={`${d.referencia}-${d.calidad}-${i}`} className="break-words capitalize">
+                                    <span className="font-mono text-xs text-muted tabular-nums mr-1">{d.cantidad}×</span>
+                                    {d.referencia}
+                                    {d.calidad && <span className="text-muted"> · {d.calidad}</span>}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="break-words">
+                                {String(m.descripcion || '').split(' [')[0]
+                                  || (m.es_legacy
+                                    ? 'Compra anterior al sistema'
+                                    /* Una venta del sistema sin pacas detrás no es histórica:
+                                       es una venta a la que le falta el detalle, y decir que
+                                       es «anterior al sistema» sería mentir sobre su fecha. */
+                                    : 'Venta sin detalle guardado')}
+                              </span>
+                            )}
                             {m.es_legacy && (
                               <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 align-middle whitespace-nowrap">
                                 histórico

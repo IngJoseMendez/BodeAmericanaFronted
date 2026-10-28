@@ -1201,7 +1201,11 @@ export function hojaCarteraCliente(wb, data, nombreHoja) {
       // cliente una compra como si fuera un pago suyo. Su plata va en TOTAL,
       // donde va la de cualquier otra compra.
       const r = ws.getRow(fila);
-      r.getCell(1).value = m.descripcion || 'Compra anterior al sistema';
+      // Y si no hay concepto escrito, el respaldo depende de SI ES HISTÓRICA.
+      // «Compra anterior al sistema» sobre una venta de ayer es mentir sobre su
+      // fecha, que es justo lo que pasaba en la pestaña de Compras de Cartera.
+      r.getCell(1).value = m.descripcion
+        || (m.legado ? 'Compra anterior al sistema' : 'Venta sin detalle guardado');
       r.getCell(5).value = num(m.monto);
       r.getCell(5).numFmt = '$#,##0';
       r.getCell(5).alignment = { horizontal: 'right' };
