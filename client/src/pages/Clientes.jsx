@@ -605,6 +605,21 @@ export default function Clientes() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* ── QUÉ CLASE DE CLIENTE ES ───────────────────────────
+                `tipo_cliente` existe en la base desde el principio y SE
+                GUARDABA, pero no había casilla para elegirlo: el formulario lo
+                mandaba fijo como 'mayorista'. Por eso los 98 clientes son
+                mayoristas, y no porque alguien lo haya decidido.
+
+                El valor 'mayorista' se conserva para «Al por mayor» en vez de
+                renombrarlo: así los 98 que ya están cargados siguen diciendo lo
+                que dicen, sin una migración que los toque uno por uno. */}
+            <Select
+              label="Tipo de cliente"
+              value={formData.tipo_cliente}
+              onChange={(e) => setFormData({ ...formData, tipo_cliente: e.target.value })}
+              options={CLIENTE_TIPOS}
+            />
             <Select
               label="Forma de pago"
               value={formData.clasificacion_pago}

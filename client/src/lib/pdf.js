@@ -298,7 +298,7 @@ export async function exportarPDFInternos(sel, data, fileName) {
     const conSaldo = (data.cartera || [])
       .filter((c) => saldoDe(c) !== 0)
       .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
-    // Las dadas por perdidas van en su propia tabla, debajo del total y con el
+    // Las inactivas van en su propia tabla, debajo del total y con el
     // motivo al lado. Mezcladas en la misma tabla alguien sumaría la columna
     // entera; separadas, la cifra que se cobra es la del TOTAL y punto. Es la
     // misma decisión que en la hoja de Excel (ver hojaCarteraInterna).
@@ -323,13 +323,13 @@ export async function exportarPDFInternos(sel, data, fileName) {
       const perdido = perdidas.reduce((s, c) => s + saldoDe(c), 0);
       autoTable(doc, {
         startY: (doc.lastAutoTable?.finalY || 60) + 18,
-        head: [['DADAS POR PERDIDAS — no suman al TOTAL de arriba', 'SALDO', 'POR QUÉ SE DEJÓ DE COBRAR']],
+        head: [['CARTERAS INACTIVAS — no suman al TOTAL de arriba', 'SALDO', 'POR QUÉ SE DEJÓ DE COBRAR']],
         body: perdidas.map((c) => [
           c.nombre,
           formatCOP(saldoDe(c)),
           String(c.cartera_inactiva_motivo || '').trim() || 'SIN MOTIVO ESCRITO',
         ]),
-        foot: [['TOTAL DADO POR PERDIDO', formatCOP(perdido), 'no entra en el TOTAL de arriba']],
+        foot: [['TOTAL CARTERA INACTIVA', formatCOP(perdido), 'no entra en el TOTAL de arriba']],
         theme: 'grid',
         styles: { fontSize: 8 },
         columnStyles: { 1: { halign: 'right' } },

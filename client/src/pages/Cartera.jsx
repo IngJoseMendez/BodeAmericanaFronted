@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+// El rotulo del tipo de cliente. Se importa para que la pantalla, el PDF y
+// el Excel digan lo mismo: 'minorista' en crudo no se le ensena a nadie.
+import { etiquetaTipoCliente } from '../types';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, matrizApi } from '../services/api';
 import { METODOS_PAGO } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
-import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen } from 'lucide-react';
+import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen, ExternalLink } from 'lucide-react';
 import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
@@ -280,6 +283,8 @@ export default function Cartera() {
 
   // Deep-link: ?focus=<cliente_id> abre el detalle de cartera de ese cliente (trazabilidad)
   const [searchParams, setSearchParams] = useSearchParams();
+  // Para el atajo de una compra a su venta en el panel de Ventas.
+  const navigate = useNavigate();
   useEffect(() => {
     const focus = searchParams.get('focus');
     if (!focus) return;
@@ -301,7 +306,7 @@ export default function Cartera() {
     );
   }, [searchQuery, carteraOriginal]);
 
-  // ── LO QUE SE COBRA Y LO QUE SE DIO POR PERDIDO, SIEMPRE SEPARADO ──────────
+  // ── LO QUE SE COBRA Y LO QUE ESTA INACTIVO, SIEMPRE SEPARADO ───────────────
   //
   // Hay cuentas que la dueña da por perdidas: la deuda sigue escrita, pero no
   // entra en lo que espera cobrar. En su Excel eso lo venía restando a mano —la
@@ -650,7 +655,7 @@ export default function Cartera() {
       
       const infoFields = [
         ['Teléfono:', data.cliente.telefono || '-', 'Ciudad:', data.cliente.ciudad || '-'],
-        ['Dirección:', data.cliente.direccion || '-', 'Tipo:', data.cliente.tipo_cliente?.toUpperCase() || '-'],
+        ['Dirección:', data.cliente.direccion || '-', 'Tipo:', etiquetaTipoCliente(data.cliente.tipo_cliente).toUpperCase() || '-'],
       ];
       
       for (const [label1, val1, label2, val2] of infoFields) {
@@ -852,7 +857,7 @@ export default function Cartera() {
               <span><strong>Nombre:</strong> ${data.cliente.nombre}</span>
               <span><strong>Teléfono:</strong> ${data.cliente.telefono || '-'}</span>
               <span><strong>Ciudad:</strong> ${data.cliente.ciudad || '-'}</span>
-              <span><strong>Tipo:</strong> ${data.cliente.tipo_cliente || '-'}</span>
+              <span><strong>Tipo:</strong> ${etiquetaTipoCliente(data.cliente.tipo_cliente) || '-'}</span>
               <span><strong>Dirección:</strong> ${data.cliente.direccion || '-'}</span>
             </div>
           </div>
@@ -1079,7 +1084,7 @@ export default function Cartera() {
       setGuardandoInactiva(true);
       await carteraApi.marcarInactiva(clienteId, inactiva, motivo);
       addToast(inactiva
-        ? 'Cartera dada por perdida. Sigue escrita, pero ya no suma al total.'
+        ? 'Cartera puesta como inactiva. Sigue escrita, pero ya no suma al total.'
         : 'Cartera devuelta a cobro.', 'success');
       setInactivaModal(null);
       setInactivaMotivo('');
@@ -1177,7 +1182,7 @@ export default function Cartera() {
             </div>
             {resumenCartera.cuentasPerdidas > 0 && (
               <div className="flex-1 min-w-[220px] p-4 rounded-xl border border-amber-300 bg-amber-50">
-                <p className="text-xs text-amber-700 uppercase tracking-wide">Dado por perdido</p>
+                <p className="text-xs text-amber-700 uppercase tracking-wide">Cartera inactiva</p>
                 <p className="font-display text-2xl text-amber-800 break-all">{formatCurrency(resumenCartera.perdido)}</p>
                 <p className="text-xs text-amber-700 mt-1">
                   {resumenCartera.cuentasPerdidas === 1
@@ -1242,7 +1247,7 @@ export default function Cartera() {
                       <h3 className="font-display text-lg text-primary">{c.nombre}</h3>
                       <p className="text-sm text-gray-500">{c.ciudad || 'Sin ciudad'}</p>
                     </div>
-                    <Badge variant={c.tipo_cliente}>{c.tipo_cliente}</Badge>
+                    <Badge variant={c.tipo_cliente}>{etiquetaTipoCliente(c.tipo_cliente)}</Badge>
                   </div>
                   {/* El aviso va ARRIBA de las cifras, no debajo: quien lee una
                       tarjeta de cobro baja hasta el saldo y para. Si la marca
@@ -1250,7 +1255,7 @@ export default function Cartera() {
                       nadie espera cobrar. */}
                   {c.cartera_inactiva && (
                     <div className="mb-3 px-2.5 py-2 rounded-lg bg-amber-100 border border-amber-300">
-                      <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Dada por perdida</p>
+                      <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Inactiva</p>
                       <p className="text-xs text-amber-800 mt-0.5">
                         {String(c.cartera_inactiva_motivo || '').trim() || 'Sin motivo escrito.'}
                       </p>
@@ -1331,7 +1336,7 @@ export default function Cartera() {
                       <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-amber-900">
-                          Esta cartera está dada por perdida — no suma al total por cobrar
+                          Esta cartera está inactiva — no suma al total por cobrar
                         </p>
                         <p className="text-sm text-amber-800 mt-0.5 break-words">
                           {String(detalleCliente.cliente?.cartera_inactiva_motivo || '').trim() || 'Sin motivo escrito.'}
@@ -1360,7 +1365,7 @@ export default function Cartera() {
                   </p>
                   <Button size="sm" variant="ghost" disabled={guardandoInactiva}
                     onClick={() => cambiarInactiva(cid, true)}>
-                    <AlertTriangle size={14} /> Dar por perdida
+                    <AlertTriangle size={14} /> Poner inactiva
                   </Button>
                 </div>
               );
@@ -1484,15 +1489,49 @@ export default function Cartera() {
                                 sólo se usa cuando de verdad no se sabe qué se llevó —una
                                 compra del Excel viejo sin concepto escrito—. */}
                             {m.detalles?.length ? (
-                              <div className="space-y-0.5">
-                                {m.detalles.map((d, i) => (
-                                  <p key={`${d.referencia}-${d.calidad}-${i}`} className="break-words capitalize">
-                                    <span className="font-mono text-xs text-muted tabular-nums mr-1">{d.cantidad}×</span>
-                                    {d.referencia}
-                                    {d.calidad && <span className="text-muted"> · {d.calidad}</span>}
-                                  </p>
-                                ))}
-                              </div>
+                              /* EL ATAJO A LA VENTA. Desde aquí se ve QUÉ se
+                                 llevó; para ver a qué precio cada paca, el
+                                 descuento, el flete o para corregirla, hay que
+                                 estar en Ventas. Antes había que ir al panel,
+                                 buscar el cliente y encontrar la fecha a mano.
+
+                                 Sólo las compras del sistema lo llevan: una del
+                                 Excel viejo no tiene venta a la que ir, y un
+                                 enlace que no lleva a ningún sitio es peor que
+                                 no tener enlace. */
+                              m.venta_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/ventas?venta=${m.venta_id}`)}
+                                  title="Ver esta venta en el panel de Ventas"
+                                  className="block w-full text-left -mx-1 px-1 py-0.5 rounded-lg
+                                             hover:bg-secondary/10 group"
+                                >
+                                  <span className="space-y-0.5 block">
+                                    {m.detalles.map((d, i) => (
+                                      <span key={`${d.referencia}-${d.calidad}-${i}`}
+                                        className="block break-words capitalize">
+                                        <span className="font-mono text-xs text-muted tabular-nums mr-1">{d.cantidad}×</span>
+                                        <span className="group-hover:text-secondary">{d.referencia}</span>
+                                        {d.calidad && <span className="text-muted"> · {d.calidad}</span>}
+                                      </span>
+                                    ))}
+                                    <span className="flex items-center gap-1 text-[11px] text-secondary mt-0.5">
+                                      <ExternalLink size={11} aria-hidden="true" /> ver la venta
+                                    </span>
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  {m.detalles.map((d, i) => (
+                                    <p key={`${d.referencia}-${d.calidad}-${i}`} className="break-words capitalize">
+                                      <span className="font-mono text-xs text-muted tabular-nums mr-1">{d.cantidad}×</span>
+                                      {d.referencia}
+                                      {d.calidad && <span className="text-muted"> · {d.calidad}</span>}
+                                    </p>
+                                  ))}
+                                </div>
+                              )
                             ) : (
                               <span className="break-words">
                                 {String(m.descripcion || '').split(' [')[0]
@@ -2125,7 +2164,7 @@ export default function Cartera() {
           confirm sólo sabe decir sí o no. Los tres motivos de un toque son los
           que de verdad se repiten; se pueden editar después de pulsarlos, que
           es lo que hace falta cuando el caso es parecido pero no igual. */}
-      <Modal isOpen={!!inactivaModal} onClose={() => setInactivaModal(null)} title="Dar la cartera por perdida">
+      <Modal isOpen={!!inactivaModal} onClose={() => setInactivaModal(null)} title="Poner la cartera como inactiva">
         {inactivaModal && (
           <div className="space-y-4">
             <div className="p-3 rounded-xl border border-amber-300 bg-amber-50">
@@ -2172,7 +2211,7 @@ export default function Cartera() {
               <Button type="button" variant="secondary"
                 disabled={guardandoInactiva || !inactivaMotivo.trim()}
                 onClick={() => guardarInactiva(inactivaModal.clienteId, true, inactivaMotivo.trim())}>
-                {guardandoInactiva ? 'Guardando…' : 'Dar por perdida'}
+                {guardandoInactiva ? 'Guardando…' : 'Poner inactiva'}
               </Button>
             </div>
           </div>

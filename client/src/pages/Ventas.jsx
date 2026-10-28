@@ -1,6 +1,7 @@
 // `Fragment` con nombre y no <>…</>: la fila de la venta y la de su desglose
 // son dos <tr> hermanos que necesitan UNA key, y la forma corta no admite key.
 import { useEffect, useState, useRef, useMemo, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { ventasApi, pacasApi, clientesApi, reservasApi } from '../services/api';
@@ -26,6 +27,30 @@ import {
 // totales distintos, y el cliente tendria un papel con una cifra y la cartera
 // con otra.
 import { precioConDescuento } from '../lib/cotizacion';
+
+/**
+ * Los renglones de una venta, agrupados por producto y contados.
+ *
+ * El servidor manda UNA FILA POR PACA, porque una venta se hace contra pacas
+ * concretas. Para leerlo hace falta lo contrario: «2× mixta verano supreme» en
+ * vez de la misma línea dos veces. La cantidad ES la información, y repetir el
+ * nombre la esconde.
+ *
+ * Se agrupa por referencia + calidad, que es el par con el que trabaja toda la
+ * bodega, y se respeta el orden en que vino: el servidor ya los manda ordenados.
+ */
+function agruparItemsVenta(items) {
+  const m = new Map();
+  for (const d of items || []) {
+    const referencia = String(d?.referencia ?? '').trim() || 'sin referencia';
+    const calidad = String(d?.calidad ?? '').trim();
+    const clave = `${referencia.toLowerCase()}|${calidad.toLowerCase()}`;
+    const ya = m.get(clave);
+    if (ya) { ya.cantidad += 1; continue; }
+    m.set(clave, { clave, referencia, calidad, cantidad: 1 });
+  }
+  return [...m.values()];
+}
 
 // Los rótulos de los cuatro filtros del selector de productos. `categoria` se
 // llama TEMPORADA en la bodega, y es como hay que escribirlo en la pantalla.
@@ -282,6 +307,23 @@ export default function Ventas() {
   // que es como se compara una venta con otra.
   const [ventasAbiertas, setVentasAbiertas] = useState(() => new Set());
 
+  // ── LLEGAR DESDE LA CARTERA DE UN CLIENTE ───────────────────────
+  //
+  // `/ventas?venta=5` abre la pantalla EN esa venta. Se filtra en el servidor y
+  // no se busca entre lo que haya cargado: con la lista paginada, la venta
+  // podria estar en la pagina siete y el atajo no llevaria a ninguna parte.
+  //
+  // El filtro se ve y se quita con un clic, porque una pantalla que ensena una
+  // sola fila sin decir por que parece una pantalla vacia.
+  const [paramsUrl, setParamsUrl] = useSearchParams();
+  const ventaEnfocada = paramsUrl.get('venta');
+
+  const quitarVentaEnfocada = () => {
+    const siguiente = new URLSearchParams(paramsUrl);
+    siguiente.delete('venta');
+    setParamsUrl(siguiente, { replace: true });
+  };
+
   // ── CORREGIR UNA VENTA YA CREADA ────────────────────────────────
   //
   // El caso que lo pidio: se registraron varias ventas y se olvido el descuento
@@ -410,6 +452,16 @@ export default function Ventas() {
 
   const claveVenta = (v) => `${v.origen || 'sistema'}-${v.id}`;
 
+  // Al llegar con `?venta=5`: se recarga con el filtro puesto y la venta se
+  // abre sola. Llegar a una fila plegada obligaria a un clic mas para ver justo
+  // lo que se venia a ver.
+  useEffect(() => {
+    if (!ventaEnfocada) return;
+    setVentasAbiertas((abiertas) => new Set(abiertas).add(`sistema-${ventaEnfocada}`));
+    setPagina(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ventaEnfocada]);
+
   const alternarVenta = (v) => setVentasAbiertas((abiertas) => {
     const siguiente = new Set(abiertas);
     const k = claveVenta(v);
@@ -472,7 +524,10 @@ export default function Ventas() {
 
   useEffect(() => {
     loadVentas(pagina);
-  }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax]);
+    // `ventaEnfocada` va aqui tambien: es un filtro mas, y sin el la pantalla
+    // se quedaria con la lista de antes al llegar desde la cartera.
+  }, [pagina, filtroVista, debouncedBusqueda, filtroFechaInicio, filtroFechaFin, montoMin, montoMax,
+    ventaEnfocada]);
 
   // Al borrar la única venta de la última página quedaba una tabla vacía con el
   // paginador marcando una página que ya no existe.
@@ -490,6 +545,10 @@ export default function Ventas() {
     fecha_fin: filtroFechaFin || undefined,
     monto_min: montoMin || undefined,
     monto_max: montoMax || undefined,
+    // El atajo desde la cartera. Lo filtra el SERVIDOR: con la lista paginada,
+    // buscar la venta entre lo que ya este cargado no la encontraria si esta en
+    // la pagina siete.
+    venta_id: ventaEnfocada || undefined,
   });
 
   // El valor por defecto es la página actual, no la 1: al eliminar una venta o
@@ -1336,6 +1395,10 @@ export default function Ventas() {
     setFiltroFechaFin('');
     setFiltroMontoMin('');
     setFiltroMontoMax('');
+    // Y la venta que se abrió desde la cartera, que también es un filtro. Si se
+    // quedara puesta, «Limpiar» dejaría la tabla con una sola fila y la palabra
+    // del botón sería mentira.
+    if (ventaEnfocada) quitarVentaEnfocada();
   };
 
   return (
@@ -1479,6 +1542,28 @@ export default function Ventas() {
                       </Button>
                     )}
                   </div>
+
+                  {/* ── SE ESTÁ MIRANDO UNA SOLA VENTA ─────────────────
+                      Al llegar desde la cartera de un cliente la lista trae una
+                      fila. Sin decirlo, eso parece una pantalla vacía o un
+                      filtro que se quedó puesto de antes: el aviso dice por qué
+                      hay una sola y la saca de un clic. */}
+                  {ventaEnfocada && (
+                    <div className="flex flex-wrap items-center gap-2 mt-3 p-2.5 rounded-xl bg-secondary/10">
+                      <span className="text-xs text-primary">
+                        Se está mostrando <strong>una sola venta</strong>, la que se abrió desde la
+                        cartera del cliente.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={quitarVentaEnfocada}
+                        className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full
+                                   text-xs font-semibold text-secondary hover:bg-secondary/20"
+                      >
+                        Ver todas las ventas <X size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
                   {/* El filtrado lo hace el servidor, así que el conteo debe salir
                       del total devuelto, no de las 20 filas de la página. */}
                   {hayFiltros && !loading && (
@@ -1530,6 +1615,11 @@ export default function Ventas() {
                           // y ahi se enlaza.
                           const delSistema = venta.origen !== 'cartera';
                           const items = Array.isArray(venta.detalles) ? venta.detalles : [];
+                          // Agrupado por producto para poder decir la CANTIDAD.
+                          // El servidor manda un renglon por paca; «2x mixta
+                          // verano supreme» se lee de un golpe y la misma linea
+                          // repetida dos veces, no.
+                          const porProducto = agruparItemsVenta(items);
                           const abierta = ventasAbiertas.has(claveVenta(venta));
                           const idDesglose = `desglose-${claveVenta(venta)}`;
                           return (
@@ -1549,22 +1639,44 @@ export default function Ventas() {
                                     abierto; el galón se ve siempre, porque en la
                                     tableta no hay ratón que haga aparecer nada. */}
                                 {items.length > 0 ? (
+                                  /* QUÉ SE VENDIÓ, SIN TENER QUE ABRIR NADA.
+                                     Antes decía «6 pacas · ver cuáles», que es
+                                     mejor que nada pero obliga a un clic por
+                                     venta para saber lo único que de verdad se
+                                     quiere saber. Ahora los productos están
+                                     ahí, con su cantidad, y el botón sólo abre
+                                     lo que NO cabe en una línea: el precio de
+                                     cada paca y el desglose del total. */
                                   <button
                                     type="button"
                                     onClick={() => alternarVenta(venta)}
                                     aria-expanded={abierta}
                                     aria-controls={idDesglose}
-                                    className="inline-flex items-center gap-1.5 -mx-2 px-2 py-2 rounded-lg
-                                               text-xs font-medium text-secondary hover:bg-secondary/10"
+                                    title={abierta ? 'Plegar el detalle' : 'Ver los precios de cada paca'}
+                                    className="block w-full text-left -mx-2 px-2 py-1.5 rounded-lg
+                                               hover:bg-secondary/10"
                                   >
-                                    <ChevronRight
-                                      size={14}
-                                      aria-hidden="true"
-                                      className={`transition-transform ${abierta ? 'rotate-90' : ''}`}
-                                    />
-                                    {items.length} paca{items.length === 1 ? '' : 's'}
-                                    <span className="text-muted font-normal">
-                                      {abierta ? '· plegar' : '· ver cuáles'}
+                                    <span className="flex items-start gap-1.5">
+                                      <ChevronRight
+                                        size={14}
+                                        aria-hidden="true"
+                                        className={`mt-0.5 shrink-0 text-secondary transition-transform ${abierta ? 'rotate-90' : ''}`}
+                                      />
+                                      <span className="min-w-0">
+                                        {porProducto.map((d, i) => (
+                                          <span key={`${d.clave}-${i}`} className="block capitalize leading-snug">
+                                            <span className="font-mono text-[11px] text-muted tabular-nums mr-1">
+                                              {d.cantidad}×
+                                            </span>
+                                            <span className="text-primary">{d.referencia}</span>
+                                            {d.calidad && <span className="text-muted"> · {d.calidad}</span>}
+                                          </span>
+                                        ))}
+                                        <span className="block text-[11px] text-muted mt-0.5">
+                                          {items.length} paca{items.length === 1 ? '' : 's'}
+                                          {' · '}{abierta ? 'plegar' : 'ver precios'}
+                                        </span>
+                                      </span>
                                     </span>
                                   </button>
                                 ) : (

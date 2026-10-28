@@ -1274,7 +1274,7 @@ export function hojaCarteraInterna(wb, filas) {
     .filter((c) => num(c.saldo_pendiente) !== 0)
     .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
 
-  // LAS DADAS POR PERDIDAS VAN APARTE, DEBAJO DEL TOTAL.
+  // LAS INACTIVAS VAN APARTE, DEBAJO DEL TOTAL.
   //
   // La dueña lleva años restando esas filas a mano en su propio Excel —la
   // fórmula de su total es la suma de la columna MENOS la celda de esa fila— y
@@ -1350,7 +1350,7 @@ export function hojaCarteraInterna(wb, filas) {
   if (perdidas.length) {
     ws.mergeCells(fila, 1, fila, 5);
     const av = ws.getCell(fila, 1);
-    av.value = 'DADAS POR PERDIDAS — están aquí para saber cuánto fue y de quién, pero NO suman al TOTAL de arriba';
+    av.value = 'CARTERAS INACTIVAS — están aquí para saber cuánto fue y de quién, pero NO suman al TOTAL de arriba';
     av.font = { size: 11, bold: true, color: { argb: '92400e' } };
     av.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fef3c7' } };
     av.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -1374,7 +1374,7 @@ export function hojaCarteraInterna(wb, filas) {
     }
 
     const p = ws.getRow(fila);
-    p.getCell(1).value = 'TOTAL DADO POR PERDIDO';
+    p.getCell(1).value = 'TOTAL CARTERA INACTIVA';
     [pv, pa, ps].forEach((v, i) => { p.getCell(i + 2).value = v; p.getCell(i + 2).numFmt = '$#,##0'; });
     p.getCell(5).value = 'no entra en el TOTAL de arriba';
     for (let i = 1; i <= 5; i++) {
