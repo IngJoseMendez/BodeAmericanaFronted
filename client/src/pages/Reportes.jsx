@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { leerPeriodoDeUrl, periodoAParams, moverPeriodo } from '../lib/periodo';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, useToast, Badge, TableSkeleton, RefLink } from '../components/common';
 import { reportesApi, dashboardApi, carteraApi } from '../services/api';
@@ -38,10 +40,37 @@ export default function Reportes() {
   // Arranca en el mes de hoy, que es lo que el reporte enseñaba siempre, y
   // desde ahí se puede ir hacia atrás. Lo guarda la pantalla y no el servidor:
   // el servidor sólo responde lo que se le pregunta.
-  const [periodo, setPeriodo] = useState(() => {
-    const h = new Date();
-    return { anio: h.getFullYear(), mes: h.getMonth() + 1 };
-  });
+  //
+  // ── Y VIVE EN LA URL, NO EN UN useState ─────────────────────────
+  //
+  // Es la única fuente: no hay una copia en estado que pueda quedar diciendo
+  // otra cosa que la barra de direcciones. Con eso se gana que el botón de
+  // atrás deshaga un cambio de mes —se pulsa la flecha cuatro veces y se vuelve
+  // con cuatro atrás— y que se pueda llegar a un mes concreto desde fuera, con
+  // /reportes?anio=2026&mes=9.
+  //
+  // El año entero se escribe `mes=todo` y no se deja el parámetro fuera. Sin
+  // eso, `?anio=2026` sería ambiguo: no se sabría si pide el año entero o
+  // septiembre de 2026, y la pantalla tendría que adivinar.
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // La lectura, la escritura y el salto de mes viven en lib/periodo.js, con su
+  // prueba: son aritmética de calendario y casos de URL rota, que es lo que
+  // sale mal callado. Aquí sólo queda el enganche con la barra de direcciones.
+  const periodo = useMemo(() => leerPeriodoDeUrl(searchParams), [searchParams]);
+
+  // `setPeriodo` acepta lo mismo que antes —un objeto o una función que recibe
+  // el periodo actual—, así que los tres sitios que ya lo llamaban no cambian.
+  const periodoRef = useRef(periodo);
+  periodoRef.current = periodo;
+  const setPeriodo = useCallback((siguiente) => {
+    const p = typeof siguiente === 'function' ? siguiente(periodoRef.current) : siguiente;
+    setSearchParams((previos) => {
+      const n = new URLSearchParams(previos);
+      for (const [k, v] of Object.entries(periodoAParams(p))) n.set(k, v);
+      return n;
+    });
+  }, [setSearchParams]);
   const [deudores, setDeudores] = useState([]);
   const [error, setError] = useState(null);
   // Qué listados secundarios no llegaron. Se guardan aparte del error general
@@ -137,12 +166,10 @@ export default function Reportes() {
   // costo, y un renglon de los libros no tiene paca detras. Se quedan con su
   // cifra del sistema y la tarjeta lo dice, que es muy distinto de inventarlas.
   // Mes anterior y siguiente, cruzando el año solo. Con el año entero puesto,
-  // las flechas mueven de año.
-  const moverPeriodo = (paso) => setPeriodo((p) => {
-    if (p.mes == null) return { anio: p.anio + paso, mes: null };
-    const total = (p.anio * 12) + (p.mes - 1) + paso;
-    return { anio: Math.floor(total / 12), mes: (total % 12) + 1 };
-  });
+  // las flechas mueven de año. La aritmética está en lib/periodo.js y probada:
+  // «un paso atrás desde enero» es la clase de cuenta que parece obvia y sale
+  // mal, y aquí la flecha es la interacción principal de la pantalla.
+  const retrocederOAvanzar = (paso) => setPeriodo((p) => moverPeriodo(p, paso));
 
   // No se deja ir al futuro: un reporte de un mes que no ha pasado es una
   // pantalla de ceros que parece un error.
@@ -598,7 +625,7 @@ export default function Reportes() {
                     comparar años es otra pregunta distinta. */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1 rounded-xl border border-border p-1">
-                    <button type="button" onClick={() => moverPeriodo(-1)}
+                    <button type="button" onClick={() => retrocederOAvanzar(-1)}
                       title={periodo.mes == null ? 'Año anterior' : 'Mes anterior'}
                       aria-label={periodo.mes == null ? 'Año anterior' : 'Mes anterior'}
                       className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5">
@@ -628,7 +655,7 @@ export default function Reportes() {
                       {ANIOS.map((a) => <option key={a} value={a}>{a}</option>)}
                     </select>
 
-                    <button type="button" onClick={() => moverPeriodo(1)}
+                    <button type="button" onClick={() => retrocederOAvanzar(1)}
                       disabled={!haySiguiente}
                       title={haySiguiente
                         ? (periodo.mes == null ? 'Año siguiente' : 'Mes siguiente')
