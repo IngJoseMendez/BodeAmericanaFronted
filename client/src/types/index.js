@@ -38,4 +38,33 @@ export const CLIENTE_ESTADOS = ['activo', 'inactivo'];
 export const PAGO_TIPOS = ['contado', 'credito'];
 export const PAGO_METODOS = ['efectivo', 'transferencia', 'cheque', 'otro'];
 
-export const METODOS_PAGO = ['efectivo', 'transferencia', 'cheque', 'mercadopago', 'otro'];
+// ── COMO ENTRO LA PLATA ─────────────────────────────────────────────────────
+//
+// Las cuatro formas en que de verdad entra un abono en esta casa. La lista
+// anterior ('efectivo', 'transferencia', 'cheque', 'mercadopago', 'otro') era
+// genérica y no describía nada de aquí: no se reciben cheques ni pagos por
+// Mercado Pago, y faltaban las dos que más se usan, la consignación y el giro.
+//
+// Esto es una lista FIJA y no un catálogo de la base, a diferencia de la
+// entidad y de la cuenta, porque es un tipo y no algo que crezca: si algún día
+// apareciera una quinta forma de recibir plata, eso es una decisión de negocio
+// que se piensa, no un nombre que se teclea en una pantalla.
+//
+// El valor va en minúsculas y sin tildes porque es lo que se guarda en la base
+// (y porque el único abono que ya tenía método guardado dice 'efectivo', así
+// que la convención ya estaba puesta). La etiqueta es lo que se lee.
+export const TRANSACCIONES = [
+  { value: 'efectivo',      label: 'Efectivo' },
+  { value: 'consignacion',  label: 'Consignación' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'giro',          label: 'Giro' },
+];
+
+export const etiquetaTransaccion = (valor) =>
+  TRANSACCIONES.find((t) => t.value === valor)?.label || valor || '';
+
+// El efectivo es el único que no va a ninguna parte: es plata que entró en la
+// casa, sin entidad y sin cuenta. Los otros tres sí tienen destino. Se pregunta
+// con una función para que la pantalla y el servidor no puedan discrepar.
+export const transaccionTieneDestino = (valor) =>
+  Boolean(valor) && valor !== 'efectivo';

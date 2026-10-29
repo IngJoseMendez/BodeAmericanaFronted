@@ -5,8 +5,8 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { etiquetaTipoCliente } from '../types';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto, BuscadorLista } from '../components/common';
-import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, matrizApi } from '../services/api';
-import { METODOS_PAGO } from '../types';
+import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, bancosApi, matrizApi } from '../services/api';
+import { TRANSACCIONES, etiquetaTransaccion, transaccionTieneDestino } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen, ExternalLink } from 'lucide-react';
@@ -192,7 +192,7 @@ function matchAbono(m, q) {
   // formatFechaCorta ancla la fecha al mediodía; con new Date('2026-08-11') el
   // navegador restaba un día y buscar "11/08" no encontraba el abono de ese día.
   const fechaStr = `${String(m.fecha || '')} ${m.fecha ? formatFechaCorta(m.fecha) : ''}`.toLowerCase();
-  const campos = [m.metodo_pago, m.cuenta_nombre, m.cotizacion_numero, m.despacho_numero, m.referencia, fechaStr];
+  const campos = [m.metodo_pago, m.banco_nombre, m.cuenta_nombre, m.cotizacion_numero, m.despacho_numero, m.referencia, fechaStr];
   if (campos.some(v => _txt(v).includes(ql))) return true;
   if (qd && _digits(m.monto).includes(qd)) return true;
   return false;
@@ -262,7 +262,7 @@ export default function Cartera() {
   const [detalleCliente, setDetalleCliente] = useState(null);
   const [editandoAbono, setEditandoAbono] = useState(null); // { id, monto, fecha, metodo_pago, referencia, cotizacion_id }
   const [formData, setFormData] = useState({
-    cliente_id: '', monto: '', fecha: hoy(), metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
+    cliente_id: '', monto: '', fecha: hoy(), metodo_pago: 'efectivo', banco_id: '', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
   });
   const [cotizacionesCliente, setCotizacionesCliente] = useState([]); // cotizaciones-venta del cliente (para atribuir abono)
   const [detalleTab, setDetalleTab] = useState('ventas'); // pestaña activa del modal de detalle: 'ventas' | 'compras' | 'abonos'
@@ -270,6 +270,10 @@ export default function Cartera() {
   const [saldoCliente, setSaldoCliente] = useState(null); // saldo pendiente del cliente seleccionado
   const [clientes, setClientes] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
+  // Las entidades por donde llega la plata (Bancolombia, Western Union…). Es un
+  // catálogo de la base y no una lista escrita aquí, así que se puede añadir
+  // una entidad nueva desde la pantalla de Cuentas sin esperar un despliegue.
+  const [entidades, setEntidades] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -322,6 +326,7 @@ export default function Cartera() {
 
   useEffect(() => {
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
+    bancosApi.getAll().then(setEntidades).catch(() => {});
   }, []);
 
   // Al cambiar la fecha de corte se recarga la cartera con esa foto.
@@ -513,6 +518,7 @@ export default function Cartera() {
         monto: '',
         fecha: hoy(),
         metodo_pago: 'efectivo',
+        banco_id: '',
         cuenta_id: '',
         cotizacion_id: '',
         referencia: ''
@@ -534,7 +540,7 @@ export default function Cartera() {
       setClientes(data);
       setFormData({
         cliente_id: cliente.id, monto: '', fecha: hoy(),
-        metodo_pago: 'efectivo', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
+        metodo_pago: 'efectivo', banco_id: '', cuenta_id: '', cotizacion_id: '', referencia: '', clase: 'pago', descripcion: ''
       });
       setClienteSearch(cliente.nombre || '');
       setError('');
@@ -588,7 +594,14 @@ export default function Cartera() {
         monto: parseMonto(formData.monto),
         fecha: formData.fecha,
         metodo_pago: formData.metodo_pago,
-        cuenta_id: formData.cuenta_id ? parseInt(formData.cuenta_id) : null,
+        // El efectivo no lleva entidad ni cuenta: viajan en nulo para no
+        // guardar un renglón que se contradice («Efectivo en Bancolombia»).
+        // El servidor lo vuelve a comprobar por su cuenta; esto es para que la
+        // pantalla no mande algo que luego se descarte sin avisar.
+        banco_id: transaccionTieneDestino(formData.metodo_pago) && formData.banco_id
+          ? parseInt(formData.banco_id) : null,
+        cuenta_id: transaccionTieneDestino(formData.metodo_pago) && formData.cuenta_id
+          ? parseInt(formData.cuenta_id) : null,
         cotizacion_id: formData.cotizacion_id ? parseInt(formData.cotizacion_id) : null,
         referencia: formData.referencia,
         clase: formData.clase,
@@ -651,6 +664,13 @@ export default function Cartera() {
         monto: parseMonto(editandoAbono.monto),
         fecha: editandoAbono.fecha,
         metodo_pago: editandoAbono.metodo_pago,
+        // Van SIEMPRE las dos, aunque estén vacías: el servidor distingue «no
+        // vino en el cuerpo» de «vino vacía», y es lo que permite pasar un
+        // abono de consignación a efectivo y que la entidad se borre de verdad.
+        banco_id: transaccionTieneDestino(editandoAbono.metodo_pago) && editandoAbono.banco_id
+          ? parseInt(editandoAbono.banco_id) : null,
+        cuenta_id: transaccionTieneDestino(editandoAbono.metodo_pago) && editandoAbono.cuenta_id
+          ? parseInt(editandoAbono.cuenta_id) : null,
         cotizacion_id: editandoAbono.cotizacion_id || null,
         referencia: editandoAbono.referencia,
       });
@@ -1758,7 +1778,7 @@ export default function Cartera() {
                     <th className="px-3 py-2 text-left">Fecha</th>
                     <th className="px-3 py-2 text-left">Tipo</th>
                     <th className="px-3 py-2 text-right">Monto</th>
-                    <th className="px-3 py-2 text-left">Método</th>
+                    <th className="px-3 py-2 text-left">Transacción</th>
                     <th className="px-3 py-2 text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -1776,33 +1796,79 @@ export default function Cartera() {
                         // Fila en modo edición
                         <>
                           <td className="px-2 py-1" colSpan={4}>
-                            <div className="grid grid-cols-4 gap-2">
+                            {/* Dos filas de tres y no una de seis: seis campos
+                                en el ancho de una fila de tabla dejan cada uno
+                                tan estrecho que no se lee lo que tiene dentro. */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                               <CampoMonto
                                 value={editandoAbono.monto}
                                 onChange={e => setEditandoAbono({ ...editandoAbono, monto: e.target.value })}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full tabular-nums"
                                 placeholder="Monto"
+                                aria-label="Monto del abono"
                               />
                               <input
                                 type="date"
                                 value={editandoAbono.fecha?.split('T')[0]}
                                 onChange={e => setEditandoAbono({ ...editandoAbono, fecha: e.target.value })}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                aria-label="Fecha del abono"
                               />
                               <BuscadorLista
                                 value={editandoAbono.metodo_pago || 'efectivo'}
-                                onChange={(valorElegido) => setEditandoAbono({ ...editandoAbono, metodo_pago: valorElegido })}
+                                onChange={(valorElegido) => setEditandoAbono((a) => ({
+                                  ...a,
+                                  metodo_pago: valorElegido,
+                                  banco_id:  transaccionTieneDestino(valorElegido) ? a.banco_id  : '',
+                                  cuenta_id: transaccionTieneDestino(valorElegido) ? a.cuenta_id : '',
+                                }))}
+                                /* Si lo guardado no está en la lista -un método
+                                   de los viejos, como 'cheque'- se añade como
+                                   opción en vez de dejar la casilla en blanco:
+                                   una lista que no puede mostrar el valor que
+                                   tiene delante lo borraría al guardar. */
                                 opciones={[
-                                  ...METODOS_PAGO.map((mp) => ({ value: mp, label: mp })),
+                                  ...TRANSACCIONES,
+                                  ...(editandoAbono.metodo_pago
+                                    && !TRANSACCIONES.some((t) => t.value === editandoAbono.metodo_pago)
+                                    ? [{ value: editandoAbono.metodo_pago,
+                                         label: editandoAbono.metodo_pago + ' (como estaba)' }]
+                                    : []),
                                 ]}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                aria-label="Transacción"
                               />
+                              {transaccionTieneDestino(editandoAbono.metodo_pago) ? (
+                                <>
+                                  <BuscadorLista
+                                    value={editandoAbono.banco_id ? String(editandoAbono.banco_id) : ''}
+                                    onChange={(v) => setEditandoAbono({ ...editandoAbono, banco_id: v })}
+                                    opciones={[{ value: '', label: '— Sin entidad —' },
+                                      ...entidades.map((b) => ({ value: String(b.id), label: b.nombre }))]}
+                                    className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                    aria-label="Entidad"
+                                  />
+                                  <BuscadorLista
+                                    value={editandoAbono.cuenta_id ? String(editandoAbono.cuenta_id) : ''}
+                                    onChange={(v) => setEditandoAbono({ ...editandoAbono, cuenta_id: v })}
+                                    opciones={[{ value: '', label: '— Sin cuenta —' },
+                                      ...cuentasBanco.map((c) => ({ value: String(c.id), label: c.nombre }))]}
+                                    className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
+                                    aria-label="Cuenta"
+                                  />
+                                </>
+                              ) : (
+                                <span className="col-span-2 self-center text-[11px] text-muted px-1">
+                                  El efectivo no lleva entidad ni cuenta.
+                                </span>
+                              )}
                               <input
                                 type="text"
                                 value={editandoAbono.referencia || ''}
                                 onChange={e => setEditandoAbono({ ...editandoAbono, referencia: e.target.value })}
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
                                 placeholder="Referencia"
+                                aria-label="Referencia"
                               />
                             </div>
                           </td>
@@ -1846,8 +1912,16 @@ export default function Cartera() {
                           <td className={`px-3 py-2 text-right ${m.tipo === 'venta' ? 'text-primary' : 'text-success'}`}>
                             {m.tipo === 'venta' ? '+' : '-'}{formatCurrency(m.monto)}
                           </td>
-                          <td className="px-3 py-2 text-gray-500">
-                            {m.metodo_pago || '-'}
+                          <td className="px-3 py-2 text-muted">
+                            {/* Las tres cosas, una debajo de otra: cómo llegó,
+                                por dónde y a quién. Un guion donde no se sabe,
+                                nunca un valor inventado. */}
+                            <span className="block text-primary">
+                              {etiquetaTransaccion(m.metodo_pago) || '-'}
+                            </span>
+                            {m.banco_nombre && (
+                              <span className="block text-[11px]">{m.banco_nombre}</span>
+                            )}
                             {m.cuenta_nombre && (
                               <RefLink to="/cuentas" id={m.cuenta_id} title="Ver cuenta" icon={false} className="block text-[11px]">{m.cuenta_nombre}</RefLink>
                             )}
@@ -1856,7 +1930,13 @@ export default function Cartera() {
                             {m.tipo === 'abono' && (
                               <div className="flex justify-end gap-2">
                                 <button
-                                  onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia, cotizacion_id: m.cotizacion_id })}
+                                  onClick={() => setEditandoAbono({
+                                    id: m.id, monto: m.monto, fecha: m.fecha,
+                                    metodo_pago: m.metodo_pago,
+                                    banco_id: m.banco_id ? String(m.banco_id) : '',
+                                    cuenta_id: m.cuenta_id ? String(m.cuenta_id) : '',
+                                    referencia: m.referencia, cotizacion_id: m.cotizacion_id,
+                                  })}
                                   className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
                                   title="Editar abono" aria-label="Editar abono"
                                 >
@@ -2092,29 +2172,62 @@ export default function Cartera() {
               : 'Ej: consignación del lunes'}
           />
 
+          {/* ── POR DONDE ENTRO LA PLATA ───────────────────────────
+              Tres preguntas en el orden en que se contestan: cómo llegó, por
+              dónde y a quién. La entidad y la cuenta sólo aparecen cuando
+              tienen sentido: un pago en efectivo no entró por ningún banco ni
+              cayó en ninguna cuenta, y dejar esos dos campos a la vista
+              invitaría a rellenarlos con algo que no significa nada.
+
+              Al cambiar a Efectivo se VACÍAN los dos, no se esconden con el
+              valor dentro: un campo escondido que sigue guardando lo que tenía
+              es la forma más silenciosa de guardar un dato que nadie eligió. */}
           {formData.clase !== 'descuento' && (
-            <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="Transacción"
+              value={formData.metodo_pago}
+              onChange={(e) => {
+                const nueva = e.target.value;
+                setFormData((f) => ({
+                  ...f,
+                  metodo_pago: nueva,
+                  banco_id:  transaccionTieneDestino(nueva) ? f.banco_id  : '',
+                  cuenta_id: transaccionTieneDestino(nueva) ? f.cuenta_id : '',
+                }));
+              }}
+              options={TRANSACCIONES}
+            />
+          )}
+
+          {formData.clase !== 'descuento' && transaccionTieneDestino(formData.metodo_pago) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Select
-                label="Método de Pago"
-                value={formData.metodo_pago}
-                onChange={(e) => setFormData({ ...formData, metodo_pago: e.target.value })}
-                options={METODOS_PAGO.map(m => ({ value: m, label: m.charAt(0).toUpperCase() + m.slice(1) }))}
+                label="Entidad"
+                value={formData.banco_id}
+                onChange={(e) => setFormData({ ...formData, banco_id: e.target.value })}
+                options={[
+                  { value: '', label: '— Sin entidad —' },
+                  ...entidades.map((b) => ({ value: String(b.id), label: b.nombre })),
+                ]}
               />
-              <Input
-                label="Referencia"
-                value={formData.referencia}
-                onChange={(e) => setFormData({ ...formData, referencia: e.target.value })}
-                placeholder="No. transacción"
+              <Select
+                label="Cuenta"
+                value={formData.cuenta_id}
+                onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
+                options={[
+                  { value: '', label: '— Sin cuenta —' },
+                  ...cuentasBanco.map((c) => ({ value: String(c.id), label: c.nombre })),
+                ]}
               />
             </div>
           )}
 
           {formData.clase !== 'descuento' && (
-            <Select
-              label="Cuenta (banco / caja)"
-              value={formData.cuenta_id}
-              onChange={(e) => setFormData({ ...formData, cuenta_id: e.target.value })}
-              options={[{ value: '', label: '— Sin cuenta —' }, ...cuentasBanco.map(c => ({ value: String(c.id), label: c.nombre }))]}
+            <Input
+              label="Referencia"
+              value={formData.referencia}
+              onChange={(e) => setFormData({ ...formData, referencia: e.target.value })}
+              placeholder="El número del comprobante, si lo hay"
             />
           )}
 
