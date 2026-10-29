@@ -2200,6 +2200,16 @@ export default function Cartera() {
           )}
 
           {formData.clase !== 'descuento' && transaccionTieneDestino(formData.metodo_pago) && (
+            <div>
+            {/* El camino de salida cuando lo que necesita no está en la lista.
+                Sin esto se queda parada: está a medio registrar un abono, la
+                cuenta no aparece, y no hay nada que le diga dónde se crean. */}
+            <div className="flex justify-end mb-1">
+              <Link to="/cuentas"
+                className="text-xs font-semibold text-secondary hover:underline underline-offset-2">
+                ¿Falta una entidad o una cuenta? Se crean en Cuentas
+              </Link>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Select
                 label="Entidad"
@@ -2219,6 +2229,7 @@ export default function Cartera() {
                   ...cuentasBanco.map((c) => ({ value: String(c.id), label: c.nombre })),
                 ]}
               />
+            </div>
             </div>
           )}
 

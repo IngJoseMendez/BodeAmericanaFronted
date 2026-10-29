@@ -83,6 +83,13 @@ export default function Cuentas() {
   const bancosOrdenados = [...bancos].sort(
     (a, b) => Number(a.activo === false) - Number(b.activo === false)
   );
+  // Las cuentas, igual. Antes se quedaban en su sitio alfabético al 50% de
+  // opacidad, mezcladas entre las que sí se usan: una lista donde lo que ya no
+  // sirve estorba entre lo que sirve se lee peor cada vez que crece.
+  const cuentasOrdenadas = [...cuentas].sort(
+    (a, b) => Number(a.activo === false) - Number(b.activo === false)
+  );
+  const cuentasInactivas = cuentas.filter((c) => c.activo === false).length;
 
   // ── Cuentas ──────────────────────────────────────────────────────
 
@@ -106,15 +113,20 @@ export default function Cuentas() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.nombre.trim()) { addToast('Escribe el nombre de la cuenta', 'error'); return; }
-    if (form.tipo === 'banco' && !form.banco_id) {
-      addToast('Elige el banco de la lista', 'error');
-      return;
-    }
+    // La entidad YA NO ES OBLIGATORIA, y el cambio tiene una razón concreta:
+    // desde que un abono guarda su propia entidad, una cuenta puede ser una
+    // persona que recibe por varias (Caro por Bancolombia hoy y por Western
+    // Union mañana). Atarla a una sola volvería a juntar las dos cosas que se
+    // separaron, y además dejaba sin poder guardar a las cuentas que ya están
+    // creadas sin banco.
     const datos = {
       nombre: form.nombre.trim(),
       tipo: form.tipo,
-      // Solo las cuentas de banco llevan entidad y número.
-      banco_id: form.tipo === 'banco' ? Number(form.banco_id) : null,
+      // Vacío viaja como null y no como 0: Number('') es 0, y un 0 no existe
+      // en la tabla de entidades. Hoy el servidor lo salvaría porque 0 es
+      // falsy, pero depender de esa casualidad es pedirle al próximo que la
+      // descubra a base de un error de clave ajena.
+      banco_id: form.tipo === 'banco' && form.banco_id ? Number(form.banco_id) : null,
       numero_cuenta: form.tipo === 'banco' ? form.numero_cuenta.trim() : '',
     };
     try {
@@ -144,6 +156,19 @@ export default function Cuentas() {
       load();
     } catch (err) {
       addToast(mensajeDeError(err), 'error');
+    }
+  };
+
+  // Vuelve a poner en la lista una cuenta desactivada. Faltaba, y las
+  // entidades sí lo tenían: desactivar «Caro» por error era irreversible
+  // desde la pantalla, aunque el endpoint siempre lo permitió.
+  const reactivarCuenta = async (c) => {
+    try {
+      await cuentasApi.update(c.id, { activo: true });
+      addToast(`"${c.nombre}" vuelve a estar disponible`, 'success');
+      load();
+    } catch (err) {
+      addToast(mensajeDeError(err, 'reactivar la cuenta'), 'error');
     }
   };
 
@@ -216,15 +241,20 @@ export default function Cuentas() {
   const selectCls = 'w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30';
 
   return (
-    <Layout title="Cuentas" subtitle="Bancos y cajas por donde entra y sale la plata">
+    <Layout title="Cuentas y entidades" subtitle="Por dónde entra y sale la plata">
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <p className="text-sm text-muted">
-            Se usan al registrar abonos de clientes, de proveedores y gastos.
+            Estas dos listas son las que aparecen al registrar un abono de un cliente,
+            un pago a un proveedor o un gasto. Lo que se quita de una lista no se
+            borra: queda guardado y se puede volver a usar cuando quieras.
           </p>
           <div className="flex gap-2">
+            {/* El formulario de abono dice «Entidad»; esta pantalla decía
+                «Bancos». Es la misma cosa, y gana la palabra que ella va a
+                buscar. «bancos» se queda de apoyo para reconocerlo. */}
             <Button variant="outline" onClick={() => setBancosOpen(true)}>
-              <Building2 size={16} className="mr-1" /> Bancos ({bancosActivos.length})
+              <Building2 size={16} className="mr-1" /> Entidades ({bancosActivos.length})
             </Button>
             <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Nueva cuenta</Button>
           </div>
@@ -244,7 +274,15 @@ export default function Cuentas() {
               </div>
             ) : (
               <div className="space-y-2">
-                {cuentas.map(c => (
+                {cuentasInactivas > 0 && (
+                  <p className="text-xs text-muted pb-1">
+                    {cuentasInactivas === 1
+                      ? 'Hay 1 cuenta fuera de la lista, al final.'
+                      : `Hay ${cuentasInactivas} cuentas fuera de la lista, al final.`}
+                    {' '}Siguen guardadas y se reactivan con el botón de deshacer.
+                  </p>
+                )}
+                {cuentasOrdenadas.map(c => (
                   <div key={c.id}
                     className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
                       highlightId === c.id ? 'border-secondary bg-secondary/10 ring-2 ring-secondary/30' : 'border-border'
@@ -270,7 +308,16 @@ export default function Cuentas() {
                         className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                         <Pencil size={16} />
                       </button>
-                      {c.activo !== false && (
+                      {c.activo === false ? (
+                        // Con <Button size="icono"> y no con un <button> a pelo: el
+                        // componente ya trae los 44x44 táctiles y el anillo de foco,
+                        // que es justo lo que se olvida al escribirlos a mano. El
+                        // trinquete de tests/sistema-de-diseno lo cazó al escribirlo.
+                        <Button variant="ghost" size="icono" icon={RotateCcw}
+                          onClick={() => reactivarCuenta(c)}
+                          title="Volver a usarla" aria-label="Volver a usarla"
+                          className="text-muted hover:text-success hover:bg-success/10 rounded-lg" />
+                      ) : (
                         <button onClick={() => handleDelete(c)} title="Desactivar" aria-label="Desactivar"
                           className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-error rounded-lg hover:bg-error/5">
                           <Trash2 size={16} />
@@ -309,24 +356,29 @@ export default function Cuentas() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-sm font-medium text-primary" htmlFor="cuenta-banco">
-                    Banco <span className="text-error">*</span>
+                    Entidad fija <span className="text-muted font-normal">(opcional)</span>
                   </label>
                   <button type="button" onClick={() => setBancosOpen(true)}
                     className="text-xs font-semibold text-secondary hover:underline underline-offset-2">
-                    ¿Falta uno? Agrégalo
+                    ¿Falta una? Agrégala
                   </button>
                 </div>
                 <BuscadorLista
                   value={form.banco_id}
                   onChange={(valorElegido) => setForm({ ...form, banco_id: valorElegido })}
-                  opcionVacia="Elige el banco…"
-                  placeholder="Elige el banco…"
+                  opcionVacia="Se pregunta en cada abono"
+                  placeholder="Se pregunta en cada abono"
                   opciones={[
                     ...bancosSelect.map((b) => ({ value: b.id, label: `${b.nombre}${b.activo === false ? ' (fuera de la lista)' : ''}` })),
                   ]}
                   id="cuenta-banco"
                   className={selectCls}
                 />
+                <p className="text-xs text-muted mt-1">
+                  Déjalo vacío si esta cuenta recibe por varias entidades: al registrar
+                  cada abono se escoge por dónde entró. Pónle una sola si siempre es la
+                  misma.
+                </p>
               </div>
 
               <Input label="Número de cuenta (opcional)" value={form.numero_cuenta}
@@ -350,17 +402,20 @@ export default function Cuentas() {
 
       {/* ── Catálogo de bancos ──────────────────────────────────── */}
       <Modal isOpen={bancosOpen} onClose={() => { setBancosOpen(false); setEditBanco(null); }}
-             title="Bancos y entidades">
+             title="Entidades">
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Esta es la lista que aparece al crear una cuenta. Agregar aquí evita que el mismo
-            banco quede escrito de tres formas distintas. Un banco que ya tenga cuentas no se
-            borra: queda fuera de la lista y puedes volver a activarlo cuando quieras.
+            Bancos, giros y billeteras: por dónde llega la plata. Esta es la lista
+            que aparece como <strong>Entidad</strong> al registrar un abono. Agregarla
+            aquí evita que la misma entidad quede escrita de tres formas distintas.
+            Una que ya tenga cuentas no se borra: queda fuera de la lista y se puede
+            volver a activar cuando quieras.
           </p>
 
           <form onSubmit={crearBanco} className="flex gap-2">
             <input type="text" value={nuevoBanco} onChange={(e) => setNuevoBanco(e.target.value)}
-              placeholder="Nombre del banco o entidad…"
+              aria-label="Nombre de la entidad nueva"
+              placeholder="Ej: Nequi, Daviplata, Bancolombia…"
               className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
             <Button type="submit" disabled={!nuevoBanco.trim()}>
               <Plus size={15} className="mr-1" /> Agregar
