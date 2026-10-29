@@ -30,11 +30,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// La línea base del 2026-10-29. Estos números SOLO pueden bajar.
+// La línea base del 2026-10-29, contando sólo código y no comentarios. Estos
+// números SOLO pueden bajar.
 const TECHO = {
-  'src/pages':      { button: 232, input: 116 },
-  'src/components': { button: 33,  input: 13  },
+  'src/pages':      { button: 228, input: 111 },
+  'src/components': { button: 33,  input: 8   },
 };
+
+// Los comentarios no son código. Esta comprobación saltó la primera vez por un
+// comentario que EXPLICABA el problema y escribía `<button>` dentro: contar
+// prosa como deuda hace que la única salida sea no poder hablar del tema en un
+// comentario, que es justo lo contrario de lo que se busca. (Es la segunda vez
+// en este proyecto que un contador lee un comentario y se cree lo que ve.)
+function sinComentarios(texto) {
+  return texto
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // bloque
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1'); // línea, sin tragarse el // de una URL
+}
 
 function jsxDe(dir) {
   const salida = [];
@@ -57,7 +69,7 @@ for (const [dir, techo] of Object.entries(TECHO)) {
   let total = { button: 0, input: 0 };
 
   for (const f of jsxDe(path.join(process.cwd(), ...dir.split('/')))) {
-    const texto = fs.readFileSync(f, 'utf8');
+    const texto = sinComentarios(fs.readFileSync(f, 'utf8'));
     const rel = path.relative(process.cwd(), f).replace(/\\/g, '/');
     for (const etiqueta of ['button', 'input']) {
       // `<button` en minúscula es el elemento HTML; `<Button` es el componente.
