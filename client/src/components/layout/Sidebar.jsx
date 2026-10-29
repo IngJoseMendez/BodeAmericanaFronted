@@ -394,7 +394,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
             <button
               onClick={onToggle}
-              className="flex-shrink-0 p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200 active:scale-95"
+              className="flex-shrink-0 p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 active:scale-95"
               aria-label="Cerrar menú"
             >
               <X size={20} />
@@ -413,7 +413,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                 </div>
                 <button
                   onClick={onToggleCollapse}
-                  className="flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                  className="flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200"
                   aria-label="Expandir sidebar"
                   title="Expandir"
                 >
@@ -436,7 +436,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
                 <button
                   onClick={onToggleCollapse}
-                  className="ml-auto flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                  className="ml-auto flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200"
                   aria-label="Colapsar sidebar"
                   title="Colapsar"
                 >
@@ -457,7 +457,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 aria-label="Buscar en el menú"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-primary/5 border border-transparent text-primary placeholder-muted font-medium text-sm transition-all focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30 focus:bg-surface"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-primary/5 border border-transparent text-primary placeholder-muted font-medium text-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary/30 focus:bg-surface"
               />
               <Search
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
@@ -523,7 +523,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                     aria-current={isActive ? 'page' : undefined}
                     className={`
                       relative flex items-center gap-3 rounded-xl cursor-pointer
-                      transition-all duration-200 overflow-hidden
+                      transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 overflow-hidden
                       ${collapsed ? 'justify-center p-3 mx-1' : 'px-3 py-3 lg:py-2.5'}
                       ${isActive
                         ? 'bg-secondary/10 text-primary font-semibold'

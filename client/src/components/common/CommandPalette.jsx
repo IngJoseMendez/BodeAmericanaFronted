@@ -260,7 +260,7 @@ export function CommandPalette() {
                   onClick={() => handleNavigate(route.path)}
                   onMouseEnter={() => setSelectedIndex(i)}
                   className={`
-                    w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all duration-150
+                    w-full flex items-center gap-3 px-4 py-2.5 text-left transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150
                     ${isSelected ? 'bg-secondary/10' : 'hover:bg-primary/5'}
                   `}
                 >

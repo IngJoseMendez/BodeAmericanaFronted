@@ -46,10 +46,17 @@ export function Button({
 }) {
   const clickedRef = useRef(false);
   
-  // `transition-all` animaba tambien las propiedades que mueven la
-  // maquetacion. Aqui se listan las cinco que de verdad cambian. Y 200ms en vez
-  // de 300: trescientos en un boton que se pulsa se sienten como que la tableta
-  // responde tarde.
+  // Antes decia "transition" seguido de "all", que animaba tambien las
+  // propiedades que mueven la maquetacion. Aqui se listan las cinco que de
+  // verdad cambian en este componente: color, fondo, borde, sombra y opacidad.
+  // La escala va aparte, abajo, con su propia duracion mas corta.
+  //
+  // (El nombre de la clase vieja va escrito a trozos a proposito: un barrido
+  // mecanico que la buscara para reemplazarla reescribiria este comentario y lo
+  // dejaria diciendo una incoherencia. Ya paso.)
+  //
+  // Y 200ms en vez de 300: trescientos en un boton que se pulsa se sienten como
+  // que la tableta responde tarde.
   //
   // `motion-reduce`: quien tenga puesto «reducir movimiento» en su sistema no
   // quiere que el boton se encoja al pulsarlo.

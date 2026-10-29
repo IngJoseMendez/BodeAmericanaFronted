@@ -773,7 +773,7 @@ export default function CuentasPagar() {
                                       Cancelar
                                     </button>
                                     <button type="button" onClick={() => handleInlineAbono(c)} disabled={inlineSubmitting}
-                                      className="flex items-center gap-1.5 px-4 py-1.5 bg-secondary text-white rounded-lg text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 active:scale-[0.98] transition-all">
+                                      className="flex items-center gap-1.5 px-4 py-1.5 bg-secondary text-white rounded-lg text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                                       {inlineSubmitting
                                         ? 'Registrando...'
                                         : <><CheckCircle size={13} /> Registrar Abono</>}

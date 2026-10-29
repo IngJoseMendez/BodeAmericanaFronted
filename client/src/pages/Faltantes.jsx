@@ -1059,7 +1059,7 @@ export default function Faltantes() {
               type="button"
               onClick={() => setVista(v)}
               aria-pressed={vista === v}
-              className={`px-3 h-8 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3 h-8 rounded-xl text-xs font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                 vista === v ? 'bg-surface shadow-sm text-primary' : 'text-muted hover:text-primary'
               }`}
             >
@@ -1269,7 +1269,7 @@ export default function Faltantes() {
                   type="button"
                   onClick={() => setVista(v)}
                   aria-pressed={vista === v}
-                  className={`px-3 h-8 rounded-xl text-xs font-semibold transition-all ${
+                  className={`px-3 h-8 rounded-xl text-xs font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                     vista === v ? 'bg-surface shadow-sm text-primary' : 'text-muted hover:text-primary'
                   }`}
                 >

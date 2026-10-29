@@ -561,7 +561,7 @@ function StatusBadge({ estado }) {
 // ── KPI Card ─────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, icon: Icon, color }) {
   return (
-    <div className="bg-surface rounded-2xl p-5 border border-border/60 shadow-card hover:shadow-card-hover transition-all duration-200 group">
+    <div className="bg-surface rounded-2xl p-5 border border-border/60 shadow-card hover:shadow-card-hover transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 group">
       <div className="flex items-start justify-between mb-3">
         <p className="text-xs font-semibold text-muted uppercase tracking-wider">{label}</p>
         <div className={`p-2 rounded-xl ${color} transition-transform duration-200 group-hover:scale-110`}>
@@ -625,7 +625,7 @@ function TimelineView({ items, onView, isAdmin = false }) {
                   : cont.estado === 'legado' ? 'bg-gray-400'
                   : 'bg-warning'}`} />
                 <div
-                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-all duration-150 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-secondary/40"
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 hover:shadow-sm transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-secondary/40"
                   onClick={() => onView(cont)}
                   // Antes era un div con solo onClick: con teclado no se podía abrir
                   // ningún contenedor desde la línea de tiempo. Enter y Espacio, que
@@ -687,7 +687,7 @@ function TimelineView({ items, onView, isAdmin = false }) {
               <div key={cont.id} className="relative flex items-center gap-3">
                 <div className="absolute left-[-15px] w-3.5 h-3.5 rounded-full border-2 border-surface bg-muted/40" />
                 <div
-                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 transition-all duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary/40"
+                  className="flex-1 flex items-center justify-between bg-surface border border-border/60 rounded-xl px-4 py-3 hover:border-secondary/30 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary/40"
                   onClick={() => onView(cont)}
                   role="button"
                   tabIndex={0}
@@ -795,7 +795,7 @@ function ComparadorModal({ isOpen, onClose, items }) {
                     <span className="text-xs text-muted font-medium w-32 truncate">{c.numero}</span>
                     <div className="flex-1 h-2.5 bg-primary/8 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-700 ${isBest ? 'bg-success' : 'bg-secondary/60'}`}
+                        className={`h-full rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-700 ${isBest ? 'bg-success' : 'bg-secondary/60'}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -3634,7 +3634,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           <div className="flex items-center gap-2">
             <button
               onClick={() => openCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60 rounded-xl text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition-all duration-150"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 border border-dashed border-amber-400/60 rounded-xl text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150"
               title="Crear un contenedor estimado (lo que crees que llegará) para empezar a registrar abonos"
               aria-label="Nueva estimación de contenedor"
             >
@@ -3643,7 +3643,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             </button>
             <button
               onClick={() => openCreateModal(false)}
-              className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-95 transition-all duration-150 shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 shadow-sm"
               title="Nuevo contenedor" aria-label="Nuevo contenedor"
             >
               <Plus size={17} />
@@ -4233,11 +4233,11 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     botón vive abajo, en la barra de acciones. */}
                 <div className={`flex items-center gap-2 px-4 pt-3 ${soloLectura ? 'hidden' : ''}`}>
                   <button type="button" onClick={() => setTemplateModalOpen(true)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-secondary px-3 py-1.5 rounded-lg border border-secondary/30 hover:bg-secondary/8 transition-all">
+                    className="flex items-center gap-1.5 text-xs font-semibold text-secondary px-3 py-1.5 rounded-lg border border-secondary/30 hover:bg-secondary/8 transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                     <BookTemplate size={13} /> Cargar plantilla{templates.length > 0 && ` (${templates.length})`}
                   </button>
                   <button type="button" onClick={() => { setNombrePlantilla(''); setSaveTemplateModalOpen(true); }}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-primary px-3 py-1.5 rounded-lg border border-border hover:bg-primary/5 transition-all">
+                    className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-primary px-3 py-1.5 rounded-lg border border-border hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                     <Save size={13} /> Guardar como plantilla
                   </button>
                 </div>
@@ -4697,7 +4697,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
                 <div className="space-y-6">
                   {proveedores.map((prov, pi) => (
-                    <div key={pi} className="rounded-2xl border-2 border-secondary/20 bg-surface shadow-sm hover:shadow-md hover:border-secondary/40 transition-all duration-200">
+                    <div key={pi} className="rounded-2xl border-2 border-secondary/20 bg-surface shadow-sm hover:shadow-md hover:border-secondary/40 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200">
                       {/* ── Cabecera del proveedor (color destacado) ─── */}
                       <div className="px-4 py-3 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20 rounded-t-2xl">
                         <div className="flex items-center gap-3">
@@ -5020,7 +5020,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         )}
                         {!soloLectura && (
                         <button type="button" onClick={() => addDetalle(pi)}
-                          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5 hover:border-secondary transition-all">
+                          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-secondary/40 text-secondary text-xs font-semibold hover:bg-secondary/5 hover:border-secondary transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                           <Plus size={13} /> Agregar línea a {prov.proveedor_nombre || `Proveedor ${pi+1}`}
                         </button>
                         )}
@@ -5031,7 +5031,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 </div>
                 {!soloLectura && (
                 <button type="button" onClick={addProveedor}
-                  className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-secondary/40 text-secondary text-sm font-bold hover:bg-secondary/5 hover:border-secondary transition-all">
+                  className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-secondary/40 text-secondary text-sm font-bold hover:bg-secondary/5 hover:border-secondary transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                   <Plus size={16} /> Agregar otro proveedor
                 </button>
                 )}
@@ -5523,7 +5523,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     </button>
                     <button type="button" onClick={() => handleConvertirNormal(selectedContenedor)}
                       title="Ya llegó: pasar a contenedor y registrar lo real"
-                      className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 active:scale-95 transition-all duration-150">
+                      className="flex items-center gap-2 px-5 py-2 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                       <RefreshCw size={17} /> Ya llegó — convertir
                     </button>
                   </div>
@@ -5535,7 +5535,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       <Edit2 size={15} /> Editar
                     </button>
                     <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
-                      className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-all duration-150">
+                      className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                       <ClipboardCheck size={17} /> Revisar Contenedor
                     </button>
                   </div>
@@ -5547,7 +5547,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       <ClipboardCheck size={15} /> Editar Revisión
                     </button>
                     <button type="button" onClick={() => openFinalizarModal(selectedContenedor)}
-                      className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all duration-150">
+                      className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                       <CheckCircle size={17} /> Finalizar Contenedor
                     </button>
                   </div>
@@ -5852,7 +5852,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 Cancelar
               </button>
               <button type="submit" disabled={submitting}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                 {submitting && <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>}
                 {submitting ? 'Guardando…' : editMode ? (modoEstimacion ? 'Actualizar Estimación' : 'Actualizar Contenedor') : (modoEstimacion ? 'Crear Estimación' : 'Crear Contenedor')}
               </button>
@@ -6222,7 +6222,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     Cancelar
                   </button>
                   <button onClick={handleFinalizar} disabled={submitting}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all duration-150">
+                    className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                     {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
                   </button>
                 </div>
@@ -6290,7 +6290,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   r.clasificacion_recibida || r.referencia_recibida || r.calidad_recibida
                 );
                 return (
-                <div key={prov} className="rounded-xl border-2 border-secondary/20 bg-surface overflow-hidden shadow-sm hover:shadow-md transition-all duration-200">
+                <div key={prov} className="rounded-xl border-2 border-secondary/20 bg-surface overflow-hidden shadow-sm hover:shadow-md transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200">
                   {/* ── Cabecera compacta del proveedor ─────────────── */}
                   <div className="px-3 py-2 bg-gradient-to-r from-secondary/10 to-secondary/5 border-b-2 border-secondary/20 flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -6332,7 +6332,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       const hayDiff = parseInt(row.cantidad_recibida) !== parseInt(row.cantidad_enviada);
                       const hayCambioTipo = row.clasificacion_recibida || row.referencia_recibida || row.calidad_recibida;
                       return (
-                      <div key={row.detalle_id ?? row._key} className={`border-l-4 ${row.es_nuevo ? 'border-l-blue-500 bg-blue-50/30' : hayDiff || hayCambioTipo ? 'border-l-warning' : 'border-l-secondary/40'} hover:border-l-secondary hover:bg-surface transition-all duration-150`}>
+                      <div key={row.detalle_id ?? row._key} className={`border-l-4 ${row.es_nuevo ? 'border-l-blue-500 bg-blue-50/30' : hayDiff || hayCambioTipo ? 'border-l-warning' : 'border-l-secondary/40'} hover:border-l-secondary hover:bg-surface transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150`}>
                         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_140px_minmax(160px,1.2fr)] gap-2 p-2 items-center">
                           {/* Col 1: Enviado — solo lectura, salvo en los items agregados a mano */}
                           {row.es_nuevo ? (
@@ -6513,7 +6513,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 Cancelar
               </button>
               <button onClick={handleGuardarRevision} disabled={submitting}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 disabled:opacity-40 active:scale-95 transition-all duration-150">
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 disabled:opacity-40 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                 {submitting
                   ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Guardando...</>
                   : <><ClipboardCheck size={17} /> Guardar Revisión</>
@@ -6686,7 +6686,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           ) : (
             <div className="space-y-2">
               {templatesFiltradas.map(t => (
-                <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-all group">
+                <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-secondary/30 hover:bg-primary/3 transition-[color,background-color,border-color,box-shadow,opacity,transform] group">
                   {/* Era un <div onClick>: con teclado no había forma de cargar una
                       plantilla. Como <button> entra en el orden de tabulación. */}
                   <button type="button" className="flex-1 cursor-pointer min-w-0 text-left" onClick={() => {
@@ -6716,7 +6716,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </button>
                   <button type="button" onClick={() => removeTemplate(t.id)}
                     title="Eliminar plantilla" aria-label={`Eliminar la plantilla ${t.nombre}`}
-                    className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all flex-shrink-0 ml-2">
+                    className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-[color,background-color,border-color,box-shadow,opacity,transform] flex-shrink-0 ml-2">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -6754,7 +6754,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
               Cancelar
             </button>
             <button type="button" onClick={handleSaveTemplate} disabled={!nombrePlantilla.trim()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 transition-all">
+              className="flex items-center gap-1.5 px-4 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 transition-[color,background-color,border-color,box-shadow,opacity,transform]">
               <Save size={15} /> Guardar
             </button>
           </div>

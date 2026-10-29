@@ -1201,7 +1201,7 @@ export default function Pacas() {
               <Card
                 key={r.categoria}
                 hover
-                className={`cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${activa ? 'ring-2 ring-secondary' : ''}`}
+                className={`cursor-pointer transition-[color,background-color,border-color,box-shadow,opacity,transform] focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${activa ? 'ring-2 ring-secondary' : ''}`}
                 onClick={() => setFiltroCategoria(activa ? '' : r.categoria)}
                 role="button"
                 tabIndex={0}
@@ -1648,10 +1648,10 @@ export default function Pacas() {
                                 editar de eliminar. Se nombra la unidad concreta. */}
                             {paca.estado === 'disponible' && (
                               <>
-                                <button type="button" onClick={() => openReservaModal(paca)} className="p-2 rounded-lg text-muted hover:text-success hover:bg-success/10 transition-all" title="Reservar para cliente" aria-label={`Reservar para cliente la unidad ${paca.uuid?.slice(0, 8)}`}>
+                                <button type="button" onClick={() => openReservaModal(paca)} className="p-2 rounded-lg text-muted hover:text-success hover:bg-success/10 transition-[color,background-color,border-color,box-shadow,opacity,transform]" title="Reservar para cliente" aria-label={`Reservar para cliente la unidad ${paca.uuid?.slice(0, 8)}`}>
                                   <Calendar size={16} aria-hidden="true" />
                                 </button>
-                                <button type="button" onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-all" title="Asignar a lote" aria-label={`Asignar a lote la unidad ${paca.uuid?.slice(0, 8)}`}>
+                                <button type="button" onClick={() => openAssignModal(paca)} className="p-2 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-[color,background-color,border-color,box-shadow,opacity,transform]" title="Asignar a lote" aria-label={`Asignar a lote la unidad ${paca.uuid?.slice(0, 8)}`}>
                                   <Link size={16} aria-hidden="true" />
                                 </button>
                               </>
@@ -1659,10 +1659,10 @@ export default function Pacas() {
                             {paca.estado === 'separada' && (
                               <span className="text-xs bg-warning/10 text-warning px-2 py-1 rounded-full">Separada</span>
                             )}
-                            <button type="button" onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all" title="Editar unidad" aria-label={`Editar la unidad ${paca.uuid?.slice(0, 8)}`}>
+                            <button type="button" onClick={() => handleEdit(paca)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" title="Editar unidad" aria-label={`Editar la unidad ${paca.uuid?.slice(0, 8)}`}>
                               <Edit2 size={16} aria-hidden="true" />
                             </button>
-                            <button type="button" onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" disabled={paca.estado === 'vendida'} title="Eliminar unidad" aria-label={`Eliminar la unidad ${paca.uuid?.slice(0, 8)}`}>
+                            <button type="button" onClick={() => handleDelete(paca.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" disabled={paca.estado === 'vendida'} title="Eliminar unidad" aria-label={`Eliminar la unidad ${paca.uuid?.slice(0, 8)}`}>
                               <Trash2 size={16} aria-hidden="true" />
                             </button>
                           </div>

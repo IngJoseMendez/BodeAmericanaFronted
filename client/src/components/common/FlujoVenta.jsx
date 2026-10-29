@@ -157,7 +157,7 @@ export function FlujoVenta({ cotizaciones = [], onCerrar, onCambio }) {
 
   const Boton = ({ children, onClick, primario = false, ...rest }) => (
     <button type="button" onClick={onClick} disabled={trabajando} {...rest}
-      className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${
+      className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${
         primario ? 'bg-secondary text-white hover:bg-secondary/85'
           : 'border border-border text-muted hover:text-primary hover:bg-primary/5'
       }`}>

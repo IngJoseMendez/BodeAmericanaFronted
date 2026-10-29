@@ -29,7 +29,7 @@ const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 // El color base pasó de text-border (#e2e8f0, casi blanco sobre blanco) a
 // text-muted, que sí se distingue.
 const BTN_ACCION =
-  'p-1.5 rounded-lg text-muted transition-all [@media(hover:hover)]:opacity-0 ' +
+  'p-1.5 rounded-lg text-muted transition-[color,background-color,border-color,box-shadow,opacity,transform] [@media(hover:hover)]:opacity-0 ' +
   'group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 ' +
   'focus:outline-none focus:ring-2 focus:ring-secondary/40';
 
@@ -94,14 +94,14 @@ function PanelItem({ item, table, onDelete, edicion, temporadas, familias }) {
             <button
               onClick={saveEdit}
               disabled={guardandoEdit}
-              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-secondary hover:bg-secondary/10 transition-all disabled:opacity-50"
+              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-secondary hover:bg-secondary/10 transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-50"
               title="Guardar" aria-label="Guardar"
             >
               <Check size={14} />
             </button>
             <button
               onClick={cancelEdit}
-              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:bg-primary/5 transition-all"
+              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]"
               title="Cancelar" aria-label="Cancelar"
             >
               <X size={14} />

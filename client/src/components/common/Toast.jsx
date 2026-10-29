@@ -75,7 +75,7 @@ function ToastItem({ message, type, removing, onClose }) {
         border-2 md:border shadow-xl md:shadow-lg
         ${colors[type]}
         ${removing ? 'animate-toast-exit' : 'animate-toast-enter'}
-        transition-all duration-300 ease-out
+        transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out
         touch-manipulation
       `}
       role="alert"

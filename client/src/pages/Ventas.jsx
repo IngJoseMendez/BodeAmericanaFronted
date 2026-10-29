@@ -1427,7 +1427,7 @@ export default function Ventas() {
             tabIndex={filtroVista === 'disponible' ? 0 : -1}
             onClick={() => setFiltroVista('disponible')}
             onKeyDown={navegarPestanas}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 ${
               filtroVista === 'disponible'
                 ? 'bg-primary text-white'
                 : 'text-primary hover:bg-primary/10'
@@ -1443,7 +1443,7 @@ export default function Ventas() {
             tabIndex={filtroVista === 'reservada' ? 0 : -1}
             onClick={() => setFiltroVista('reservada')}
             onKeyDown={navegarPestanas}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 ${
               filtroVista === 'reservada'
                 ? 'bg-success text-white'
                 : 'text-primary hover:bg-success/10'

@@ -329,12 +329,16 @@ select {
 }
 
 .glow-secondary { box-shadow: 0 0 20px rgba(79, 70, 229, 0.3); }
-.glow-accent    { box-shadow: 0 0 20px rgba(6, 182, 212, 0.3); }
+.glow-accent    { box-shadow: 0 0 20px rgba(14, 116, 144, 0.3); }
 
 /* ============================================
    CARD HOVER EFFECTS
    ============================================ */
-.card-hover { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Solo transform y box-shadow, que es lo unico que cambia el :hover de
+   abajo. Con `all` el navegador vigila TODAS las propiedades de cada
+   tarjeta de la pantalla por si alguna cambia. */
+.card-hover { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                          box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-hover:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg), var(--shadow-glow);
@@ -347,7 +351,8 @@ select {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  transition: all 0.3s ease;
+  /* Fondo y borde: lo unico que cambia entre temas y al enfocar. */
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 [data-theme="dark"] .search-input {

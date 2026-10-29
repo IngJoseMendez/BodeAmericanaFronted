@@ -1251,7 +1251,7 @@ export default function Despachos() {
         <div className="flex items-center gap-2 p-1 bg-primary/5 rounded-2xl w-fit">
           <button
             onClick={() => setVistaActiva('pendientes')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
               vistaActiva === 'pendientes'
                 ? 'bg-surface shadow-sm text-primary'
                 : 'text-muted hover:text-primary'
@@ -1267,7 +1267,7 @@ export default function Despachos() {
           </button>
           <button
             onClick={() => setVistaActiva('despachados')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
               vistaActiva === 'despachados'
                 ? 'bg-surface shadow-sm text-primary'
                 : 'text-muted hover:text-primary'
@@ -1297,12 +1297,12 @@ export default function Despachos() {
               <div className="flex-shrink-0 flex flex-wrap gap-2">
                 <button type="button" onClick={abrirDirecto}
                   title="Vender y despachar mercancía disponible sin pasar por una cotización"
-                  className="flex items-center justify-center gap-2 px-5 py-3 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-[0.98] transition-all duration-150">
+                  className="flex items-center justify-center gap-2 px-5 py-3 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                   <Plus size={17} aria-hidden="true" /> Nuevo despacho
                 </button>
                 <button type="button" onClick={abrirLote}
                   title="Pegar la tanda del día desde una hoja de cálculo y crear todos los despachos de una"
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-secondary/40 text-secondary text-sm font-semibold hover:bg-secondary/5 active:scale-[0.98] transition-all duration-150">
+                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-secondary/40 text-secondary text-sm font-semibold hover:bg-secondary/5 active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                   <LayoutGrid size={16} aria-hidden="true" /> Varios a la vez
                 </button>
                 {/* El botón grande: una vuelta por la bodega, un papel y una
@@ -1312,7 +1312,7 @@ export default function Despachos() {
                   title={despachos.length
                     ? 'Confirmar la salida de todos los despachos pendientes de una vez'
                     : 'No hay despachos pendientes de salir'}
-                  className="flex items-center justify-center gap-2 px-4 py-3 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all duration-150">
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                   <Truck size={16} aria-hidden="true" /> Despachar todo
                   {despachos.length > 0 && (
                     <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/20">{despachos.length}</span>
@@ -1604,7 +1604,7 @@ export default function Despachos() {
                     <X size={15} /> Anular
                   </button>
                   <button onClick={abrirConfirmModal} disabled={submitting}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-success text-white text-sm font-semibold hover:bg-success/85 active:scale-95 transition-all disabled:opacity-40">
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-success text-white text-sm font-semibold hover:bg-success/85 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] disabled:opacity-40">
                     <CheckCircle size={15} /> Confirmar Salida
                   </button>
                 </div>
@@ -1765,7 +1765,7 @@ export default function Despachos() {
                   type="button"
                   onClick={handleConfirmar}
                   disabled={submitting || Object.values(seleccion).filter(Boolean).length === 0}
-                  className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-all"
+                  className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform]"
                 >
                   {submitting
                     ? <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -2378,7 +2378,7 @@ export default function Despachos() {
                     </button>
                     <button type="button" onClick={crearLote}
                       disabled={creandoLote || vacia || faltas.length > 0}
-                      className="flex items-center gap-2 px-5 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all">
+                      className="flex items-center gap-2 px-5 py-2 bg-secondary text-white rounded-xl text-sm font-semibold hover:bg-secondary/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                       {creandoLote ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
                       {creandoLote ? 'Creando…' : `Crear ${despachosDelLote.length || ''} despacho(s)`}
                     </button>
@@ -2518,7 +2518,7 @@ export default function Despachos() {
                   </button>
                   <button type="button" onClick={confirmarSalidaGeneral}
                     disabled={salidaEnviando || !totalMarcado}
-                    className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all">
+                    className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform]">
                     {salidaEnviando ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
                     {salidaEnviando ? 'Confirmando…' : 'Confirmar la salida'}
                   </button>

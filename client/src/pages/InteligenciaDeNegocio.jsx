@@ -158,7 +158,7 @@ function CircularProgress({ score, size = 80, strokeWidth = 6, showLabel = true 
       <svg 
         width={size} 
         height={size} 
-        className={`transform -rotate-90 ${reducedMotion ? '' : 'transition-all duration-500 ease-out'}`}
+        className={`transform -rotate-90 ${reducedMotion ? '' : 'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-500 ease-out'}`}
       >
         {/* Fondo */}
         <circle
@@ -181,7 +181,7 @@ function CircularProgress({ score, size = 80, strokeWidth = 6, showLabel = true 
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          className={`${reducedMotion ? '' : 'transition-all duration-700 ease-out'}`}
+          className={`${reducedMotion ? '' : 'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-700 ease-out'}`}
         />
       </svg>
       {showLabel && (
@@ -217,7 +217,7 @@ function LinearProgress({ value, max = 100, color, label, showValue = true }) {
         aria-valuemax={max}
       >
         <div
-          className={`h-full rounded-full ${reducedMotion ? '' : 'transition-all duration-500 ease-out'}`}
+          className={`h-full rounded-full ${reducedMotion ? '' : 'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-500 ease-out'}`}
           style={{ 
             width: `${percentage}%`, 
             backgroundColor: color || (percentage >= 85 ? '#10b981' : percentage >= 70 ? '#3b82f6' : percentage >= 50 ? '#f59e0b' : '#ef4444')
@@ -330,7 +330,7 @@ function ClientePrediccionCard({ cliente, index = 0 }) {
     <div
       className={`
         ${urgenciaStyle.bg} border ${urgenciaStyle.border} rounded-2xl overflow-hidden
-        ${reducedMotion ? '' : 'transition-all duration-300 ease-out'}
+        ${reducedMotion ? '' : 'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out'}
         ${expanded ? 'shadow-lg' : 'hover:shadow-md hover:scale-[1.01]'}
         animate-fade-in-up
       `}
@@ -1000,7 +1000,7 @@ export default function InteligenciaDeNegocio() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,transform] ${
                 activeTab === tab.id
                   ? 'bg-secondary text-on-primary shadow-md font-semibold'
                   : 'bg-surface text-muted hover:bg-primary/5 border border-border'
@@ -1239,7 +1239,7 @@ export default function InteligenciaDeNegocio() {
                     title={cuantos
                       ? `Ver los ${cuantos} clientes ${t.label.toLowerCase()}`
                       : `No hay clientes ${t.label.toLowerCase()}`}
-                    className={`text-left rounded-2xl transition-all duration-150 ${
+                    className={`text-left rounded-2xl transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150 ${
                       activa ? 'ring-2 ring-secondary ring-offset-2 ring-offset-bg' : 'hover:opacity-90'
                     }`}>
                     <MetricCard
@@ -1484,7 +1484,7 @@ export default function InteligenciaDeNegocio() {
                           </div>
                           <div className="h-2 bg-primary/5 rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full transition-all duration-500"
+                              className="h-full rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-500"
                               style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
                             />
                           </div>
@@ -1933,7 +1933,7 @@ export default function InteligenciaDeNegocio() {
                     return (
                       <div 
                         key={item.nivel}
-                        className={`p-3 ${colors.bg} border ${colors.border} rounded-xl transition-all hover:scale-[1.02]`}
+                        className={`p-3 ${colors.bg} border ${colors.border} rounded-xl transition-[color,background-color,border-color,box-shadow,opacity,transform] hover:scale-[1.02]`}
                       >
                         <div className="flex items-center gap-2 mb-1">
                           <span className={`w-3 h-3 rounded-full ${colors.dot}`}></span>

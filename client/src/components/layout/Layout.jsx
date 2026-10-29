@@ -155,7 +155,7 @@ export function Layout({ children, title, subtitle, actions, pantallaCompleta = 
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className={`
-                lg:hidden p-2.5 rounded-xl transition-all duration-200 active:scale-95
+                lg:hidden p-2.5 rounded-xl transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 active:scale-95
                 ${sidebarOpen
                   ? 'bg-secondary/20 text-secondary ring-2 ring-secondary/30'
                   : 'bg-surface shadow-md hover:shadow-lg text-primary'}
@@ -198,7 +198,7 @@ export function Layout({ children, title, subtitle, actions, pantallaCompleta = 
                     key: 'k', ctrlKey: true, bubbles: true
                   }));
                 }}
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-border/60 text-muted hover:text-primary hover:border-secondary/40 transition-all text-xs font-medium"
+                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-border/60 text-muted hover:text-primary hover:border-secondary/40 transition-[color,background-color,border-color,box-shadow,opacity,transform] text-xs font-medium"
                 aria-label="Abrir buscador rápido (Ctrl+K)"
                 title="Buscador rápido"
               >

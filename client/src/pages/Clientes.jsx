@@ -504,10 +504,10 @@ export default function Clientes() {
                   {/* Botones de solo icono: sin aria-label el lector de pantalla
                       decía "botón" en los dos y no se distinguía editar de borrar. */}
                   <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/50">
-                    <button type="button" onClick={() => handleEdit(cliente)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all" title="Editar cliente" aria-label={`Editar a ${cliente.nombre}`}>
+                    <button type="button" onClick={() => handleEdit(cliente)} className="p-2 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" title="Editar cliente" aria-label={`Editar a ${cliente.nombre}`}>
                       <Edit2 size={16} aria-hidden="true" />
                     </button>
-                    <button type="button" onClick={() => handleDelete(cliente.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-all" title="Eliminar cliente" aria-label={`Eliminar a ${cliente.nombre}`}>
+                    <button type="button" onClick={() => handleDelete(cliente.id)} className="p-2 rounded-lg text-muted hover:text-accent hover:bg-accent/5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" title="Eliminar cliente" aria-label={`Eliminar a ${cliente.nombre}`}>
                       <Trash2 size={16} aria-hidden="true" />
                     </button>
                   </div>

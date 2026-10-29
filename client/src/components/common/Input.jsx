@@ -20,7 +20,7 @@ import { BuscadorLista } from './BuscadorLista';
 
 const cajaCampo = (error, extra = '') => `
   w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
-  transition-all duration-300 ease-out
+  transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out
   focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
   disabled:opacity-50 disabled:cursor-not-allowed
   ${extra}
@@ -119,7 +119,7 @@ export const Input = ({ label, error, className = '', type, id, ...props }) => {
         aria-describedby={error ? errorId : undefined}
         className={`
           w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
-          transition-all duration-300 ease-out
+          transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out
           focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
           disabled:opacity-50 disabled:cursor-not-allowed
           ${error ? 'border-error focus:ring-error/30' : 'border-border'}
@@ -164,7 +164,7 @@ export function Select({ label, error, options = [], className = '', placeholder
         aria-describedby={error ? errorId : undefined}
         className={`
           w-full px-4 py-3 rounded-xl border bg-surface text-primary
-          transition-all duration-300 ease-out
+          transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out
           focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
           disabled:opacity-50 disabled:cursor-not-allowed
           ${error ? 'border-error focus:ring-error/30' : 'border-border'}
@@ -192,7 +192,7 @@ export function Textarea({ label, error, className = '', id, ...props }) {
         aria-describedby={error ? errorId : undefined}
         className={`
           w-full px-4 py-3 rounded-xl border bg-surface text-primary placeholder-muted
-          transition-all duration-300 ease-out
+          transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out
           focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:border-secondary
           disabled:opacity-50 disabled:cursor-not-allowed resize-none
           ${error ? 'border-error focus:ring-error/30' : 'border-border'}

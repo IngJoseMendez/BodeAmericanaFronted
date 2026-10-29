@@ -425,7 +425,7 @@ export default function Lotes() {
               value={form.notas}
               onChange={(e) => setForm({ ...form, notas: e.target.value })}
               placeholder="Notas adicionales..."
-              className="w-full px-4 py-2.5 rounded-xl border border-border focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-all resize-none"
+              className="w-full px-4 py-2.5 rounded-xl border border-border focus:border-secondary focus:ring-2 focus:ring-secondary/20 outline-none transition-[color,background-color,border-color,box-shadow,opacity,transform] resize-none"
               rows={3}
             />
           </div>

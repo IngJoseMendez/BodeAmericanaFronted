@@ -182,7 +182,7 @@ function ProgressBar({ value, max, color = 'bg-success', label }) {
       </div>
       <div className="h-1.5 bg-primary/8 rounded-full overflow-hidden">
         <div
-          className={`h-full ${color} rounded-full transition-all duration-700 ease-out`}
+          className={`h-full ${color} rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-700 ease-out`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -226,7 +226,7 @@ function QuickAction({ to, icon: Icon, label, color }) {
   return (
     <Link
       to={to}
-      className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-primary/5 transition-all duration-200 group"
+      className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-primary/5 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200 group"
     >
       <div className={`p-3 rounded-xl ${color} group-hover:scale-110 transition-transform duration-200`}>
         <Icon size={18} aria-hidden="true" />

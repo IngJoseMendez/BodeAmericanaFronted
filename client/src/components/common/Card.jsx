@@ -3,7 +3,7 @@ export function Card({ children, className = '', hover = false, padding = true, 
     <div
       className={`
         bg-surface rounded-2xl border border-border/50 shadow-card
-        ${hover ? 'transition-all duration-300 ease-out hover:shadow-card-hover hover:border-secondary/30' : ''}
+        ${hover ? 'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-300 ease-out hover:shadow-card-hover hover:border-secondary/30' : ''}
         ${padding ? 'p-5' : ''}
         ${className}
       `}

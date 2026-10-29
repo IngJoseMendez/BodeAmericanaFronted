@@ -276,7 +276,7 @@ function ConfirmDialogUI({
             <button
               ref={confirmRef}
               onClick={onConfirm}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm active:scale-95 ${v.btn}`}
+              className={`px-5 py-2 rounded-xl text-sm font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform] shadow-sm active:scale-95 ${v.btn}`}
             >
               {confirmText}
             </button>
