@@ -34,7 +34,7 @@ import {
   LayoutGrid,
   PackageX
 } from 'lucide-react';
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, Fragment } from 'react';
 import { dashboardApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -71,49 +71,83 @@ function midePantalla() {
   }
 }
 
+// ── LOS CINCO BLOQUES DEL MENU ──────────────────────────────────────────────
+//
+// El orden de los bloques sigue el dia: primero lo que hay (Mercancia), luego
+// lo que se hace con ello (Vender), luego la plata que eso mueve (Cobrar y
+// pagar), y al final lo que se mira (Informes) y lo que casi nunca se toca
+// (Sistema). Dashboard va suelto arriba, sin bloque: es la portada.
+const GRUPOS = [
+  { id: 'mercancia', label: 'Mercancía' },
+  { id: 'vender',    label: 'Vender' },
+  { id: 'dinero',    label: 'Cobrar y pagar' },
+  { id: 'informes',  label: 'Informes' },
+  { id: 'sistema',   label: 'Sistema' },
+];
+
 const adminNavItems = [
-  { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',       key: null },
-  { path: '/contenedores',         icon: Package2,        label: 'Contenedores',    key: null },
-  { path: '/pacas',                icon: Package,         label: 'Inventario',      key: 'pacas' },
-  { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',    key: null },
-  // Va pegada a Cotizaciones porque cada fila de la matriz termina siendo una
-  // cotización normal: es la misma tarea, hecha para muchos clientes de una vez.
-  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matriz',          key: null },
-  // Y Faltantes va pegada a la Matriz porque son la misma tarea en dos momentos.
-  // La Matriz es la sesión de trabajo del día de reparto y se vacía al terminar;
-  // esta pantalla es lo que quedó faltando de ese reparto, que se consulta
-  // después y casi siempre porque el cliente llamó preguntando. Quien reparte por
-  // la mañana es quien contesta el teléfono por la tarde, así que el menú tiene
-  // que llevarla del reparto al seguimiento con un solo salto de ojo, sin
-  // obligarla a buscar la pantalla en otro bloque del menú.
-  // `key: null` no es un olvido: aquí NO va contador. `key` solo admite
-  // 'pacas' | 'clientes' | 'ventas' (sale de dashboardApi.getMetricas), así que un
-  // número aquí obligaría a tocar esa consulta, contadores.js y el vaciado al
-  // cerrar sesión, para un dato que no cambia en todo el día salvo cuando ella
-  // misma reparte — y en ese momento ya lo tiene delante en la Matriz. Un badge
-  // que casi nunca cambia se vuelve invisible en una semana, y cuando se queda
-  // rancio, miente.
-  { path: '/faltantes',            icon: PackageX,        label: 'Faltantes',       key: null },
-  { path: '/despachos',            icon: Truck,           label: 'Despachos',       key: null },
-  { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar', key: null },
-  { path: '/cartera',              icon: Wallet,          label: 'Cartera',         key: null },
-  { path: '/entregables',          icon: FileSpreadsheet, label: 'Entregables',     key: null },
-  { path: '/deuda-masiva',         icon: ListChecks,      label: 'Deuda masiva',    key: null, rol: 'admin' },
-  { path: '/clientes',             icon: Users,           label: 'Clientes',        key: 'clientes' },
-  { path: '/tipos-paca',           icon: Tag,             label: 'Productos',        key: null },
-  { path: '/precios',              icon: DollarSign,      label: 'Precios',          key: null },
-  { path: '/lista-precios',        icon: Tag,             label: 'Lista de Precios', key: null },
-  { path: '/precios-promocion',    icon: Percent,         label: 'Promociones',      key: null },
-  { path: '/cuentas',              icon: Wallet,          label: 'Cuentas',          key: null, rol: 'admin' },
-  { path: '/gastos',               icon: Coins,           label: 'Gastos',           key: null, rol: 'admin' },
-  { path: '/historico',            icon: BarChart3,       label: 'Histórico',        key: null, rol: 'admin' },
-  { path: '/utilidad',             icon: TrendingUp,      label: 'Utilidad',         key: null, rol: 'admin' },
-  { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',          key: 'ventas' },
-  { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',         key: 'pedidos' },
-  { path: '/reportes',             icon: FileText,        label: 'Reportes',        key: null },
-  { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',       key: null },
-  { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',        key: null, rol: 'admin' },
-  { path: '/auditoria',            icon: History,         label: 'Auditoría',       key: null, rol: 'admin' },
+  { path: '/',                     icon: LayoutDashboard, label: 'Dashboard',        key: null,       grupo: null },
+
+  // ── MERCANCIA: lo que hay en la bodega y a cuanto esta ──────────
+  { path: '/contenedores',         icon: Package2,        label: 'Contenedores',     key: null,       grupo: 'mercancia' },
+  { path: '/pacas',                icon: Package,         label: 'Inventario',       key: 'pacas',    grupo: 'mercancia' },
+  { path: '/tipos-paca',           icon: Tag,             label: 'Productos',        key: null,       grupo: 'mercancia' },
+  { path: '/precios',              icon: DollarSign,      label: 'Precios',          key: null,       grupo: 'mercancia' },
+  { path: '/lista-precios',        icon: Tag,             label: 'Lista de Precios', key: null,       grupo: 'mercancia' },
+  { path: '/precios-promocion',    icon: Percent,         label: 'Promociones',      key: null,       grupo: 'mercancia' },
+
+  // ── VENDER: el flujo del dia, en su orden ───────────────────────
+  //
+  // Estas cuatro van juntas y en este orden a proposito, y agrupar el menu no
+  // las separa. Cada fila de la Matriz termina siendo una cotizacion normal:
+  // es la misma tarea hecha para muchos clientes de una vez. Y Faltantes va
+  // pegada a la Matriz porque son la misma tarea en dos momentos: la Matriz es
+  // la sesion de trabajo del dia de reparto y se vacia al terminar; Faltantes
+  // es lo que quedo faltando de ese reparto, que se consulta despues y casi
+  // siempre porque el cliente llamo preguntando. Quien reparte por la manana
+  // es quien contesta el telefono por la tarde, asi que el menu tiene que
+  // llevarla del reparto al seguimiento con un solo salto de ojo, sin
+  // obligarla a buscar la pantalla en otro bloque.
+  //
+  // `key: null` en Faltantes no es un olvido: ahi NO va contador. `key` solo
+  // admite 'pacas' | 'clientes' | 'ventas' (sale de dashboardApi.getMetricas),
+  // asi que un numero ahi obligaria a tocar esa consulta, contadores.js y el
+  // vaciado al cerrar sesion, para un dato que no cambia en todo el dia salvo
+  // cuando ella misma reparte - y en ese momento ya lo tiene delante en la
+  // Matriz. Un badge que casi nunca cambia se vuelve invisible en una semana,
+  // y cuando se queda rancio, miente.
+  { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',     key: null,       grupo: 'vender' },
+  { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matriz',           key: null,       grupo: 'vender' },
+  { path: '/faltantes',            icon: PackageX,        label: 'Faltantes',        key: null,       grupo: 'vender' },
+  { path: '/despachos',            icon: Truck,           label: 'Despachos',        key: null,       grupo: 'vender' },
+  { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',           key: 'ventas',   grupo: 'vender' },
+  { path: '/gestionar-pedidos',    icon: Receipt,         label: 'Pedidos',          key: 'pedidos',  grupo: 'vender' },
+
+  // ── COBRAR Y PAGAR: la plata que entra y la que sale ────────────
+  //
+  // Clientes va aqui y no en Sistema porque la razon por la que se abre la
+  // ficha de un cliente, casi siempre, es ver lo que debe.
+  { path: '/cartera',              icon: Wallet,          label: 'Cartera',          key: null,       grupo: 'dinero' },
+  { path: '/clientes',             icon: Users,           label: 'Clientes',         key: 'clientes', grupo: 'dinero' },
+  { path: '/deuda-masiva',         icon: ListChecks,      label: 'Deuda masiva',     key: null,       grupo: 'dinero', rol: 'admin' },
+  { path: '/cuentas-pagar',        icon: CreditCard,      label: 'Cuentas x Pagar',  key: null,       grupo: 'dinero' },
+  { path: '/cuentas',              icon: Wallet,          label: 'Cuentas',          key: null,       grupo: 'dinero', rol: 'admin' },
+  { path: '/gastos',               icon: Coins,           label: 'Gastos',           key: null,       grupo: 'dinero', rol: 'admin' },
+
+  // ── INFORMES: lo que se mira y lo que se imprime ────────────────
+  //
+  // Entregables esta aqui, y no en Vender, porque genera hojas de Excel de
+  // todos los modulos (bodega, matriz, faltantes, cartera, utilidad): es un
+  // sitio donde se producen papeles, no un paso de la venta.
+  { path: '/entregables',          icon: FileSpreadsheet, label: 'Entregables',      key: null,       grupo: 'informes' },
+  { path: '/reportes',             icon: FileText,        label: 'Reportes',         key: null,       grupo: 'informes' },
+  { path: '/inteligencia-negocio', icon: Brain,           label: 'Analytics',        key: null,       grupo: 'informes' },
+  { path: '/utilidad',             icon: TrendingUp,      label: 'Utilidad',         key: null,       grupo: 'informes', rol: 'admin' },
+  { path: '/historico',            icon: BarChart3,       label: 'Histórico',        key: null,       grupo: 'informes', rol: 'admin' },
+
+  // ── SISTEMA: lo que casi nunca se toca ──────────────────────────
+  { path: '/gestion-usuarios',     icon: Shield,          label: 'Usuarios',         key: null,       grupo: 'sistema', rol: 'admin' },
+  { path: '/auditoria',            icon: History,         label: 'Auditoría',        key: null,       grupo: 'sistema', rol: 'admin' },
 ];
 
 const clienteNavItems = [
@@ -441,19 +475,45 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
           aria-label="Navegación principal"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {!collapsed && (
-            <p className="px-3 py-2 text-[10px] font-heading font-semibold text-muted uppercase tracking-wider">
-              Menú
-            </p>
-          )}
-
+          {/* El rótulo «Menú» encabezaba la lista entera sin decir nada.
+              Con los bloques con nombre encima de cada uno, sobra. */}
           <div className="space-y-1 pb-2">
             {filteredItems.map((item, index) => {
               const isActive = location.pathname === item.path;
               const badge    = item.key ? counts[item.key] : null;
 
+              // ── EL ENCABEZADO DE SU BLOQUE ────────────────────────
+              //
+              // Se pinta cuando este item es el PRIMERO visible de su bloque,
+              // mirando el item anterior de la lista YA FILTRADA. Asi un
+              // bloque que se quedó sin entradas (un vendedor no ve las de
+              // rol admin) no deja un título colgado sin nada debajo.
+              //
+              // Buscando no se pintan: el resultado es una lista corta y
+              // plana, y encabezarla por bloques sólo añadiría ruido.
+              const grupoPrevio = index > 0 ? filteredItems[index - 1].grupo : null;
+              const abreBloque  = !searchQuery.trim() && item.grupo && item.grupo !== grupoPrevio;
+              const tituloBloque = abreBloque
+                ? GRUPOS.find((g) => g.id === item.grupo)?.label
+                : null;
+
               return (
-                <div key={item.path} className="relative group/item">
+                <Fragment key={item.path}>
+                  {/* Plegado el menú son sólo iconos: un texto de 10px al lado
+                      de nada no se lee, así que el bloque se marca con una
+                      raya. Lleva aria-hidden porque el nombre del bloque sí se
+                      anuncia en el <h2> de abajo cuando está desplegado, y una
+                      raya no es información para quien escucha. */}
+                  {abreBloque && collapsed && (
+                    <div className="mx-3 my-2 border-t border-border" aria-hidden="true" />
+                  )}
+                  {abreBloque && !collapsed && (
+                    <h2 className="px-3 pt-3 pb-1 text-[10px] font-heading font-semibold
+                                   text-muted uppercase tracking-wider">
+                      {tituloBloque}
+                    </h2>
+                  )}
+                <div className="relative group/item">
                   <Link
                     to={item.path}
                     onClick={handleNavClick}
@@ -534,6 +594,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                     </div>
                   )}
                 </div>
+                </Fragment>
               );
             })}
 
