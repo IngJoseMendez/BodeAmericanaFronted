@@ -223,11 +223,11 @@ export default function PreciosPromocion() {
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex justify-end gap-2">
-                              <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-secondary/10 text-muted hover:text-secondary transition-colors">
-                                <Edit2 size={15} />
+                              <button onClick={() => openEdit(p)} aria-label="Editar esta promoción" className="p-2.5 rounded-lg hover:bg-secondary/10 text-muted hover:text-secondary transition-colors">
+                                <Edit2 size={15} aria-hidden="true" />
                               </button>
-                              <button onClick={() => handleDelete(p)} className="p-1.5 rounded-lg hover:bg-red-50 text-muted hover:text-red-500 transition-colors">
-                                <Trash2 size={15} />
+                              <button onClick={() => handleDelete(p)} aria-label="Eliminar esta promoción" className="p-2.5 rounded-lg hover:bg-error/10 text-muted hover:text-error transition-colors">
+                                <Trash2 size={15} aria-hidden="true" />
                               </button>
                             </div>
                           </td>

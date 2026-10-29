@@ -177,9 +177,11 @@ export default function Catalogo() {
                         <td className="px-4 py-3">
                           <button
                             onClick={() => toggleSeleccion(paca)}
-                            className={`p-2 rounded-lg transition-all ${selected ? 'bg-success text-on-primary' : 'bg-primary/5 text-muted hover:bg-success/20'}`}
+                            aria-pressed={!!selected}
+                            aria-label={selected ? 'Quitar esta paca del pedido' : 'Añadir esta paca al pedido'}
+                            className={`p-2.5 rounded-lg transition-colors ${selected ? 'bg-success text-on-primary' : 'bg-primary/5 text-muted hover:bg-success/20'}`}
                           >
-                            <Check size={16} />
+                            <Check size={16} aria-hidden="true" />
                           </button>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted font-mono">{paca.uuid?.slice(0, 8)}</td>

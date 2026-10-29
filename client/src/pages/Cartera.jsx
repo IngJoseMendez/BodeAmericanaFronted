@@ -1207,9 +1207,10 @@ export default function Cartera() {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
+              aria-label="Limpiar la búsqueda"
               className="absolute right-4 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -1423,7 +1424,7 @@ export default function Cartera() {
               />
               {detalleBusqueda && (
                 <button onClick={() => setDetalleBusqueda('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-primary" title="Limpiar">
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-primary" title="Limpiar" aria-label="Limpiar">
                   <X size={14} />
                 </button>
               )}
@@ -1727,10 +1728,10 @@ export default function Cartera() {
                           </td>
                           <td className="px-2 py-1 text-right">
                             <div className="flex justify-end gap-1">
-                              <button onClick={handleGuardarEdicionAbono} className="p-1.5 rounded text-success hover:bg-success/10" title="Guardar">
+                              <button onClick={handleGuardarEdicionAbono} className="p-1.5 rounded text-success hover:bg-success/10" title="Guardar" aria-label="Guardar">
                                 <CheckCircle size={15} />
                               </button>
-                              <button onClick={() => setEditandoAbono(null)} className="p-1.5 rounded text-gray-400 hover:bg-gray-100" title="Cancelar">
+                              <button onClick={() => setEditandoAbono(null)} className="p-1.5 rounded text-gray-400 hover:bg-gray-100" title="Cancelar" aria-label="Cancelar">
                                 <X size={15} />
                               </button>
                             </div>
@@ -1777,14 +1778,14 @@ export default function Cartera() {
                                 <button
                                   onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia, cotizacion_id: m.cotizacion_id })}
                                   className="p-1.5 rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
-                                  title="Editar abono"
+                                  title="Editar abono" aria-label="Editar abono"
                                 >
                                   <Edit2 size={13} />
                                 </button>
                                 <button
                                   onClick={() => handleEliminarAbono(m.id)}
                                   className="p-1.5 rounded text-gray-400 hover:text-error hover:bg-error/10"
-                                  title="Eliminar abono"
+                                  title="Eliminar abono" aria-label="Eliminar abono"
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -1858,9 +1859,10 @@ export default function Cartera() {
                     setFormData({ ...formData, cliente_id: '' });
                     setClienteSearch('');
                   }}
-                  className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary"
+                  aria-label="Quitar el cliente elegido"
+                  className="p-2.5 rounded-lg hover:bg-secondary/20 text-secondary"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden="true" />
                 </button>
               </div>
             ) : (
@@ -2142,7 +2144,7 @@ export default function Cartera() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="font-mono font-semibold text-primary">{formatCurrency(r.monto)}</span>
-                      <button onClick={() => removeLegacyRow(idx)} className="p-1 text-muted hover:text-error"><X size={14} /></button>
+                      <button onClick={() => removeLegacyRow(idx)} aria-label="Quitar esta fila" className="p-2 text-muted hover:text-error"><X size={14} aria-hidden="true" /></button>
                     </div>
                   </div>
                 ))}

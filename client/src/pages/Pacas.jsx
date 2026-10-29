@@ -2003,7 +2003,7 @@ export default function Pacas() {
                           document.getElementById('reserva-buscar-cliente')?.focus();
                         }
                       }}
-                      className="w-full text-left px-4 py-3 cursor-pointer hover:bg-primary/5 focus:bg-primary/10 focus:outline-none transition-colors duration-150 border-b border-border/50 last:border-b-0"
+                      className="w-full text-left px-4 py-3 cursor-pointer hover:bg-primary/5 focus:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary transition-colors duration-150 border-b border-border/50 last:border-b-0"
                     >
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-primary/8 rounded-lg">

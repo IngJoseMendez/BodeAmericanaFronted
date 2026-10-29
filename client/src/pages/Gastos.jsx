@@ -395,7 +395,7 @@ export default function Gastos() {
                           </span>
                         )}
                       </div>
-                      <button onClick={() => eliminar(g)} className="p-2 text-muted hover:text-red-500"><Trash2 size={16} /></button>
+                      <button onClick={() => eliminar(g)} aria-label="Eliminar este gasto" className="p-2.5 text-muted hover:text-error"><Trash2 size={16} aria-hidden="true" /></button>
                     </div>
                   </div>
                 ))}

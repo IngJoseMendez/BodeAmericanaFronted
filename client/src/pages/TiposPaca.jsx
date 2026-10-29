@@ -94,14 +94,14 @@ function PanelItem({ item, table, onDelete, edicion, temporadas, familias }) {
               onClick={saveEdit}
               disabled={guardandoEdit}
               className="p-1.5 rounded-lg text-secondary hover:bg-secondary/10 transition-all disabled:opacity-50"
-              title="Guardar"
+              title="Guardar" aria-label="Guardar"
             >
               <Check size={14} />
             </button>
             <button
               onClick={cancelEdit}
               className="p-1.5 rounded-lg text-muted hover:bg-primary/5 transition-all"
-              title="Cancelar"
+              title="Cancelar" aria-label="Cancelar"
             >
               <X size={14} />
             </button>

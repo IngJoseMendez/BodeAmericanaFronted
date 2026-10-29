@@ -45,8 +45,8 @@ export default {
       },
       boxShadow: {
         'card': '0 4px 12px rgba(15, 23, 42, 0.08)',
-        'card-hover': '0 12px 32px rgba(15, 23, 42, 0.12), 0 0 40px rgba(99, 102, 241, 0.15)',
-        'glow': '0 0 40px rgba(99, 102, 241, 0.2)',
+        'card-hover': '0 12px 32px rgba(15, 23, 42, 0.12), 0 0 40px rgba(79, 70, 229, 0.15)',
+        'glow': '0 0 40px rgba(79, 70, 229, 0.2)',
       },
       animation: {
         'fade-in-up': 'fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',

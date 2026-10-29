@@ -4736,7 +4736,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           </div>
                           {!soloLectura && proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
-                              title="Eliminar proveedor"
+                              title="Eliminar proveedor" aria-label="Eliminar proveedor"
                               className="p-2 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
                               <X size={16} />
                             </button>
@@ -6382,7 +6382,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 value={row.costo_unitario}
                                 onChange={e => updateRevisionRow(idx, 'costo_unitario', e.target.value)} />
                               <button type="button" onClick={() => removeRevisionItem(idx)}
-                                title="Quitar este producto"
+                                title="Quitar este producto" aria-label="Quitar este producto"
                                 className="p-1 text-muted hover:text-error flex-shrink-0">
                                 <Trash2 size={13} />
                               </button>

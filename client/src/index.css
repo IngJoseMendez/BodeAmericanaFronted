@@ -6,16 +6,35 @@
 
 /* ============================================
    DESIGN TOKENS — LIGHT MODE (default)
+
+   Los valores salen de medir el contraste, no del gusto. WCAG 2.2 AA (1.4.3)
+   pide 4.5:1 para texto normal, y aqui casi todo el texto de color es pequeno:
+   chips de 11px, avisos de 12px, cifras en text-lg. Los que estaban antes
+   fallaban:
+
+     accent    #06b6d4 -> 2.43:1   el TOTAL POR COBRAR de la cartera
+     warning   #d97706 -> 3.19:1
+     success   #16a34a -> 3.30:1
+     info      #3b82f6 -> 3.68:1
+     error     #ef4444 -> 3.76:1
+     secondary #6366f1 -> 4.47:1   a tres centesimas de pasar
+
+   El peor era `accent`: es el color de la cifra mas importante de la pantalla
+   mas usada. Ahora el minimo de la paleta es 4.55:1 (muted sobre cream) y
+   todos pasan en los dos temas. Se comprueba con scripts/contraste, no a ojo.
+
+   `border` se queda en 1.23:1 a proposito: es una raya divisoria decorativa, y
+   1.4.11 exige 3:1 solo a lo que IDENTIFICA un componente o su estado.
    ============================================ */
 :root {
   --color-primary: #0f172a;
-  --color-secondary: #6366f1;
-  --color-accent: #06b6d4;
-  --color-success: #16a34a;
-  --color-warning: #d97706;
-  --color-error: #ef4444;
-  --color-error-fuerte: #dc2626;
-  --color-info: #3b82f6;
+  --color-secondary: #4f46e5;
+  --color-accent: #0e7490;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-error: #dc2626;
+  --color-error-fuerte: #b91c1c;
+  --color-info: #2563eb;
   --color-cream: #f8fafc;
   --color-surface: #ffffff;
   --color-muted: #64748b;
@@ -29,7 +48,7 @@
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
-  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --shadow-glow: 0 0 40px rgba(79, 70, 229, 0.15);
 
   color-scheme: light;
 }
@@ -44,7 +63,7 @@
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-error: #f87171;
-  --color-error-fuerte: #dc2626;
+  --color-error-fuerte: #fca5a5;
   --color-info: #60a5fa;
   --color-cream: #0f172a;
   --color-surface: #1e293b;
@@ -111,7 +130,7 @@ select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.25);
 }
 
 /* Cursor pointer on all interactive elements */
@@ -121,6 +140,12 @@ a,
 label[for],
 select {
   cursor: pointer;
+  /* El navegador espera ~300ms tras un toque para ver si llega un segundo y es
+     un doble toque para hacer zoom. En una tableta eso se siente como que la
+     pantalla va lenta, cuando lo que va lento es la espera. `manipulation`
+     mantiene el gesto de pinza para hacer zoom (que NO se desactiva) y renuncia
+     solo al doble toque, que aqui no se usa para nada. */
+  touch-action: manipulation;
 }
 
 /* ============================================
@@ -128,14 +153,14 @@ select {
    ============================================ */
 .bg-pattern {
   background-image:
-    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.07) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(79, 70, 229, 0.07) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.05) 0%, transparent 50%),
     radial-gradient(circle at 40% 40%, rgba(129, 140, 248, 0.04) 0%, transparent 30%);
 }
 
 :root[data-theme="dark"] .bg-pattern {
   background-image:
-    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(79, 70, 229, 0.06) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.04) 0%, transparent 50%),
     radial-gradient(circle at 40% 40%, rgba(129, 140, 248, 0.04) 0%, transparent 30%);
 }
@@ -303,7 +328,7 @@ select {
   border-color: var(--color-border);
 }
 
-.glow-secondary { box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); }
+.glow-secondary { box-shadow: 0 0 20px rgba(79, 70, 229, 0.3); }
 .glow-accent    { box-shadow: 0 0 20px rgba(6, 182, 212, 0.3); }
 
 /* ============================================
@@ -333,7 +358,7 @@ select {
 .search-input:focus {
   background: rgba(255, 255, 255, 0.15);
   border-color: var(--color-secondary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
 }
 
 .search-input::placeholder { color: rgba(255, 255, 255, 0.4); }
@@ -379,7 +404,7 @@ select {
    ACTIVE NAV ITEM
    ============================================ */
 .nav-item-active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.1));
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(79, 70, 229, 0.1));
   border-left: 3px solid var(--color-secondary);
 }
 

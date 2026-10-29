@@ -265,12 +265,12 @@ export default function Cuentas() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => openEdit(c)} title="Editar"
+                      <button onClick={() => openEdit(c)} title="Editar" aria-label="Editar"
                         className="p-2 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                         <Pencil size={16} />
                       </button>
                       {c.activo !== false && (
-                        <button onClick={() => handleDelete(c)} title="Desactivar"
+                        <button onClick={() => handleDelete(c)} title="Desactivar" aria-label="Desactivar"
                           className="p-2 text-muted hover:text-error rounded-lg hover:bg-error/5">
                           <Trash2 size={16} />
                         </button>
@@ -377,10 +377,10 @@ export default function Cuentas() {
                     <input type="text" value={editBanco.nombre} autoFocus
                       onChange={(e) => setEditBanco({ ...editBanco, nombre: e.target.value })}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarNombreBanco(); } }}
-                      className="flex-1 px-2 py-1 rounded-lg border border-secondary bg-surface text-sm focus:outline-none" />
-                    <button type="button" onClick={guardarNombreBanco} title="Guardar"
+                      className="flex-1 px-2 py-1 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/40" />
+                    <button type="button" onClick={guardarNombreBanco} title="Guardar" aria-label="Guardar"
                       className="p-1.5 text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
-                    <button type="button" onClick={() => setEditBanco(null)} title="Cancelar"
+                    <button type="button" onClick={() => setEditBanco(null)} title="Cancelar" aria-label="Cancelar"
                       className="p-1.5 text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
                   </>
                 ) : (
@@ -397,16 +397,16 @@ export default function Cuentas() {
                       )}
                     </span>
                     <button type="button" onClick={() => setEditBanco({ id: b.id, nombre: b.nombre })}
-                      title="Renombrar" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
+                      title="Renombrar" aria-label="Renombrar" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                       <Pencil size={14} />
                     </button>
                     {b.activo === false ? (
-                      <button type="button" onClick={() => reactivarBanco(b)} title="Volver a usarlo"
+                      <button type="button" onClick={() => reactivarBanco(b)} title="Volver a usarlo" aria-label="Volver a usarlo"
                         className="p-1.5 text-muted hover:text-success rounded-lg hover:bg-success/10">
                         <RotateCcw size={14} />
                       </button>
                     ) : (
-                      <button type="button" onClick={() => borrarBanco(b)} title="Quitar"
+                      <button type="button" onClick={() => borrarBanco(b)} title="Quitar" aria-label="Quitar"
                         className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
                         <Trash2 size={14} />
                       </button>

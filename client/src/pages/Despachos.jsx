@@ -1369,8 +1369,8 @@ export default function Despachos() {
                         <td className="px-4 py-3 font-mono text-sm font-semibold">{formatCurrency(d.total)}</td>
                         <td className="px-4 py-3"><EstadoBadge estado={d.estado} /></td>
                         <td className="px-4 py-3">
-                          <button onClick={() => openView(d)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
-                            <Eye size={15} />
+                          <button onClick={() => openView(d)} aria-label="Ver el despacho" className="p-2.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+                            <Eye size={15} aria-hidden="true" />
                           </button>
                         </td>
                       </tr>
@@ -1460,7 +1460,7 @@ export default function Despachos() {
                             <td className="px-4 py-3">
                               <button onClick={() => openView(d)}
                                 className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
-                                title="Ver detalle">
+                                title="Ver detalle" aria-label="Ver detalle">
                                 <Eye size={15} />
                               </button>
                             </td>
@@ -2086,13 +2086,13 @@ export default function Despachos() {
                       }}
                       className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-border bg-surface text-sm text-primary focus:outline-none focus:ring-2 focus:ring-secondary/30"
                     />
-                    <button type="button" title="Guardar el nuevo nombre"
+                    <button type="button" title="Guardar el nuevo nombre" aria-label="Guardar el nuevo nombre"
                       disabled={!editTranspNombre.trim()}
                       onClick={() => renombrarTransporte(t.id)}
                       className="p-1.5 text-success rounded-lg hover:bg-success/10 disabled:opacity-40 flex-shrink-0">
                       <Check size={15} />
                     </button>
-                    <button type="button" title="Cancelar"
+                    <button type="button" title="Cancelar" aria-label="Cancelar"
                       onClick={() => { setEditTranspId(null); setEditTranspNombre(''); }}
                       className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 flex-shrink-0">
                       <X size={15} />
@@ -2102,12 +2102,12 @@ export default function Despachos() {
                   <>
                     <span className="text-sm text-primary truncate">{t.nombre}</span>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      <button type="button" title="Cambiar el nombre"
+                      <button type="button" title="Cambiar el nombre" aria-label="Cambiar el nombre"
                         onClick={() => { setEditTranspId(t.id); setEditTranspNombre(t.nombre); }}
                         className="p-1.5 text-muted hover:text-secondary rounded-lg hover:bg-secondary/5">
                         <Pencil size={14} />
                       </button>
-                      <button type="button" title="Quitar de la lista"
+                      <button type="button" title="Quitar de la lista" aria-label="Quitar de la lista"
                         onClick={async () => {
                           const ok = await confirm({
                             title: '¿Quitar transporte?',

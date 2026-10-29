@@ -1240,9 +1240,10 @@ export default function Cotizaciones() {
                       <button
                         type="button"
                         onClick={() => removeItem(index)}
-                        className="flex items-center justify-center w-7 h-7 rounded-lg text-muted hover:text-red-500 hover:bg-red-50 transition-colors mx-auto"
+                        aria-label="Quitar este artículo de la cotización"
+                        className="flex items-center justify-center w-10 h-10 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors mx-auto"
                       >
-                        <XIcon size={14} />
+                        <XIcon size={14} aria-hidden="true" />
                       </button>
                     </div>
 

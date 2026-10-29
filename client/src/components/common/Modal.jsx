@@ -221,15 +221,19 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', onSolicit
           <button
             ref={triggerRef}
             onClick={solicitarCierre}
-            className="p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+            className="p-3 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-colors duration-200"
             aria-label="Cerrar modal"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
         {/* Content */}
-        <div className={`p-6 overflow-y-auto ${contentHeights[size] ?? 'max-h-[74vh]'}`}>
+        {/* `overscroll-contain`: al llegar al final de este panel, seguir
+            arrastrando NO mueve la pagina de detras. Sin esto, en una tableta
+            un formulario largo termina desplazando la pantalla de abajo y al
+            cerrar el modal se ha perdido el sitio donde se estaba. */}
+        <div className={`p-6 overflow-y-auto overscroll-contain ${contentHeights[size] ?? 'max-h-[74vh]'}`}>
           {children}
         </div>
       </div>

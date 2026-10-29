@@ -608,13 +608,13 @@ export default function CuentasPagar() {
                               <div className="flex items-center gap-1 justify-end">
                                 <button onClick={() => openView(c)}
                                   className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
-                                  title="Ver historial">
+                                  title="Ver historial" aria-label="Ver historial">
                                   <Eye size={15} />
                                 </button>
                                 <button onClick={() => handleDelete(c)}
                                   className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors"
                                   disabled={parseFloat(c.total_abonado) > 0}
-                                  title="Eliminar">
+                                  title="Eliminar" aria-label="Eliminar">
                                   <Trash2 size={15} />
                                 </button>
                               </div>
