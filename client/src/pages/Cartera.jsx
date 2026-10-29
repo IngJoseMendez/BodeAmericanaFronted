@@ -52,6 +52,54 @@ function indexarFaltantesCartera(respuesta) {
   return indice;
 }
 
+// ── CUANTAS FILAS SE PINTAN DE UNA VEZ ──────────────────────────────────────
+//
+// La ficha de MARTA BOTERO tiene 2.215 movimientos (1.592 compras y 623
+// abonos). Pintados todos de golpe, abrir su ficha congelaba la tableta unos
+// segundos: no por los datos —son 309 kB— sino por los 1.592 <tr>.
+//
+// 100 llena de sobra el alto visible de la tabla (max-h-72), así que en el caso
+// normal no se nota que hay una ventana; en el caso grande, es la diferencia
+// entre abrir y esperar.
+const VENTANA_FILAS = 100;
+
+// El aviso de que hay más, con las dos salidas. Va FUERA del contenedor con
+// scroll a propósito: dentro habría que llegar al final para enterarse, y
+// mientras tanto la pantalla parece estar enseñando todo.
+function HayMasFilas({ mostradas, total, onMas, onTodas, singular, plural }) {
+  if (total <= mostradas) return null;
+  const faltan = total - mostradas;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5
+                    border-t border-border bg-secondary/5">
+      <span className="text-xs text-primary">
+        Se están mostrando las{' '}
+        <strong className="tabular-nums">{mostradas}</strong> más recientes de{' '}
+        <strong className="tabular-nums">{total}</strong> {total === 1 ? singular : plural}.
+        {' '}El buscador sí busca en todas.
+      </span>
+      <span className="flex gap-2">
+        <button
+          type="button"
+          onClick={onMas}
+          className="px-3 py-2 rounded-xl text-xs font-semibold text-secondary
+                     hover:bg-secondary/15 whitespace-nowrap"
+        >
+          Ver {Math.min(VENTANA_FILAS, faltan)} más
+        </button>
+        <button
+          type="button"
+          onClick={onTodas}
+          className="px-3 py-2 rounded-xl text-xs font-semibold text-muted
+                     hover:bg-primary/5 whitespace-nowrap"
+        >
+          Ver las {total}
+        </button>
+      </span>
+    </div>
+  );
+}
+
 // Agrupa los movimientos por cotización para el desglose de pagos (Nivel 2).
 // Devuelve cada cotización con su venta, abonado, saldo y % pagado,
 // más los movimientos "generales" (sin cotización atribuida).
@@ -361,6 +409,23 @@ export default function Cartera() {
     () => (detalleCliente?.movimientos || []).filter(m => m.tipo === 'abono' && matchAbono(m, detalleBusqueda)),
     [detalleCliente, detalleBusqueda]
   );
+
+  // ── LA VENTANA DE CADA PESTAÑA ──────────────────────────────────
+  //
+  // Un contador por pestaña y no uno compartido: si se abren 500 compras y se
+  // pasa a Abonos, al volver siguen abiertas las 500. Con uno solo, cambiar de
+  // pestaña desharía el trabajo.
+  //
+  // Se reinician al cambiar de CLIENTE (otra ficha, otra lista) y al cambiar la
+  // BÚSQUEDA (otro conjunto de resultados, donde «las 300 primeras» ya no
+  // significa lo mismo).
+  const [comprasVisibles, setComprasVisibles] = useState(VENTANA_FILAS);
+  const [abonosVisibles, setAbonosVisibles] = useState(VENTANA_FILAS);
+  const clienteFichaId = detalleCliente?.cliente?.id ?? null;
+  useEffect(() => {
+    setComprasVisibles(VENTANA_FILAS);
+    setAbonosVisibles(VENTANA_FILAS);
+  }, [clienteFichaId, detalleBusqueda]);
 
   // ── LAS COMPRAS, UNA POR UNA ────────────────────────────────────────────────
   //
@@ -1475,7 +1540,10 @@ export default function Cartera() {
                             : 'Sin compras registradas para este cliente'}
                         </td></tr>
                       )}
-                      {comprasFiltradas.map(m => (
+                      {/* La ventana se aplica AQUI, al pintar, y nunca sobre
+                          comprasFiltradas: el total del pie, el contador de la
+                          pestaña y el buscador siguen contando con todas. */}
+                      {comprasFiltradas.slice(0, comprasVisibles).map(m => (
                         <tr key={m.id}>
                           <td className="px-3 py-2 whitespace-nowrap">{formatFechaCorta(m.fecha)}</td>
                           <td className="px-3 py-2">
@@ -1558,6 +1626,14 @@ export default function Cartera() {
                     </tbody>
                   </table>
                 </div>
+                <HayMasFilas
+                  mostradas={Math.min(comprasVisibles, comprasFiltradas.length)}
+                  total={comprasFiltradas.length}
+                  onMas={() => setComprasVisibles((n) => n + VENTANA_FILAS)}
+                  onTodas={() => setComprasVisibles(comprasFiltradas.length)}
+                  singular="compra"
+                  plural="compras"
+                />
                 {comprasFiltradas.length > 0 && (
                   <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border text-sm">
                     <span className="text-muted">
@@ -1673,6 +1749,7 @@ export default function Cartera() {
 
             {/* PESTAÑA ABONOS: historial de abonos del cliente */}
             {detalleTab === 'abonos' && (
+            <div>
             <div className="max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
@@ -1690,7 +1767,9 @@ export default function Cartera() {
                       {detalleBusqueda.trim() ? `Ningún abono coincide con "${detalleBusqueda.trim()}"` : 'Sin abonos registrados para este cliente'}
                     </td></tr>
                   )}
-                  {abonosFiltrados.map(m => (
+                  {/* Igual que en Compras: la ventana corta el pintado, no
+                      la lista. */}
+                  {abonosFiltrados.slice(0, abonosVisibles).map(m => (
                     <tr key={m.id} className={editandoAbono?.id === m.id ? 'bg-secondary/5' : ''}>
                       {editandoAbono?.id === m.id ? (
                         // Fila en modo edición
@@ -1798,6 +1877,15 @@ export default function Cartera() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <HayMasFilas
+              mostradas={Math.min(abonosVisibles, abonosFiltrados.length)}
+              total={abonosFiltrados.length}
+              onMas={() => setAbonosVisibles((n) => n + VENTANA_FILAS)}
+              onTodas={() => setAbonosVisibles(abonosFiltrados.length)}
+              singular="abono"
+              plural="abonos"
+            />
             </div>
             )}
 
