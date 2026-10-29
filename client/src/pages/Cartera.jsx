@@ -1490,7 +1490,7 @@ export default function Cartera() {
               />
               {detalleBusqueda && (
                 <button onClick={() => setDetalleBusqueda('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-primary" title="Limpiar" aria-label="Limpiar">
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-primary" title="Limpiar" aria-label="Limpiar">
                   <X size={14} />
                 </button>
               )}
@@ -1501,7 +1501,7 @@ export default function Cartera() {
                 contenido no se adivina: Ventas enseña cotizaciones (y de un
                 cliente del Excel viejo, ninguna) y Abonos siempre tuvo su
                 lista. Sin el número, nadie abre una pestaña que cree vacía. */}
-            <div className="flex gap-1 border-b border-border">
+            <div className="flex gap-2 border-b border-border">
               <button type="button" onClick={() => setDetalleTab('ventas')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${detalleTab === 'ventas' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
                 Ventas
@@ -1807,11 +1807,11 @@ export default function Cartera() {
                             </div>
                           </td>
                           <td className="px-2 py-1 text-right">
-                            <div className="flex justify-end gap-1">
-                              <button onClick={handleGuardarEdicionAbono} className="p-1.5 rounded text-success hover:bg-success/10" title="Guardar" aria-label="Guardar">
+                            <div className="flex justify-end gap-2">
+                              <button onClick={handleGuardarEdicionAbono} className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded text-success hover:bg-success/10" title="Guardar" aria-label="Guardar">
                                 <CheckCircle size={15} />
                               </button>
-                              <button onClick={() => setEditandoAbono(null)} className="p-1.5 rounded text-gray-400 hover:bg-gray-100" title="Cancelar" aria-label="Cancelar">
+                              <button onClick={() => setEditandoAbono(null)} className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded text-gray-400 hover:bg-gray-100" title="Cancelar" aria-label="Cancelar">
                                 <X size={15} />
                               </button>
                             </div>
@@ -1854,17 +1854,17 @@ export default function Cartera() {
                           </td>
                           <td className="px-3 py-2 text-right">
                             {m.tipo === 'abono' && (
-                              <div className="flex justify-end gap-1">
+                              <div className="flex justify-end gap-2">
                                 <button
                                   onClick={() => setEditandoAbono({ id: m.id, monto: m.monto, fecha: m.fecha, metodo_pago: m.metodo_pago, referencia: m.referencia, cotizacion_id: m.cotizacion_id })}
-                                  className="p-1.5 rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
+                                  className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded text-gray-400 hover:text-secondary hover:bg-secondary/10"
                                   title="Editar abono" aria-label="Editar abono"
                                 >
                                   <Edit2 size={13} />
                                 </button>
                                 <button
                                   onClick={() => handleEliminarAbono(m.id)}
-                                  className="p-1.5 rounded text-gray-400 hover:text-error hover:bg-error/10"
+                                  className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded text-gray-400 hover:text-error hover:bg-error/10"
                                   title="Eliminar abono" aria-label="Eliminar abono"
                                 >
                                   <Trash2 size={13} />
@@ -2160,7 +2160,7 @@ export default function Cartera() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-border">
+          <div className="flex gap-2 border-b border-border">
             <button onClick={() => setLegacyTab('manual')}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${legacyTab === 'manual' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>
               Manual

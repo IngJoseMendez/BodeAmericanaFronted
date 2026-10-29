@@ -1642,7 +1642,7 @@ export default function Pacas() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end gap-2">
                             {/* Botones de solo icono: sin aria-label el lector de
                                 pantalla solo decía "botón" y no se distinguía
                                 editar de eliminar. Se nombra la unidad concreta. */}

@@ -489,14 +489,14 @@ const FilaDistribucion = memo(function FilaDistribucion({
             <button type="button" onClick={() => onDuplicar(pi, di)}
               title="Duplicar esta línea (Ctrl+D)"
               aria-label={`Duplicar la línea ${di + 1}`}
-              className="p-1.5 rounded-md text-muted hover:text-secondary hover:bg-secondary/10 transition-colors">
+              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-md text-muted hover:text-secondary hover:bg-secondary/10 transition-colors">
               <Copy size={13} />
             </button>
             {puedeBorrar && (
               <button type="button" onClick={() => onBorrar(pi, di)}
                 title="Eliminar esta línea"
                 aria-label={`Eliminar la línea ${di + 1}`}
-                className="p-1.5 rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors">
+                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-md text-muted hover:text-error hover:bg-error/10 transition-colors">
                 <X size={13} />
               </button>
             )}
@@ -3710,7 +3710,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             title="Vista tabla"
             aria-label="Ver como tabla"
             aria-pressed={vista === 'tabla'}
-            className={`p-2 transition-colors ${vista === 'tabla' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
+            className={`p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center transition-colors ${vista === 'tabla' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
           >
             <List size={15} />
           </button>
@@ -3719,7 +3719,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             title="Vista timeline"
             aria-label="Ver como línea de tiempo"
             aria-pressed={vista === 'timeline'}
-            className={`p-2 transition-colors ${vista === 'timeline' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
+            className={`p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center transition-colors ${vista === 'timeline' ? 'bg-secondary text-white' : 'bg-surface text-muted hover:text-primary'}`}
           >
             <Calendar size={15} />
           </button>
@@ -4738,7 +4738,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           {!soloLectura && proveedores.length > 1 && (
                             <button type="button" onClick={() => removeProveedor(pi)}
                               title="Eliminar proveedor" aria-label="Eliminar proveedor"
-                              className="p-2 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
                               <X size={16} />
                             </button>
                           )}
@@ -5266,7 +5266,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                           {!soloLectura && servicios.length > 1 && (
                             <button type="button" onClick={() => removeServicio(si)}
                               title="Eliminar servicio" aria-label={`Eliminar servicio ${si + 1}`}
-                              className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0">
                               <X size={15} />
                             </button>
                           )}
@@ -6384,7 +6384,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 onChange={e => updateRevisionRow(idx, 'costo_unitario', e.target.value)} />
                               <button type="button" onClick={() => removeRevisionItem(idx)}
                                 title="Quitar este producto" aria-label="Quitar este producto"
-                                className="p-1 text-muted hover:text-error flex-shrink-0">
+                                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-error flex-shrink-0">
                                 <Trash2 size={13} />
                               </button>
                             </div>
@@ -6716,7 +6716,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </button>
                   <button type="button" onClick={() => removeTemplate(t.id)}
                     title="Eliminar plantilla" aria-label={`Eliminar la plantilla ${t.nombre}`}
-                    className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all flex-shrink-0 ml-2">
+                    className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all flex-shrink-0 ml-2">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -6768,7 +6768,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
 function ActionBtn({ icon: Icon, title, onClick, color = 'hover:text-primary hover:bg-primary/10' }) {
   return (
     <button onClick={onClick} title={title}
-      className={`p-1.5 rounded-lg text-muted ${color} transition-colors duration-150 cursor-pointer`}
+      className={`p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted ${color} transition-colors duration-150 cursor-pointer`}
       aria-label={title}>
       <Icon size={15} />
     </button>

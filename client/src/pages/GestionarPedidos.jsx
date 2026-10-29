@@ -258,7 +258,7 @@ export default function GestionarPedidos() {
                       aria-label="Quitar el filtro de cliente"
                       title="Quitar el filtro de cliente"
                       onClick={limpiarFiltroCliente}
-                      className="p-1.5 rounded-lg hover:bg-secondary/20 text-secondary flex-shrink-0"
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg hover:bg-secondary/20 text-secondary flex-shrink-0"
                     >
                       <X size={18} />
                     </button>
@@ -366,7 +366,7 @@ export default function GestionarPedidos() {
             {(filtroCliente || filtroEstado) && (
               <div className="flex gap-2 mt-3">
                 {filtroCliente && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-secondary/10 text-secondary text-sm rounded-full">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 bg-secondary/10 text-secondary text-sm rounded-full">
                     Cliente: {searchCliente}
                     <button type="button" aria-label={`Quitar el filtro de cliente ${searchCliente}`} onClick={limpiarFiltroCliente} className="hover:text-secondary">
                       <X size={14} />

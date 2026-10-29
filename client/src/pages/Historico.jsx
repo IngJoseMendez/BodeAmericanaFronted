@@ -341,7 +341,7 @@ export default function Historico() {
         {/* Tabs: la pestaña activa solo se distinguía por color, así que un lector de
             pantalla no anunciaba cuál estaba seleccionada. Con role=tab/aria-selected
             sí lo dice, y las flechas ← → cambian de pestaña como es de esperar. */}
-        <div role="tablist" aria-label="Secciones de Histórico" className="flex gap-1 border-b border-border">
+        <div role="tablist" aria-label="Secciones de Histórico" className="flex gap-2 border-b border-border">
           <button role="tab" id="tab-subir" aria-selected={tab === 'subir'} aria-controls="panel-historico" tabIndex={tab === 'subir' ? 0 : -1}
             onClick={() => setTab('subir')} onKeyDown={onTabKeyDown}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === 'subir' ? 'border-secondary text-secondary' : 'border-transparent text-muted hover:text-primary'}`}>Subir Excel</button>

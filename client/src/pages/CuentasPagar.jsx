@@ -606,14 +606,14 @@ export default function CuentasPagar() {
                             <td className="px-4 py-3 font-mono text-sm font-semibold text-warning">{formatCurrency(pendiente, c.moneda)}</td>
                             <td className="px-4 py-3"><EstadoBadge estado={c.estado} /></td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-1 justify-end">
+                              <div className="flex items-center gap-2 justify-end">
                                 <button onClick={() => openView(c)}
-                                  className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
+                                  className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
                                   title="Ver historial" aria-label="Ver historial">
                                   <Eye size={15} />
                                 </button>
                                 <button onClick={() => handleDelete(c)}
-                                  className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors"
+                                  className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors"
                                   disabled={parseFloat(c.total_abonado) > 0}
                                   title="Eliminar" aria-label="Eliminar">
                                   <Trash2 size={15} />

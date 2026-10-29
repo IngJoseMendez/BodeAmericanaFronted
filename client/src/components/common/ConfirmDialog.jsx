@@ -229,7 +229,7 @@ function ConfirmDialogUI({
         {/* Close X */}
         <button
           onClick={onCancel}
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
+          className="absolute top-3 right-3 p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
           aria-label="Cancelar"
         >
           <X size={16} />

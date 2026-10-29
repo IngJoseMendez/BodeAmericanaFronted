@@ -394,7 +394,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
             <button
               onClick={onToggle}
-              className="flex-shrink-0 p-2 rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200 active:scale-95"
+              className="flex-shrink-0 p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-xl text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200 active:scale-95"
               aria-label="Cerrar menú"
             >
               <X size={20} />
@@ -413,7 +413,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
                 </div>
                 <button
                   onClick={onToggleCollapse}
-                  className="flex p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                  className="flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
                   aria-label="Expandir sidebar"
                   title="Expandir"
                 >
@@ -436,7 +436,7 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
 
                 <button
                   onClick={onToggleCollapse}
-                  className="ml-auto flex p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
+                  className="ml-auto flex p-2.5 min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-all duration-200"
                   aria-label="Colapsar sidebar"
                   title="Colapsar"
                 >

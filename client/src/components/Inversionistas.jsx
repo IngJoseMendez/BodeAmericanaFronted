@@ -302,9 +302,9 @@ export function Inversionistas() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <button onClick={guardarEdicion} title="Guardar" aria-label="Guardar"
-                              className="p-1.5 text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
                             <button onClick={() => setEditAporte(null)} title="Cancelar" aria-label="Cancelar"
-                              className="p-1.5 text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
                           </td>
                         </>
                       ) : (
@@ -320,11 +320,11 @@ export function Inversionistas() {
                           <td className="px-3 py-2.5 text-right font-mono tabular-nums text-muted">{fmtUSD(f.utilUsd)}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-right">
                             <button onClick={() => setEditAporte({ id: f.id, aporte_cop: String(f.cop), aporte_usd: String(f.dol.toFixed(2)) })}
-                              title="Editar" aria-label="Editar" className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
+                              title="Editar" aria-label="Editar" className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                               <Pencil size={14} />
                             </button>
                             <button onClick={() => borrarAporte(f)} title="Quitar" aria-label="Quitar"
-                              className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-error rounded-lg hover:bg-error/5">
                               <Trash2 size={14} />
                             </button>
                           </td>
@@ -428,9 +428,9 @@ export function Inversionistas() {
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renombrar(); } }}
                       className={inp + ' flex-1'} />
                     <button onClick={renombrar} title="Guardar" aria-label="Guardar"
-                      className="p-1.5 text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-success hover:bg-success/10 rounded-lg"><Check size={15} /></button>
                     <button onClick={() => setEditInv(null)} title="Cancelar" aria-label="Cancelar"
-                      className="p-1.5 text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:bg-primary/5 rounded-lg"><X size={15} /></button>
                   </>
                 ) : (
                   <>
@@ -443,11 +443,11 @@ export function Inversionistas() {
                       </p>
                     </div>
                     <button onClick={() => setEditInv({ id: i.id, nombre: i.nombre })} title="Renombrar" aria-label="Renombrar"
-                      className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5">
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-primary rounded-lg hover:bg-primary/5">
                       <Pencil size={14} />
                     </button>
                     <button onClick={() => borrarInversionista(i)} title="Quitar" aria-label="Quitar"
-                      className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-error rounded-lg hover:bg-error/5">
                       <Trash2 size={14} />
                     </button>
                   </>

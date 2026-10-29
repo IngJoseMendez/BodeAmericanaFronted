@@ -273,14 +273,14 @@ export default function Auditoria() {
                 onClick={() => setPagina(p => p - 1)}
                 title="Página anterior"
                 aria-label="Página anterior"
-                className="p-2 rounded-lg border border-border hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg border border-border hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               ><ChevronLeft size={15} /></button>
               <button
                 disabled={pagina >= totalPaginas}
                 onClick={() => setPagina(p => p + 1)}
                 title="Página siguiente"
                 aria-label="Página siguiente"
-                className="p-2 rounded-lg border border-border hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg border border-border hover:bg-primary/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               ><ChevronRight size={15} /></button>
             </div>
           </div>

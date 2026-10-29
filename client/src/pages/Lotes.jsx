@@ -602,7 +602,7 @@ export default function Lotes() {
                             {paca.estado !== 'vendida' && (
                               <button
                                 onClick={() => handleDesasignarPaca(paca.id)}
-                                className="p-1.5 rounded-lg text-muted hover:text-error hover:bg-error/10"
+                                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10"
                                 title="Desasignar del lote" aria-label="Desasignar del lote"
                               >
                                 <Unlink size={14} />

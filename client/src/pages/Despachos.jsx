@@ -1248,7 +1248,7 @@ export default function Despachos() {
         </div>
 
         {/* Tabs Pendientes / Despachados */}
-        <div className="flex items-center gap-1 p-1 bg-primary/5 rounded-2xl w-fit">
+        <div className="flex items-center gap-2 p-1 bg-primary/5 rounded-2xl w-fit">
           <button
             onClick={() => setVistaActiva('pendientes')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
@@ -1460,7 +1460,7 @@ export default function Despachos() {
                             </td>
                             <td className="px-4 py-3">
                               <button onClick={() => openView(d)}
-                                className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
+                                className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
                                 title="Ver detalle" aria-label="Ver detalle">
                                 <Eye size={15} />
                               </button>
@@ -1909,7 +1909,7 @@ export default function Despachos() {
                             <button type="button"
                               onClick={() => setDirecto((d) => ({ ...d, lineas: d.lineas.filter((_, j) => j !== i) }))}
                               aria-label={`Quitar la línea ${i + 1}`}
-                              className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10">
+                              className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-md text-muted hover:text-error hover:bg-error/10">
                               <X size={13} />
                             </button>
                           )}
@@ -2090,22 +2090,22 @@ export default function Despachos() {
                     <button type="button" title="Guardar el nuevo nombre" aria-label="Guardar el nuevo nombre"
                       disabled={!editTranspNombre.trim()}
                       onClick={() => renombrarTransporte(t.id)}
-                      className="p-1.5 text-success rounded-lg hover:bg-success/10 disabled:opacity-40 flex-shrink-0">
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-success rounded-lg hover:bg-success/10 disabled:opacity-40 flex-shrink-0">
                       <Check size={15} />
                     </button>
                     <button type="button" title="Cancelar" aria-label="Cancelar"
                       onClick={() => { setEditTranspId(null); setEditTranspNombre(''); }}
-                      className="p-1.5 text-muted hover:text-primary rounded-lg hover:bg-primary/5 flex-shrink-0">
+                      className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-primary rounded-lg hover:bg-primary/5 flex-shrink-0">
                       <X size={15} />
                     </button>
                   </>
                 ) : (
                   <>
                     <span className="text-sm text-primary truncate">{t.nombre}</span>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <button type="button" title="Cambiar el nombre" aria-label="Cambiar el nombre"
                         onClick={() => { setEditTranspId(t.id); setEditTranspNombre(t.nombre); }}
-                        className="p-1.5 text-muted hover:text-secondary rounded-lg hover:bg-secondary/5">
+                        className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-secondary rounded-lg hover:bg-secondary/5">
                         <Pencil size={14} />
                       </button>
                       <button type="button" title="Quitar de la lista" aria-label="Quitar de la lista"
@@ -2122,7 +2122,7 @@ export default function Despachos() {
                             loadTransportes();
                           } catch (err) { addToast(mensajeDeError(err), 'error'); }
                         }}
-                        className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
+                        className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center text-muted hover:text-error rounded-lg hover:bg-error/5">
                         <X size={15} />
                       </button>
                     </div>
@@ -2294,7 +2294,7 @@ export default function Despachos() {
                           <button type="button"
                             onClick={() => setLote((L) => ({ ...L, lineas: L.lineas.filter((_, j) => j !== i) }))}
                             aria-label={`Quitar la fila ${i + 1}`}
-                            className="p-1 rounded-md text-muted hover:text-error hover:bg-error/10">
+                            className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-md text-muted hover:text-error hover:bg-error/10">
                             <X size={13} />
                           </button>
                         )}

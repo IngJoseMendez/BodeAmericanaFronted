@@ -385,7 +385,7 @@ const GrupoProducto = memo(function GrupoProducto({
                     paradas de más por producto. */}
                 <div className="mt-2 py-1">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">Repartir:</p>
-                  <div className="flex flex-wrap items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button" tabIndex={-1} disabled={deshabilitado}
                       onClick={() => onCriterio(clave, 'prorrata')}
