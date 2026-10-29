@@ -8,6 +8,7 @@ import { formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 export default function GestionarPedidos() {
   const [pedidos, setPedidos] = useState([]);
   const [pedidosOriginal, setPedidosOriginal] = useState([]);
@@ -63,7 +64,7 @@ export default function GestionarPedidos() {
       setPedidos(data);
       setPedidosOriginal(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -118,7 +119,7 @@ export default function GestionarPedidos() {
       setDetallePedido(detalles);
       setModalDetalle(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -138,7 +139,7 @@ export default function GestionarPedidos() {
       setModalDetalle(false);
       loadPedidos();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -157,7 +158,7 @@ export default function GestionarPedidos() {
       setModalDetalle(false);
       loadPedidos();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -206,7 +207,7 @@ export default function GestionarPedidos() {
       descargarExcel(buffer, `pedidos-${hoy()}.xlsx`);
       addToast('Excel descargado', 'success');
     } catch (err) {
-      addToast('Error al exportar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar'), 'error');
     } finally {
       setExportando(false);
     }

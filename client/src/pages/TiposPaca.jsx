@@ -6,6 +6,7 @@ import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes } from 'lucide-react';
 
 
+import { mensajeDeError } from '../lib/errores';
 // ─────────────────────────────────────────────────────────────────────────────
 // Panel y PanelItem viven FUERA del componente a propósito.
 //
@@ -212,25 +213,25 @@ export default function TiposPaca() {
   const loadTipos = async () => {
     setLoadingTipos(true);
     try { setTipos(await tiposPacaApi.getTipos()); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setLoadingTipos(false); }
   };
   const loadCategorias = async () => {
     setLoadingCats(true);
     try { setCategorias(await tiposPacaApi.getCategorias()); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setLoadingCats(false); }
   };
   const loadCalidades = async () => {
     setLoadingCals(true);
     try { setCalidades(await tiposPacaApi.getCalidades()); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setLoadingCals(false); }
   };
   const loadTemporadas = async () => {
     setLoadingTemps(true);
     try { setTemporadas(await tiposPacaApi.getTemporadas()); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setLoadingTemps(false); }
   };
 
@@ -239,7 +240,7 @@ export default function TiposPaca() {
   const loadFamilias = async () => {
     setLoadingFams(true);
     try { setFamilias(await tiposPacaApi.getFamilias()); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setLoadingFams(false); }
   };
 
@@ -253,7 +254,7 @@ export default function TiposPaca() {
       setNuevaFamilia({ nombre: '', descripcion: '' });
       loadFamilias();
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setGuardandoFam(false); }
   };
 
@@ -273,7 +274,7 @@ export default function TiposPaca() {
       loadFamilias();
       loadCategorias();
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const handleCrearTipo = async (e) => {
@@ -337,7 +338,7 @@ export default function TiposPaca() {
       setTipos(prev => prev.filter(t => t.id !== tipo.id));
       addToast(`Clasificación "${tipo.nombre}" eliminada`, 'success');
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
   const handleEliminarCategoria = async (cat) => {
     const ok = await confirm({ title: `¿Eliminar referencia "${cat.nombre}"?`, message: 'Solo se puede eliminar si no hay unidades que la usen.', confirmText: 'Sí, eliminar', variant: 'danger' });
@@ -347,7 +348,7 @@ export default function TiposPaca() {
       setCategorias(prev => prev.filter(c => c.id !== cat.id));
       addToast(`Referencia "${cat.nombre}" eliminada`, 'success');
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
   const handleEliminarCalidad = async (cal) => {
     const ok = await confirm({ title: `¿Eliminar calidad "${cal.nombre}"?`, message: 'Solo se puede eliminar si no hay unidades que la usen.', confirmText: 'Sí, eliminar', variant: 'danger' });
@@ -357,7 +358,7 @@ export default function TiposPaca() {
       setCalidades(prev => prev.filter(c => c.id !== cal.id));
       addToast(`Calidad "${cal.nombre}" eliminada`, 'success');
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
   const handleEliminarTemporada = async (temp) => {
     const ok = await confirm({ title: `¿Eliminar categoría "${temp.nombre}"?`, message: 'Solo se puede eliminar si no hay unidades que la usen.', confirmText: 'Sí, eliminar', variant: 'danger' });
@@ -367,7 +368,7 @@ export default function TiposPaca() {
       setTemporadas(prev => prev.filter(t => t.id !== temp.id));
       addToast(`Categoría "${temp.nombre}" eliminada`, 'success');
       reloadCatalog();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const startEdit = (table, item) => setEditando({ table, id: item.id, nombre: item.nombre, temporada_id: item.temporada_id || '', familia_id: item.familia_id || '' });
@@ -396,7 +397,7 @@ export default function TiposPaca() {
       setEditando(null);
       reloadCatalog();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setGuardandoEdit(false);
     }

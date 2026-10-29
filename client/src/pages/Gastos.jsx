@@ -8,6 +8,7 @@ import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 const CATEGORIAS_FIJAS = [
   { value: 'arriendo',   label: 'Arriendo' },
   { value: 'servicios',  label: 'Servicios' },
@@ -80,7 +81,7 @@ export default function Gastos() {
       setGastos(g);
       setCuentas(c);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -124,7 +125,7 @@ export default function Gastos() {
       setForm(f => ({ ...f, concepto: '', monto: '', categoria: '', es_fijo: false, moneda: 'COP', monedaOtra: '', tasa_cambio: '' }));
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -136,7 +137,7 @@ export default function Gastos() {
       addToast('Gasto eliminado', 'success');
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -180,7 +181,7 @@ export default function Gastos() {
       const buf = await wb.xlsx.writeBuffer();
       descargarExcel(buf, `Gastos_${hoy()}.xlsx`);
     } catch (err) {
-      addToast('Error al exportar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar'), 'error');
     }
   };
 

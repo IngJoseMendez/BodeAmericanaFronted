@@ -8,6 +8,7 @@ import { History, Upload, Download, FileSpreadsheet, Trash2, CheckCircle2 } from
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
+import { mensajeDeError } from '../lib/errores';
 const fmt = formatCOP;
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -203,7 +204,7 @@ export default function Historico() {
       setResult(null);
       addToast(`${rows.length} fila(s) leída(s) del archivo`, 'success');
     } catch (err) {
-      addToast('Error al leer el archivo: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'leer el archivo'), 'error');
     } finally {
       if (fileRef.current) fileRef.current.value = '';
     }
@@ -226,7 +227,7 @@ export default function Historico() {
       addToast(`${res.insertados} registro(s) importado(s)`, 'success');
       cargarAnios();
     } catch (err) {
-      addToast('Error al importar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'importar'), 'error');
     } finally {
       setImporting(false);
     }
@@ -242,7 +243,7 @@ export default function Historico() {
       setResult(null);
       cargarAnios();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -285,7 +286,7 @@ export default function Historico() {
       const buf = await wb.xlsx.writeBuffer();
       descargarExcel(buf, `Clientes_historico_${anio || 'todos'}.xlsx`);
     } catch (err) {
-      addToast('Error al exportar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar'), 'error');
     }
   };
 

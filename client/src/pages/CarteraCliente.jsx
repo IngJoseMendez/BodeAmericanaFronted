@@ -5,6 +5,7 @@ import { clienteApi } from '../services/api';
 import { Wallet, TrendingUp, TrendingDown, Loader, AlertTriangle, RefreshCw } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 export default function CarteraCliente() {
   const [cartera, setCartera] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export default function CarteraCliente() {
     } catch (err) {
       setCartera(null);
       setErrorCarga(err.message || 'No se pudo conectar con el servidor.');
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }

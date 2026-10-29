@@ -7,6 +7,7 @@ import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 
 import { hoy, formatFecha, entreFechas } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
 
 const formatDate = formatFecha;
@@ -123,7 +124,7 @@ export default function PreciosPromocion() {
       setModalOpen(false);
       await reload();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -137,7 +138,7 @@ export default function PreciosPromocion() {
       addToast('Promoción eliminada', 'success');
       await reload();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

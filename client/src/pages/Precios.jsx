@@ -6,6 +6,7 @@ import { useCatalog } from '../context/CatalogContext';
 import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
 
 const emptyForm = { categoria: '', calidad: '', precio: '' };
@@ -64,7 +65,7 @@ export default function Precios() {
       setModalOpen(false);
       await reload();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -78,7 +79,7 @@ export default function Precios() {
       addToast('Precio eliminado', 'success');
       await reload();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 import { aFecha, hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 const ACTION_COLORS = {
   CREATE:   'bg-success/15 text-success',
   UPDATE:   'bg-secondary/15 text-secondary',
@@ -96,7 +97,7 @@ export default function Auditoria() {
       setTotal(data.total || 0);
       setTotalPaginas(data.total_paginas || 1);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -155,7 +156,7 @@ export default function Auditoria() {
         addToast(`${filas.length} registros exportados`, 'success');
       }
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setExportando(false);
     }

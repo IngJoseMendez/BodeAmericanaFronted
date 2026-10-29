@@ -28,6 +28,7 @@ import {
 // con otra.
 import { precioConDescuento } from '../lib/cotizacion';
 
+import { mensajeDeError } from '../lib/errores';
 /**
  * Los renglones de una venta, agrupados por producto y contados.
  *
@@ -444,7 +445,7 @@ export default function Ventas() {
       loadVentas();
       loadPacasDisponibles();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setGuardandoCorreccion(false);
     }
@@ -575,7 +576,7 @@ export default function Ventas() {
       // histórico anterior a las últimas 20 ventas fuera de alcance.
     } catch (err) {
       if (miPeticion !== peticionVentasRef.current) return;
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       if (miPeticion === peticionVentasRef.current) setLoading(false);
     }
@@ -637,7 +638,7 @@ export default function Ventas() {
       setError('');
       setModalOpen(true);
     } catch (err) {
-      addToast('Error al cargar datos: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'cargar datos'), 'error');
     }
   };
 
@@ -736,7 +737,7 @@ export default function Ventas() {
       if (pagina === 1) loadVentas(1); else setPagina(1);
     } catch (err) {
       setError(err.message);
-      addToast('Error al registrar venta: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'registrar venta'), 'error');
     } finally {
       setEnviando(false);
     }
@@ -755,7 +756,7 @@ export default function Ventas() {
       addToast('Venta eliminada', 'success');
       loadVentas();
     } catch (err) {
-      addToast('Error al eliminar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'eliminar'), 'error');
     }
   };
 
@@ -1205,7 +1206,7 @@ export default function Ventas() {
         addToast(`Excel descargado — ${renglones} renglón(es) de ${filas.length} venta(s)`, 'success');
       }
     } catch (err) {
-      addToast('Error al exportar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar'), 'error');
     } finally {
       setExportando(false);
     }
@@ -1250,7 +1251,7 @@ export default function Ventas() {
       // El contador de la pestaña "Reservas" se quedaba viejo hasta recargar.
       loadReservas();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -1277,7 +1278,7 @@ export default function Ventas() {
       loadReservas();
       loadVentas();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -1365,7 +1366,7 @@ export default function Ventas() {
 
       addToast('Excel descargado', 'success');
     } catch (err) {
-      addToast('Error al descargar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'descargar'), 'error');
     }
   };
 
@@ -2576,7 +2577,7 @@ export default function Ventas() {
               <Button
                 onClick={async () => {
                   try { await comprobanteExcelDeVenta(despachoData); }
-                  catch (err) { addToast('No se pudo generar el Excel: ' + err.message, 'error'); }
+                  catch (err) { addToast(mensajeDeError(err, 'generar el Excel'), 'error'); }
                 }}
                 variant="secondary"
                 className="flex-1"
@@ -2587,7 +2588,7 @@ export default function Ventas() {
               <Button
                 onClick={() => {
                   try { descargarPDF(despachoData); }
-                  catch (err) { addToast('No se pudo generar el PDF: ' + err.message, 'error'); }
+                  catch (err) { addToast(mensajeDeError(err, 'generar el PDF'), 'error'); }
                 }}
                 variant="primary"
                 className="flex-1"

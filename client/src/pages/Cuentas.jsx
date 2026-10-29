@@ -5,6 +5,7 @@ import { Card, CardBody, Button, Input, Modal, useToast, useConfirm, BuscadorLis
 import { cuentasApi, bancosApi } from '../services/api';
 import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X, RotateCcw } from 'lucide-react';
 
+import { mensajeDeError } from '../lib/errores';
 // Tipos base. La lista se amplía sola con cualquier tipo que ya se haya usado,
 // así que se pueden crear tipos nuevos desde esta misma pantalla.
 const TIPOS_BASE = [
@@ -124,7 +125,7 @@ export default function Cuentas() {
       setModalOpen(false);
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setGuardando(false);
     }
@@ -142,7 +143,7 @@ export default function Cuentas() {
       addToast('Cuenta desactivada', 'success');
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -158,7 +159,7 @@ export default function Cuentas() {
       setNuevoBanco('');
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -177,7 +178,7 @@ export default function Cuentas() {
       setEditBanco(null);
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -188,7 +189,7 @@ export default function Cuentas() {
       addToast(`"${b.nombre}" vuelve a estar disponible`, 'success');
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -208,7 +209,7 @@ export default function Cuentas() {
       addToast(enUso ? 'Banco desactivado' : 'Banco eliminado', 'success');
       load();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

@@ -14,6 +14,7 @@ import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 // ── PACAS QUE LE FALTAN, QUE NO SON PLATA ────────────────────────────────────
 //
 // Índice cliente_id → pacas que le quedaron faltando de repartos anteriores. Es
@@ -464,7 +465,7 @@ export default function Cartera() {
       setCarteraOriginal(data);
     } catch (err) {
       if (corteEnCursoRef.current !== corte) return;
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       if (corteEnCursoRef.current === corte) setLoading(false);
     }
@@ -522,7 +523,7 @@ export default function Cartera() {
       setError('');
       setModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -540,7 +541,7 @@ export default function Cartera() {
       await cargarSaldoCliente(cliente.id);
       setModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -611,7 +612,7 @@ export default function Cartera() {
       }
     } catch (err) {
       setError(err.message);
-      addToast('Error al registrar el abono: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'registrar el abono'), 'error');
     } finally {
       setEnviando(false);
     }
@@ -635,7 +636,7 @@ export default function Cartera() {
       setDetalleCliente(data);
       loadCartera(fechaCorte);
     } catch (err) {
-      addToast('Error al eliminar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'eliminar'), 'error');
     }
   };
 
@@ -659,7 +660,7 @@ export default function Cartera() {
       setDetalleCliente(data);
       loadCartera(fechaCorte);
     } catch (err) {
-      addToast('Error al actualizar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'actualizar'), 'error');
     }
   };
 
@@ -1013,7 +1014,7 @@ export default function Cartera() {
       setError('');
       setLegacyModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -1114,7 +1115,7 @@ export default function Cartera() {
       setLegacyRows(prev => [...prev, ...parsed]);
       addToast(`${parsed.length} registro(s) cargado(s) del archivo`, 'success');
     } catch (err) {
-      addToast('Error al leer el archivo: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'leer el archivo'), 'error');
     } finally {
       if (legacyFileRef.current) legacyFileRef.current.value = '';
     }
@@ -1163,7 +1164,7 @@ export default function Cartera() {
         setDetalleCliente(data);
       }
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setGuardandoInactiva(false);
     }
@@ -1179,7 +1180,7 @@ export default function Cartera() {
       setLegacyRows([]);
       loadCartera(fechaCorte);
     } catch (err) {
-      addToast('Error al importar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'importar'), 'error');
     } finally {
       setLegacySubmitting(false);
     }

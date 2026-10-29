@@ -4,6 +4,7 @@ import { inversionistasApi, contenedoresApi } from '../services/api';
 import { Users, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 // Reparto de la utilidad de un contenedor entre quienes lo financiaron.
 //
 //   porcentaje = aporte del inversionista / inversión total del contenedor
@@ -121,7 +122,7 @@ export function Inversionistas() {
       setAporteForm({ inversionista_id: '', aporte_cop: '', aporte_usd: '' });
       cargarContenedor();
       cargarBase();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setGuardando(false); }
   };
 
@@ -137,7 +138,7 @@ export function Inversionistas() {
       setEditAporte(null);
       cargarContenedor();
       cargarBase();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const borrarAporte = async (f) => {
@@ -152,7 +153,7 @@ export function Inversionistas() {
       addToast('Aporte eliminado', 'success');
       cargarContenedor();
       cargarBase();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // ── Catálogo ───────────────────────────────────────────────────
@@ -165,7 +166,7 @@ export function Inversionistas() {
       addToast(`"${nuevoNombre.trim()}" agregado`, 'success');
       setNuevoNombre('');
       cargarBase();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const renombrar = async () => {
@@ -176,7 +177,7 @@ export function Inversionistas() {
       setEditInv(null);
       cargarBase();
       cargarContenedor();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const borrarInversionista = async (i) => {
@@ -193,7 +194,7 @@ export function Inversionistas() {
       await inversionistasApi.delete(i.id);
       addToast(enUso ? 'Inversionista desactivado' : 'Inversionista eliminado', 'success');
       cargarBase();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const inp = 'px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30';

@@ -8,6 +8,7 @@ import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
 
 export default function ListaPrecios() {
@@ -22,7 +23,7 @@ export default function ListaPrecios() {
       const data = await listaPreciosApi.getAll(buscar ? { buscar } : {});
       setRows(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }

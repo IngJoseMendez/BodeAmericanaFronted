@@ -9,6 +9,7 @@ import { aInputDate } from '../lib/fecha';
 import { Inversionistas } from '../components/Inversionistas';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 // La utilidad BRUTA es venta − costo de la mercancía. La NETA descuenta además
 // los gastos de operación del período, que es la plata que realmente queda.
 // Los gastos no se pueden repartir por venta, así que se restan del total.
@@ -217,7 +218,7 @@ export default function Utilidad() {
       descargarExcel(buffer, `Utilidad_${desde}_a_${hasta}.xlsx`);
       addToast('Excel de utilidad descargado', 'success');
     } catch (err) {
-      addToast('No se pudo generar el Excel: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'generar el Excel'), 'error');
     }
   };
 

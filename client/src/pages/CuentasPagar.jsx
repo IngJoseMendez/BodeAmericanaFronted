@@ -12,6 +12,7 @@ import { parseMonto, formatMoneda, MONEDAS } from '../lib/money';
 import { hoy, formatFecha } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = (value, moneda = 'USD') => formatMoneda(value, moneda, { decimales: 0 });
 
 const formatDate = formatFecha;
@@ -147,7 +148,7 @@ export default function CuentasPagar() {
       const data = await cuentasPagarApi.getAll(params);
       setCuentas(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -208,7 +209,7 @@ export default function CuentasPagar() {
         setSelectedCuenta(updated);
       }
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setInlineSubmitting(false);
     }
@@ -220,7 +221,7 @@ export default function CuentasPagar() {
       setSelectedCuenta(data);
       setViewModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -239,7 +240,7 @@ export default function CuentasPagar() {
       setCreateForm({ proveedor_nombre: '', total_factura: '', moneda: 'USD', notas: '' });
       loadCuentas();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setCreateSubmitting(false);
     }
@@ -259,7 +260,7 @@ export default function CuentasPagar() {
       if (expandedId === cuenta.id) setExpandedId(null);
       loadCuentas();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

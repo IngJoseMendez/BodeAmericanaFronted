@@ -24,6 +24,7 @@ import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 // avisos dicen lo mismo y tienen que leerse igual.
 import { selloBorrador } from './matriz/borrador';
 import { descargarExcel } from '../lib/descargar';
+import { mensajeDeError } from '../lib/errores';
 // Las cuentas del contenedor viven fuera de la pantalla porque el SERVIDOR tiene
 // su propia copia de las mismas fórmulas —él decide lo que se guarda, esta
 // pantalla lo que se ve— y las dos tienen que dar lo mismo. En lib se pueden
@@ -1048,7 +1049,7 @@ export default function Contenedores() {
       const data = await contenedoresApi.getAll(params);
       setContenedores(Array.isArray(data) ? data : []);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -1413,7 +1414,7 @@ export default function Contenedores() {
 
     let full = cont;
     if (!cont.proveedores_mercancia) {
-      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(err.message, 'error'); return; }
+      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(mensajeDeError(err), 'error'); return; }
     }
 
     const wb = new ExcelJS.Workbook();
@@ -1745,7 +1746,7 @@ export default function Contenedores() {
 
     let full = cont;
     if (!cont.proveedores_mercancia) {
-      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(err.message, 'error'); return; }
+      try { full = await contenedoresApi.getOne(cont.id); } catch (err) { addToast(mensajeDeError(err), 'error'); return; }
     }
 
     const wb = new ExcelJS.Workbook();
@@ -2882,7 +2883,7 @@ export default function Contenedores() {
       }
       setSoloLectura(false);
       setEditMode(true); setModalOpen(true);
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // Tirar el borrador: vuelve a lo que hay guardado en el servidor (o a un
@@ -2909,7 +2910,7 @@ export default function Contenedores() {
       // solo tienen sentido sobre algo guardado.
       setSoloLectura(true);
       setEditMode(true); setModalOpen(true);
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // Pasar de mirar a editar SIN volver a pedir el contenedor: los datos ya están
@@ -3052,7 +3053,7 @@ export default function Contenedores() {
       }
       setModalOpen(false); setSoloLectura(false); setBorradorRecuperado(null); resetForm(); loadContenedores();
       return true;
-    } catch (err) { addToast(err.message, 'error'); return false; }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); return false; }
     finally { setSubmitting(false); }
   };
 
@@ -3118,7 +3119,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
     const ok = await confirm({ title: 'Eliminar contenedor', message: `¿Eliminar "${contenedor.numero}"? Esta acción es irreversible.`, confirmText: 'Eliminar', variant: 'danger' });
     if (!ok) return;
     try { await contenedoresApi.delete(contenedor.id); addToast('Contenedor eliminado', 'success'); loadContenedores(); }
-    catch (err) { addToast(err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // ── Convertir estimación → contenedor normal ───────────────────
@@ -3143,7 +3144,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       setModalOpen(false); setSoloLectura(false);
       loadContenedores();
       openEditModal(full); // abre el formulario normal para diligenciar lo real
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // ── Finalizar ──────────────────────────────────────────────────
@@ -3220,7 +3221,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       setPreciosVenta(init);
       setPreciosAutocompletados(autoKeys);
       setModalOpen(false); setSoloLectura(false); setFinalizarModalOpen(true);
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // ── Revisión ──────────────────────────────────────────────────
@@ -3254,7 +3255,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
       setRevisionTocada(false);
       setModalOpen(false); setSoloLectura(false);
       setRevisionModalOpen(true);
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   // Producto que llegó en el contenedor pero no estaba en la factura original.
@@ -3376,7 +3377,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
           await handleExportReclamacionExcel(contenedorActualizado);
         }
       }
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setSubmitting(false); }
   };
 
@@ -3490,7 +3491,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
       finalizado = result;
       addToast(`Lote "${result.lote_numero}" creado — ${result.total_pacas_creadas} unidades al inventario`, 'success');
       setFinalizarModalOpen(false); loadContenedores();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
     finally { setSubmitting(false); }
 
     if (!finalizado) return;

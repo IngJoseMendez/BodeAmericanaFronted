@@ -19,6 +19,7 @@ import {
 } from '../lib/entregables';
 import { exportarPDFBodega, exportarPDFInternos } from '../lib/pdf';
 
+import { mensajeDeError } from '../lib/errores';
 const norm = (s) => String(s ?? '').trim();
 
 // Nombre de hoja válido en Excel: 31 caracteres y sin : \ / ? * [ ]
@@ -216,7 +217,7 @@ export default function Entregables() {
   const conCarga = (clave, fn) => async () => {
     setGenerando(clave);
     try { await fn(); }
-    catch (err) { addToast('No se pudo generar: ' + err.message, 'error'); }
+    catch (err) { addToast(mensajeDeError(err, 'generar'), 'error'); }
     finally { setGenerando(null); }
   };
 

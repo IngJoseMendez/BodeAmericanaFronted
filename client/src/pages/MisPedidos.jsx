@@ -9,6 +9,7 @@ import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 // El PDF se arma interpolando texto que escribió alguien (notas del pedido, tipo,
 // categoría) y luego se mete con innerHTML. Sin escapar, unas notas con
 // <img src=x onerror="..."> ejecutaban código al renderizar html2pdf, porque
@@ -37,7 +38,7 @@ export default function MisPedidos() {
       const data = await pedidosApi.getAll();
       setPedidos(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -51,7 +52,7 @@ export default function MisPedidos() {
       setDetallePedido(data);
       setPedidoSeleccionado(pedidoId);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setCargandoDetalleId(null);
     }
@@ -186,7 +187,7 @@ export default function MisPedidos() {
       
       addToast('Excel descargado', 'success');
     } catch (err) {
-      addToast('Error al exportar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar'), 'error');
     }
   };
   

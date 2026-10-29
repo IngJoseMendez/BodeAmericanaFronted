@@ -5,6 +5,7 @@ import { clientesApi, carteraApi } from '../services/api';
 import { ListChecks, Search, Save } from 'lucide-react';
 import { parseMonto, formatCOP } from '../lib/money';
 import { hoy } from '../lib/fecha';
+import { mensajeDeError } from '../lib/errores';
 const fmt = formatCOP;
 const CHUNK = 100; // el server limita el body a 10kb; enviamos por lotes
 
@@ -52,7 +53,7 @@ export default function DeudaMasiva() {
       for (const row of cartera) map[row.id] = parseFloat(row.saldo_pendiente) || 0;
       setSaldos(map);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }

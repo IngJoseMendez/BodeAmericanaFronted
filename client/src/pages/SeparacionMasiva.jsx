@@ -53,6 +53,7 @@ import {
 } from '../lib/matriz';
 import FasePedidos from './matriz/FasePedidos';
 import FaseDistribucion from './matriz/FaseDistribucion';
+import { mensajeDeError } from '../lib/errores';
 import {
   numServidor, itemVacio, filaVacia, entregaDeCliente,
   itemTieneAlgo, resumenFaltante, porCargar,
@@ -2135,7 +2136,7 @@ export default function SeparacionMasiva() {
           'error',
         );
       } else {
-        addToast(err.message, 'error');
+        addToast(mensajeDeError(err), 'error');
       }
     } finally {
       setEnviando(false);
@@ -2174,7 +2175,7 @@ export default function SeparacionMasiva() {
       );
       await descargar(wb, 'MATRIZ');
     } catch (err) {
-      addToast('No se pudo generar la matriz: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'generar la matriz'), 'error');
     } finally {
       setGenerandoMatriz(false);
     }

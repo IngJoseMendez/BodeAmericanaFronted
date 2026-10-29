@@ -7,6 +7,7 @@ import { ShoppingBag, Wallet, Clock, TrendingUp, RefreshCw, CreditCard, BarChart
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 export default function ClienteDashboard() {
   const [stats, setStats] = useState({ 
     pedidosPendientes: 0, 
@@ -82,7 +83,7 @@ export default function ClienteDashboard() {
       addToast('Pedido creado exitosamente', 'success');
       loadStats();
     } catch (err) {
-      addToast(err.message || 'Error al crear pedido', 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setQuickRebuyLoading(false);
     }

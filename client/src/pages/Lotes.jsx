@@ -9,6 +9,7 @@ import { hoy } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
 
 export default function Lotes() {
@@ -143,7 +144,7 @@ export default function Lotes() {
       loadLotes();
     } catch (err) {
       console.error(err);
-      addToast(err.message || 'No se puede eliminar', 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -176,7 +177,7 @@ export default function Lotes() {
       setLotePacas(pacasActualizadas);
     } catch (err) {
       console.error(err);
-      addToast(err.message || 'Error al crear pacas', 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -198,7 +199,7 @@ export default function Lotes() {
       setLotePacas(pacasActualizadas);
     } catch (err) {
       console.error(err);
-      addToast(err.message || 'Error al asignar pacas', 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -220,7 +221,7 @@ export default function Lotes() {
       loadLotes();
     } catch (err) {
       console.error(err);
-      addToast(err.message || 'Error', 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

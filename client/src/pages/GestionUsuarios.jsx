@@ -5,6 +5,7 @@ import { authApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Edit2, UserX, UserCheck, User, Shield, Users, Eye, EyeOff } from 'lucide-react';
 
+import { mensajeDeError } from '../lib/errores';
 export default function GestionUsuarios() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export default function GestionUsuarios() {
       const data = await authApi.getUsers();
       setUsuarios(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -125,7 +126,7 @@ export default function GestionUsuarios() {
       setModalOpen(false);
       loadUsuarios();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -148,7 +149,7 @@ export default function GestionUsuarios() {
       addToast(activo ? 'Usuario desactivado' : 'Usuario reactivado', 'success');
       loadUsuarios();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

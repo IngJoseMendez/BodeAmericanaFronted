@@ -6,6 +6,7 @@ import { PACA_TIPOS, PACA_CATEGORIAS } from '../types';
 import { ShoppingCart, Package, Filter, Check } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
+import { mensajeDeError } from '../lib/errores';
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -47,7 +48,7 @@ export default function Catalogo() {
       setPacas(data.data || []);
       setResumen(resumenData || []);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -73,7 +74,7 @@ export default function Catalogo() {
       setSeleccionadas([]);
       loadCatalogo();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 

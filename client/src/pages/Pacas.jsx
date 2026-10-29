@@ -28,6 +28,7 @@ import autoTable from 'jspdf-autotable';
 import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 // La raya de una cabecera de tabla PEGAJOSA. Va como sombra interior y no como
 // borde: un border-bottom lo pinta la TABLA, no la celda, asi que al despegarse
 // la cabecera se queda clavado en su sitio y el encabezado flota sin linea.
@@ -457,7 +458,7 @@ export default function Pacas() {
       // la pagina 2 igual de vacia. Sin resultados hay UNA pagina, la vacia.
       if (typeof data.total_paginas === 'number') setTotalPaginas(Math.max(1, data.total_paginas));
     } catch (err) {
-      if (miCarga === cargaPacasRef.current) addToast(err.message, 'error');
+      if (miCarga === cargaPacasRef.current) addToast(mensajeDeError(err), 'error');
     } finally {
       if (miCarga === cargaPacasRef.current) setLoading(false);
     }
@@ -505,7 +506,7 @@ export default function Pacas() {
       setReservaModalOpen(false);
       recargarInventario();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -549,7 +550,7 @@ export default function Pacas() {
       resetForm();
       recargarInventario();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -587,7 +588,7 @@ export default function Pacas() {
       recargarInventario();
       addToast('Unidad eliminada', 'success');
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -606,7 +607,7 @@ export default function Pacas() {
       recargarInventario();
       loadLotes();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -956,7 +957,7 @@ export default function Pacas() {
       doc.save(`Inventario_Pacas_${hoy()}.pdf`);
       addToast('PDF exportado (Agrupado + Detallado)', 'success');
     } catch (err) {
-      addToast('Error al exportar PDF: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'exportar PDF'), 'error');
     } finally {
       setExporting(false);
     }
@@ -1145,7 +1146,7 @@ export default function Pacas() {
       descargarExcel(buffer, `Separadas_por_cliente_${hoy()}.xlsx`);
       addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');
     } catch (err) {
-      addToast('No se pudo generar el Excel: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'generar el Excel'), 'error');
     } finally {
       setExporting(false);
     }

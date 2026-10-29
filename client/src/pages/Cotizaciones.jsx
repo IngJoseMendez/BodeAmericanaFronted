@@ -13,6 +13,7 @@ import { hoy } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 import { tasaUsd } from '../lib/entregables';
 
+import { mensajeDeError } from '../lib/errores';
 // Los nombres de referencia, categoría y calidad vienen de tablas distintas y
 // difieren en mayúsculas y acentos: se comparan normalizados.
 const normTxt = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
@@ -326,7 +327,7 @@ export default function Cotizaciones() {
       const data = await cotizacionesApi.getAll(params);
       setCotizaciones(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -363,7 +364,7 @@ export default function Cotizaciones() {
       setSelectedCotizacion(data);
       setViewModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -698,7 +699,7 @@ export default function Cotizaciones() {
         total: Number(creada?.total) || 0,
       }]);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -711,7 +712,7 @@ export default function Cotizaciones() {
       addToast('Cotización aprobada', 'success');
       loadCotizaciones();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -730,7 +731,7 @@ export default function Cotizaciones() {
       setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -747,7 +748,7 @@ export default function Cotizaciones() {
       addToast('Cotización eliminada', 'success');
       loadCotizaciones();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -772,7 +773,7 @@ export default function Cotizaciones() {
       setViewModalOpen(false);
       loadCotizaciones();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setConvertSubmitting(false);
     }

@@ -22,6 +22,7 @@ import { agruparStock, claveStock } from '../lib/stock';
 // vive en ese archivo y es el mismo que usan los contenedores.
 import { leerDespachosPegados, CAMPOS_DESPACHO, normPegado } from '../lib/pegarLineas';
 
+import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
 
 const formatDate = formatFecha;
@@ -611,7 +612,7 @@ export default function Despachos() {
       setDirectoOpen(false);
       loadDespachos();
     } catch (err) {
-      addToast(err.message || 'No se pudo crear el despacho', 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setCreandoDirecto(false);
     }
@@ -817,7 +818,7 @@ export default function Despachos() {
       setLoteOpen(false);
       loadDespachos();
     } catch (err) {
-      addToast(err.message || 'No se pudo crear el lote', 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setCreandoLote(false);
     }
@@ -1015,7 +1016,7 @@ export default function Despachos() {
       loadDespachos();
       if (vistaActiva === 'despachados' || despachados.length > 0) loadDespachados();
     } catch (err) {
-      addToast(err.message || 'No se pudo confirmar la salida', 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setSalidaEnviando(false);
     }
@@ -1061,7 +1062,7 @@ export default function Despachos() {
       const data = await despachosApi.getAll({ estado: 'en_proceso' });
       setDespachos(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -1073,7 +1074,7 @@ export default function Despachos() {
       const data = await despachosApi.getAll({ con_salida: true });
       setDespachados(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoadingDespachados(false);
     }
@@ -1085,7 +1086,7 @@ export default function Despachos() {
       setSelectedDespacho(data);
       setViewModalOpen(true);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -1154,7 +1155,7 @@ export default function Despachos() {
         loadDespachados();
       }
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1174,7 +1175,7 @@ export default function Despachos() {
       setViewModalOpen(false);
       loadDespachos();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -1195,7 +1196,7 @@ export default function Despachos() {
       setEditTranspId(null);
       setEditTranspNombre('');
       loadTransportes();
-    } catch (err) { addToast(err.message, 'error'); }
+    } catch (err) { addToast(mensajeDeError(err), 'error'); }
   };
 
   const cerrarTransportes = () => {
@@ -2048,7 +2049,7 @@ export default function Despachos() {
                 addToast(`"${nombre}" agregado`, 'success');
                 setNuevoTransp('');
                 loadTransportes();
-              } catch (err) { addToast(err.message, 'error'); }
+              } catch (err) { addToast(mensajeDeError(err), 'error'); }
             }}
             className="flex gap-2"
           >
@@ -2119,7 +2120,7 @@ export default function Despachos() {
                             await transportesApi.delete(t.id);
                             addToast('Transporte quitado', 'success');
                             loadTransportes();
-                          } catch (err) { addToast(err.message, 'error'); }
+                          } catch (err) { addToast(mensajeDeError(err), 'error'); }
                         }}
                         className="p-1.5 text-muted hover:text-error rounded-lg hover:bg-error/5">
                         <X size={15} />

@@ -10,6 +10,7 @@ import { hoy, formatFechaCorta } from '../lib/fecha';
 import { formatCOP, formatNumero } from '../lib/money';
 import { descargarExcel } from '../lib/descargar';
 
+import { mensajeDeError } from '../lib/errores';
 // ── LO QUE LE QUEDÓ FALTANDO A CADA CLIENTE ──────────────────────────────────
 //
 // Esta pantalla es una rejilla de tarjetas y puede tener CIENTOS. La única forma
@@ -177,7 +178,7 @@ export default function Clientes() {
       const data = await clientesApi.getAll(params);
       setClientes(data);
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -229,7 +230,7 @@ export default function Clientes() {
       resetForm();
       loadClientes();
     } catch (err) {
-      addToast(err.message, 'error');
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -270,7 +271,7 @@ export default function Clientes() {
       addToast('Cliente eliminado', 'success');
       loadClientes();
     } catch (err) {
-      addToast('Error al eliminar: ' + err.message, 'error');
+      addToast(mensajeDeError(err, 'eliminar'), 'error');
     }
   };
 
