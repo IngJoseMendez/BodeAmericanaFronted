@@ -265,22 +265,47 @@ export default function Entregables() {
   };
 
   // Paquete de UN cliente: solo lo suyo, listo para enviárselo.
+  //
+  // ── LOS VIAJES AL SERVIDOR, A LA VEZ ───────────────────────────
+  //
+  // Esto hacía hasta VEINTIÚN peticiones una detrás de otra: la lista de
+  // cotizaciones, luego cada una de las veinte completas en un bucle, y al
+  // final el estado de cuenta. Ninguna necesita la respuesta de la anterior
+  // —sólo los ids, que llegan en la primera—, así que esperarlas en fila era
+  // tiempo regalado: a 300ms por viaje son más de seis segundos mirando un
+  // botón que dice «Generando…».
+  //
+  // `Promise.all` CONSERVA EL ORDEN del arreglo, así que las hojas del Excel
+  // salen exactamente en el mismo orden que antes. Eso importa: el nombre de
+  // cada hoja pasa por `nombreHoja`, que lleva un Set para desduplicar, y si
+  // el orden cambiara, dos cotizaciones del mismo número se renombrarían al
+  // revés y el archivo saldría distinto cada vez.
+  //
+  // Cada petición lleva su propio `.catch(() => null)` en vez de un try/catch
+  // alrededor de todas: con Promise.all, una sola que falle rechaza el conjunto
+  // y se perderían las diecinueve que sí llegaron. Una que falla se omite, que
+  // es lo que hacía el try/catch de dentro del bucle.
   const genCliente = async (wb, cliente) => {
     const usados = new Set();
-    try {
-      const cots = await cotizacionesApi.getAll({ cliente_id: cliente.id });
-      for (const c of (cots || []).slice(0, 20)) {
-        try {
-          const full = await cotizacionesApi.getOne(c.id);
-          hojaCotizacionCliente(wb, full, nombreHoja(`COT ${full.numero || c.id}`, usados));
-        } catch { /* omitir */ }
-      }
-    } catch { /* omitir */ }
 
-    try {
-      const data = await carteraApi.exportOne(cliente.id);
-      hojaCarteraCliente(wb, data, nombreHoja('ESTADO DE CUENTA', usados));
-    } catch { /* sin movimientos */ }
+    // La lista de cotizaciones y el estado de cuenta no dependen entre sí.
+    const [cots, estado] = await Promise.all([
+      cotizacionesApi.getAll({ cliente_id: cliente.id }).catch(() => null),
+      carteraApi.exportOne(cliente.id).catch(() => null),
+    ]);
+
+    const resumidas = (cots || []).slice(0, 20);
+    const completas = await Promise.all(
+      resumidas.map((c) => cotizacionesApi.getOne(c.id).catch(() => null))
+    );
+    completas.forEach((full, i) => {
+      if (!full) return;
+      hojaCotizacionCliente(wb, full, nombreHoja(`COT ${full.numero || resumidas[i].id}`, usados));
+    });
+
+    // Va después de las cotizaciones, como siempre: el orden de las hojas es
+    // el que ella ya conoce.
+    if (estado) hojaCarteraCliente(wb, estado, nombreHoja('ESTADO DE CUENTA', usados));
 
     hojaListaPreciosClientes(wb, datos.lista || [], parseMonto(tasaLista));
   };
