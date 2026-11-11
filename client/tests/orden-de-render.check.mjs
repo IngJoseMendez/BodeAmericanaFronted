@@ -124,6 +124,78 @@ for (const ruta of mirados) {
   });
 }
 
+// ── Y LO QUE SE LEE EN EL RENDER NO PUEDE DAR POR HECHO QUE HAY DATOS ──
+//
+// Segunda pasada, misma familia y mismo aislamiento del componente. Existe por
+// otro error que llegó a producción, y éste con el agravante de PARECER
+// defendido. En Entregables.jsx hay veinte lecturas de `datos.algo` y todas
+// eran seguras porque viven en generadores y manejadores de clic: sólo corren
+// cuando la carga terminó. Al añadir el desplegable de contenedores se escribió
+// una más, pero en el CUERPO DEL RENDER:
+//
+//     const contenedoresCerrados = (datos.contenedores || [])
+//
+// `datos` arranca en null, así que el `|| []` NUNCA llega a evaluarse: revienta
+// antes con «Cannot read properties of null (reading 'contenedores')» y el
+// ErrorBoundary se come la pantalla entera. Ese `|| []` de detrás es justo lo
+// que lo volvió invisible al revisarlo.
+//
+// No lo ve el linter —no sabe que `useState(null)` empieza en null— ni la
+// pasada de arriba, que mira el ORDEN: aquí el orden está bien, lo que falla es
+// el VALOR en el primer render.
+//
+// LO QUE SE DEJA PASAR, A PROPÓSITO, porque la primera versión de esto sacó
+// siete avisos y seis eran mentira:
+//   · Lo que esté fuera del componente exportado por defecto. Un ayudante de
+//     módulo con un PARÁMETRO que se llama igual que un estado no tiene nada
+//     que ver — es la trampa que ya avisa la cabecera de este archivo.
+//   · Una lectura con cortocircuito delante: `x && x.id`, `!!x && … x.id`,
+//     `x ? x.id : …`. Eso ya está defendido.
+//   · La sentencia `return` del JSX, que se alcanza después de los retornos
+//     tempranos.
+//   · `x?.campo`, que es la forma correcta.
+const nulos = [];
+for (const ruta of mirados) {
+  const texto = fs.readFileSync(ruta, 'utf8');
+  const cuerpo = cuerpoDelComponente(texto);
+  if (!cuerpo) continue;
+  const estados = new Set();
+  for (const m of cuerpo.texto.matchAll(
+    /const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*set[\w$]*\s*\]\s*=\s*useState\(\s*(?:null|undefined)?\s*\)/g)) {
+    estados.add(m[1]);
+  }
+  if (!estados.size) continue;
+
+  const base = texto.slice(0, cuerpo.desde).split('\n').length;
+  const lineas = cuerpo.texto.split('\n');
+  const ARRANQUE = /^ {2}(?!\s)(?!\/\/)(?!\*)/;
+  let i = 0;
+  while (i < lineas.length) {
+    if (!ARRANQUE.test(lineas[i])) { i++; continue; }
+    const desde = i;
+    let j = i + 1;
+    while (j < lineas.length && !ARRANQUE.test(lineas[j]) && lineas[j].trim() !== '') j++;
+    const trozo = lineas.slice(desde, j).join('\n');
+    i = j;
+    if (/^\s*return\b/.test(trozo)) continue;
+
+    // Sólo lo que se evalúa al renderizar: lo de antes del primer `=>` o
+    // `function`. Lo de después es cuerpo de función y corre cuando se llama.
+    const corte = trozo.search(/=>|\bfunction\b/);
+    const enElRender = (corte === -1 ? trozo : trozo.slice(0, corte))
+      .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+    for (const nombre of estados) {
+      if (!new RegExp(`(?<!\\?)\\b${nombre}\\s*\\.`).test(enElRender)) continue;
+      const guarda = new RegExp(
+        `(?:!!\\s*)?\\b${nombre}\\b\\s*(?:&&|\\?|!==?\\s*null|===?\\s*null)`).test(enElRender);
+      if (guarda) continue;
+      nulos.push(`${path.basename(ruta)}:${base + desde} «${nombre}» empieza en null y se `
+        + `lee al renderizar — ${lineas[desde].trim().slice(0, 70)}`);
+    }
+  }
+}
+
 if (fallos.length) {
   console.log('\nLEE ANTES DE DECLARAR — la pantalla reventaría al renderizar:');
   for (const f of fallos) console.log('  ✗ ' + f.replace(/^(\S+):\d+ /, '$1 '));
@@ -131,4 +203,11 @@ if (fallos.length) {
   console.log('Mueve la declaración por encima de donde se lee.\n');
   process.exit(1);
 }
-console.log(`orden-de-render: nada se lee antes de declararse (${mirados.length} archivo(s))`);
+if (nulos.length) {
+  console.log('\nLEE UN ESTADO NULO AL RENDERIZAR — la pantalla no llega a pintarse:');
+  for (const n of nulos) console.log('  ✗ ' + n);
+  console.log('\nUsa «?.». Un «|| []» detrás NO defiende: no se llega a evaluar.\n');
+  process.exit(1);
+}
+console.log('orden-de-render: nada se lee antes de declararse, ni con los datos '
+  + `sin cargar (${mirados.length} archivo(s))`);

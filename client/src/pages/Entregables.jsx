@@ -389,7 +389,13 @@ export default function Entregables() {
   //
   // Los que ya cerraron, el más reciente primero. Un contenedor en borrador no
   // entra: sus costos todavía se están tecleando y el papel iría firmado.
-  const contenedoresCerrados = (datos.contenedores || [])
+  // `datos?.` y no `datos.`: esto se evalúa EN EL RENDER, y en el primer render
+  // `datos` todavía es null —la carga llega después—. Los otros veinte usos de
+  // `datos.` del archivo viven dentro de generadores y manejadores de clic, que
+  // sólo corren cuando ya hay datos; éste no, y la pantalla reventaba con
+  // «Cannot read properties of null (reading 'contenedores')» antes de pintar
+  // nada. Lo vigila tests/render-sin-datos.check.mjs.
+  const contenedoresCerrados = (datos?.contenedores || [])
     .filter(c => c.estado === 'finalizado' || c.estado === 'legado')
     .slice()
     .sort((a, b) => String(b.fecha_llegada || b.created_at || '')
