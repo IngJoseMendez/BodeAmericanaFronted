@@ -345,3 +345,163 @@ export async function exportarPDFInternos(sel, data, fileName) {
 
   doc.save(`${fileName}.pdf`);
 }
+
+/**
+ * EL PDF DE INVERSIONISTAS: en qué se gastó el contenedor y qué le toca a cada uno.
+ *
+ * Recibe los contenedores YA RESUELTOS —`{ cont, desglose, aportes }`— y no
+ * calcula ni una cifra. Es a propósito: el desglose sale de `desgloseCostos`,
+ * la misma función que alimenta el Excel y la pantalla de Contenedores. Si este
+ * papel rehiciera la cuenta, bastaría con que alguien cambiara una de las dos
+ * para que el PDF firmado y el libro enseñaran costos distintos del mismo
+ * contenedor, y es la clase de error que nadie encuentra hasta que un
+ * inversionista pregunta.
+ *
+ * Cada contenedor ocupa dos páginas: los costos y el reparto.
+ */
+export async function exportarPDFInversionistas(sel, contenedores, fileName) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  let pageAdded = false;
+
+  const addTitle = (title, sub) => {
+    if (pageAdded) doc.addPage();
+    doc.setFontSize(14);
+    doc.text(title, 40, 40);
+    if (sub) {
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(sub, 40, 56);
+      doc.setTextColor(0);
+    }
+    pageAdded = true;
+  };
+
+  const resumen = (pares, y) => {
+    autoTable(doc, {
+      startY: y,
+      body: pares.map(([k, v]) => [k, v]),
+      theme: 'plain',
+      styles: { fontSize: 9 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 200 }, 1: { halign: 'right', cellWidth: 140 } },
+    });
+    return doc.lastAutoTable.finalY + 12;
+  };
+
+  for (const { cont, desglose: d, aportes } of contenedores) {
+    if (sel.includes('COSTOS(CONTENEDOR)')) {
+      addTitle(`COSTOS DEL CONTENEDOR ${cont.numero || ''}`,
+        d.compartido
+          ? `Contenedor compartido: de ${formatNum(d.base)} unidades, ${formatNum(d.propias)} son suyas. `
+            + 'Los servicios que no son propios entran solo en esa parte.'
+          : null);
+
+      let y = resumen([
+        ['VALOR DÓLAR', (d.tasa || 0).toLocaleString('es-CO')],
+        ['CANTIDAD NOSOTROS', formatNum(d.propias)],
+        ...(d.compartido ? [['CANTIDAD TOTAL DEL CONTENEDOR', formatNum(d.base)]] : []),
+      ], 72);
+
+      autoTable(doc, {
+        startY: y,
+        head: [['PROVEEDOR', 'MONEDA', 'LO QUE COBRA', 'COSTO CO$', 'POR PACA CO$', 'UNIDADES']],
+        body: d.mercancia.map((p) => [
+          p.nombre + (p.estimado ? '  (estimado)' : ''), p.moneda,
+          p.moneda === 'USD' ? `US$ ${(p.original || 0).toLocaleString('es-CO')}` : formatCOP(p.original),
+          formatCOP(p.cop), formatCOP(p.porPaca), formatNum(p.unidades),
+        ]),
+        foot: [['TOTAL MERCANCÍA', '', '', formatCOP(d.costoMercancia),
+          formatCOP(d.propias > 0 ? d.costoMercancia / d.propias : 0), formatNum(d.propias)]],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'center' } },
+        headStyles: { fillColor: [99, 102, 241] },
+        footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      });
+      y = doc.lastAutoTable.finalY + 14;
+
+      autoTable(doc, {
+        startY: y,
+        head: [['SERVICIO', 'MONEDA', 'LO QUE COBRAN', 'LO QUE NOS TOCA CO$', 'POR PACA CO$', 'REPARTO']],
+        body: d.servicios.length ? d.servicios.map((sv) => [
+          `${sv.nombre} — ${sv.tipo}` + (sv.estimado ? '  (estimado)' : ''), sv.moneda,
+          sv.moneda === 'USD' ? `US$ ${(sv.original || 0).toLocaleString('es-CO')}` : formatCOP(sv.original),
+          formatCOP(sv.asignado), formatCOP(sv.porPaca),
+          sv.propio ? 'propio' : (d.compartido ? `${d.propias}/${d.base}` : 'entero'),
+        ]) : [['Este contenedor no tiene gastos ni servicios registrados', '', '', '', '', '']],
+        foot: [['TOTAL GASTOS', '', '', formatCOP(d.costoServicios),
+          formatCOP(d.propias > 0 ? d.costoServicios / d.propias : 0), '']],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'center' } },
+        headStyles: { fillColor: [99, 102, 241] },
+        footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      });
+      y = doc.lastAutoTable.finalY + 14;
+
+      resumen([
+        ['GRAN TOTAL INVERSIÓN', formatCOP(d.costoTotal)],
+        ['COSTO POR PACA', formatCOP(d.costoUnitario)],
+        ...(d.utilidadUnitaria ? [
+          ['UTILIDAD POR PACA', formatCOP(d.utilidadUnitaria)],
+          ['UTILIDAD DEL CONTENEDOR', formatCOP(d.utilidadTotal)],
+          ['INVERSIÓN + UTILIDAD', formatCOP(d.inversionMasUtilidad)],
+        ] : []),
+      ], y);
+    }
+
+    if (sel.includes('UTILIDAD(INVERSIONISTAS)')) {
+      addTitle(`UTILIDAD INVERSIONISTAS — CONTENEDOR ${cont.numero || ''}`);
+      const y = resumen([
+        ['PACAS', formatNum(d.propias)],
+        ['UTILIDAD/PACA', formatCOP(d.utilidadUnitaria)],
+        ['UTILIDAD/CONTENEDOR', formatCOP(d.utilidadTotal)],
+        ['VALOR DÓLAR', (d.tasa || 0).toLocaleString('es-CO')],
+        ['TOTAL INVERSIÓN', formatCOP(d.costoTotal)],
+      ], 60);
+
+      const inversion = d.costoTotal;
+      let acumCop = 0, acumPct = 0, acumUtil = 0;
+      const filas = (aportes || []).map((inv) => {
+        const cop = parseFloat(inv.aporte_cop) || 0;
+        const pct = inversion > 0 ? (cop / inversion) * 100 : 0;
+        const util = d.utilidadTotal * (pct / 100);
+        acumCop += cop; acumPct += pct; acumUtil += util;
+        return [inv.inversionista_nombre || inv.nombre || '—', formatCOP(cop),
+          `${pct.toFixed(2)}%`, formatCOP(util),
+          d.tasa > 0 ? `US$ ${(util / d.tasa).toLocaleString('es-CO', { maximumFractionDigits: 2 })}` : ''];
+      });
+
+      autoTable(doc, {
+        startY: y,
+        head: [['INVERSIONISTA', 'APORTE CO$', 'PORCENTAJE', 'UTILIDAD CO$', 'UTILIDAD US$']],
+        body: filas.length ? filas
+          : [['Sin inversionistas registrados en este contenedor', '', '', '', '']],
+        foot: filas.length ? [['TOTAL', formatCOP(acumCop), `${acumPct.toFixed(2)}%`,
+          formatCOP(acumUtil),
+          d.tasa > 0 ? `US$ ${(acumUtil / d.tasa).toLocaleString('es-CO', { maximumFractionDigits: 2 })}` : '']] : [],
+        theme: 'grid',
+        styles: { fontSize: 9 },
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+        headStyles: { fillColor: [99, 102, 241] },
+        footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      });
+
+      // Que falte capital por asignar se dice en el papel, no se deja adivinar:
+      // si el porcentaje no llega a 100 hay inversión del contenedor sin dueño.
+      if (filas.length && acumPct < 99.5) {
+        doc.setFontSize(9);
+        doc.setTextColor(217, 119, 6);
+        doc.text(`Falta por asignar el ${(100 - acumPct).toFixed(2)}% de la inversión.`,
+          40, doc.lastAutoTable.finalY + 18);
+        doc.setTextColor(0);
+      }
+    }
+  }
+
+  if (!pageAdded) {
+    doc.setFontSize(11);
+    doc.text('No seleccionaste ninguna hoja, o no hay contenedores finalizados en el periodo.', 40, 40);
+  }
+
+  doc.save(`${fileName}.pdf`);
+}

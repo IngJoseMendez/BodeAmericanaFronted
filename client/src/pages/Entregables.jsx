@@ -6,7 +6,7 @@ import {
   despachosApi, pacasApi, clientesApi, carteraApi,
   listaPreciosApi, cotizacionesApi, contenedoresApi, inversionistasApi, matrizApi,
 } from '../services/api';
-import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2, LayoutGrid } from 'lucide-react';
+import { Download, Package2, Users, Lock, FileSpreadsheet, Loader2, LayoutGrid, Briefcase } from 'lucide-react';
 import { parseMonto } from '../lib/money';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -15,9 +15,13 @@ import {
   hojaFaltantes, hojaConteoBodega, hojaDespachoGeneral,
   hojaListaPreciosClientes, hojaCotizacionCliente, hojaCarteraCliente,
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
-  hojaPreciosInternos, hojaUtilidadContenedor,
+  hojaPreciosInternos, hojaUtilidadContenedor, hojaCostosContenedor,
 } from '../lib/entregables';
-import { exportarPDFBodega, exportarPDFInternos } from '../lib/pdf';
+// El desglose de costos sale de la MISMA función que usa la pantalla de
+// Contenedores. Rehacer la cuenta aquí dejaría al entregable del inversionista
+// diciendo un costo por paca distinto del que enseña el sistema.
+import { desgloseCostos } from '../lib/contenedor';
+import { exportarPDFBodega, exportarPDFInternos, exportarPDFInversionistas } from '../lib/pdf';
 
 import { mensajeDeError } from '../lib/errores';
 const norm = (s) => String(s ?? '').trim();
@@ -56,7 +60,8 @@ export default function Entregables() {
   const [hojasSel, setHojasSel] = useState({
     bodega: ['DESPACHO(GENERAL)', 'DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'CONTEO(BODEGA)',
       'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
-    internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT']
+    internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT'],
+    inversionistas: ['COSTOS(CONTENEDOR)', 'UTILIDAD(INVERSIONISTAS)'],
   });
 
   const toggleHoja = (grupoId, hoja) => {
@@ -375,6 +380,72 @@ export default function Entregables() {
     }
   };
 
+  // ── LOS CONTENEDORES QUE ENTRAN EN LOS ENTREGABLES DE INVERSIONISTAS ──
+  //
+  // Se resuelven UNA vez y se usan para el Excel y para el PDF, para que los dos
+  // salgan del mismo dato. Cada uno llega con su desglose ya calculado y con sus
+  // aportes; el PDF no vuelve a pedir nada ni a calcular nada.
+  //
+  // Los aportes son opcionales a propósito: hoy `aportes_inversionista` está
+  // vacía, así que el entregable sale con los costos completos y el reparto
+  // diciendo que no hay inversionistas registrados. Eso es lo correcto —el
+  // papel dice la verdad sobre lo que hay— y se llena solo en cuanto ella los
+  // registre desde el contenedor.
+  const resolverInversionistas = async () => {
+    const rango = rangoInternos();
+    let finalizados = (datos.contenedores || [])
+      .filter(c => c.estado === 'finalizado' || c.estado === 'legado');
+    if (rango) {
+      finalizados = finalizados.filter(c => {
+        const f = new Date(c.fecha_llegada || c.updated_at || c.created_at);
+        return !isNaN(f) && f >= rango.desde && f <= rango.hasta;
+      });
+    } else {
+      finalizados = finalizados.slice(0, 1);
+    }
+    if (finalizados.length === 0) {
+      addToast(rango
+        ? `Sin contenedores en ${rango.etiqueta}`
+        : 'Sin contenedores finalizados', 'warning');
+      return [];
+    }
+    const salida = [];
+    for (const c of finalizados.slice(0, 12)) {
+      try {
+        const cont = await contenedoresApi.getOne(c.id);
+        const aportes = await inversionistasApi
+          .getAportes({ contenedor_id: c.id })
+          .catch(() => []);
+        salida.push({
+          cont,
+          desglose: desgloseCostos(cont),
+          aportes: Array.isArray(aportes) ? aportes : [],
+        });
+      } catch (err) {
+        addToast(mensajeDeError(err, `leer el contenedor ${c.numero || c.id}`), 'error');
+      }
+    }
+    return salida;
+  };
+
+  const genInversionistas = async (wb, sel) => {
+    const lista = await resolverInversionistas();
+    const usados = new Set(wb.worksheets.map(w => w.name));
+    const quiere = (h) => !sel || sel.includes(h);
+    for (const { cont, desglose, aportes } of lista) {
+      // Las hojas se llaman COSTOS/REPARTO y no COSTOS/UTILIDAD a propósito: el
+      // grupo de internos ya saca hojas «UTILIDAD <numero>» y en el libro
+      // completo las dos colecciones caen en el mismo archivo. Dos hojas con el
+      // mismo nombre revientan al guardar.
+      if (quiere('COSTOS(CONTENEDOR)')) {
+        hojaCostosContenedor(wb, cont, nombreHoja(`COSTOS ${cont.numero || cont.id}`, usados), desglose);
+      }
+      if (quiere('UTILIDAD(INVERSIONISTAS)')) {
+        hojaUtilidadContenedor(wb, cont, nombreHoja(`REPARTO ${cont.numero || cont.id}`, usados), aportes);
+      }
+    }
+  };
+
   const grupos = [
     {
       id: 'bodega', titulo: 'Para la bodega', icon: Package2,
@@ -416,10 +487,24 @@ export default function Entregables() {
       gen: genInternos, archivo: 'Entregables_Internos',
       soloAdmin: true,
     },
+    {
+      id: 'inversionistas', titulo: 'Inversionistas', icon: Briefcase,
+      color: 'text-accent bg-accent/10',
+      desc: 'En qué se gastó el contenedor y qué utilidad le toca a cada quien.',
+      // Va en su propio cuadro y no dentro de «Internos» porque es lo único que
+      // SÍ sale de la oficina: es lo que se le entrega a un inversionista. Lleva
+      // costos, así que sigue tras rol admin — lo que cambia es a quién se le da,
+      // no quién lo descarga.
+      hojas: ['COSTOS(CONTENEDOR)', 'UTILIDAD(INVERSIONISTAS)'],
+      gen: genInversionistas, archivo: 'Inversionistas',
+      soloAdmin: true,
+      nota: 'Usa el mismo mes que los internos. El reparto necesita los aportes '
+        + 'registrados en el contenedor; si no los tiene, la hoja lo dice.',
+    },
   ].filter(g => !g.soloAdmin || esAdmin);
 
   const descargarGrupo = (g, isPdf = false) => conCarga(g.id + (isPdf ? '_pdf' : '_excel'), async () => {
-    const sel = (g.id === 'bodega' || g.id === 'internos') ? (hojasSel[g.id] || []) : g.hojas;
+    const sel = hojasSel[g.id] ? (hojasSel[g.id] || []) : g.hojas;
     if (sel.length === 0) {
       addToast('No seleccionaste ninguna hoja', 'warning');
       return;
@@ -456,6 +541,10 @@ export default function Entregables() {
         }, totales, g.archivo);
       } else if (g.id === 'internos') {
         await exportarPDFInternos(sel, { inventario: datos.inventario || [], cartera: datos.cartera || [] }, g.archivo);
+      } else if (g.id === 'inversionistas') {
+        // El PDF recibe los contenedores YA resueltos, con el desglose hecho:
+        // el papel y el Excel salen del mismo cálculo.
+        await exportarPDFInversionistas(sel, await resolverInversionistas(), g.archivo);
       }
       addToast(`${g.titulo}: PDF descargado`, 'success');
     } else {
@@ -463,9 +552,11 @@ export default function Entregables() {
       await g.gen(wb, sel);
       // Remove unselected sheets (handle dynamic names for internos)
       wb.worksheets.slice().forEach(ws => {
-        const keep = sel.includes(ws.name) || 
+        const keep = sel.includes(ws.name) ||
                      (sel.includes('PRECIOSINTERNOS') && ws.name.startsWith('PRECIOS')) ||
-                     (sel.includes('UTILIDADCONT') && ws.name.startsWith('UTILIDAD'));
+                     (sel.includes('UTILIDADCONT') && ws.name.startsWith('UTILIDAD')) ||
+                     (sel.includes('COSTOS(CONTENEDOR)') && ws.name.startsWith('COSTOS')) ||
+                     (sel.includes('UTILIDAD(INVERSIONISTAS)') && ws.name.startsWith('REPARTO'));
         if (!keep) {
           wb.removeWorksheet(ws.id);
         }
@@ -525,7 +616,7 @@ export default function Entregables() {
 
                 <ul className="space-y-1 mb-3">
                   {g.hojas.map(h => {
-                    const esSeleccionable = g.id === 'bodega' || g.id === 'internos';
+                    const esSeleccionable = Boolean(hojasSel[g.id]);
                     const sel = esSeleccionable ? (hojasSel[g.id] || []).includes(h) : true;
                     return (
                       <li key={h} className="text-xs font-mono text-muted flex items-center gap-2">
@@ -554,9 +645,9 @@ export default function Entregables() {
                 </div>
 
                 {/* Período: filtra qué contenedores entran en los internos */}
-                {g.id === 'internos' && (
+                {(g.id === 'internos' || g.id === 'inversionistas') && (
                   <div className="mb-3 space-y-2">
-                    <label className="block text-xs font-semibold text-muted" htmlFor="periodo-int">
+                    <label className="block text-xs font-semibold text-muted" htmlFor={`periodo-${g.id}`}>
                       Período
                     </label>
                     <BuscadorLista
@@ -567,7 +658,7 @@ export default function Entregables() {
                         { value: 'mes', label: 'Este mes' },
                         { value: 'rango', label: 'Rango de fechas…' },
                       ]}
-                      id="periodo-int"
+                      id={`periodo-${g.id}`}
                       className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
                     />
 
@@ -615,7 +706,7 @@ export default function Entregables() {
                       ? <><Loader2 size={15} className="mr-1 animate-spin" /> Generando…</>
                       : <><Download size={15} className="mr-1" /> Excel</>}
                   </Button>
-                  {(g.id === 'bodega' || g.id === 'internos') && (
+                  {Boolean(hojasSel[g.id]) && (
                     <Button variant="outline" onClick={descargarGrupo(g, true)} disabled={cargando || generando}
                             className="flex-1 px-3 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
                       {generando === g.id + '_pdf'

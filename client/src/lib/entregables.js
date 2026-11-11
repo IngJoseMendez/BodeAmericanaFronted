@@ -1635,6 +1635,166 @@ export function hojaPreciosInternos(wb, cont, nombreHoja) {
   return ws;
 }
 
+/** La fila de total de un bloque de costos, con su promedio por paca. */
+function totalBloque(ws, fila, etiqueta, valor, propias, nCols = 6) {
+  const t = ws.getRow(fila);
+  t.height = 20;
+  t.getCell(1).value = etiqueta;
+  t.getCell(4).value = valor;
+  t.getCell(5).value = propias > 0 ? valor / propias : 0;
+  t.getCell(4).numFmt = '$#,##0';
+  t.getCell(5).numFmt = '$#,##0';
+  for (let i = 1; i <= nCols; i++) {
+    t.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    t.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    t.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' };
+  }
+  return fila + 1;
+}
+
+/**
+ * COSTOS(CONTENEDOR) — en qué se gastó el contenedor, línea por línea.
+ *
+ * Replica el formato que se llevaba a mano («COSTOS DEL CONTENEDOR»): la
+ * mercancía de cada proveedor, cada servicio con su moneda, y el promedio por
+ * paca. Es lo que antes había que ir a buscar abriendo el contenedor en la
+ * pantalla.
+ *
+ * Las cifras NO se calculan aquí: llegan de `desgloseCostos`, la misma cuenta
+ * que usa la pantalla de Contenedores y que `tests/costos-contenedor.test.mjs`
+ * compara contra lo que el servidor dejó guardado. Un entregable que se le
+ * entrega a un inversionista no puede decir un costo por paca distinto del que
+ * enseña el sistema.
+ *
+ * DOS COSAS QUE LA HOJA TIENE QUE DECIR EN VOZ ALTA, porque cambian el número y
+ * a simple vista no se ven:
+ *   · Si el contenedor va COMPARTIDO, cuántas unidades son suyas y cuántas del
+ *     contenedor entero. Los servicios que no son propios entran sólo en esa
+ *     parte, y olvidarlo son 107 millones de diferencia en el C626.
+ *   · Cuáles son PROPIOS —no se reparten— y cuáles van estimados porque
+ *     todavía no llegó la factura.
+ */
+export function hojaCostosContenedor(wb, cont, nombreHoja, desglose) {
+  const ws = wb.addWorksheet(nombreHoja || 'COSTOS');
+  [34, 16, 18, 20, 18, 14].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  const d = desglose;
+
+  let fila = titulo(ws, `COSTOS DEL CONTENEDOR ${cont.numero || ''} — ${hoyStr()}`, 6);
+
+  const dato = (k, v, fmt, resaltar) => {
+    const r = ws.getRow(fila);
+    r.getCell(1).value = k;
+    r.getCell(1).font = { bold: true, size: 11 };
+    r.getCell(2).value = v;
+    if (fmt) r.getCell(2).numFmt = fmt;
+    r.getCell(2).font = { bold: true, size: 12, color: { argb: resaltar ? '16a34a' : INK } };
+    r.getCell(2).alignment = { horizontal: 'right' };
+    if (resaltar) {
+      [1, 2].forEach((i) => {
+        r.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT } };
+      });
+    }
+    r.height = 20;
+    fila++;
+  };
+
+  dato('VALOR DOLAR', d.tasa, '#,##0.00');
+  dato('CANTIDAD NOSOTROS', d.propias, '#,##0');
+  if (d.compartido) {
+    dato('CANTIDAD TOTAL DEL CONTENEDOR', d.base, '#,##0');
+    const r = ws.getRow(fila);
+    r.getCell(1).value = `Contenedor compartido: de ${d.base} unidades, ${d.propias} son suyas. `
+      + 'Los servicios que no son propios entran solo en esa parte.';
+    r.getCell(1).font = { italic: true, size: 10, color: { argb: 'd97706' } };
+    ws.mergeCells(fila, 1, fila, 6);
+    fila += 2;
+  }
+  if (d.utilidadUnitaria) dato('UTILIDAD POR PACA', d.utilidadUnitaria, '$#,##0');
+
+  fila++;
+  ws.getCell(fila, 1).value = 'MERCANCIA';
+  ws.getCell(fila, 1).font = { bold: true, size: 11, color: { argb: ACCENT } };
+  fila++;
+  fila = cabecera(ws, fila, ['PROVEEDOR', 'MONEDA', 'LO QUE COBRA',
+    'COSTO CO$', 'POR PACA CO$', 'UNIDADES']);
+  for (const p of d.mercancia) {
+    const r = ws.getRow(fila);
+    r.height = 18;
+    r.getCell(1).value = p.nombre + (p.estimado ? '  (estimado)' : '');
+    r.getCell(2).value = p.moneda;
+    r.getCell(3).value = p.original;
+    r.getCell(4).value = p.cop;
+    r.getCell(5).value = p.porPaca;
+    r.getCell(6).value = p.unidades || null;
+    r.getCell(3).numFmt = p.moneda === 'USD' ? 'US$ #,##0.00' : '$#,##0';
+    r.getCell(4).numFmt = '$#,##0';
+    r.getCell(5).numFmt = '$#,##0';
+    r.getCell(6).numFmt = '#,##0';
+    for (let i = 1; i <= 6; i++) {
+      r.getCell(i).font = { size: 10, italic: p.estimado };
+      r.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' };
+    }
+    zebra(ws, fila, 6);
+    fila++;
+  }
+  fila = totalBloque(ws, fila, 'TOTAL MERCANCIA', d.costoMercancia, d.propias);
+
+  fila++;
+  ws.getCell(fila, 1).value = 'GASTOS Y SERVICIOS';
+  ws.getCell(fila, 1).font = { bold: true, size: 11, color: { argb: ACCENT } };
+  fila++;
+  fila = cabecera(ws, fila, ['SERVICIO', 'MONEDA', 'LO QUE COBRAN',
+    'LO QUE NOS TOCA CO$', 'POR PACA CO$', 'REPARTO']);
+  for (const sv of d.servicios) {
+    const r = ws.getRow(fila);
+    r.height = 18;
+    r.getCell(1).value = `${sv.nombre} — ${sv.tipo}` + (sv.estimado ? '  (estimado)' : '');
+    r.getCell(2).value = sv.moneda;
+    r.getCell(3).value = sv.original;
+    r.getCell(4).value = sv.asignado;
+    r.getCell(5).value = sv.porPaca;
+    r.getCell(6).value = sv.propio ? 'propio' : (d.compartido ? `${d.propias}/${d.base}` : 'entero');
+    r.getCell(3).numFmt = sv.moneda === 'USD' ? 'US$ #,##0.00' : '$#,##0';
+    r.getCell(4).numFmt = '$#,##0';
+    r.getCell(5).numFmt = '$#,##0';
+    for (let i = 1; i <= 6; i++) {
+      r.getCell(i).font = { size: 10, italic: sv.estimado };
+      r.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right', vertical: 'middle' };
+    }
+    zebra(ws, fila, 6);
+    fila++;
+  }
+  if (!d.servicios.length) {
+    ws.getCell(fila, 1).value = 'Este contenedor no tiene gastos ni servicios registrados';
+    ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: '94a3b8' } };
+    fila++;
+  }
+  fila = totalBloque(ws, fila, 'TOTAL GASTOS', d.costoServicios, d.propias);
+
+  fila++;
+  dato('GRAN TOTAL INVERSION', d.costoTotal, '$#,##0', true);
+  dato('COSTO POR PACA', d.costoUnitario, '$#,##0', true);
+  if (d.utilidadUnitaria) {
+    dato('UTILIDAD DEL CONTENEDOR', d.utilidadTotal, '$#,##0');
+    dato('INVERSION + UTILIDAD', d.inversionMasUtilidad, '$#,##0', true);
+  }
+
+  // Si la cuenta de esta hoja no diera lo que el servidor guardó, se enseñan las
+  // DOS cifras. Nunca se elige una por nuestra cuenta: la diferencia es el dato,
+  // y quien lea el entregable tiene que poder verla.
+  const g = d.guardado;
+  if (g.costoTotal > 0 && Math.abs(g.costoTotal - d.costoTotal) > 1) {
+    fila++;
+    ws.getCell(fila, 1).value = 'OJO: el sistema tiene guardado '
+      + `${Math.round(g.costoTotal).toLocaleString('es-CO')} y esta hoja suma `
+      + `${Math.round(d.costoTotal).toLocaleString('es-CO')}. `
+      + 'Hay que abrir el contenedor y volver a guardarlo antes de usar este entregable.';
+    ws.getCell(fila, 1).font = { bold: true, size: 10, color: { argb: 'dc2626' } };
+    ws.mergeCells(fila, 1, fila, 6);
+  }
+  return ws;
+}
+
 /** UTILIDADCONT — la utilidad del contenedor y su reparto. */
 export function hojaUtilidadContenedor(wb, cont, nombreHoja, inversionistas = []) {
   const ws = wb.addWorksheet(nombreHoja || 'UTILIDADCONT');

@@ -234,3 +234,83 @@ export function serviciosPorUnidadGuardados(contenedor = {}) {
   const servicios = parseFloat(contenedor.costo_servicios_total) || 0;
   return { valor: unidades > 0 ? servicios / unidades : 0, derivado: servicios > 0 && unidades > 0 };
 }
+
+// ── EL DESGLOSE DE COSTOS DE UN CONTENEDOR YA GUARDADO ────────────
+//
+// La pantalla de Contenedores ya calcula esto mientras se teclea
+// (`calcularResumen`), pero lo hace sobre el FORMULARIO. El entregable necesita
+// lo mismo sobre un contenedor TRAÍDO DEL SERVIDOR, y la cuenta no puede ser
+// otra: si el Excel que se le entrega a un inversionista dijera un costo por
+// paca distinto del que enseña la pantalla, no habría forma de saber cuál de
+// los dos creer.
+//
+// Por eso esta función se apoya en las MISMAS piezas que usan la pantalla y el
+// servidor —`costoProveedorEfectivo`, `costoServicioEfectivo`,
+// `esServicioPropio`, `costoServicioAsignado`— y la prueba
+// `tests/costos-contenedor.test.mjs` comprueba que su total coincide con el
+// `costo_total` y el `costo_unitario` que el servidor dejó guardados.
+//
+// Las dos sutilezas que importan y que son fáciles de perder:
+//   · Un servicio PROPIO no se prorratea. El flete del contenedor se reparte
+//     entre todas sus unidades; el transporte de NUESTRA mercancía desde el
+//     puerto es nuestro entero.
+//   · Un servicio o un proveedor sin costo real usa su estimado, igual que
+//     `costoBaseServicio` y `costoBaseProveedor` en el servidor.
+export function desgloseCostos(contenedor = {}) {
+  const tasa = parseFloat(contenedor.tasa_conversion) || 1;
+  const propias = parseInt(contenedor.total_pacas_recibidas)
+    || parseInt(contenedor.total_pacas) || 0;
+  const cantidadTotal = parseInt(contenedor.cantidad_total) || 0;
+  const base = cantidadTotal > 0 ? cantidadTotal : propias;
+
+  const mercancia = (contenedor.proveedores_mercancia || []).map((p) => {
+    const moneda = p.moneda || 'USD';
+    const original = costoProveedorEfectivo(p);
+    const cop = moneda === 'USD' ? original * tasa : original;
+    const real = (p.detalles || []).reduce(
+      (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+    const unidades = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+    return {
+      nombre: p.proveedor_nombre || '—', moneda, original, cop, unidades,
+      estimado: real === 0 && original > 0,
+      porPaca: propias > 0 ? cop / propias : 0,
+    };
+  });
+
+  const servicios = (contenedor.servicios || []).map((sv) => {
+    const moneda = sv.moneda || 'COP';
+    const propio = esServicioPropio(sv);
+    const original = costoServicioEfectivo(sv);
+    const facturado = moneda === 'USD' ? original * tasa : original;
+    const asignado = costoServicioAsignado(facturado, { propio, base, propias });
+    return {
+      tipo: sv.tipo_servicio || '—', nombre: sv.proveedor_nombre || '—', moneda, propio,
+      original, facturado, asignado,
+      estimado: !(parseFloat(sv.costo) > 0),
+      porPaca: propias > 0 ? asignado / propias : 0,
+    };
+  });
+
+  const costoMercancia = mercancia.reduce((s, p) => s + p.cop, 0);
+  const costoServicios = servicios.reduce((s, sv) => s + sv.asignado, 0);
+  const costoTotal = costoMercancia + costoServicios;
+  const costoUnitario = propias > 0 ? costoTotal / propias : 0;
+  const utilidadUnitaria = parseFloat(contenedor.utilidad_unitaria) || 0;
+
+  return {
+    tasa, propias, base, compartido: cantidadTotal > 0 && cantidadTotal !== propias,
+    mercancia, servicios,
+    costoMercancia, costoServicios, costoTotal, costoUnitario,
+    utilidadUnitaria,
+    utilidadTotal: utilidadUnitaria * propias,
+    inversionMasUtilidad: costoTotal + utilidadUnitaria * propias,
+    // Lo que el servidor dejó guardado, para poder enseñar las dos cifras si
+    // alguna vez no coinciden en vez de elegir una por nuestra cuenta.
+    guardado: {
+      costoTotal: parseFloat(contenedor.costo_total) || 0,
+      costoUnitario: parseFloat(contenedor.costo_unitario) || 0,
+      costoMercancia: parseFloat(contenedor.costo_mercancia_total) || 0,
+      costoServicios: parseFloat(contenedor.costo_servicios_total) || 0,
+    },
+  };
+}
