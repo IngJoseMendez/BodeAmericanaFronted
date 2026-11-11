@@ -46,6 +46,11 @@ export default function Entregables() {
   const [periodo, setPeriodo] = useState('todo');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  // El contenedor del entregable de inversionistas. Es UNO y se elige a mano:
+  // ese papel se le entrega a una persona concreta por un contenedor concreto,
+  // así que heredar el «período» de los internos —que saca hasta doce de
+  // golpe— era la pregunta equivocada.
+  const [contInvSel, setContInvSel] = useState('');
   const { addToast } = useToast();
   // Los entregables internos llevan costos, márgenes y la cartera de TODOS los
   // clientes. La tarjeta decía "no sale de la oficina" pero no lo impedía: un
@@ -380,52 +385,68 @@ export default function Entregables() {
     }
   };
 
-  // ── LOS CONTENEDORES QUE ENTRAN EN LOS ENTREGABLES DE INVERSIONISTAS ──
+  // ── EL CONTENEDOR DEL ENTREGABLE DE INVERSIONISTAS ────────────────
   //
-  // Se resuelven UNA vez y se usan para el Excel y para el PDF, para que los dos
-  // salgan del mismo dato. Cada uno llega con su desglose ya calculado y con sus
-  // aportes; el PDF no vuelve a pedir nada ni a calcular nada.
+  // Los que ya cerraron, el más reciente primero. Un contenedor en borrador no
+  // entra: sus costos todavía se están tecleando y el papel iría firmado.
+  const contenedoresCerrados = (datos.contenedores || [])
+    .filter(c => c.estado === 'finalizado' || c.estado === 'legado')
+    .slice()
+    .sort((a, b) => String(b.fecha_llegada || b.created_at || '')
+      .localeCompare(String(a.fecha_llegada || a.created_at || '')));
+
+  // dd/mm/aaaa recortando la cadena, SIN pasar por `new Date(...)`. Es la trampa
+  // de siempre del proyecto: una fecha de solo día se lee como medianoche UTC y
+  // en Colombia retrocede un día al pintarla.
+  const fechaCorta = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ''));
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+  };
+
+  const opcionesContenedor = contenedoresCerrados.map(c => {
+    const partes = [`${int(c.total_pacas)} pacas`];
+    const f = fechaCorta(c.fecha_llegada);
+    if (f) partes.push(`llegó ${f}`);
+    return { value: String(c.id), label: `${c.numero || c.id} · ${partes.join(' · ')}` };
+  });
+
+  // Sin elegir nada vale el más reciente, que es lo que se quiere el 90% de las
+  // veces. Se calcula aquí y no con un useEffect para que no haya un instante en
+  // que el desplegable esté vacío mientras cargan los contenedores.
+  const contInvActual = contInvSel || (opcionesContenedor[0]?.value ?? '');
+  const contInvNumero = contenedoresCerrados
+    .find(c => String(c.id) === String(contInvActual))?.numero || '';
+
+  // ── EL CONTENEDOR, YA RESUELTO ────────────────────────────────────
+  //
+  // Se resuelve UNA vez y se usa para el Excel y para el PDF, para que los dos
+  // salgan del mismo dato: llega con su desglose ya calculado y con sus aportes,
+  // y el PDF no vuelve a pedir nada ni a calcular nada.
   //
   // Los aportes son opcionales a propósito: hoy `aportes_inversionista` está
   // vacía, así que el entregable sale con los costos completos y el reparto
-  // diciendo que no hay inversionistas registrados. Eso es lo correcto —el
-  // papel dice la verdad sobre lo que hay— y se llena solo en cuanto ella los
-  // registre desde el contenedor.
+  // diciendo que no hay inversionistas registrados. Eso es lo correcto —el papel
+  // dice la verdad sobre lo que hay— y se llena solo en cuanto se registren
+  // desde la pantalla de Utilidad.
   const resolverInversionistas = async () => {
-    const rango = rangoInternos();
-    let finalizados = (datos.contenedores || [])
-      .filter(c => c.estado === 'finalizado' || c.estado === 'legado');
-    if (rango) {
-      finalizados = finalizados.filter(c => {
-        const f = new Date(c.fecha_llegada || c.updated_at || c.created_at);
-        return !isNaN(f) && f >= rango.desde && f <= rango.hasta;
-      });
-    } else {
-      finalizados = finalizados.slice(0, 1);
-    }
-    if (finalizados.length === 0) {
-      addToast(rango
-        ? `Sin contenedores en ${rango.etiqueta}`
-        : 'Sin contenedores finalizados', 'warning');
+    if (!contInvActual) {
+      addToast('No hay contenedores cerrados todavía', 'warning');
       return [];
     }
-    const salida = [];
-    for (const c of finalizados.slice(0, 12)) {
-      try {
-        const cont = await contenedoresApi.getOne(c.id);
-        const aportes = await inversionistasApi
-          .getAportes({ contenedor_id: c.id })
-          .catch(() => []);
-        salida.push({
-          cont,
-          desglose: desgloseCostos(cont),
-          aportes: Array.isArray(aportes) ? aportes : [],
-        });
-      } catch (err) {
-        addToast(mensajeDeError(err, `leer el contenedor ${c.numero || c.id}`), 'error');
-      }
+    try {
+      const cont = await contenedoresApi.getOne(contInvActual);
+      const aportes = await inversionistasApi
+        .getAportes({ contenedor_id: contInvActual })
+        .catch(() => []);
+      return [{
+        cont,
+        desglose: desgloseCostos(cont),
+        aportes: Array.isArray(aportes) ? aportes : [],
+      }];
+    } catch (err) {
+      addToast(mensajeDeError(err, `leer el contenedor ${contInvNumero || contInvActual}`), 'error');
+      return [];
     }
-    return salida;
   };
 
   const genInversionistas = async (wb, sel) => {
@@ -496,10 +517,14 @@ export default function Entregables() {
       // costos, así que sigue tras rol admin — lo que cambia es a quién se le da,
       // no quién lo descarga.
       hojas: ['COSTOS(CONTENEDOR)', 'UTILIDAD(INVERSIONISTAS)'],
-      gen: genInversionistas, archivo: 'Inversionistas',
+      gen: genInversionistas,
+      // El número del contenedor va en el nombre del archivo: si no, bajar dos
+      // contenedores deja dos «Inversionistas.xlsx» y el segundo se llama
+      // «(1)». Quien lo recibe tiene que saber de cuál es sin abrirlo.
+      archivo: `Inversionistas_${contInvNumero || 'contenedor'}`,
       soloAdmin: true,
-      nota: 'Usa el mismo mes que los internos. El reparto necesita los aportes '
-        + 'registrados en el contenedor; si no los tiene, la hoja lo dice.',
+      nota: 'El reparto necesita los aportes registrados en Utilidad; si el '
+        + 'contenedor no los tiene, la hoja lo dice en vez de salir en blanco.',
     },
   ].filter(g => !g.soloAdmin || esAdmin);
 
@@ -644,8 +669,37 @@ export default function Entregables() {
                   )}
                 </div>
 
+                {/* Contenedor: el entregable de inversionistas es de UNO solo */}
+                {g.id === 'inversionistas' && (
+                  <div className="mb-3 space-y-2">
+                    <label className="block text-xs font-semibold text-muted" htmlFor="contenedor-inv">
+                      Contenedor
+                    </label>
+                    {opcionesContenedor.length > 0 ? (
+                      <>
+                        <BuscadorLista
+                          value={contInvActual}
+                          onChange={(valorElegido) => setContInvSel(valorElegido)}
+                          opciones={opcionesContenedor}
+                          id="contenedor-inv"
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+                        />
+                        <p className="text-[11px] text-muted">
+                          Se descarga sólo este contenedor. Salen los cerrados, el más
+                          reciente arriba; uno en borrador no entra porque sus costos
+                          todavía se están tecleando.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-warning">
+                        No hay contenedores cerrados todavía.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Período: filtra qué contenedores entran en los internos */}
-                {(g.id === 'internos' || g.id === 'inversionistas') && (
+                {g.id === 'internos' && (
                   <div className="mb-3 space-y-2">
                     <label className="block text-xs font-semibold text-muted" htmlFor={`periodo-${g.id}`}>
                       Período
