@@ -482,6 +482,18 @@ export const analyticsApi = {
   },
 };
 
+// Catalogo de tipos de servicio de un contenedor. Guarda el TEXTO en
+// `contenedor_servicios.tipo_servicio`, no un id, igual que los transportes:
+// renombrar o quitar un tipo NO toca los servicios ya guardados.
+export const tiposServicioApi = {
+  getAll({ todos } = {}) {
+    return api.get(`/tipos-servicio${todos ? '?todos=true' : ''}`);
+  },
+  create(data) { return api.post('/tipos-servicio', data); },
+  update(id, data) { return api.put(`/tipos-servicio/${id}`, data); },
+  remove(id) { return api.delete(`/tipos-servicio/${id}`); },
+};
+
 export const tiposPacaApi = {
   getTipos() { return api.get('/tipos-paca/tipos'); },
   createTipo(data) { return api.post('/tipos-paca/tipos', data); },

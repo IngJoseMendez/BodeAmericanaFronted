@@ -7,15 +7,15 @@ import {
   ArrowRight, AlertTriangle, Layers, Search, Download,
   BarChart2, Calendar, List, ChevronRight, BookTemplate, Save,
   ClipboardCheck, Sparkles, RefreshCw, Info,
-  Copy, ClipboardPaste, CornerDownLeft, PanelRight, PanelBottom,
+  Copy, ClipboardPaste, CornerDownLeft, PanelRight, PanelBottom, Settings2,
 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { leerBloquePegado, cruzarConCatalogo, CAMPOS_PEGADO } from '../lib/pegarLineas';
-import { Modal, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista, CampoMonto } from '../components/common';
+import { Modal, Button, useToast, useConfirm, TableSkeleton, RefLink, BuscadorLista, CampoMonto } from '../components/common';
 // `api` suelto además de contenedoresApi: el consecutivo de número
 // (/contenedores/siguiente-numero) todavía no tiene método propio en el cliente
 // de la API, y ese archivo lo está tocando otra persona.
-import { api, contenedoresApi, preciosApi } from '../services/api';
+import { api, contenedoresApi, preciosApi, tiposServicioApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import { parseMonto, formatCOP, formatNumero, formatMoneda } from '../lib/money';
@@ -25,6 +25,7 @@ import { hoy, formatFecha, aInputDate } from '../lib/fecha';
 import { selloBorrador } from './matriz/borrador';
 import { descargarExcel } from '../lib/descargar';
 import { mensajeDeError } from '../lib/errores';
+import { GestorTiposServicio } from '../components/GestorTiposServicio';
 // Las cuentas del contenedor viven fuera de la pantalla porque el SERVIDOR tiene
 // su propia copia de las mismas fórmulas —él decide lo que se guarda, esta
 // pantalla lo que se ve— y las dos tienen que dar lo mismo. En lib se pueden
@@ -37,7 +38,12 @@ import {
 } from '../lib/contenedor';
 
 // ── Constants ────────────────────────────────────────────────────
-const TIPOS_SERVICIO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
+// Los tipos de servicio ya NO viven aqui: salen de la tabla `tipos_servicio`
+// y se editan desde el boton «Tipos» de la seccion de Servicios. Esta lista
+// se queda SOLO como respaldo para que la pantalla siga sirviendo si la
+// consulta se cae: sin ella el desplegable saldria vacio y no se podria
+// registrar un servicio, que es peor que ofrecer los seis de siempre.
+const TIPOS_SERVICIO_RESPALDO = ['transporte', 'aduana', 'cargue', 'descargue', 'almacenaje', 'otro'];
 
 // La raya de una cabecera de tabla PEGAJOSA. Va como sombra interior y no como
 // borde porque un `border-bottom` lo pinta la TABLA, no la celda: al despegarse
@@ -917,6 +923,9 @@ export default function Contenedores() {
   const [formData, setFormData]       = useState(FORM_VACIO);
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
+  // El catalogo de tipos de servicio, y el gestor para editarlo.
+  const [tiposServicio, setTiposServicio] = useState(null);
+  const [gestorTipos, setGestorTipos] = useState(false);
   const monedaBase = formData.moneda_base === 'COP' ? 'COP' : 'USD';
 
   // Moneda en la que se LEE el resumen de costos: 'USD' | 'COP'.
@@ -925,6 +934,14 @@ export default function Contenedores() {
   useEffect(() => {
     localStorage.setItem('bodega_monedaVista', monedaResumen);
   }, [monedaResumen]);
+
+  // El catalogo de tipos de servicio. Si la consulta se cae se queda en null
+  // y el desplegable usa TIPOS_SERVICIO_RESPALDO: un desplegable vacio
+  // impediria registrar un servicio, que es peor que ofrecer los de siempre.
+  const cargarTiposServicio = async () => {
+    try { setTiposServicio(await tiposServicioApi.getAll()); } catch { setTiposServicio(null); }
+  };
+  useEffect(() => { cargarTiposServicio(); }, []);
 
   // ── Finalize ───────────────────────────────────────────────────
   const [preciosVenta, setPreciosVenta]           = useState({});
@@ -5197,6 +5214,13 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <h3 className="text-sm font-semibold text-primary leading-none">Servicios</h3>
                     <p className="text-[11px] text-muted mt-0.5">Transporte, aduana, maniobras y otros costos operativos</p>
                   </div>
+                  {/* Los tipos se editan desde aqui, junto al desplegable que
+                      los usa: una pantalla de ajustes aparte serian dos sitios
+                      donde mantener la misma lista. */}
+                  <Button type="button" variant="ghost" size="sm" icon={Settings2}
+                          onClick={() => setGestorTipos(true)} className="ml-auto">
+                    Tipos
+                  </Button>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-surface overflow-hidden">
                   <div className="divide-y divide-border/30">
@@ -5209,7 +5233,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             opcionVacia="Tipo"
                             placeholder="Tipo"
                             opciones={[
-                              ...TIPOS_SERVICIO.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) })),
+                              ...(tiposServicio?.length
+                                ? tiposServicio.map((t) => ({ value: t.nombre, label: t.nombre.charAt(0).toUpperCase() + t.nombre.slice(1) }))
+                                : TIPOS_SERVICIO_RESPALDO.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))),
                             ]}
                             aria-label={`Tipo del servicio ${si + 1}`}
                             className={`${inpBase} lg:w-36`}
@@ -6760,6 +6786,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           </div>
         </div>
       </Modal>
+
+      {/* El gestor de tipos de servicio. Al cerrarlo se recarga el catalogo
+          para que el desplegable ensene lo que acaba de cambiar sin tener
+          que recargar la pantalla. */}
+      <GestorTiposServicio
+        abierto={gestorTipos}
+        onCerrar={() => setGestorTipos(false)}
+        onCambio={cargarTiposServicio}
+      />
     </Layout>
   );
 }
