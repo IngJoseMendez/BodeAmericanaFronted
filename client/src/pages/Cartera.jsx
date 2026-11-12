@@ -6,7 +6,7 @@ import { etiquetaTipoCliente } from '../types';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, bancosApi, matrizApi } from '../services/api';
-import { TRANSACCIONES, etiquetaTransaccion, transaccionTieneDestino } from '../types';
+import { TRANSACCIONES, etiquetaTransaccion, transaccionTieneDestino, etiquetaClaseMovimiento } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen, ExternalLink } from 'lucide-react';
@@ -62,6 +62,26 @@ function indexarFaltantesCartera(respuesta) {
 // 100 llena de sobra el alto visible de la tabla (max-h-72), así que en el caso
 // normal no se nota que hay una ventana; en el caso grande, es la diferencia
 // entre abrir y esperar.
+// ── CUANTAS PACAS LLEVA UNA COMPRA ────────────────────────────────
+//
+// Sale de DOS sitios y hacen falta los dos:
+//   · una compra del Excel la trae en `cantidad`, deducida y comprobada al
+//     cargar el libro (precio x cantidad da el importe);
+//   · una venta hecha EN EL SISTEMA no la trae, porque su detalle son pacas
+//     de verdad y el servidor las manda en `detalles`.
+//
+// Devuelve null —no cero— cuando no se sabe. Un cero diria «cero pacas» y de
+// las 7.355 compras de los libros hay 223 donde no se puede saber: 213 que no
+// son mercancia (fletes, descuentos, pagos, que llevan un recuento de prendas
+// que NO son pacas) y 59 donde la propia hoja se contradice con su total.
+const pacasDeCompra = (m) => {
+  if (m?.cantidad != null) return Number(m.cantidad) || 0;
+  if (m?.detalles?.length) {
+    return m.detalles.reduce((s, d) => s + (Number(d.cantidad) || 0), 0);
+  }
+  return null;
+};
+
 const VENTANA_FILAS = 100;
 
 // El aviso de que hay más, con las dos salidas. Va FUERA del contenedor con
@@ -456,6 +476,24 @@ export default function Cartera() {
     () => comprasFiltradas.reduce((s, m) => s + (parseFloat(m.monto) || 0), 0),
     [comprasFiltradas]
   );
+  // ── CUÁNTAS PACAS, Y DE CUÁNTAS COMPRAS SE SABE ───────────────────
+  //
+  // Se devuelven las DOS cifras y no sólo la suma, porque una suma sola
+  // mentiría por omisión: de las 7.355 compras de los libros hay 223 sin
+  // cantidad —213 que no son mercancía (fletes, descuentos) y 59 donde la
+  // propia hoja se contradice con su total— y el pie tiene que poder decir «de
+  // 239 de 256 compras» en vez de dar un número redondo que parece completo.
+  const pacasCompras = useMemo(() => {
+    let pacas = 0;
+    let conDato = 0;
+    for (const m of comprasFiltradas) {
+      const n = pacasDeCompra(m);
+      if (n == null) continue;
+      pacas += n;
+      conDato++;
+    }
+    return { pacas, conDato, sinDato: comprasFiltradas.length - conDato };
+  }, [comprasFiltradas]);
 
   // corte vacío = saldo de hoy (comportamiento de siempre); con fecha, el
   // backend reconstruye el saldo con los movimientos hasta ese día.
@@ -1550,12 +1588,14 @@ export default function Cartera() {
                       <tr>
                         <th className="px-3 py-2 text-left">Fecha</th>
                         <th className="px-3 py-2 text-left">Qué se llevó</th>
+                        <th className="px-3 py-2 text-right">Cant.</th>
+                        <th className="px-3 py-2 text-right">Precio/u</th>
                         <th className="px-3 py-2 text-right">Monto</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {comprasFiltradas.length === 0 && (
-                        <tr><td colSpan={3} className="px-3 py-6 text-center text-muted text-sm">
+                        <tr><td colSpan={5} className="px-3 py-6 text-center text-muted text-sm">
                           {detalleBusqueda.trim()
                             ? `Ninguna compra coincide con "${detalleBusqueda.trim()}"`
                             : 'Sin compras registradas para este cliente'}
@@ -1639,6 +1679,22 @@ export default function Cartera() {
                               </span>
                             )}
                           </td>
+                          {/* CANTIDAD Y PRECIO POR UNIDAD.
+                              Un GUION donde no se sabe, nunca un cero: un cero
+                              diria «cero pacas» y de 7.355 compras de los libros
+                              hay 223 donde no se puede saber —213 no son
+                              mercancia (fletes, descuentos) y en 59 la propia hoja
+                              se contradice con su total—. */}
+                          <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                            {pacasDeCompra(m) != null
+                              ? formatNumero(pacasDeCompra(m))
+                              : <span className="text-muted">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted whitespace-nowrap">
+                            {m.precio_unitario != null
+                              ? formatCurrency(m.precio_unitario)
+                              : <span className="text-muted">—</span>}
+                          </td>
                           <td className="px-3 py-2 text-right tabular-nums text-primary font-medium whitespace-nowrap">
                             {formatCurrency(m.monto)}
                           </td>
@@ -1660,6 +1716,14 @@ export default function Cartera() {
                     <span className="text-muted">
                       {comprasFiltradas.length} compra{comprasFiltradas.length === 1 ? '' : 's'}
                       {detalleBusqueda.trim() ? ' que coinciden' : ''}
+                      {pacasCompras.conDato > 0 && (
+                        <span className="block text-[11px]">
+                          {formatNumero(pacasCompras.pacas)} paca{pacasCompras.pacas === 1 ? '' : 's'}
+                          {pacasCompras.sinDato > 0
+                            ? `, de ${pacasCompras.conDato} de las ${comprasFiltradas.length} compras`
+                            : ''}
+                        </span>
+                      )}
                     </span>
                     <span className="font-display text-primary tabular-nums">{formatCurrency(totalCompras)}</span>
                   </div>
@@ -1888,9 +1952,14 @@ export default function Cartera() {
                         <>
                           <td className="px-3 py-2">{formatFechaCorta(m.fecha)}</td>
                           <td className="px-3 py-2">
-                            <Badge variant={m.tipo === 'venta' ? 'vendida' : 'disponible'}>
+                            {/* La etiqueta sale de la CLASE, no del tipo: un
+                                descuento o un ajuste salian rotulados «abono»,
+                                como si hubiera entrado plata. El signo si sigue
+                                saliendo del tipo, que es lo que manda en la
+                                cuenta. Ver etiquetaClaseMovimiento. */}
+                            <Badge variant={etiquetaClaseMovimiento(m).variante}>
                               {m.tipo === 'venta' ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}
-                              {m.tipo}
+                              {etiquetaClaseMovimiento(m).texto}
                             </Badge>
                             {/* Origen: cotización + despacho para saber de dónde proviene */}
                             {m.cotizacion_id && (

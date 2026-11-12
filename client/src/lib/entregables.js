@@ -1635,6 +1635,109 @@ export function hojaPreciosInternos(wb, cont, nombreHoja) {
   return ws;
 }
 
+/**
+ * PACAS(INTERNA) — cuántas pacas se le han vendido a cada clienta.
+ *
+ * Lo que faltaba: la ficha enseñaba el importe de cada compra y nada más, así
+ * que no había forma de saber cuántas PACAS se le vendieron a alguien sin
+ * volver al Excel. Está en todos los libros de la dueña y no estaba aquí.
+ *
+ * LAS DOS CIFRAS, SIEMPRE. Junto a las pacas va sobre CUÁNTAS compras se
+ * calcularon, porque un total a secas mentiría por omisión: de las 7.355
+ * compras de los libros hay 223 sin cantidad —213 que no son mercancía (los
+ * FLETES llevan un recuento de PRENDAS, no de pacas, y la fila de un pago
+ * también) y 59 donde la propia hoja se contradice con su total—. Quien lea
+ * «2.350 pacas» tiene que poder ver que salen de 1.379 de 1.602 compras.
+ *
+ * El rango de fechas lo resuelve el servidor, que es donde están los
+ * movimientos; aquí sólo se pinta lo que manda.
+ */
+export function hojaPacasPorCliente(wb, datos, nombreHoja) {
+  const ws = wb.addWorksheet(nombreHoja || 'PACAS(INTERNA)');
+  [30, 18, 12, 12, 16, 20, 14, 14].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  const d = datos || {};
+  const clientes = d.clientes || [];
+  const t = d.total || {};
+  const periodo = d.desde || d.hasta
+    ? `${d.desde ? `desde ${d.desde}` : ''}${d.desde && d.hasta ? ' ' : ''}${d.hasta ? `hasta ${d.hasta}` : ''}`
+    : 'todo el histórico';
+
+  let fila = titulo(ws, `PACAS VENDIDAS POR CLIENTA — ${periodo} — ${hoyStr()}`, 8);
+
+  const r0 = ws.getRow(fila);
+  r0.getCell(1).value = `${int(t.pacas).toLocaleString('es-CO')} pacas en total, de `
+    + `${int(t.compras_con_cantidad)} de las ${int(t.compras_con_cantidad) + int(t.compras_sin_cantidad)} compras`;
+  r0.getCell(1).font = { bold: true, size: 11, color: { argb: ACCENT } };
+  ws.mergeCells(fila, 1, fila, 8);
+  fila++;
+  if (int(t.compras_sin_cantidad) > 0) {
+    const r1 = ws.getRow(fila);
+    r1.getCell(1).value = `${int(t.compras_sin_cantidad)} compra(s) no tienen cantidad y NO entran en el `
+      + 'conteo: los fletes y los descuentos no son pacas, y hay renglones donde el libro se '
+      + 'contradice con su propio total. El importe de todas sí está contado.';
+    r1.getCell(1).font = { italic: true, size: 10, color: { argb: 'd97706' } };
+    ws.mergeCells(fila, 1, fila, 8);
+    fila++;
+  }
+  fila++;
+
+  fila = cabecera(ws, fila, ['CLIENTA', 'CIUDAD', 'PACAS', 'COMPRAS',
+    'SIN CANTIDAD', 'IMPORTE', 'PRIMERA', 'ULTIMA']);
+
+  for (const c of clientes) {
+    const r = ws.getRow(fila);
+    r.height = 18;
+    r.getCell(1).value = c.nombre || '—';
+    r.getCell(2).value = c.ciudad || '';
+    r.getCell(3).value = num(c.pacas);
+    r.getCell(4).value = int(c.compras_con_cantidad);
+    // Vacío y no cero cuando no falta ninguna: un cero invita a leerlo como un
+    // dato y aquí la noticia es que no hay nada que advertir.
+    r.getCell(5).value = int(c.compras_sin_cantidad) || null;
+    r.getCell(6).value = num(c.importe_total);
+    r.getCell(7).value = c.primera ? String(c.primera).slice(0, 10) : '';
+    r.getCell(8).value = c.ultima ? String(c.ultima).slice(0, 10) : '';
+    r.getCell(3).numFmt = '#,##0';
+    r.getCell(4).numFmt = '#,##0';
+    r.getCell(5).numFmt = '#,##0';
+    r.getCell(6).numFmt = '$#,##0';
+    for (let i = 1; i <= 8; i++) {
+      r.getCell(i).font = { size: 10 };
+      r.getCell(i).alignment = { horizontal: i <= 2 || i >= 7 ? 'left' : 'right', vertical: 'middle' };
+    }
+    if (int(c.compras_sin_cantidad) > 0) {
+      r.getCell(5).font = { size: 10, color: { argb: 'd97706' }, bold: true };
+    }
+    zebra(ws, fila, 8);
+    fila++;
+  }
+
+  if (!clientes.length) {
+    ws.getCell(fila, 1).value = 'Ninguna compra en este periodo';
+    ws.getCell(fila, 1).font = { italic: true, size: 10, color: { argb: '94a3b8' } };
+    return ws;
+  }
+
+  const tt = ws.getRow(fila);
+  tt.height = 20;
+  tt.getCell(1).value = 'TOTAL';
+  tt.getCell(3).value = num(t.pacas);
+  tt.getCell(4).value = int(t.compras_con_cantidad);
+  tt.getCell(5).value = int(t.compras_sin_cantidad) || null;
+  tt.getCell(6).value = num(t.importe_total);
+  tt.getCell(3).numFmt = '#,##0';
+  tt.getCell(4).numFmt = '#,##0';
+  tt.getCell(5).numFmt = '#,##0';
+  tt.getCell(6).numFmt = '$#,##0';
+  for (let i = 1; i <= 8; i++) {
+    tt.getCell(i).font = { bold: true, size: 11, color: { argb: WHITE } };
+    tt.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INK } };
+    tt.getCell(i).alignment = { horizontal: i <= 2 || i >= 7 ? 'left' : 'right', vertical: 'middle' };
+  }
+  return ws;
+}
+
 /** La fila de total de un bloque de costos, con su promedio por paca. */
 function totalBloque(ws, fila, etiqueta, valor, propias, nCols = 6) {
   const t = ws.getRow(fila);

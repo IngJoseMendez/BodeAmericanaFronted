@@ -268,6 +268,16 @@ export const carteraApi = {
   getDeudores() {
     return api.get('/cartera/deudores');
   },
+  // Pacas vendidas por clienta, con rango de fechas opcional. Es un RANGO y no
+  // un corte como `fecha_corte`: la pregunta de verdad es «cuántas pacas se
+  // vendieron en noviembre», no «cuántas llevaba vendidas el 30 de noviembre».
+  getPacas({ desde, hasta } = {}) {
+    const q = new URLSearchParams();
+    if (desde) q.set('desde', desde);
+    if (hasta) q.set('hasta', hasta);
+    const cola = q.toString();
+    return api.get(`/cartera/pacas${cola ? `?${cola}` : ''}`);
+  },
   exportOne(clienteId) {
     return api.get(`/cartera/exportar/${clienteId}`);
   },

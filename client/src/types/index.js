@@ -68,3 +68,31 @@ export const etiquetaTransaccion = (valor) =>
 // con una función para que la pantalla y el servidor no puedan discrepar.
 export const transaccionTieneDestino = (valor) =>
   Boolean(valor) && valor !== 'efectivo';
+
+// ── COMO SE LLAMA UN MOVIMIENTO DE CARTERA ────────────────────────
+//
+// La ficha partía los movimientos en dos pestañas por `tipo` —compras y
+// abonos— y pintaba la etiqueta con ese mismo `tipo`, ignorando la `clase`. Eso
+// bastaba mientras sólo hubiera compras y pagos, pero en la base hay además 30
+// líneas de AJUSTE y 126 de DESCUENTO, y todas se anunciaban como lo que no
+// son: un descuento salía rotulado «abono», como si hubiera entrado plata.
+//
+// Y los libros corregidos traen un caso peor. Para anotar una corrección, la
+// dueña escribe un abono NEGATIVO: Liliana tiene «AJUSTE −11.875.000». La
+// aritmética es correcta —un abono negativo sube la deuda— pero en pantalla
+// salía «−$−11.875.000». Al cargarlos se les da la vuelta (un abono de −X es
+// una venta de +X con clase 'ajuste', que es lo que ya hacía
+// cargar-pestana.js), y aquí se les pone el nombre que les corresponde.
+//
+// El SIGNO sigue saliendo del `tipo`, que es lo que manda en la cuenta: un
+// ajuste que sube la deuda es `tipo='venta'` y lleva '+'. Lo que cambia es el
+// rótulo, no la aritmética.
+export const etiquetaClaseMovimiento = (m = {}) => {
+  const clase = String(m.clase || '').toLowerCase();
+  if (clase === 'ajuste') return { texto: 'ajuste', variante: 'warning' };
+  if (clase === 'descuento') return { texto: 'descuento', variante: 'info' };
+  return {
+    texto: m.tipo || '',
+    variante: m.tipo === 'venta' ? 'vendida' : 'disponible',
+  };
+};

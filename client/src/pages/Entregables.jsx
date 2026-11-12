@@ -16,6 +16,7 @@ import {
   hojaListaPreciosClientes, hojaCotizacionCliente, hojaCarteraCliente,
   hojaCarteraInterna, hojaListaDisponiblesInterna, hojaInventarioInterno,
   hojaPreciosInternos, hojaUtilidadContenedor, hojaCostosContenedor,
+  hojaPacasPorCliente,
 } from '../lib/entregables';
 // El desglose de costos sale de la MISMA función que usa la pantalla de
 // Contenedores. Rehacer la cuenta aquí dejaría al entregable del inversionista
@@ -65,7 +66,7 @@ export default function Entregables() {
   const [hojasSel, setHojasSel] = useState({
     bodega: ['DESPACHO(GENERAL)', 'DESPACHO(BODEGA)', 'SEPARADAS(BODEGA)', 'CONTEO(BODEGA)',
       'INVENTARIO(BODEGA)', 'MATRIZ', 'FALTANTES(BODEGA)'],
-    internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT'],
+    internos: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT', 'PACAS(INTERNA)'],
     inversionistas: ['COSTOS(CONTENEDOR)', 'UTILIDAD(INVERSIONISTAS)'],
   });
 
@@ -336,7 +337,31 @@ export default function Entregables() {
     };
   };
 
-  const genInternos = async (wb) => {
+  // Las pacas por clienta se piden UNA vez y sirven para el Excel y para el
+  // PDF. Si cada uno las pidiera por su lado, el dia que uno cambiara el rango
+  // habria dos entregables con el mismo nombre y distinto contenido — que es
+  // exactamente lo que ya paso con FALTANTES(BODEGA).
+  const resolverPacas = async () => {
+    const r = rangoInternos();
+    // La fecha a AAAA-MM-DD sin pasar por UTC: `toISOString()` a secas
+    // retrocede un dia en Colombia y el rango saldria corrido.
+    const aISO = (f) => (f ? new Date(f.getTime() - f.getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 10) : undefined);
+    try {
+      return await carteraApi.getPacas(
+        r ? { desde: aISO(r.desde), hasta: aISO(r.hasta) } : {});
+    } catch (err) {
+      addToast(mensajeDeError(err, 'leer las pacas vendidas'), 'error');
+      return null;
+    }
+  };
+
+  const genInternos = async (wb, sel) => {
+    // PACAS POR CLIENTA, con el mismo periodo que ya elige el grupo.
+    if (!sel || sel.includes('PACAS(INTERNA)')) {
+      const pacas = await resolverPacas();
+      if (pacas) hojaPacasPorCliente(wb, pacas, 'PACAS(INTERNA)');
+    }
     hojaCarteraInterna(wb, datos.cartera || []);
     hojaListaDisponiblesInterna(wb, datos.inventario || []);
     hojaInventarioInterno(wb, datos.inventario || []);
@@ -510,7 +535,7 @@ export default function Entregables() {
       id: 'internos', titulo: 'Internos', icon: Lock,
       color: 'text-warning bg-warning/10',
       desc: 'Costos, márgenes y utilidad del contenedor. No sale de la oficina.',
-      hojas: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT'],
+      hojas: ['CARTERA(INTERNA)', 'LISTADISPONIBLES(INTERNA)', 'INVENTARIO(INTERNO)', 'PRECIOSINTERNOS', 'UTILIDADCONT', 'PACAS(INTERNA)'],
       gen: genInternos, archivo: 'Entregables_Internos',
       soloAdmin: true,
     },
@@ -571,7 +596,10 @@ export default function Entregables() {
           faltantes: datos.faltantes ? datos.faltantes.faltantes : null,
         }, totales, g.archivo);
       } else if (g.id === 'internos') {
-        await exportarPDFInternos(sel, { inventario: datos.inventario || [], cartera: datos.cartera || [] }, g.archivo);
+        await exportarPDFInternos(sel, {
+          inventario: datos.inventario || [], cartera: datos.cartera || [],
+          pacas: sel.includes('PACAS(INTERNA)') ? await resolverPacas() : null,
+        }, g.archivo);
       } else if (g.id === 'inversionistas') {
         // El PDF recibe los contenedores YA resueltos, con el desglose hecho:
         // el papel y el Excel salen del mismo cálculo.

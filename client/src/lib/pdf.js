@@ -339,6 +339,56 @@ export async function exportarPDFInternos(sel, data, fileName) {
     }
   }
 
+  // PACAS(INTERNA). Va aquí y no sólo en el Excel porque este archivo ya tuvo
+  // el bug: mientras faltó el bloque de FALTANTES, el PDF y el libro eran dos
+  // entregables llamados igual con contenido distinto, y la casilla marcada en
+  // pantalla no hacía nada. Una hoja nueva en el grupo necesita su bloque aquí.
+  if (sel.includes('PACAS(INTERNA)') && data.pacas) {
+    const d = data.pacas;
+    const t = d.total || {};
+    const periodo = d.desde || d.hasta
+      ? `${d.desde ? `desde ${d.desde}` : ''}${d.desde && d.hasta ? ' ' : ''}${d.hasta ? `hasta ${d.hasta}` : ''}`
+      : 'todo el histórico';
+    addTitle(`PACAS VENDIDAS POR CLIENTA — ${periodo}`);
+
+    const conCant = parseInt(t.compras_con_cantidad, 10) || 0;
+    const sinCant = parseInt(t.compras_sin_cantidad, 10) || 0;
+    doc.setFontSize(9);
+    doc.text(`${formatNum(t.pacas)} pacas, de ${conCant} de las ${conCant + sinCant} compras`, 40, 58);
+    if (sinCant > 0) {
+      // Lo que NO entra en el conteo se dice en el papel. Un total a secas
+      // mentiría por omisión: los fletes llevan un recuento de PRENDAS y no de
+      // pacas, y hay renglones donde el libro se contradice con su total.
+      doc.setTextColor(217, 119, 6);
+      doc.text(`${sinCant} compra(s) sin cantidad no entran en el conteo (fletes, descuentos y `
+        + 'renglones donde el libro no cuadra con su total). El importe sí está contado.', 40, 72);
+      doc.setTextColor(0);
+    }
+
+    autoTable(doc, {
+      startY: sinCant > 0 ? 86 : 72,
+      head: [['CLIENTA', 'CIUDAD', 'PACAS', 'COMPRAS', 'SIN CANTIDAD', 'IMPORTE', 'PRIMERA', 'ÚLTIMA']],
+      body: (d.clientes || []).map((c) => [
+        c.nombre || '—', c.ciudad || '',
+        formatNum(c.pacas), formatNum(c.compras_con_cantidad),
+        parseInt(c.compras_sin_cantidad, 10) ? formatNum(c.compras_sin_cantidad) : '',
+        formatCOP(c.importe_total),
+        c.primera ? formatFechaCorta(c.primera) : '',
+        c.ultima ? formatFechaCorta(c.ultima) : '',
+      ]),
+      foot: [['TOTAL', '', formatNum(t.pacas), formatNum(conCant),
+        sinCant ? formatNum(sinCant) : '', formatCOP(t.importe_total), '', '']],
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      columnStyles: {
+        2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+        5: { halign: 'right' },
+      },
+      headStyles: { fillColor: [231, 111, 81] },
+      footStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    });
+  }
+
   if (!pageAdded) {
     doc.text("No data selected or missing PDF mapping for selected pages", 40, 40);
   }
