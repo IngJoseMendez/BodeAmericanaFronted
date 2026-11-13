@@ -11,6 +11,9 @@ import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
 import { Plus, Search, Wallet, TrendingDown, TrendingUp, Download, FileSpreadsheet, Upload, User, X, Edit2, Trash2, AlertTriangle, CheckCircle, Calendar, PackageOpen, ExternalLink } from 'lucide-react';
 import { parseMonto, formatCOP, formatNumero } from '../lib/money';
+// Los tres montones de la cartera —por cobrar, dado por perdido y a favor— con
+// su regla: lib/cartera.js la explica entera.
+import { totalesDeCartera, esAFavor } from '../lib/cartera';
 import { hoy, aInputDate, formatFecha, formatFechaCorta } from '../lib/fecha';
 import { descargarExcel } from '../lib/descargar';
 
@@ -380,34 +383,30 @@ export default function Cartera() {
     );
   }, [searchQuery, carteraOriginal]);
 
-  // ── LO QUE SE COBRA Y LO QUE ESTA INACTIVO, SIEMPRE SEPARADO ───────────────
+  // ── LO QUE SE COBRA, LO PERDIDO Y LO QUE SE DEBE: SIEMPRE SEPARADO ─────────
   //
   // Hay cuentas que la dueña da por perdidas: la deuda sigue escrita, pero no
   // entra en lo que espera cobrar. En su Excel eso lo venía restando a mano —la
   // fórmula de su total es la suma de la columna menos la celda de esa fila—, y
   // era la razón por la que sus cifras y las del sistema no cuadraban.
   //
-  // Las dos cifras se enseñan juntas y nunca sumadas. Una sola cifra obliga a
-  // elegir cuál mentira contar: si incluye lo perdido, abulta la cartera y la
+  // Y hay clientes que abonaron de más: su saldo queda a favor, y eso tampoco es
+  // cartera. Mientras entraba en la suma le restaba al total, como si otro
+  // cliente hubiera pagado esa plata.
+  //
+  // Las cifras se enseñan juntas y nunca sumadas. Una sola cifra obliga a elegir
+  // cuál mentira contar: si incluye lo perdido, abulta la cartera y la
   // contradice a ella; si no lo incluye y no lo nombra, 20 millones desaparecen
-  // de la pantalla sin que nadie sepa dónde fueron.
+  // de la pantalla sin que nadie sepa dónde fueron. La regla y los tres montones
+  // viven en lib/cartera.js, y el servidor suma con la misma.
   //
   // Se calcula sobre la lista COMPLETA, no sobre la filtrada: un total que
   // cambia mientras se escribe en el buscador no es un total, y nadie espera
   // que buscar a alguien le mueva la cifra de arriba.
-  const resumenCartera = useMemo(() => {
-    let porCobrar = 0, perdido = 0, cuentasPerdidas = 0;
-    for (const c of carteraOriginal) {
-      const s = parseFloat(c.saldo_pendiente) || 0;
-      if (c.cartera_inactiva) {
-        perdido += s;
-        if (Math.round(s) !== 0) cuentasPerdidas++;
-      } else {
-        porCobrar += s;
-      }
-    }
-    return { porCobrar, perdido, cuentasPerdidas };
-  }, [carteraOriginal]);
+  const resumenCartera = useMemo(
+    () => totalesDeCartera(carteraOriginal),
+    [carteraOriginal],
+  );
 
   // El detalle recalculaba resumenPorCotizacion en CADA render (recorre todos
   // los movimientos y ordena por fecha). Memoizado, solo se rehace cuando
@@ -816,7 +815,11 @@ export default function Cartera() {
         
         ws.getCell(`B${row}`).value = kpi.value;
         ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: kpi.color } };
-        ws.getCell(`B${row}`).numFmt = '$#,##0.00';
+        // Sin decimales, como el resto del documento y como la pantalla. En
+        // pesos los centavos no existen: «$2.260.000,00» sólo añade dos ceros
+        // que hay que leer para descartarlos, y encima dejaba el resumen
+        // escrito de una forma y los movimientos de abajo de otra.
+        ws.getCell(`B${row}`).numFmt = '$#,##0';
         ws.getCell(`B${row}`).alignment = { horizontal: 'right' };
         ws.mergeCells(`B${row}:I${row}`);
         row++;
@@ -1295,9 +1298,9 @@ export default function Cartera() {
           </div>
         )}
 
-        {/* Las dos cifras, nunca sumadas. La de cobrar manda y por eso va más
-            grande; la perdida sólo aparece cuando hay alguna, para no poner un
-            cero permanente al lado de lo que de verdad importa. */}
+        {/* Las cifras, nunca sumadas. La de cobrar manda y por eso va primera;
+            la perdida y la de los favores sólo aparecen cuando hay alguna, para
+            no poner un cero permanente al lado de lo que de verdad importa. */}
         {!loading && (
           <div className="flex flex-wrap items-stretch gap-3">
             <div className="flex-1 min-w-[220px] p-4 rounded-xl border border-border bg-surface">
@@ -1312,6 +1315,23 @@ export default function Cartera() {
                   {resumenCartera.cuentasPerdidas === 1
                     ? '1 cuenta. No suma a lo de cobrar.'
                     : `${resumenCartera.cuentasPerdidas} cuentas. No suman a lo de cobrar.`}
+                </p>
+              </div>
+            )}
+            {/* LO QUE SE LE DEBE A LOS CLIENTES, NO LO QUE ELLOS DEBEN.
+                Quien abonó de más tiene saldo a favor: eso no es cartera y no
+                puede restarle al total de arriba. Se enseña porque es plata que
+                existe —un pedido ya pagado por adelantado— y porque si no se
+                nombra, nadie entiende por qué la cuenta de ese cliente se ve en
+                verde y en negativo. */}
+            {resumenCartera.cuentasAFavor > 0 && (
+              <div className="flex-1 min-w-[220px] p-4 rounded-xl border border-success/40 bg-success/5">
+                <p className="text-xs text-success uppercase tracking-wide">Saldos a favor</p>
+                <p className="font-display text-2xl text-success break-all">{formatCurrency(resumenCartera.aFavor)}</p>
+                <p className="text-xs text-muted mt-1">
+                  {resumenCartera.cuentasAFavor === 1
+                    ? '1 cliente abonó de más. No resta a lo de cobrar.'
+                    : `${resumenCartera.cuentasAFavor} clientes abonaron de más. No restan a lo de cobrar.`}
                 </p>
               </div>
             )}
@@ -1403,8 +1423,15 @@ export default function Cartera() {
                       <span className="text-success text-right break-all">{formatCurrency(c.total_abonado)}</span>
                     </div>
                     <div className="flex justify-between items-start pt-2 border-t border-gray-100 gap-2">
-                      <span className="font-medium shrink-0">Saldo Pendiente</span>
-                      <span className="font-display text-lg text-accent text-right break-all">{formatCurrency(c.saldo_pendiente)}</span>
+                      {/* Quien abonó de más tiene plata a favor, no una deuda
+                          en negativo. Con su nombre y en positivo no hay signo
+                          que interpretar en una tarjeta de cobro. */}
+                      <span className="font-medium shrink-0">
+                        {esAFavor(c.saldo_pendiente) ? 'Saldo a favor' : 'Saldo Pendiente'}
+                      </span>
+                      <span className={`font-display text-lg text-right break-all ${esAFavor(c.saldo_pendiente) ? 'text-success' : 'text-accent'}`}>
+                        {formatCurrency(Math.abs(parseFloat(c.saldo_pendiente) || 0))}
+                      </span>
                     </div>
                   </div>
                 </CardBody>
@@ -1434,8 +1461,13 @@ export default function Cartera() {
                 <p className="text-lg font-display text-success break-all">{formatCurrency(detalleCliente.total_abonado)}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Saldo Pendiente</p>
-                <p className="text-lg font-display text-accent break-all">{formatCurrency(detalleCliente.saldo_pendiente)}</p>
+                {/* Si abonó de más es plata a favor, no una deuda negativa. */}
+                <p className="text-sm text-gray-500">
+                  {esAFavor(detalleCliente.saldo_pendiente) ? 'Saldo a favor' : 'Saldo Pendiente'}
+                </p>
+                <p className={`text-lg font-display break-all ${esAFavor(detalleCliente.saldo_pendiente) ? 'text-success' : 'text-accent'}`}>
+                  {formatCurrency(Math.abs(parseFloat(detalleCliente.saldo_pendiente) || 0))}
+                </p>
               </div>
             </div>
 

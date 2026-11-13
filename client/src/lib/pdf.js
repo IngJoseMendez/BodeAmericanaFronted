@@ -15,9 +15,16 @@ import { agruparPorProducto } from './entregables.js';
 // El papel de bodega, en su diseño de verdad: partido en «recoger» y
 // «empacar». Ver lib/despachoPdf.js.
 import { seccionRecoger, seccionEmpacar, seccionSeparar } from './despachoPdf.js';
+// El reparto de la cartera en sus tres montones —por cobrar, dado por perdido y
+// a favor—, con la regla explicada: ver lib/cartera.js.
+import { montonesDeCartera } from './cartera.js';
 
 const formatNum = (v) => (parseInt(v) || 0).toLocaleString('es-CO');
-const formatCOP = (v) => '$' + (parseFloat(v) || 0).toLocaleString('es-CO');
+// Al peso y sin decimales, como en toda la aplicación. `toLocaleString` a secas
+// deja salir hasta tres decimales, así que un saldo con centavos de un abono
+// viejo se imprimía «$2.260.000,5» en un papel de cobro, que es donde menos
+// falta hace un decimal.
+const formatCOP = (v) => '$' + Math.round(parseFloat(v) || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
 
 // Fecha corta dd/mm/aaaa recortando la cadena que manda el servidor, SIN pasar
 // por `new Date(...)`. Es la trampa de siempre de este proyecto: una fecha de
@@ -298,12 +305,12 @@ export async function exportarPDFInternos(sel, data, fileName) {
     const conSaldo = (data.cartera || [])
       .filter((c) => saldoDe(c) !== 0)
       .sort((a, b) => paraOrdenar(a.nombre).localeCompare(paraOrdenar(b.nombre), 'es'));
-    // Las inactivas van en su propia tabla, debajo del total y con el
-    // motivo al lado. Mezcladas en la misma tabla alguien sumaría la columna
-    // entera; separadas, la cifra que se cobra es la del TOTAL y punto. Es la
-    // misma decisión que en la hoja de Excel (ver hojaCarteraInterna).
-    const activas = conSaldo.filter((c) => !c.cartera_inactiva);
-    const perdidas = conSaldo.filter((c) => c.cartera_inactiva);
+    // Las inactivas y los saldos a favor van en su propia tabla, debajo del
+    // total. Mezclados en la misma tabla alguien sumaría la columna entera;
+    // separados, la cifra que se cobra es la del TOTAL y punto. Es la misma
+    // decisión que en la hoja de Excel (ver hojaCarteraInterna), y el reparto en
+    // los tres montones lo hace lib/cartera.js, que explica la regla.
+    const { activas, perdidas, aFavor } = montonesDeCartera(conSaldo, saldoDe);
 
     const total = activas.reduce((s, c) => s + saldoDe(c), 0);
     autoTable(doc, {
@@ -335,6 +342,25 @@ export async function exportarPDFInternos(sel, data, fileName) {
         columnStyles: { 1: { halign: 'right' } },
         headStyles: { fillColor: [180, 83, 9] },
         footStyles: { fillColor: [253, 230, 138], textColor: [146, 64, 14], fontStyle: 'bold' }
+      });
+    }
+
+    // LO QUE SE LE DEBE A LOS CLIENTES, en positivo y debajo del total.
+    // No es cartera: no hay nada que cobrarle a quien abonó de más, y restarlo
+    // del TOTAL de arriba hacía que la cifra con la que se sale a cobrar dijera
+    // menos de lo que hay que cobrar.
+    if (aFavor.length) {
+      const favor = aFavor.reduce((s, c) => s - saldoDe(c), 0);
+      autoTable(doc, {
+        startY: (doc.lastAutoTable?.finalY || 60) + 18,
+        head: [['SALDOS A FAVOR — no restan al TOTAL de arriba', 'A FAVOR']],
+        body: aFavor.map((c) => [c.nombre, formatCOP(-saldoDe(c))]),
+        foot: [['TOTAL A FAVOR DE LOS CLIENTES', formatCOP(favor)]],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        columnStyles: { 1: { halign: 'right' } },
+        headStyles: { fillColor: [21, 128, 61] },
+        footStyles: { fillColor: [220, 252, 231], textColor: [21, 128, 61], fontStyle: 'bold' }
       });
     }
   }

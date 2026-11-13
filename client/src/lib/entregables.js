@@ -1,6 +1,9 @@
 import ExcelJS from 'exceljs';
 import { hoy, aFecha } from './fecha.js';
 import { descargarExcel } from './descargar.js';
+// El reparto de la cartera en sus tres montones —por cobrar, dado por perdido y
+// a favor—, con la regla explicada: ver lib/cartera.js.
+import { montonesDeCartera } from './cartera.js';
 
 // Hojas replicadas del Excel que ya usa la operación ("Comercio Global
 // Logistico.xlsx"). Los encabezados y su orden se respetan tal cual para que
@@ -1288,8 +1291,11 @@ export function hojaCarteraInterna(wb, filas) {
   // hace cualquiera en Excel— y el error no avisaría. Debajo de un total ya
   // cerrado, con su propia cabecera y su propio subtotal, no hay forma de
   // sumarlas por descuido.
-  const activas = conSaldo.filter((c) => !c.cartera_inactiva);
-  const perdidas = conSaldo.filter((c) => c.cartera_inactiva);
+  // Y por lo mismo van aparte los SALDOS A FAVOR: quien abonó de más no tiene
+  // cartera, y mientras su saldo negativo estuvo dentro del TOTAL le restaba a
+  // lo que hay que cobrar, como si otro cliente hubiera pagado esa plata. El
+  // reparto en los tres montones lo hace lib/cartera.js, que explica la regla.
+  const { activas, perdidas, aFavor } = montonesDeCartera(conSaldo);
 
   const pintar = (c) => {
     const vend = num(c.total_vendido), ab = num(c.total_abonado), sal = num(c.saldo_pendiente);
@@ -1381,6 +1387,46 @@ export function hojaCarteraInterna(wb, filas) {
       p.getCell(i).font = { bold: true, size: 10, color: { argb: '92400e' } };
       p.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fde68a' } };
       p.getCell(i).alignment = { horizontal: i === 1 || i === 5 ? 'left' : 'right' };
+    }
+    fila++;
+  }
+
+  // LOS SALDOS A FAVOR, EN POSITIVO Y DEBAJO DEL TOTAL.
+  //
+  // Es plata que se le debe al cliente, normalmente un pedido pagado por
+  // adelantado. No se cobra y no resta: va en su propio bloque, como las
+  // inactivas, y con la cifra en positivo para que nadie tenga que interpretar
+  // un signo menos en una lista con la que se sale a cobrar.
+  if (aFavor.length) {
+    fila++;
+    ws.mergeCells(fila, 1, fila, 5);
+    const av = ws.getCell(fila, 1);
+    av.value = 'SALDOS A FAVOR — estos clientes abonaron de más; NO restan al TOTAL de arriba';
+    av.font = { size: 11, bold: true, color: { argb: '15803d' } };
+    av.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'dcfce7' } };
+    av.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.getRow(fila).height = 24;
+    fila++;
+    fila = cabecera(ws, fila, ['CLIENTE', 'VENDIDO', 'ABONADO', 'A FAVOR']);
+
+    let fv = 0, fa = 0, fs = 0;
+    for (const c of aFavor) {
+      const suya = fila;
+      const t = pintar(c);
+      fv += t.vend; fa += t.ab; fs += -t.sal;
+      // En positivo: la columna se llama A FAVOR y el signo sobra.
+      const celda = ws.getRow(suya).getCell(4);
+      celda.value = -t.sal;
+      celda.font = { bold: true, color: { argb: '15803d' } };
+    }
+
+    const f = ws.getRow(fila);
+    f.getCell(1).value = 'TOTAL A FAVOR DE LOS CLIENTES';
+    [fv, fa, fs].forEach((v, i) => { f.getCell(i + 2).value = v; f.getCell(i + 2).numFmt = '$#,##0'; });
+    for (let i = 1; i <= 4; i++) {
+      f.getCell(i).font = { bold: true, size: 10, color: { argb: '15803d' } };
+      f.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'bbf7d0' } };
+      f.getCell(i).alignment = { horizontal: i === 1 ? 'left' : 'right' };
     }
   }
   return ws;
