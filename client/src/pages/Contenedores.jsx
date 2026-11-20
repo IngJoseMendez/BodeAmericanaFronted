@@ -513,6 +513,98 @@ const FilaDistribucion = memo(function FilaDistribucion({
   );
 });
 
+// ── HISTORIAL DE AJUSTES DEL CONTENEDOR ──────────────────────────
+//
+// LA FACTURA DEL PROVEEDOR NO SE TOCA. Lo que llegó se registra aparte —en la
+// revisión física— y es eso lo que entra al inventario. Pero la revisión se
+// puede editar tantas veces como haga falta, y cada pasada pisaba la anterior:
+// seis meses después nadie podía contestar quién cambió una cantidad, cuándo,
+// ni por qué.
+//
+// Esta tabla es ese rastro. Una fila por campo ajustado, con lo que decía la
+// factura al lado de lo que se registró, la fecha, el motivo si se escribió y
+// quién lo hizo.
+const CAMPO_AJUSTE_LABEL = {
+  cantidad: 'Cantidad recibida',
+  cantidad_facturada: 'Cantidad en la factura',
+  costo_unitario: 'Costo unitario',
+  clasificacion: 'Clasificación',
+  referencia: 'Referencia',
+  calidad: 'Calidad',
+  no_facturado: 'Llegó sin estar facturado',
+  linea_borrada: 'Línea quitada de la factura',
+  linea_agregada: 'Línea agregada a la factura',
+};
+
+const ORIGEN_AJUSTE_LABEL = {
+  revision: 'Revisión física',
+  edicion_factura: 'Edición de la factura ya revisada',
+};
+
+function HistorialAjustes({ ajustes }) {
+  if (!ajustes?.length) return null;
+  return (
+    <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+      <div className="px-4 py-3 border-b border-border/60 bg-cream/30">
+        <p className="text-sm font-semibold text-primary">Historial de ajustes</p>
+        <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
+          La factura del proveedor queda como la emitió. Aquí está cada diferencia que se
+          registró después: lo que decía, lo que se ajustó, cuándo y quién.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-cream/20 text-[9px] font-bold text-muted uppercase tracking-wider">
+            <tr>
+              <th className="px-3 py-2 text-left">Cuándo</th>
+              <th className="px-3 py-2 text-left">Producto</th>
+              <th className="px-3 py-2 text-left">Qué</th>
+              <th className="px-3 py-2 text-left">Decía</th>
+              <th className="px-3 py-2 text-left">Quedó</th>
+              <th className="px-3 py-2 text-left">Motivo</th>
+              <th className="px-3 py-2 text-left">Quién</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/30">
+            {ajustes.map((a) => (
+              <tr key={a.id} className="align-top">
+                <td className="px-3 py-2 whitespace-nowrap text-muted">{formatFecha(a.created_at)}</td>
+                <td className="px-3 py-2">
+                  <span className="capitalize text-primary">{a.producto || '—'}</span>
+                  {a.proveedor_nombre && (
+                    <span className="block text-[10px] text-muted">{a.proveedor_nombre}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <span className="text-primary">{CAMPO_AJUSTE_LABEL[a.campo] || a.campo}</span>
+                  {/* De dónde viene el ajuste. Un cambio hecho al editar la
+                      factura YA revisada no es lo mismo que una diferencia
+                      contada en bodega, y mezclados no se distinguirían. */}
+                  {a.origen === 'edicion_factura' && (
+                    <span className="block text-[10px] text-warning">
+                      {ORIGEN_AJUSTE_LABEL[a.origen]}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 font-mono tabular-nums text-muted">
+                  {a.valor_original == null || a.valor_original === '' ? '—' : a.valor_original}
+                </td>
+                <td className="px-3 py-2 font-mono tabular-nums text-primary font-semibold">
+                  {a.valor_ajustado == null || a.valor_ajustado === '' ? '—' : a.valor_ajustado}
+                </td>
+                {/* Vacío, no «sin motivo»: el motivo es opcional a propósito y
+                    rellenarlo con un texto haría parecer que falta algo. */}
+                <td className="px-3 py-2 text-muted">{a.motivo || ''}</td>
+                <td className="px-3 py-2 text-muted whitespace-nowrap">{a.usuario_nombre || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Status badge ─────────────────────────────────────────────────
 function StatusBadge({ estado }) {
   if (estado === 'finalizado') {
@@ -919,7 +1011,11 @@ export default function Contenedores() {
   // `moneda_base` es la moneda en la que se piensa el contenedor ENTERO: la
   // heredan las líneas nuevas y con ella se rotula todo. Arranca en USD porque
   // la mercancía se compra en dólares.
-  const FORM_VACIO = { numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '', moneda_base: MONEDA_BASE_POR_DEFECTO, utilidad_total_estimada: '' };
+  //
+  // `legado` es el interruptor de «contenedor heredado»: mercancía que llegó
+  // antes del sistema y que se teclea solo para dejarla escrita. Ver el bloque
+  // de ayuda del propio interruptor, más abajo en el formulario.
+  const FORM_VACIO = { numero: '', fecha_llegada: '', fecha_salida: '', tasa_conversion: '1', total_pacas: '', notas: '', utilidad_unitaria: '', gastos_unitarios: '', cantidad_total: '', moneda_base: MONEDA_BASE_POR_DEFECTO, utilidad_total_estimada: '', legado: false };
   const [formData, setFormData]       = useState(FORM_VACIO);
   const [proveedores, setProveedores] = useState([emptyProveedor()]);
   const [servicios, setServicios]     = useState([emptyServicio()]);
@@ -1988,7 +2084,12 @@ export default function Contenedores() {
       // Subtotal por proveedor
       if (filas.length > 0) {
         const provEnd = mRow;
-        wsM.mergeCells(`A${provEnd}:H${provEnd}`);
+        // Se merge hasta E y no hasta H para dejar libre la columna F, que es
+        // «Cantidad»: el subtotal de un proveedor tenía su plata pero no sus
+        // PACAS, y son las dos mitades de la misma cuenta —esto costó, por
+        // estas pacas—. Sin ella, el costo por paca de la columna K no se podía
+        // comprobar dentro de la propia hoja.
+        wsM.mergeCells(`A${provEnd}:E${provEnd}`);
         wsM.getCell(`A${provEnd}`).value = `Subtotal — ${p.proveedor_nombre}`;
         wsM.getCell(`A${provEnd}`).font = { bold: true, size: 10, color: { argb: primary } };
         wsM.getCell(`A${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
@@ -2001,18 +2102,22 @@ export default function Contenedores() {
           (s, f) => s + ((f.cantidad * f.costoUnit) || (f.estimada ? factEst : 0)), 0
         );
         const subProvCOP = subProvOriginal * factor;
+        const subProvPacas = filas.reduce((s, f) => s + (parseInt(f.cantidad) || 0), 0);
 
+        wsM.getCell(`F${provEnd}`).value = subProvPacas;
+        wsM.getCell(`F${provEnd}`).numFmt = '#,##0';
         wsM.getCell(`I${provEnd}`).value = subProvOriginal;
         wsM.getCell(`I${provEnd}`).numFmt = '#,##0.00';
         wsM.getCell(`J${provEnd}`).value = subProvCOP;
         wsM.getCell(`J${provEnd}`).numFmt = '$ #,##0';
-        ['I','J','K'].forEach(col => {
+        ['F','I','J','K'].forEach(col => {
           wsM.getCell(`${col}${provEnd}`).font = { bold: true, size: 10, color: { argb: primary } };
           wsM.getCell(`${col}${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
-          wsM.getCell(`${col}${provEnd}`).alignment = { horizontal: 'right', vertical: 'middle' };
+          wsM.getCell(`${col}${provEnd}`).alignment = { horizontal: col === 'F' ? 'center' : 'right', vertical: 'middle' };
           wsM.getCell(`${col}${provEnd}`).border = thinBorder;
         });
-        ['A','B','C','D','E','F','G','H'].forEach(col => {
+        ['A','B','C','D','E','G','H'].forEach(col => {
+          wsM.getCell(`${col}${provEnd}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE8DF' } };
           wsM.getCell(`${col}${provEnd}`).border = thinBorder;
         });
         wsM.getRow(provEnd).height = 20;
@@ -2020,12 +2125,24 @@ export default function Contenedores() {
       }
     });
 
-    // Total general mercancía
-    wsM.mergeCells(`A${mRow}:I${mRow}`);
+    // Total general mercancía — con LAS PACAS DEL CONTENEDOR al lado de la
+    // plata, por lo mismo que en cada subtotal: el consolidado tenía el valor y
+    // no la cantidad, y el costo por paca de la derecha sale de dividir las dos.
+    wsM.mergeCells(`A${mRow}:E${mRow}`);
     wsM.getCell(`A${mRow}`).value = esEstimacionExcel ? 'TOTAL MERCANCÍA ESTIMADA (COP)' : 'TOTAL MERCANCÍA (COP)';
     wsM.getCell(`A${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
     wsM.getCell(`A${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
     wsM.getCell(`A${mRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+    wsM.getCell(`F${mRow}`).value = totalPacas;
+    wsM.getCell(`F${mRow}`).numFmt = '#,##0';
+    wsM.getCell(`F${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    wsM.getCell(`F${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    wsM.getCell(`F${mRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    // Las celdas que quedan entre el rótulo y las cifras: sin fondo se leerían
+    // como un hueco en medio de la fila de total.
+    ['G','H','I'].forEach(col => {
+      wsM.getCell(`${col}${mRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primary } };
+    });
     wsM.getCell(`J${mRow}`).value = totalMercanciaCOP;
     wsM.getCell(`J${mRow}`).numFmt = '$ #,##0';
     wsM.getCell(`J${mRow}`).font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
@@ -2195,6 +2312,54 @@ export default function Contenedores() {
       });
     });
 
+    // ── Hoja Ajustes ─────────────────────────────────────────────────
+    //
+    // EL REPORTE DE CAMBIOS, en el mismo archivo que la factura que explica.
+    // Las hojas de arriba llevan la factura del proveedor tal como la emitió
+    // —eso no se toca— y esta lleva cada diferencia que se registró después:
+    // lo que decía, lo que quedó, cuándo, el motivo y quién. Separarlas en dos
+    // archivos obligaría a cruzarlos a mano justo cuando hace falta discutir
+    // una diferencia con el proveedor.
+    //
+    // Solo se crea si hay ajustes: una hoja vacía en el Excel de un contenedor
+    // que llegó completo es una pregunta sin respuesta.
+    const ajustes = full.ajustes || [];
+    if (ajustes.length > 0) {
+      const wsA = wb.addWorksheet('Ajustes');
+      wsA.properties.tabColor = { argb: amber };
+      wsA.columns = [
+        { width: 20 }, // A Cuándo
+        { width: 22 }, // B Proveedor
+        { width: 26 }, // C Producto
+        { width: 22 }, // D Qué
+        { width: 18 }, // E Decía
+        { width: 18 }, // F Quedó
+        { width: 34 }, // G Motivo
+        { width: 20 }, // H Quién
+        { width: 24 }, // I De dónde viene
+      ];
+      addHeader(wsA, `${marca}AJUSTES — Contenedor ${full.numero}`, 'A1:I1');
+      drawTableHeader(wsA, [
+        'Cuándo', 'Proveedor', 'Producto', 'Qué cambió', 'Decía', 'Quedó', 'Motivo', 'Quién', 'De dónde viene',
+      ], 2);
+      let aRow = 3;
+      for (const a of ajustes) {
+        wsA.getCell(`A${aRow}`).value = a.created_at ? formatFecha(a.created_at) : '';
+        wsA.getCell(`B${aRow}`).value = a.proveedor_nombre || '';
+        wsA.getCell(`C${aRow}`).value = a.producto || '';
+        wsA.getCell(`D${aRow}`).value = CAMPO_AJUSTE_LABEL[a.campo] || a.campo;
+        wsA.getCell(`E${aRow}`).value = a.valor_original ?? '';
+        wsA.getCell(`F${aRow}`).value = a.valor_ajustado ?? '';
+        // Vacío donde no se escribió motivo: un «sin motivo» haría parecer que
+        // falta un dato obligatorio, y es opcional a propósito.
+        wsA.getCell(`G${aRow}`).value = a.motivo || '';
+        wsA.getCell(`H${aRow}`).value = a.usuario_nombre || '';
+        wsA.getCell(`I${aRow}`).value = ORIGEN_AJUSTE_LABEL[a.origen] || a.origen || '';
+        wsA.getRow(aRow).height = 18;
+        aRow++;
+      }
+    }
+
     const buffer = await wb.xlsx.writeBuffer();
     // El nombre del archivo también lo dice: dos Excel del mismo contenedor —el
     // estimado y el real— acaban en la misma carpeta, y con el mismo nombre no
@@ -2219,8 +2384,22 @@ export default function Contenedores() {
       const costoOriginal = costoProveedorEfectivo(p);
       const moneda = p.moneda || 'USD';
       const costoEnCOP = moneda === 'USD' ? costoOriginal * tasa : costoOriginal;
+      // ── CUÁNTAS PACAS SON DE ESTE PROVEEDOR ──────────────────────
+      // El resumen decía cuánto cuesta cada proveedor pero no cuántas pacas son
+      // suyas, así que la cifra con la que se negocia —lo que cuesta CADA paca
+      // de ese proveedor— se podía leer pero no comprobar, y el «por unidad» de
+      // debajo es otra cosa: el costo repartido entre el contenedor entero.
+      //
+      // Las líneas mandan; mientras no haya, lo estimado. Es el mismo orden que
+      // el costo de arriba a propósito: si el costo viene del estimado, las
+      // unidades también, y la división cuadra.
+      const unidadesLineas = (p.detalles || []).reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+      const unidadesEstimadas = parseInt(p.cantidad_estimada) || 0;
+      const unidades = unidadesLineas > 0 ? unidadesLineas : unidadesEstimadas;
       return { nombre: p.proveedor_nombre, moneda, costoOriginal, costoEnCOP,
                esEstimado: costoReal === 0 && costoOriginal > 0,
+               unidades, unidadesLineas, unidadesEstimadas,
+               costoPorUnidadPropia: unidades > 0 ? costoEnCOP / unidades : 0,
                costoPorPaca: totalPacas > 0 ? costoEnCOP / totalPacas : 0 };
     });
 
@@ -2841,6 +3020,9 @@ export default function Contenedores() {
       gastos_unitarios:  full.gastos_unitarios  != null ? String(full.gastos_unitarios)  : '',
       utilidad_total_estimada: full.utilidad_total_estimada != null ? String(full.utilidad_total_estimada) : '',
       moneda_base: baseDelContenedor,
+      // Se refleja lo que ES, aunque el interruptor no se pinte al editar: así
+      // el resto del formulario puede preguntarlo sin consultar al servidor.
+      legado: full.estado === 'legado',
     });
     // Las filas en blanco son una comodidad para CAPTURAR: al editar, un
     // proveedor vacío listo para escribir. Mirando, en cambio, son mentira: un
@@ -2999,6 +3181,12 @@ export default function Contenedores() {
               ? null : parseMonto(formData.utilidad_total_estimada) }
           : {}),
         ...(modoEstimacion && !editMode ? { estado: 'estimacion' } : {}),
+        // SOLO AL CREAR. Nacer legado o no es una decisión del momento en que
+        // se da de alta: un contenedor normal que ya generó cuentas por pagar
+        // no se puede volver legado desde aquí sin decidir qué pasa con esas
+        // cuentas, y para eso está el script contenedor-a-legado.js, que hace
+        // respaldo y lo deja escrito en la auditoría.
+        ...(!editMode && formData.legado ? { legado: true } : {}),
         proveedores_mercancia: proveedores.map((p) => ({
           proveedor_nombre: p.proveedor_nombre,
           moneda: p.moneda || 'USD',
@@ -3132,8 +3320,30 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
   };
 
   // ── Delete ─────────────────────────────────────────────────────
+  // EL AVISO DICE QUÉ DESAPARECE, no solo que es irreversible.
+  //
+  // Antes decía «¿Eliminar "C526"? Esta acción es irreversible» y nada más. Lo
+  // que de verdad hay que saber antes de pulsar es que se van también sus
+  // CUENTAS POR PAGAR: existen solo porque existe este contenedor, y en una
+  // estimación son la razón por la que se creó —para poder abonarle al
+  // proveedor antes de que llegue la mercancía—.
+  //
+  // El servidor rechaza el borrado si alguna de esas cuentas tiene abonos. Se
+  // dice aquí arriba para que nadie llegue al error por sorpresa.
   const handleDelete = async (contenedor) => {
-    const ok = await confirm({ title: 'Eliminar contenedor', message: `¿Eliminar "${contenedor.numero}"? Esta acción es irreversible.`, confirmText: 'Eliminar', variant: 'danger' });
+    const esEstimacion = contenedor.estado === 'estimacion';
+    const ok = await confirm({
+      title: esEstimacion ? 'Eliminar estimación' : 'Eliminar contenedor',
+      message:
+        `¿Eliminar "${contenedor.numero}"?\n\n`
+        + `Se borran el contenedor, sus proveedores, sus líneas y sus servicios, y también `
+        + `sus Cuentas por Pagar, que existen solo por él.\n\n`
+        + `Si alguna de esas cuentas ya tiene abonos registrados NO se borra nada: esa plata `
+        + `ya salió del banco.\n\n`
+        + `Esta acción es irreversible.`,
+      confirmText: 'Eliminar',
+      variant: 'danger',
+    });
     if (!ok) return;
     try { await contenedoresApi.delete(contenedor.id); addToast('Contenedor eliminado', 'success'); loadContenedores(); }
     catch (err) { addToast(mensajeDeError(err), 'error'); }
@@ -3242,13 +3452,43 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
   };
 
   // ── Revisión ──────────────────────────────────────────────────
+  //
+  // ── LAS PACAS, EN ORDEN ALFABÉTICO ──────────────────────────────
+  //
+  // Llegaban en el orden en que se teclearon (por id de línea). Contar cuarenta
+  // líneas contra un montón de pacas en el suelo con ese orden obliga a
+  // recorrer la lista entera por cada paca que se levanta: la pila está
+  // agrupada por referencia y la pantalla no.
+  //
+  // Se ordena por REFERENCIA —el nombre de la paca, que es lo que está impreso
+  // en el fardo— y después por clasificación y calidad, que es lo que
+  // distingue dos pacas de la misma referencia. `localeCompare` con 'es' para
+  // que las tildes y la ñ caigan donde se las busca y no al final del alfabeto,
+  // y `numeric` para que «paca 10» vaya después de «paca 9».
+  //
+  // POR QUÉ AQUÍ Y NO EN EL SERVIDOR. `fetchContenedorCompleto` ordena por id a
+  // propósito: ese mismo orden es el de la tabla de captura del formulario, y
+  // ahí las líneas NO pueden moverse —se escriben de arriba abajo y una línea
+  // que salta de sitio en cuanto se teclea su referencia hace imposible
+  // capturar—. Revisar y capturar quieren órdenes distintos porque son trabajos
+  // distintos.
+  const ordenAlfabetico = (a, b) => {
+    const cmp = (x, y) => String(x || '').trim().localeCompare(String(y || '').trim(), 'es',
+      { sensitivity: 'base', numeric: true });
+    return cmp(a.referencia, b.referencia)
+        || cmp(a.clasificacion, b.clasificacion)
+        || cmp(a.calidad, b.calidad);
+  };
+
   const openRevisionModal = async (contenedor) => {
     try {
       const full = await contenedoresApi.getOne(contenedor.id);
       setSelectedContenedor(full);
       const rows = [];
       for (const prov of full.proveedores_mercancia) {
-        for (const det of prov.detalles) {
+        // Una copia ordenada: `prov.detalles` es el contenedor que se guarda en
+        // `selectedContenedor` y lo usan otros bloques de la pantalla.
+        for (const det of [...prov.detalles].sort(ordenAlfabetico)) {
           rows.push({
             detalle_id: det.id,
             proveedor_nombre: prov.proveedor_nombre,
@@ -3265,6 +3505,11 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
             referencia_recibida: det.referencia_recibida || '',
             calidad_recibida: det.calidad_recibida || '',
             notas_revision: det.notas_revision || '',
+            // POR QUÉ la cantidad recibida no es la facturada. Es otra cosa que
+            // las notas: las notas son la libreta de quien cuenta («venían 3
+            // mojadas»); el motivo es lo que se le reclama al proveedor y lo
+            // que explica el ajuste en el historial.
+            motivo: det.motivo_ajuste || '',
           });
         }
       }
@@ -3298,6 +3543,7 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
         referencia_recibida: '',
         calidad_recibida: '',
         notas_revision: '',
+        motivo: '',
       },
     ]));
   };
@@ -3363,6 +3609,9 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
         referencia_recibida: r.referencia_recibida.trim() || null,
         calidad_recibida: r.calidad_recibida.trim() || null,
         notas_revision: r.notas_revision.trim() || null,
+        // El motivo del ajuste. Viaja aunque esté vacío: el servidor lo guarda
+        // en la línea y, si hubo diferencia, en el historial de ajustes.
+        motivo: (r.motivo || '').trim() || null,
         // Sin detalle_id, el backend debe CREAR la línea: llegó algo que no
         // estaba facturado, así que se manda el producto y su costo.
         ...(r.es_nuevo ? {
@@ -3714,6 +3963,10 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             { value: 'borrador', label: 'Borrador' },
             { value: 'revision', label: 'En Revisión' },
             { value: 'finalizado', label: 'Finalizado' },
+            // Faltaba, y desde que se pueden CREAR legados hace falta de
+            // verdad: sin esta opción, un contenedor heredado solo se encuentra
+            // buscándolo por número o bajando por la lista entera.
+            { value: 'legado', label: 'Legado' },
           ]}
           aria-label="Filtrar contenedores por estado"
           className="px-3 py-2 rounded-xl border border-border bg-surface text-primary text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 cursor-pointer"
@@ -3912,8 +4165,17 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <ActionBtn icon={Eye} title="Ver detalle" onClick={() => openViewModal(cont)} />
-                        {canEdit && (cont.estado === 'borrador' || cont.estado === 'estimacion') && (
-                          <ActionBtn icon={Edit2} title={cont.estado === 'estimacion' ? 'Editar estimación' : 'Editar'} color="hover:text-secondary hover:bg-secondary/10" onClick={() => openEditModal(cont)} />
+                        {/* Un legado NACIDO legado también se edita: se está
+                            tecleando ahora, a ratos, como cualquier otro. El
+                            que PASÓ a legado estando ya cargado no, porque sus
+                            pacas y sus cuentas por pagar ya existen (el
+                            servidor lo vuelve a comprobar y contesta 400). */}
+                        {canEdit && (cont.estado === 'borrador' || cont.estado === 'estimacion'
+                                     || (cont.estado === 'legado' && cont.origen === 'legado')) && (
+                          <ActionBtn icon={Edit2}
+                            title={cont.estado === 'estimacion' ? 'Editar estimación'
+                                   : cont.estado === 'legado' ? 'Editar contenedor de legado' : 'Editar'}
+                            color="hover:text-secondary hover:bg-secondary/10" onClick={() => openEditModal(cont)} />
                         )}
                         {canEdit && cont.estado === 'estimacion' && (
                           <ActionBtn icon={RefreshCw} title="Convertir a contenedor normal" color="hover:text-amber-600 hover:bg-amber-500/10" onClick={() => handleConvertirNormal(cont)} />
@@ -4582,6 +4844,69 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <input id="cont-notas" type="text" className={inp} placeholder="Observaciones opcionales..."
                       value={formData.notas} onChange={(e) => editarForm('notas', e.target.value)} />
                   </div>
+
+                  {/* ── CONTENEDOR DE LEGADO ──────────────────────────────
+                      Mercancía HEREDADA: llegó, se vendió y se repartió antes de
+                      que existiera el sistema, y se teclea ahora solo para
+                      dejarla escrita —de quién vino, qué traía y qué costó—.
+
+                      Un legado NO suma al inventario y NO genera cuentas por
+                      pagar, y las dos cosas son por el mismo motivo: su
+                      mercancía ya está contada en el inventario (entró al
+                      cuadrar las pacas contra la hoja de la dueña) y sus
+                      facturas se pagaron hace tiempo, fuera del sistema.
+                      Cargarlas otra vez duplicaría pacas y deuda.
+
+                      Solo al CREAR. Volver legado un contenedor que ya emitió
+                      sus cuentas por pagar es otra operación —hay que decidir
+                      qué pasa con esas cuentas y con sus abonos— y la hace un
+                      script que deja respaldo: src/scripts/contenedor-a-legado.js.
+
+                      En ESTIMACIÓN no se ofrece: una estimación es mercancía que
+                      todavía no ha llegado, lo contrario exacto de un legado. */}
+                  {!editMode && !modoEstimacion && (
+                  <div className="col-span-2 md:col-span-3">
+                    <div className={`rounded-xl border px-4 py-3 transition-colors ${
+                      formData.legado
+                        ? 'border-gray-400/60 bg-gray-500/[0.06]'
+                        : 'border-border bg-surface'}`}>
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          role="switch"
+                          id="cont-legado"
+                          aria-checked={!!formData.legado}
+                          onClick={() => editarForm('legado', !formData.legado)}
+                          /* 44 px de alto de zona tocable: esto se usa en
+                             tableta sin ratón, y un interruptor de 20 px no se
+                             acierta con el dedo. */
+                          className={`relative inline-flex items-center flex-shrink-0 mt-0.5 w-12 h-7 rounded-full
+                                      transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/40
+                                      ${formData.legado ? 'bg-gray-500' : 'bg-border'}`}
+                        >
+                          <span className={`inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform
+                                            ${formData.legado ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                        <label htmlFor="cont-legado" className="min-w-0 cursor-pointer">
+                          <span className="block text-sm font-semibold text-primary">Contenedor de legado</span>
+                          <span className="block text-xs text-muted mt-0.5 leading-relaxed">
+                            Mercancía heredada, que llegó <b>antes del sistema</b>. Se guarda entera
+                            para consulta y trazabilidad, pero <b>no suma al inventario</b> y
+                            <b> no genera cuentas por pagar</b>: sus pacas ya están contadas y sus
+                            facturas ya se pagaron.
+                          </span>
+                        </label>
+                      </div>
+                      {formData.legado && (
+                        <p className="mt-2.5 pt-2.5 border-t border-gray-400/30 text-xs text-primary leading-relaxed">
+                          Al guardar queda en estado <b>Legado</b>. Podrás seguir corrigiéndolo
+                          —se captura a ratos, como cualquier otro— pero <b>no se podrá finalizar</b>,
+                          que es el paso que crearía sus pacas por segunda vez.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  )}
                 </div>
               </div>
 
@@ -4760,20 +5085,84 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             </button>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-2.5">
-                          {(() => {
-                            const totalPacasProv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
-                            return totalPacasProv > 0 ? (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary text-white text-xs font-bold shadow-sm">
-                                <Boxes size={11} />
-                                {totalPacasProv.toLocaleString()} {totalPacasProv === 1 ? 'paca' : 'pacas'}
+                        {/* ── EL TOTAL DE LA FACTURA DE ESTE PROVEEDOR ───
+                            Aquí vivían solo la pastilla de pacas y la casilla de
+                            notas. El total de la factura estaba a 10 px, de
+                            pasada, dentro de la cabecera de la tabla de abajo
+                            —«12 líneas · 205 pacas · $18.400 USD»— que es el
+                            peor sitio posible para la cifra que se compara
+                            contra el papel del proveedor: se lee entre dos
+                            cuentas más y con el tamaño de una nota al pie.
+
+                            Ahora manda este bloque. El DÓLAR arriba y grande
+                            porque es la moneda en la que el proveedor factura, y
+                            los pesos debajo, que son la conversión. Las notas
+                            siguen aquí, debajo y a todo lo ancho: se escriben
+                            una vez y se leen pocas, al contrario que el total. */}
+                        {(() => {
+                          const monedaProv = prov.moneda || 'USD';
+                          const pacasProv = prov.detalles.reduce((s, d) => s + (parseInt(d.cantidad) || 0), 0);
+                          const totalLineas = prov.detalles.reduce(
+                            (s, d) => s + (parseInt(d.cantidad) || 0) * (parseFloat(d.costo_unitario) || 0), 0);
+                          // La misma regla que el resumen y que el servidor: las
+                          // líneas mandan y, mientras no haya, vale lo estimado.
+                          const facturaProv = totalLineas > 0 ? totalLineas : costoProveedorEfectivo(prov);
+                          const esEstimada = totalLineas === 0 && facturaProv > 0;
+                          const enCOP = monedaProv === 'USD' ? facturaProv * tasaVista : facturaProv;
+                          const enUSD = monedaProv === 'USD' ? facturaProv : (tasaVista > 0 ? facturaProv / tasaVista : 0);
+                          const pacasMostradas = pacasProv > 0 ? pacasProv : (parseInt(prov.cantidad_estimada) || 0);
+                          return (
+                        <div className="mt-2.5 rounded-xl border border-secondary/20 bg-surface/80 px-3.5 py-2.5">
+                          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">
+                                Total de la factura
+                                {esEstimada && (
+                                  <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                    estimada
+                                  </span>
+                                )}
+                              </p>
+                              {facturaProv > 0 ? (
+                                <>
+                                  <p className="font-display text-2xl font-bold text-primary tabular-nums leading-tight break-all">
+                                    {fmtPropia(facturaProv, monedaProv)} <span className="text-sm font-sans text-muted">{monedaProv}</span>
+                                  </p>
+                                  {/* El equivalente en la otra moneda. Sin tasa
+                                      no se pinta: un número sin conversión real
+                                      con otro símbolo delante es una mentira
+                                      tipográfica. */}
+                                  {tasaValida && monedaProv === 'USD' && (
+                                    <p className="text-sm font-mono text-muted tabular-nums">
+                                      {formatCurrency(enCOP)} <span className="text-[11px]">COP</span>
+                                    </p>
+                                  )}
+                                  {tasaValida && monedaProv === 'COP' && (
+                                    <p className="text-sm font-mono text-muted tabular-nums">
+                                      {formatMoneda(enUSD, 'USD', { decimales: 0 })} <span className="text-[11px]">USD</span>
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                /* Vacío, no un cero. Un «$0» diría que este
+                                   proveedor no cobra nada; lo que pasa es que
+                                   todavía no se ha escrito su mercancía. */
+                                <p className="text-sm text-muted">Sin líneas ni estimado todavía</p>
+                              )}
+                            </div>
+                            {pacasMostradas > 0 && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-white text-sm font-bold shadow-sm flex-shrink-0">
+                                <Boxes size={13} />
+                                {pacasMostradas.toLocaleString('es-CO')} {pacasMostradas === 1 ? 'paca' : 'pacas'}
                               </span>
-                            ) : null;
-                          })()}
-                          <input type="text" className={`${inp} text-xs flex-1`} placeholder="Notas del proveedor (opcional)"
+                            )}
+                          </div>
+                          <input type="text" className={`${inp} text-xs mt-2.5`} placeholder="Notas del proveedor (opcional)"
                             aria-label={`Notas del proveedor ${pi + 1}`}
                             value={prov.notas} onChange={(e) => updateProveedor(pi, 'notas', e.target.value)} />
                         </div>
+                          );
+                        })()}
                         {/* ── Datos estimados ────────────────────────────
                             EN ESTIMACIÓN se teclean: lo que de verdad se sabe al
                             estimar —cuánto cuesta cada paca y cuántas se van a
@@ -4885,7 +5274,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       <div id={`prov-${pi}`} className="px-4 pb-4 pt-3 bg-cream/30 rounded-b-2xl scroll-mt-28">
                         {(() => {
                           const monedaProv  = prov.moneda || 'USD';
-                          const totalLineas = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0)*(parseFloat(d.costo_unitario)||0),0);
+                          // El total en dinero de estas líneas ya no se cuenta
+                          // aquí: subió al bloque «Total de la factura» de la
+                          // cabecera del proveedor, que es de donde se lee.
                           const totalPacas  = prov.detalles.reduce((s,d)=>s+(parseInt(d.cantidad)||0),0);
                           const nLineas     = prov.detalles.length;
                           const sinFamilia  = prov.detalles.filter((d) => d.referencia && !familiaDeReferencia(d.referencia)).length;
@@ -4935,9 +5326,17 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                   <span className="text-[11px] font-bold text-secondary uppercase tracking-wide">
                                     {prov.proveedor_nombre || `Proveedor ${pi + 1}`}
                                   </span>
+                                  {/* El TOTAL DE LA FACTURA se fue de aquí: en
+                                      esta cabecera vivía a 10 px, entre dos
+                                      cuentas más, y es justo la cifra que se
+                                      compara contra el papel del proveedor.
+                                      Ahora está arriba, en su propio bloque y
+                                      en las dos monedas. Aquí se quedan las dos
+                                      cuentas que sirven mientras se recorre la
+                                      tabla: cuántas líneas van y cuántas pacas
+                                      suman. */}
                                   <span className="text-[10px] text-muted font-mono ml-2 tabular-nums">
-                                    {nLineas} {nLineas === 1 ? 'línea' : 'líneas'} · {totalPacas.toLocaleString('es-CO')} {totalPacas === 1 ? 'paca' : 'pacas'} · {fmtPropia(totalLineas, monedaProv)} {monedaProv}
-                                    {monedaProv === 'USD' && tasaValida && totalLineas > 0 && ` ≈ ${formatCurrency(totalLineas * tasaVista)} COP`}
+                                    {nLineas} {nLineas === 1 ? 'línea' : 'líneas'} · {totalPacas.toLocaleString('es-CO')} {totalPacas === 1 ? 'paca' : 'pacas'}
                                   </span>
                                   {/* El aviso de familia ya no cabe bajo cada referencia,
                                       así que se cuenta aquí: sigue siendo visible sin
@@ -5179,6 +5578,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                           </>
                                         )}
                                         {det.notas_revision && <p className="text-[10px] text-muted italic mt-0.5">📝 {det.notas_revision}</p>}
+                                        {/* El motivo del ajuste, al lado de la
+                                            diferencia que explica. Es lo que se
+                                            le reclama al proveedor, así que no
+                                            puede vivir solo en el historial. */}
+                                        {det.motivo_ajuste && (
+                                          <p className="text-[10px] text-warning font-medium mt-0.5">
+                                            Motivo: {det.motivo_ajuste}
+                                          </p>
+                                        )}
                                       </td>
                                       <td className="px-3 py-2 text-center font-mono font-bold text-success">{recibido}</td>
                                       <td className="px-3 py-2 text-center font-mono text-xs">
@@ -5457,7 +5865,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <p className="text-[10px] font-bold text-muted uppercase tracking-wider">Mercancía</p>
                     {resumen.proveedoresDetalle.map((p, i) => p.costoEnCOP > 0 && (
                       <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate min-w-0 text-primary">{p.nombre?.trim() || `Prov. ${i+1}`}</span>
+                        <span className="truncate min-w-0 text-primary">
+                          {p.nombre?.trim() || `Prov. ${i+1}`}
+                          {/* Las pacas de cada proveedor también aquí: en la
+                              tableta en vertical este es el único resumen que
+                              se ve, y la cifra tiene que estar en los dos. */}
+                          {p.unidades > 0 && (
+                            <span className="text-muted/70"> · {p.unidades.toLocaleString('es-CO')} pacas</span>
+                          )}
+                        </span>
                         <span className="font-mono tabular-nums text-primary flex-shrink-0">{fmtVista(p.costoEnCOP)}</span>
                       </div>
                     ))}
@@ -5485,6 +5901,19 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   <span className="text-right">
                     <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoTotal)}</span>
                     {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoTotal)}</span>}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs text-muted">Pacas del contenedor</span>
+                  <span className="text-right">
+                    <span className="block text-sm font-mono font-bold text-primary tabular-nums">
+                      {resumen.totalPacas.toLocaleString('es-CO')}
+                    </span>
+                    {resumen.sumDetalles !== resumen.totalPacas && resumen.sumDetalles > 0 && (
+                      <span className="block text-[10px] font-mono text-warning tabular-nums">
+                        las líneas suman {resumen.sumDetalles.toLocaleString('es-CO')}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-start justify-between gap-2 pb-2 border-b border-border/40">
@@ -5521,6 +5950,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </div>
                 )}
               </div>
+
+              {/* ── EL RASTRO DE LOS AJUSTES ────────────────────
+                  Solo mirando, y solo si hay alguno: es historia, no algo que
+                  se teclee. Va DESPUÉS del resumen y antes de los botones, que
+                  es donde se mira cuando la pregunta es «¿por qué esta cantidad
+                  no es la de la factura?». */}
+              {soloLectura && selectedContenedor?.ajustes?.length > 0 && (
+                <HistorialAjustes ajustes={selectedContenedor.ajustes} />
+              )}
 
               {/* ── Qué se puede hacer con este contenedor ──────
                   Convertir, revisar, finalizar, exportar, guardar como
@@ -5563,6 +6001,18 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
                       className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
                       <ClipboardCheck size={17} /> Revisar Contenedor
+                    </button>
+                  </div>
+                )}
+                {/* Un legado nacido legado se sigue corrigiendo, y nada más:
+                    no hay revisión ni finalización que ofrecer, porque su
+                    mercancía ya está contada en el inventario. */}
+                {canEdit && selectedContenedor.estado === 'legado'
+                  && selectedContenedor.origen === 'legado' && (
+                  <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={editarLoQueSeEstaViendo}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-muted hover:text-secondary hover:border-secondary/40 text-sm font-medium transition-colors">
+                      <Edit2 size={15} /> Editar contenedor de legado
                     </button>
                   </div>
                 )}
@@ -5636,8 +6086,27 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                                 {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(p.costoEnCOP)}</span>}
                               </span>
                             </div>
+                            {/* CUÁNTAS PACAS SON SUYAS, Y A CÓMO LE SALE CADA
+                                UNA. Las dos juntas y en la misma línea porque es
+                                una división: la cifra de la derecha se puede
+                                comprobar con las dos de la izquierda. */}
+                            {p.unidades > 0 && (
+                              <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
+                                <span className="text-xs text-muted/70">
+                                  {p.unidades.toLocaleString('es-CO')} {p.unidades === 1 ? 'paca' : 'pacas'}
+                                  {p.unidadesLineas === 0 && p.unidadesEstimadas > 0 && (
+                                    <span className="text-amber-600"> estimadas</span>
+                                  )}
+                                  <span className="text-muted/50"> · c/u</span>
+                                </span>
+                                <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
+                                  {fmtVista(p.costoPorUnidadPropia, { unitario: true })}
+                                  {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(p.costoPorUnidadPropia, { unitario: true })}</span>}
+                                </span>
+                              </div>
+                            )}
                             <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline">
-                              <span className="text-xs text-muted/70">por unidad</span>
+                              <span className="text-xs text-muted/70">por unidad del contenedor</span>
                               <span className="text-xs font-mono text-muted tabular-nums text-right w-40">
                                 {fmtVista(p.costoPorPaca, { unitario: true })}
                                 {mostrarAlterna && <span className="text-muted/60"> · {fmtAlterna(p.costoPorPaca, { unitario: true })}</span>}
@@ -5647,7 +6116,20 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         ))}
                         {resumen.proveedoresDetalle.filter(p => p.costoEnCOP > 0).length > 1 && (
                           <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline pt-1.5 border-t border-border/30">
-                            <span className="text-xs font-semibold text-muted">Subtotal mercancía</span>
+                            <span className="text-xs font-semibold text-muted">
+                              Subtotal mercancía
+                              {/* Las pacas del subtotal son la suma de las de
+                                  arriba, así que la columna se puede sumar a
+                                  mano y cuadrar. */}
+                              {(() => {
+                                const u = resumen.proveedoresDetalle
+                                  .filter(p => p.costoEnCOP > 0)
+                                  .reduce((s, p) => s + (p.unidades || 0), 0);
+                                return u > 0
+                                  ? <span className="font-normal text-muted/70"> · {u.toLocaleString('es-CO')} pacas</span>
+                                  : null;
+                              })()}
+                            </span>
                             <span className="text-right w-40">
                               <span className="block text-sm font-mono font-bold text-primary tabular-nums">{fmtVista(resumen.costoMercancia)}</span>
                               {mostrarAlterna && <span className="block text-[10px] font-mono text-muted tabular-nums">{fmtAlterna(resumen.costoMercancia)}</span>}
@@ -5713,7 +6195,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   {/* ── Bloque de totales: SIEMPRE en las dos monedas ──────
                       La elegida en grande y la otra debajo en pequeño. */}
                   <div className="h-px bg-border/60 mb-3" />
-                  <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline mb-4">
+                  <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline mb-1">
                     <span className="text-base font-bold text-primary">Costo total</span>
                     <span className="text-right w-40">
                       <span className="block text-lg font-mono font-bold text-primary tabular-nums">
@@ -5722,6 +6204,35 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       {mostrarAlterna && (
                         <span className="block text-xs font-mono text-muted tabular-nums">
                           {fmtAlterna(resumen.costoTotal)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {/* ── LAS PACAS DEL CONSOLIDADO ────────────────────────
+                      El total del contenedor hablaba solo de plata. Las pacas
+                      van pegadas a él porque son las dos mitades de la misma
+                      cuenta —esta plata, por estas pacas— y el costo por unidad
+                      de abajo sale de dividirlas.
+
+                      Se enseñan las dos cifras cuando no coinciden: las del
+                      campo «total de unidades» y las que de verdad suman las
+                      líneas. Mientras solo se veía una, un contenedor con 205
+                      pacas declaradas y 198 capturadas enseñaba un costo
+                      unitario que no era el de ninguna de las dos. */}
+                  <div className="grid grid-cols-[1fr_auto] gap-x-4 items-baseline mb-4">
+                    <span className="text-xs font-semibold text-muted">Pacas del contenedor</span>
+                    <span className="text-right w-40">
+                      <span className="block text-sm font-mono font-bold text-primary tabular-nums">
+                        {resumen.totalPacas.toLocaleString('es-CO')}
+                      </span>
+                      {resumen.sumDetalles !== resumen.totalPacas && resumen.sumDetalles > 0 && (
+                        <span className="block text-[10px] font-mono text-warning tabular-nums">
+                          las líneas suman {resumen.sumDetalles.toLocaleString('es-CO')}
+                        </span>
+                      )}
+                      {resumen.cantidadTotal > 0 && resumen.cantidadTotal !== resumen.totalPacas && (
+                        <span className="block text-[10px] text-muted">
+                          de {resumen.cantidadTotal.toLocaleString('es-CO')} del contenedor físico
                         </span>
                       )}
                     </span>
@@ -5854,7 +6365,19 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                 pegados al borde y el formulario terminando en 1.600 se leen como
                 dos cosas distintas. */}
             <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs min-w-0">
+            {/* ── LAS TRES CIFRAS, EN LAS DOS MONEDAS ──────────────
+                Esta barra enseñaba solo pesos (`formatCurrency`), y el
+                contenedor se COMPRA en dólares: la cifra con la que se habla
+                con el proveedor no estaba en la única parte del formulario que
+                está siempre a la vista. Había que abrir el resumen de al lado
+                para verla.
+
+                El dólar va arriba y el peso debajo, en ese orden, porque el
+                dólar es la moneda en la que se piensa la compra y el peso su
+                equivalente. Sin tasa (o con tasa 1) no se puede convertir, así
+                que solo se enseña el peso: dividir por 1 repintaría el mismo
+                número con otro símbolo, que es peor que no enseñarlo. */}
+            <div className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs min-w-0">
               <span className="text-muted">
                 Unidades <b className={`font-mono tabular-nums ml-1 ${resumen.cantidadValida ? 'text-primary' : 'text-warning'}`}>
                   {resumen.totalPacas.toLocaleString('es-CO')}
@@ -5863,14 +6386,36 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   <span className="text-warning ml-1">(las líneas suman {resumen.sumDetalles.toLocaleString('es-CO')})</span>
                 )}
               </span>
-              <span className="text-muted">
-                Costo total <b className="font-mono tabular-nums text-primary ml-1">{formatCurrency(resumen.costoTotal)}</b>
+              <span className="text-muted leading-tight">
+                Costo total
+                {tasaValida && (
+                  <b className="block font-mono tabular-nums text-primary">
+                    {formatMoneda(resumen.costoTotal / tasaVista, 'USD', { decimales: 0 })}
+                  </b>
+                )}
+                <b className={`block font-mono tabular-nums ${tasaValida ? 'text-muted font-normal text-[11px]' : 'text-primary'}`}>
+                  {formatCurrency(resumen.costoTotal)}
+                </b>
               </span>
-              <span className="text-muted">
-                Por unidad <b className="font-mono tabular-nums text-secondary ml-1">
+              <span className="text-muted leading-tight">
+                Por unidad
+                {tasaValida && (
+                  <b className="block font-mono tabular-nums text-secondary">
+                    {resumen.totalPacas > 0
+                      ? formatMoneda(resumen.costoUnitario / tasaVista, 'USD', { decimales: 2 })
+                      : '—'}
+                  </b>
+                )}
+                <b className={`block font-mono tabular-nums ${tasaValida ? 'text-muted font-normal text-[11px]' : 'text-secondary'}`}>
                   {resumen.totalPacas > 0 ? formatCurrency(resumen.costoUnitario) : '—'}
                 </b>
               </span>
+              {!tasaValida && (
+                <span className="text-warning flex items-center gap-1">
+                  <AlertTriangle size={11} className="flex-shrink-0" />
+                  Falta la tasa USD→COP
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button type="button" onClick={cerrarFormulario}
@@ -6277,12 +6822,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             {/* Distribución de unidades (pedido) — referencia rápida */}
             {selectedContenedor.proveedores_mercancia && selectedContenedor.proveedores_mercancia.length > 0 && (
               <div className="rounded-xl border border-border/60 bg-cream/20 p-3">
+                {/* En el MISMO orden alfabético que las filas de abajo: son la
+                    misma lista mirada de dos maneras, y con dos órdenes
+                    distintos hay que buscar en los dos sitios. */}
                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Distribución de Unidades (pedido)</p>
                 <div className="space-y-2">
                   {selectedContenedor.proveedores_mercancia.map((prov, i) => (
                     <div key={i} className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-bold text-primary mr-1">{prov.proveedor_nombre}:</span>
-                      {prov.detalles.map((det, di) => (
+                      {[...prov.detalles].sort(ordenAlfabetico).map((det, di) => (
                         <span key={di} className="inline-flex items-center gap-1.5 bg-surface border border-border/50 rounded-lg px-2 py-0.5 text-[11px]">
                           <span className="capitalize font-semibold text-secondary">{det.clasificacion}</span>
                           <span className="text-muted">/</span>
@@ -6479,12 +7027,42 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                             )}
                           </div>
 
-                          {/* Col 4: Notas (inline) */}
-                          <input type="text" className={`${inpBase} text-xs py-1.5`}
-                            placeholder="Notas / diferencias (opcional)"
-                            aria-label={`Notas de revisión de ${row.referencia || 'este producto'}`}
-                            value={row.notas_revision}
-                            onChange={e => updateRevisionRow(idx, 'notas_revision', e.target.value)} />
+                          {/* Col 4: Notas (inline) y, si hay diferencia, el MOTIVO */}
+                          <div className="space-y-1">
+                            <input type="text" className={`${inpBase} text-xs py-1.5`}
+                              placeholder="Notas / diferencias (opcional)"
+                              aria-label={`Notas de revisión de ${row.referencia || 'este producto'}`}
+                              value={row.notas_revision}
+                              onChange={e => updateRevisionRow(idx, 'notas_revision', e.target.value)} />
+                            {/* ── EL MOTIVO, SOLO DONDE HAY ALGO QUE EXPLICAR ──
+                                La factura no se toca: lo que se escribe aquí y en
+                                la cantidad recibida queda al lado de lo facturado,
+                                y la diferencia entra al historial de ajustes del
+                                contenedor con la fecha y el usuario.
+
+                                El campo aparece únicamente cuando la línea NO
+                                cuadra con la factura. Pedirlo en las cuarenta
+                                líneas convertiría la revisión en cuarenta
+                                justificaciones y la gente escribiría cualquier
+                                cosa; pedirlo donde hay diferencia es la pregunta
+                                que de todas formas va a hacer el proveedor. */}
+                            {(() => {
+                              const hayDiferencia = row.es_nuevo
+                                || (parseInt(row.cantidad_recibida) || 0) !== (parseInt(row.cantidad_enviada) || 0)
+                                || !!(row.clasificacion_recibida || '').trim()
+                                || !!(row.referencia_recibida || '').trim()
+                                || !!(row.calidad_recibida || '').trim();
+                              if (!hayDiferencia) return null;
+                              return (
+                                <input type="text"
+                                  className={`${inpBase} text-xs py-1.5 border-warning/50 bg-warning/5`}
+                                  placeholder="Motivo de la diferencia (p. ej. faltaron en el despacho)"
+                                  aria-label={`Motivo de la diferencia de ${row.referencia || 'este producto'}`}
+                                  value={row.motivo || ''}
+                                  onChange={e => updateRevisionRow(idx, 'motivo', e.target.value)} />
+                              );
+                            })()}
+                          </div>
                         </div>
                       </div>
                       );

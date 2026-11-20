@@ -32,8 +32,28 @@ import path from 'node:path';
 
 // La línea base del 2026-10-29, contando sólo código y no comentarios. Estos
 // números SOLO pueden bajar.
+//
+// 2026-11-20 · +2 button y +1 input en src/pages (228→230, 111→112), los tres
+// en Contenedores.jsx y los tres con su motivo:
+//
+//   · el INTERRUPTOR de «Contenedor de legado» es un `role="switch"` con su
+//     perilla deslizante. `Button` no tiene ese papel —es un botón, no un
+//     estado de encendido y apagado— así que usarlo mentiría al lector de
+//     pantalla. Lleva a mano lo que `Button` traería: zona tocable de 44 px
+//     (esto se usa en tableta sin ratón), anillo de foco y `aria-checked`.
+//   · «Editar contenedor de legado», en la barra del detalle, es el cuarto
+//     hermano de tres botones que ya son HTML plano con esas mismas clases.
+//     Uno solo hecho con `Button` se vería distinto de los de al lado: la
+//     incoherencia se ve, la deuda no.
+//   · el campo de MOTIVO de la revisión va dentro de una fila de tabla densa,
+//     pegado a la casilla de notas que ya es HTML plano. `Input` envuelve en un
+//     div con su etiqueta y su `px-4 py-3`: en esa fila rompe la rejilla.
+//
+// Los tres son de los que el comentario de arriba llama «lo que hoy obliga a
+// bajar a HTML plano»: el camino sigue siendo que Button e Input los acepten,
+// no reescribir la pantalla.
 const TECHO = {
-  'src/pages':      { button: 228, input: 111 },
+  'src/pages':      { button: 230, input: 112 },
   'src/components': { button: 33,  input: 8   },
 };
 

@@ -37,6 +37,44 @@ const facturaOriginal = (c) => {
   return { moneda: mo, total: to };
 };
 
+// ── LA DEUDA SE LEE EN LA MONEDA EN LA QUE SE DEBE ─────────────────
+//
+// Una factura de contenedor se guarda en PESOS —`total_factura`, convertida con
+// la tasa del contenedor— y los abonos se registran contra esa cifra. El
+// resultado era que esta pantalla sumaba todo en el contador de pesos y el de
+// dólares salía casi siempre en cero, cuando la obligación real con el
+// proveedor es en dólares: «a MIRTA le debo 18.400 dólares» no aparecía en
+// ninguna cifra, solo dentro de cada fila.
+//
+// Estas cifras las calcula el SERVIDOR (src/utils/cuentasPagarMoneda.js) y
+// viajan en la respuesta. Aquí no se vuelve a convertir nada a propósito: con
+// la regla escrita en los dos lados, el día que cambie en uno, la pantalla y
+// los informes dirían cosas distintas sin que nada avise.
+//
+// Si la respuesta no las trae —un servidor anterior a este cambio— se cae a las
+// de siempre, en la moneda del saldo: la pantalla enseña menos, no mal.
+const enDeuda = (c) => {
+  const mo = String(c?.moneda_original || c?.moneda || 'COP').toUpperCase();
+  const ms = String(c?.moneda || 'COP').toUpperCase();
+  const facturaSaldo = parseFloat(c?.total_factura) || 0;
+  const abonadoSaldo = parseFloat(c?.total_abonado) || 0;
+  const saldoSaldo = facturaSaldo - abonadoSaldo;
+  const lasTrae = c?.saldo_original != null;
+  return {
+    moneda: mo,
+    monedaSaldo: ms,
+    // ¿Hay dos monedas que enseñar, o la factura ya estaba en pesos?
+    doble: lasTrae && mo !== ms,
+    factura: lasTrae ? Number(c.total_factura_original) : facturaSaldo,
+    abonado: lasTrae ? Number(c.total_abonado_original) : abonadoSaldo,
+    saldo: lasTrae ? Number(c.saldo_original) : saldoSaldo,
+    facturaSaldo, abonadoSaldo, saldoSaldo,
+    // false = la cifra en dólares sale de deshacer una conversión, porque de
+    // algún abono no se guardó en qué moneda se pagó. Se dice, no se esconde.
+    exacto: c?.saldo_original_exacto !== false,
+  };
+};
+
 // Moneda que se propone al registrar un abono: la de la factura del proveedor.
 const monedaSugerida = (c) => (c?.moneda_original || c?.moneda || 'USD').toUpperCase();
 
@@ -271,30 +309,50 @@ export default function CuentasPagar() {
   const exportarExcel = async () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Cuentas por Pagar');
+    // LA MONEDA DE LA DEUDA PRIMERO, y la del saldo guardado después.
+    //
+    // Las tres columnas de la izquierda son la factura del proveedor tal como
+    // la emitió —en dólares, normalmente—; las de la derecha, la misma deuda en
+    // pesos, que es contra lo que se registran los abonos. Antes solo estaban
+    // las de pesos, con una columna «Moneda» que decía COP en todas: quien
+    // abría el archivo para saber cuántos dólares se deben no lo podía saber.
     ws.columns = [
-      { header: 'Proveedor',         key: 'proveedor',  width: 28 },
-      { header: 'Contenedor',        key: 'contenedor', width: 16 },
-      { header: 'Moneda',            key: 'moneda',     width: 10 },
-      { header: 'Total Factura',     key: 'total',      width: 18 },
-      { header: 'Total Abonado',     key: 'abonado',    width: 18 },
-      { header: 'Saldo Pendiente',   key: 'saldo',      width: 18 },
-      { header: 'Estado',            key: 'estado',     width: 12 },
-      { header: 'Fecha Creación',    key: 'fecha',      width: 16 },
+      { header: 'Proveedor',           key: 'proveedor',  width: 28 },
+      { header: 'Contenedor',          key: 'contenedor', width: 16 },
+      { header: 'Moneda de la deuda',  key: 'moneda',     width: 18 },
+      { header: 'Total Factura',       key: 'total',      width: 18 },
+      { header: 'Total Abonado',       key: 'abonado',    width: 18 },
+      { header: 'Saldo Pendiente',     key: 'saldo',      width: 18 },
+      { header: 'Exacto',              key: 'exacto',     width: 10 },
+      { header: 'Moneda del saldo',    key: 'monedaCOP',  width: 18 },
+      { header: 'Total Factura',       key: 'totalCOP',   width: 18 },
+      { header: 'Total Abonado',       key: 'abonadoCOP', width: 18 },
+      { header: 'Saldo Pendiente',     key: 'saldoCOP',   width: 18 },
+      { header: 'Estado',              key: 'estado',     width: 12 },
+      { header: 'Fecha Creación',      key: 'fecha',      width: 16 },
     ];
     ws.getRow(1).font = { bold: true };
     filtered.forEach(c => {
+      const d = enDeuda(c);
       ws.addRow({
         proveedor:  c.proveedor_nombre || '—',
         contenedor: c.contenedor_numero || 'Manual',
-        moneda:     c.moneda || 'COP',
-        total:      parseFloat(c.total_factura) || 0,
-        abonado:    parseFloat(c.total_abonado) || 0,
-        saldo:      (parseFloat(c.total_factura) || 0) - (parseFloat(c.total_abonado) || 0),
+        moneda:     d.moneda,
+        total:      d.factura,
+        abonado:    d.abonado,
+        saldo:      d.saldo,
+        // Vacío cuando no hay nada que advertir. Un «sí» en todas las filas
+        // menos tres hace que nadie lea la columna.
+        exacto:     d.doble && !d.exacto ? 'aproximado' : '',
+        monedaCOP:  d.monedaSaldo,
+        totalCOP:   d.facturaSaldo,
+        abonadoCOP: d.abonadoSaldo,
+        saldoCOP:   d.saldoSaldo,
         estado:     c.estado,
         fecha:      c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO') : '—',
       });
     });
-    ['total', 'abonado', 'saldo'].forEach(k => {
+    ['total', 'abonado', 'saldo', 'totalCOP', 'abonadoCOP', 'saldoCOP'].forEach(k => {
       ws.getColumn(k).numFmt = '#,##0.00';
     });
     const buffer = await wb.xlsx.writeBuffer();
@@ -325,12 +383,17 @@ export default function CuentasPagar() {
     grupos[key].cuentas.push(c);
     if (c.estado === 'pagada') grupos[key].pagadas++;
     else {
-      const pen = parseFloat(c.total_factura) - parseFloat(c.total_abonado);
+      // El pendiente del grupo, EN LA MONEDA EN LA QUE SE DEBE. Antes se
+      // repartía por `c.moneda`, que en toda cuenta de contenedor es COP: el
+      // contador de dólares quedaba en cero y el de pesos se llevaba la deuda
+      // entera, incluidas las facturas que el proveedor emitió en dólares.
+      const d = enDeuda(c);
+      const pen = d.saldo;
       // Lo del legado se cuenta aparte, no en el pendiente del grupo.
       if (esDeLegado(c)) {
-        if (c.moneda === 'USD') grupos[key].legadoUSD += pen;
+        if (d.moneda === 'USD') grupos[key].legadoUSD += pen;
         else grupos[key].legadoCOP += pen;
-      } else if (c.moneda === 'USD') grupos[key].pendienteUSD += pen;
+      } else if (d.moneda === 'USD') grupos[key].pendienteUSD += pen;
       else grupos[key].pendienteCOP += pen;
     }
   });
@@ -357,16 +420,32 @@ export default function CuentasPagar() {
   // Es la misma regla que la dueña pidió para la cartera: la cifra se ve, dice
   // de qué es, y no se suma a lo que de verdad hay que pagar. C626 son diez
   // facturas por 324.775.400 que llevaban meses infladando este número.
-  const saldoDe = (c) => (parseFloat(c.total_factura) || 0) - (parseFloat(c.total_abonado) || 0);
+  //
+  // Y SE SUMAN POR LA MONEDA EN LA QUE SE DEBE, no por la del saldo guardado.
+  // Las dos cifras se dan por separado y nunca mezcladas: dólares y pesos no se
+  // suman, y elegir una sola moneda para el contador obligaría a inventarse una
+  // tasa de hoy que nadie ha dicho. Es la misma decisión que los tres montones
+  // de la cartera.
   const vivas = cuentas.filter(c => c.estado !== 'pagada' && !esDeLegado(c));
   const legadas = cuentas.filter(c => c.estado !== 'pagada' && esDeLegado(c));
 
-  const totalPendienteCOP = vivas.filter(c => c.moneda === 'COP').reduce((s, c) => s + saldoDe(c), 0);
-  const totalPendienteUSD = vivas.filter(c => c.moneda === 'USD').reduce((s, c) => s + saldoDe(c), 0);
-  const totalLegadoCOP    = legadas.filter(c => c.moneda === 'COP').reduce((s, c) => s + saldoDe(c), 0);
-  const totalLegadoUSD    = legadas.filter(c => c.moneda === 'USD').reduce((s, c) => s + saldoDe(c), 0);
+  const sumaEn = (lista, moneda) => lista
+    .map(enDeuda)
+    .filter(d => d.moneda === moneda)
+    .reduce((s, d) => s + d.saldo, 0);
+
+  const totalPendienteCOP = sumaEn(vivas, 'COP');
+  const totalPendienteUSD = sumaEn(vivas, 'USD');
+  const totalLegadoCOP    = sumaEn(legadas, 'COP');
+  const totalLegadoUSD    = sumaEn(legadas, 'USD');
   const pagadas = cuentas.filter(c => c.estado === 'pagada').length;
   const pendientes = vivas.length;
+  // Cuántas cuentas vivas en dólares llevan alguna cifra aproximada: de algún
+  // abono no se guardó en qué moneda se pagó, así que su parte en dólares sale
+  // de deshacer la conversión con la tasa de la factura, no de dólares de
+  // verdad. Son los abonos registrados antes de que se guardara la moneda del
+  // pago. Si hay alguna, el contador lo dice.
+  const aproximadas = vivas.filter(c => { const d = enDeuda(c); return d.doble && !d.exacto; }).length;
 
   const inpSm = 'w-full px-3 py-2 rounded-lg border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm';
   const inp = 'w-full px-4 py-2.5 rounded-xl border border-border bg-surface focus:outline-none focus:ring-2 focus:ring-secondary/30 text-sm';
@@ -376,13 +455,33 @@ export default function CuentasPagar() {
     <Layout title="Cuentas por Pagar" subtitle={`${cuentas.length} cuentas registradas`}>
       <div className="space-y-6">
 
-        {/* KPIs */}
+        {/* KPIs — EL DÓLAR PRIMERO.
+            La mercancía se compra en dólares y las facturas se emiten en
+            dólares, así que esa es la cifra con la que se decide a quién girar.
+            Estaba de segunda y, peor, en cero: se repartía por la moneda del
+            saldo guardado y toda cuenta de contenedor se guarda en pesos. */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Pendiente COP"  value={formatCurrency(totalPendienteCOP)} icon={CreditCard} color="bg-warning/70"  sub={`${pendientes} cuenta(s) activas`} />
-          <KpiCard label="Pendiente USD"  value={`$${totalPendienteUSD.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`} icon={DollarSign} color="bg-secondary/70" sub="en dólares" />
+          <KpiCard label="Pendiente USD"  value={`$${totalPendienteUSD.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`}
+            icon={DollarSign} color="bg-secondary/70"
+            sub={aproximadas > 0
+              ? `${aproximadas} con abonos sin moneda guardada`
+              : 'lo que se le debe a los proveedores'} />
+          <KpiCard label="Pendiente COP"  value={formatCurrency(totalPendienteCOP)} icon={CreditCard} color="bg-warning/70"  sub="facturas emitidas en pesos" />
           <KpiCard label="Pagadas"        value={pagadas}    icon={CheckCircle} color="bg-success/70"  sub="completamente liquidadas" />
           <KpiCard label="Por liquidar"   value={pendientes} icon={Clock}        color="bg-accent/70"   sub="pendientes o parciales" />
         </div>
+
+        {/* La advertencia, entera y una sola vez. Una cifra aproximada que no se
+            anuncia como tal es peor que no tenerla. */}
+        {aproximadas > 0 && (
+          <p className="px-4 py-2.5 rounded-xl border border-warning/30 bg-warning/5 text-xs text-primary leading-relaxed">
+            En <b>{aproximadas}</b> cuenta(s) hay abonos registrados antes de que se
+            guardara <b>en qué moneda se pagaron</b>. Su parte en dólares sale de deshacer
+            la conversión con la tasa de la factura, no de dólares de verdad: la cifra sirve
+            para negociar, pero puede no ser al centavo. Los abonos nuevos ya guardan su
+            moneda y su tasa.
+          </p>
+        )}
 
         {/* Lo del legado, dicho en voz alta. Si no estuviera escrito aquí, la
             única forma de saber por qué los totales no cuadran con la lista de
@@ -564,7 +663,8 @@ export default function CuentasPagar() {
 
                     {/* Filas de cuentas — solo las del contenedor desplegado */}
                     {estaAbierto(key) && grupo.cuentas.map(c => {
-                      const pendiente = parseFloat(c.total_factura) - parseFloat(c.total_abonado);
+                      const d = enDeuda(c);
+                      const pendiente = d.saldoSaldo;
                       const isExpanded = expandedId === c.id;
                       const canAbono = c.estado !== 'pagada';
                       return (
@@ -600,10 +700,37 @@ export default function CuentasPagar() {
                               })()}
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${c.moneda === 'USD' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>{c.moneda}</span>
+                              {/* La moneda EN LA QUE SE DEBE. Aquí se pintaba
+                                  `c.moneda`, que en una cuenta de contenedor es
+                                  siempre COP: la columna decía «COP» justo al
+                                  lado de una factura en dólares. */}
+                              <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${d.moneda === 'USD' ? 'bg-secondary/10 text-secondary' : 'bg-primary/10 text-primary'}`}>{d.moneda}</span>
                             </td>
-                            <td className="px-4 py-3 font-mono text-sm text-success">{formatCurrency(c.total_abonado, c.moneda)}</td>
-                            <td className="px-4 py-3 font-mono text-sm font-semibold text-warning">{formatCurrency(pendiente, c.moneda)}</td>
+                            {/* ABONADO Y PENDIENTE, en la moneda de la deuda
+                                arriba y en pesos debajo. El pendiente en pesos
+                                sigue estando porque es contra esa cifra contra
+                                la que se registran los abonos. */}
+                            <td className="px-4 py-3 font-mono text-sm text-success">
+                              {formatMoneda(d.abonado, d.moneda)}
+                              {d.doble && (
+                                <span className="block text-[11px] font-normal text-muted">
+                                  ≈ {formatCurrency(d.abonadoSaldo, d.monedaSaldo)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-sm font-semibold text-warning">
+                              {formatMoneda(d.saldo, d.moneda)}
+                              {/* El asterisco es la única pista de que esa cifra
+                                  en dólares sale de deshacer una conversión. */}
+                              {d.doble && !d.exacto && (
+                                <span className="text-muted" title="Hay abonos de los que no se guardó en qué moneda se pagaron: esta cifra sale de deshacer la conversión con la tasa de la factura"> *</span>
+                              )}
+                              {d.doble && (
+                                <span className="block text-[11px] font-normal text-muted">
+                                  ≈ {formatCurrency(pendiente, d.monedaSaldo)}
+                                </span>
+                              )}
+                            </td>
                             <td className="px-4 py-3"><EstadoBadge estado={c.estado} /></td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2 justify-end">
@@ -628,19 +755,38 @@ export default function CuentasPagar() {
                               <td colSpan={9} className="px-6 pb-4 pt-1 bg-secondary/5">
                                 <div className="rounded-xl border border-secondary/20 bg-surface p-4 shadow-sm">
                                   {/* Resumen de saldo */}
-                                  <div className="flex items-center gap-6 mb-4 pb-3 border-b border-border/40">
+                                  {/* El saldo de la cuenta antes de abonarle:
+                                      en la moneda de la factura arriba y en
+                                      pesos debajo, porque el abono se registra
+                                      contra la cifra en pesos. */}
+                                  <div className="flex items-center gap-6 mb-4 pb-3 border-b border-border/40 flex-wrap">
                                     <div>
                                       <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Total factura</p>
-                                      <p className="text-sm font-mono font-semibold text-primary">{formatCurrency(c.total_factura, c.moneda)}</p>
+                                      <p className="text-sm font-mono font-semibold text-primary">{formatMoneda(d.factura, d.moneda)}</p>
+                                      {d.doble && <p className="text-[11px] font-mono text-muted">≈ {formatCurrency(d.facturaSaldo, d.monedaSaldo)}</p>}
                                     </div>
                                     <div>
                                       <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Abonado</p>
-                                      <p className="text-sm font-mono font-semibold text-success">{formatCurrency(c.total_abonado, c.moneda)}</p>
+                                      <p className="text-sm font-mono font-semibold text-success">{formatMoneda(d.abonado, d.moneda)}</p>
+                                      {d.doble && <p className="text-[11px] font-mono text-muted">≈ {formatCurrency(d.abonadoSaldo, d.monedaSaldo)}</p>}
                                     </div>
                                     <div>
                                       <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Saldo pendiente</p>
-                                      <p className="text-lg font-mono font-bold text-warning">{formatCurrency(pendiente, c.moneda)}</p>
+                                      <p className="text-lg font-mono font-bold text-warning">{formatMoneda(d.saldo, d.moneda)}</p>
+                                      {d.doble && <p className="text-[11px] font-mono text-muted">≈ {formatCurrency(pendiente, d.monedaSaldo)}</p>}
                                     </div>
+                                    {/* La tasa con la que se convirtió la
+                                        factura. Sin ella, las dos cifras de
+                                        arriba parecen dos datos sueltos en vez
+                                        de la misma deuda leída de dos formas. */}
+                                    {d.doble && (parseFloat(c.tasa_conversion_original) || 0) > 0 && (
+                                      <div>
+                                        <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Tasa de la factura</p>
+                                        <p className="text-sm font-mono text-muted">
+                                          1 {d.moneda} = {formatCurrency(parseFloat(c.tasa_conversion_original), d.monedaSaldo)}
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Campos del abono */}
@@ -800,31 +946,52 @@ export default function CuentasPagar() {
           <div className="space-y-5">
             <div className="flex flex-wrap gap-3 items-center">
               <EstadoBadge estado={selectedCuenta.estado} />
-              <span className="text-xs bg-primary/8 text-primary px-2 py-0.5 rounded-full font-semibold">{selectedCuenta.moneda}</span>
+              {/* La moneda de la FACTURA, que es la de la deuda. La del saldo
+                  guardado se ve abajo, debajo de cada cifra. */}
+              <span className="text-xs bg-primary/8 text-primary px-2 py-0.5 rounded-full font-semibold">
+                {(selectedCuenta.moneda_original || selectedCuenta.moneda || '').toUpperCase()}
+              </span>
               {selectedCuenta.contenedor_numero && (
                 <RefLink to="/contenedores" id={selectedCuenta.contenedor_id} title="Ver contenedor"
                   className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">Contenedor {selectedCuenta.contenedor_numero}</RefLink>
               )}
             </div>
 
+            {/* Las tres cifras, en la moneda en la que se debe arriba y en
+                pesos debajo. En el detalle de UNA cuenta el servidor suma los
+                abonos uno por uno, así que los pagados en dólares valen sus
+                dólares exactos: aquí la cifra es más fiable que en el listado. */}
+            {(() => {
+              const d = enDeuda(selectedCuenta);
+              return (
             <div className="rounded-2xl border border-border/60 overflow-hidden">
               <div className="grid grid-cols-3 divide-x divide-border/40">
                 <div className="p-4 text-center">
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Total Factura</p>
-                  <p className="text-lg font-display font-bold text-primary">{formatCurrency(selectedCuenta.total_factura, selectedCuenta.moneda)}</p>
+                  <p className="text-lg font-display font-bold text-primary">{formatMoneda(d.factura, d.moneda)}</p>
+                  {d.doble && <p className="text-xs font-mono text-muted">≈ {formatCurrency(d.facturaSaldo, d.monedaSaldo)}</p>}
                 </div>
                 <div className="p-4 text-center">
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Abonado</p>
-                  <p className="text-lg font-display font-bold text-success">{formatCurrency(selectedCuenta.total_abonado, selectedCuenta.moneda)}</p>
+                  <p className="text-lg font-display font-bold text-success">{formatMoneda(d.abonado, d.moneda)}</p>
+                  {d.doble && <p className="text-xs font-mono text-muted">≈ {formatCurrency(d.abonadoSaldo, d.monedaSaldo)}</p>}
                 </div>
                 <div className="p-4 text-center">
                   <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">Pendiente</p>
-                  <p className="text-lg font-display font-bold text-warning">
-                    {formatCurrency(parseFloat(selectedCuenta.total_factura) - parseFloat(selectedCuenta.total_abonado), selectedCuenta.moneda)}
-                  </p>
+                  <p className="text-lg font-display font-bold text-warning">{formatMoneda(d.saldo, d.moneda)}</p>
+                  {d.doble && <p className="text-xs font-mono text-muted">≈ {formatCurrency(d.saldoSaldo, d.monedaSaldo)}</p>}
                 </div>
               </div>
+              {d.doble && !d.exacto && (
+                <p className="px-4 py-2.5 border-t border-border/40 bg-warning/5 text-[11px] text-primary leading-relaxed">
+                  De alguno de estos abonos no se guardó <b>en qué moneda se pagó</b>, así que su
+                  parte en {d.moneda} sale de deshacer la conversión con la tasa de la factura.
+                  La cifra en {d.monedaSaldo} sí es la que está registrada.
+                </p>
+              )}
             </div>
+              );
+            })()}
 
             {selectedCuenta.notas && (
               <p className="text-sm text-muted italic">{selectedCuenta.notas}</p>

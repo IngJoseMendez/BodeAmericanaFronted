@@ -98,3 +98,71 @@ export function montonesDeCartera(filas, saldoDe = saldoDeCartera) {
   }
   return { activas, perdidas, aFavor };
 }
+
+// ── CUÁNTAS PACAS LLEVA UNA COMPRA ──────────────────────────────────────────
+//
+// Sale de DOS sitios y hacen falta los dos:
+//   · una compra del Excel la trae en `cantidad`, deducida y comprobada al
+//     cargar el libro (precio × cantidad daba el importe);
+//   · una venta hecha EN EL SISTEMA no la trae, porque su detalle son pacas de
+//     verdad y el servidor las manda en `detalles`.
+//
+// Y HAY TRES RESPUESTAS POSIBLES, no dos. Esta es la corrección que pidió el
+// negocio al ver clientes «con la cantidad de pacas vacía»:
+//
+//   un número  se sabe;
+//   NO_APLICA  el renglón no es mercancía —un flete, un descuento, un ajuste de
+//              cuadre— y por lo tanto no tiene pacas que contar. Antes caía en
+//              el mismo guion que lo desconocido, así que la pantalla parecía
+//              tener un agujero de datos donde no había ninguno: de las 223
+//              compras sin cantidad de los libros, 213 son exactamente esto;
+//   null       es mercancía y el dato FALTA. Son las 59 en las que la propia
+//              hoja se contradice con su total. Se deja vacío y se dice cuántas
+//              son: inventar una cantidad aquí metería en la cuenta de pacas
+//              vendidas un número que nadie escribió.
+//
+// `clase` es la que distingue: un movimiento de tipo 'venta' es mercancía
+// cuando su clase es 'venta' (o no la trae, que es lo que había antes de que
+// existiera la columna). 'ajuste' y 'descuento' no lo son. Es el mismo filtro
+// que usa el servidor en GET /cartera/pacas, para que las dos cifras cuadren.
+export const NO_APLICA = 'no-aplica';
+
+export const esMercancia = (m) => String(m?.clase || 'venta') === 'venta';
+
+export const pacasDeCompra = (m) => {
+  if (!esMercancia(m)) return NO_APLICA;
+  if (m?.cantidad != null) return num(m.cantidad);
+  if (m?.detalles?.length) return m.detalles.reduce((s, d) => s + num(d.cantidad), 0);
+  return null;
+};
+
+/**
+ * Las pacas de un grupo de compras, con la cuenta de sobre cuántas se sabe.
+ *
+ * Se devuelven las cuatro cifras y no sólo la suma, porque una suma sola
+ * mentiría por omisión: quien lee «1.240 pacas» tiene derecho a saber si son
+ * todas sus compras o 230 de 256. `noAplica` va aparte de `sinDato` para no
+ * contar como agujero lo que nunca tuvo pacas.
+ */
+export function pacasDeCompras(movimientos) {
+  let pacas = 0, conDato = 0, sinDato = 0, noAplica = 0;
+  for (const m of movimientos || []) {
+    const n = pacasDeCompra(m);
+    if (n === NO_APLICA) { noAplica++; continue; }
+    if (n == null) { sinDato++; continue; }
+    pacas += n;
+    conDato++;
+  }
+  return { pacas, conDato, sinDato, noAplica, compras: conDato + sinDato };
+}
+
+/**
+ * La CANTIDAD TOTAL de pacas que se le han vendido a un cliente.
+ *
+ * Es la cifra que pidió el negocio para el resumen de su cartera: cuántas pacas
+ * se llevó en total, sin importar en cuántas compras. Se cuenta sobre TODOS sus
+ * movimientos de venta —no sobre los que deje a la vista el buscador— porque es
+ * un total del cliente, no del filtro.
+ */
+export const pacasDeCliente = (movimientos) =>
+  pacasDeCompras((movimientos || []).filter((m) => m?.tipo === 'venta'));
