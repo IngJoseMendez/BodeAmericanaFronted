@@ -214,6 +214,50 @@ grupo('Costo de mercancia por producto');
   comprobar('promedio con una linea en cero', c.costoUnitarioCOP, 40000);
   comprobar('y queda marcada como incompleta', c.sinCosto, true);
   comprobar('contenedor vacio no revienta', costosPorCombinacion({}).size, 0);
+
+  // UN BORRADOR NO TIENE cantidad_final: la escribe la revision, y desde que se
+  // puede APROBAR sin revisar, el modal de Finalizar se abre sobre contenedores
+  // cuyas lineas la tienen en nulo (C726 son 106 lineas, todas). Ponderando
+  // solo por ella el mapa salia VACIO y la columna «Precio minimo» del modal
+  // ensenaba el mismo numero -servicios mas utilidad- para los 68 productos.
+  const borrador = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera',
+        costo_unitario: 900000, cantidad: 3, cantidad_final: null },
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera',
+        costo_unitario: 1100000, cantidad: 1, cantidad_final: null },
+    ] }],
+  };
+  comprobar('un borrador se pondera por la cantidad FACTURADA',
+    costosPorCombinacion(borrador).get('|dama|blusa|primera').costoUnitarioCOP, 950000);
+  comprobar('y el grupo existe, no queda fuera del mapa',
+    costosPorCombinacion(borrador).size, 1);
+
+  // Pero cantidad_final en 0 vale 0 de verdad: es una linea revisada como «no
+  // llego nada», y un respaldo con `||` la haria volver a su cantidad facturada.
+  const noLlego = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera',
+        costo_unitario: 900000, cantidad: 5, cantidad_final: 0 },
+    ] }],
+  };
+  comprobar('una linea revisada como «no llego nada» se salta',
+    costosPorCombinacion(noLlego).size, 0);
+
+  // Lo que de verdad llego manda sobre lo facturado cuando hay revision.
+  const revisado = {
+    tasa_conversion: 1,
+    proveedores_mercancia: [{ moneda: 'COP', detalles: [
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera',
+        costo_unitario: 900000, cantidad: 10, cantidad_final: 2 },
+      { clasificacion: 'dama', referencia: 'blusa', calidad: 'primera',
+        costo_unitario: 1100000, cantidad: 0, cantidad_final: 2 },
+    ] }],
+  };
+  comprobar('con revision manda cantidad_final, no la facturada',
+    costosPorCombinacion(revisado).get('|dama|blusa|primera').costoUnitarioCOP, 1000000);
 }
 
 grupo('Minimo a cobrar por producto');

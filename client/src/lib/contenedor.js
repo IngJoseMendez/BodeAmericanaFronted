@@ -161,11 +161,28 @@ export const claveCombinacion = (d = {}) => {
  * de cada línea daría un número inventado. Por eso se multiplica por la tasa
  * dentro del bucle y solo después se promedia.
  *
- * SE PONDERA POR `cantidad_final`, NO POR `cantidad`
- * Es lo que de verdad llegó y lo que el servidor convierte en pacas. Además, los
- * productos que aparecieron en la revisión sin estar facturados se guardan con
- * `cantidad` en 0 pero con su `cantidad_final` real: ponderando por `cantidad`
- * se quedarían fuera del promedio.
+ * SE PONDERA POR `cantidad_final`, Y SI NO HAY, POR LA FACTURADA
+ * `cantidad_final` es lo que de verdad llegó y lo que el servidor convierte en
+ * pacas. Además, los productos que aparecieron en la revisión sin estar
+ * facturados se guardan con `cantidad` en 0 pero con su `cantidad_final` real:
+ * ponderando por `cantidad` se quedarían fuera del promedio.
+ *
+ * PERO UN BORRADOR TODAVÍA NO LA TIENE. La escribe la revisión, y desde que se
+ * puede APROBAR sin revisar, el modal de Finalizar se abre sobre contenedores
+ * cuyas líneas tienen `cantidad_final` en nulo —C726 son 106 líneas, todas—.
+ * Ponderando sólo por ella el mapa salía VACÍO, así que cada producto caía en
+ * `costoUnitarioCOP: 0` y la columna «Precio mínimo» del modal enseñaba sólo
+ * los servicios más la utilidad: el mismo número para los 68 productos, y nada
+ * que ver con lo que cuesta cada uno.
+ *
+ * Con el respaldo a la facturada, aprobar sin revisar usa lo que dice la
+ * factura, que es la misma regla que aplican el formulario de precios, el
+ * servidor al crear las pacas y el rango del listado. Las cuatro tienen que
+ * usar la misma cantidad o enseñarán cuatro mínimos distintos del mismo
+ * producto.
+ *
+ * Con `??` y no con `||`: una línea revisada como «no llegó nada» vale 0 de
+ * verdad y se salta; un `||` la haría volver a su cantidad facturada.
  *
  * @param {object} contenedor  el contenedor completo que devuelve la API
  * @returns {Map<string, {cantidad, costoMercanciaCOP, costoUnitarioCOP, sinCosto}>}
@@ -177,7 +194,7 @@ export function costosPorCombinacion(contenedor = {}) {
   for (const p of contenedor.proveedores_mercancia || []) {
     const factor = (p.moneda || 'USD') === 'USD' ? tasa : 1;
     for (const d of p.detalles || []) {
-      const cantidad = parseInt(d.cantidad_final) || 0;
+      const cantidad = parseInt(d.cantidad_final ?? d.cantidad) || 0;
       if (cantidad === 0) continue;
       const { key } = claveCombinacion(d);
       const costoUnit = parseFloat(d.costo_unitario) || 0;
