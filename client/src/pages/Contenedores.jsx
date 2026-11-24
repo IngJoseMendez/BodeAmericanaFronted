@@ -3405,7 +3405,17 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
 
       const combMap = new Map();
       full.proveedores_mercancia.forEach((p) => p.detalles.forEach((d) => {
-        const cantidad = parseInt(d.cantidad_final) || 0;
+        // APROBAR SIN REVISAR DA POR RECIBIDO LO FACTURADO. En un borrador
+        // `cantidad_final` todavía no existe —la escribe la revisión— y sin el
+        // respaldo todas las líneas salían con 0 unidades. Es la misma regla
+        // que aplica el servidor al aprobar desde borrador (POST /:id/finalizar
+        // hace el mismo COALESCE antes de crear las pacas), y tiene que seguir
+        // siendo la misma: si una de las dos cambiara, la pantalla pediría
+        // precio para unas cantidades y el servidor crearía otras.
+        //
+        // Con `??` y no con `||`: una línea revisada como «no llegó nada» vale
+        // 0 de verdad, y un `||` la haría volver a su cantidad facturada.
+        const cantidad = parseInt(d.cantidad_final ?? d.cantidad) || 0;
         if (cantidad === 0 && full.estado === 'revision') return;
         const { categoria, clasificacion, referencia, calidad, key } = claveCombinacion(d);
         if (!combMap.has(key)) {
@@ -3641,7 +3651,40 @@ Si sales sin guardar se pierde: proveedores, líneas y servicios habrá que escr
         } : {}),
       }));
       const contenedorActualizado = await contenedoresApi.revisar(selectedContenedor.id, { revisiones });
-      addToast('Revisión guardada — el contenedor está listo para finalizar', 'success');
+      // ── QUÉ HIZO LA REVISIÓN, DICHO EN CIFRAS ───────────────────────────
+      // Revisar un contenedor YA APROBADO mueve el inventario: crea las pacas
+      // que llegaron de más, quita las que no llegaron y re-estampa el costo.
+      // Eso no se puede resolver con un «guardado» a secas: quien acaba de
+      // contar tiene que ver qué cambió en la bodega, y sobre todo lo que NO se
+      // pudo cambiar. El servidor manda el parte en `cuadre_inventario`.
+      const cuadre = contenedorActualizado?.cuadre_inventario;
+      if (cuadre) {
+        const hechos = [];
+        if (cuadre.creadas) hechos.push(`+${cuadre.creadas} paca${cuadre.creadas !== 1 ? 's' : ''} al inventario`);
+        if (cuadre.borradas) hechos.push(`−${cuadre.borradas} que no llegaron`);
+        if (cuadre.recosteadas) {
+          hechos.push(`costo por paca recalculado en ${cuadre.recosteadas}`
+            + (cuadre.vendidasRecosteadas ? ` (${cuadre.vendidasRecosteadas} ya vendidas)` : ''));
+        }
+        addToast(hechos.length
+          ? `Revisión guardada — ${hechos.join(', ')}`
+          : 'Revisión guardada — el inventario ya cuadraba', 'success');
+
+        // Lo que no se pudo hacer va en su PROPIO aviso y de tipo warning: un
+        // descuadre que se cuenta de pasada dentro de un mensaje de éxito no lo
+        // lee nadie.
+        for (const x of cuadre.noSePudieron || []) {
+          addToast(`${x.producto} (${x.proveedor}): faltan ${x.faltan} paca(s) por quitar, `
+            + 'pero ya están vendidas o separadas. Hay que resolverlo a mano.', 'warning');
+        }
+        for (const x of cuadre.sinPrecio || []) {
+          addToast(`${x.producto} (${x.proveedor}): llegaron ${x.faltan} paca(s) de más y no se `
+            + 'crearon porque ese producto no tiene precio de venta en ninguna parte. '
+            + 'Ponle precio y vuelve a guardar la revisión.', 'warning');
+        }
+      } else {
+        addToast('Revisión guardada — el contenedor está listo para aprobar', 'success');
+      }
       setRevisionModalOpen(false);
       setRevisionTocada(false);
       loadContenedores();
@@ -3746,8 +3789,11 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
       }
       const ok = await confirm({
         title: 'Falta información por completar',
-        message: `${partes.join('\n\n')}\n\nEsta acción es irreversible. ¿Finalizar de todas formas?`,
-        confirmText: 'Finalizar así',
+        // Ya no se dice «irreversible» a secas: al aprobar la mercancía entra
+        // al inventario, y una cantidad equivocada SÍ se puede corregir
+        // después, revisando. Lo que no se deshace es la aprobación misma.
+        message: `${partes.join('\n\n')}\n\nAl aprobar, la mercancía entra al inventario y queda disponible para vender. El conteo físico puede hacerse después: la revisión ajusta las pacas que falten o sobren y recalcula el costo.\n\n¿Aprobar de todas formas?`,
+        confirmText: 'Aprobar así',
         cancelText: 'Volver y completar',
         variant: 'danger',
       });
@@ -4216,17 +4262,31 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         {isAdmin && cont.estado === 'estimacion' && (
                           <ActionBtn icon={Trash2} title="Eliminar" color="hover:text-error hover:bg-error/10" onClick={() => handleDelete(cont)} />
                         )}
+                        {/* PRIMERO SE APRUEBA, Y LA REVISIÓN ES OPCIONAL. El
+                            orden del negocio es: llega el contenedor, se
+                            aprueba —entra al inventario y se puede vender— y el
+                            conteo físico se hace cuando se puede. Antes la
+                            revisión era obligatoria y venía ANTES, así que no
+                            se podía vender nada hasta haber contado paca por
+                            paca. Contar sigue estando, y ahora también después:
+                            un contenedor aprobado se revisa y la revisión
+                            cuadra el inventario (ver reconciliarInventario en
+                            src/routes/contenedores.js del servidor). */}
                         {isAdmin && cont.estado === 'borrador' && (
                           <>
-                            <ActionBtn icon={ClipboardCheck} title="Revisar contenedor" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
+                            <ActionBtn icon={CheckCircle} title="Aprobar contenedor" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
+                            <ActionBtn icon={ClipboardCheck} title="Revisar antes de aprobar (opcional)" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
                             <ActionBtn icon={Trash2} title="Eliminar" color="hover:text-error hover:bg-error/10" onClick={() => handleDelete(cont)} />
                           </>
                         )}
                         {isAdmin && cont.estado === 'revision' && (
                           <>
+                            <ActionBtn icon={CheckCircle} title="Aprobar contenedor" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
                             <ActionBtn icon={ClipboardCheck} title="Editar revisión" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
-                            <ActionBtn icon={CheckCircle} title="Finalizar" color="hover:text-success hover:bg-success/10" onClick={() => openFinalizarModal(cont)} />
                           </>
+                        )}
+                        {isAdmin && cont.estado === 'finalizado' && (
+                          <ActionBtn icon={ClipboardCheck} title="Revisar lo que llegó de verdad" color="hover:text-blue-600 hover:bg-blue-500/10" onClick={() => openRevisionModal(cont)} />
                         )}
                       </div>
                     </td>
@@ -6025,6 +6085,9 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     </button>
                   </div>
                 )}
+                {/* Aprobar es la acción principal y la revisión va al lado,
+                    rotulada como opcional: el botón grande tiene que ser el que
+                    se pulsa siempre. */}
                 {isAdmin && selectedContenedor.estado === 'borrador' && (
                   <div className="flex gap-3 ml-auto">
                     <button type="button" onClick={editarLoQueSeEstaViendo}
@@ -6032,8 +6095,14 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       <Edit2 size={15} /> Editar
                     </button>
                     <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
-                      className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
-                      <ClipboardCheck size={17} /> Revisar Contenedor
+                      title="Contar la mercancía antes de aprobar. También se puede hacer después."
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-300 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors">
+                      <ClipboardCheck size={15} /> Revisar (opcional)
+                    </button>
+                    <button type="button" onClick={() => openFinalizarModal(selectedContenedor)}
+                      title="Dar por recibido lo que dice la factura: la mercancía entra al inventario y queda disponible para vender"
+                      className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
+                      <CheckCircle size={17} /> Aprobar Contenedor
                     </button>
                   </div>
                 )}
@@ -6057,7 +6126,21 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                     </button>
                     <button type="button" onClick={() => openFinalizarModal(selectedContenedor)}
                       className="flex items-center gap-2 px-5 py-2 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
-                      <CheckCircle size={17} /> Finalizar Contenedor
+                      <CheckCircle size={17} /> Aprobar Contenedor
+                    </button>
+                  </div>
+                )}
+                {/* YA APROBADO: queda el conteo físico, que ahora se puede
+                    hacer después. No devuelve el contenedor a revisión —su
+                    mercancía ya está en el inventario y puede estar vendida—:
+                    ajusta las pacas que falten o sobren y recalcula el costo. */}
+                {isAdmin && selectedContenedor.estado === 'finalizado' && (
+                  <div className="flex gap-3 ml-auto">
+                    <button type="button" onClick={() => openRevisionModal(selectedContenedor)}
+                      title="Contar la mercancía contra la factura. Ajusta el inventario y recalcula el costo por paca; el precio de venta no se toca."
+                      className="flex items-center gap-2 px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-semibold hover:bg-blue-600 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
+                      <ClipboardCheck size={17} />
+                      {selectedContenedor.fecha_revision ? 'Corregir la revisión' : 'Revisar Contenedor'}
                     </button>
                   </div>
                 )}
@@ -6480,7 +6563,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
           FINALIZAR MODAL
       ════════════════════════════════════════════════════════ */}
       {selectedContenedor && (
-        <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title={`Finalizar — ${selectedContenedor.numero}`} size="xl">
+        <Modal isOpen={finalizarModalOpen} onClose={() => setFinalizarModalOpen(false)} title={`Aprobar — ${selectedContenedor.numero}`} size="xl">
           {(() => {
             const totalFinal = parseInt(selectedContenedor.total_pacas_recibidas) || parseInt(selectedContenedor.total_pacas);
             const costoFinal = totalFinal > 0 ? parseFloat(selectedContenedor.costo_total) / totalFinal : parseFloat(selectedContenedor.costo_unitario);
@@ -6827,7 +6910,7 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </button>
                   <button onClick={handleFinalizar} disabled={submitting}
                     className="flex items-center gap-2 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-semibold hover:bg-success/85 disabled:opacity-40 active:scale-95 transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-150">
-                    {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Finalizando...</> : <><CheckCircle size={17} /> Confirmar y crear unidades</>}
+                    {submitting ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Aprobando...</> : <><CheckCircle size={17} /> Aprobar y crear unidades</>}
                   </button>
                 </div>
               </div>

@@ -52,8 +52,22 @@ import path from 'node:path';
 // Los tres son de los que el comentario de arriba llama «lo que hoy obliga a
 // bajar a HTML plano»: el camino sigue siendo que Button e Input los acepten,
 // no reescribir la pantalla.
+//
+// 2026-11-24 · +2 button en src/pages (230→232), los dos en Contenedores.jsx y
+// por el mismo motivo que «Editar contenedor de legado» de arriba: son HERMANOS
+// en la misma barra de acciones del detalle, donde los otros tres o cuatro
+// botones ya son HTML plano con esas mismas clases largas.
+//
+//   · «Aprobar Contenedor» en un borrador, al lado de «Editar» y «Revisar
+//     (opcional)». Ahora se aprueba primero y la revisión es posterior, así que
+//     este botón tenía que existir en borrador y ser el principal de la fila.
+//   · «Revisar Contenedor» en un contenedor YA APROBADO, que es la mitad nueva
+//     del flujo invertido: antes no había nada que ofrecer en ese estado.
+//
+// Hacerlos con `Button` dejando los de al lado a pelo daría una fila con dos
+// estilos de botón. La incoherencia se ve; la deuda no.
 const TECHO = {
-  'src/pages':      { button: 230, input: 112 },
+  'src/pages':      { button: 232, input: 112 },
   'src/components': { button: 33,  input: 8   },
 };
 
