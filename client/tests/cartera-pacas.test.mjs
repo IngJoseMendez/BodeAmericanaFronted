@@ -134,5 +134,48 @@ prueba('un cliente con 1.592 compras se cuenta entero', () => {
   assert.strictEqual(pacasDeCliente(muchas).pacas, 1592);
 });
 
+// -- UN FLETE NO ES UNA PACA, AUNQUE ESTE GUARDADO COMO VENTA --------------
+// Los 106 renglones de FLETES de los libros viven con clase 'venta' porque son
+// deuda y el saldo se calcula sumando esa clase. Si la pantalla los contara
+// como mercancia sin cantidad, 106 fletes pareceria un agujero de datos.
+
+prueba('un flete es no-aplica, no un dato que falta', () => {
+  for (const d of ['FLETES', 'FLETES $75000 C/U', '6 x FLETES', 'TOTAL FLETES X 9 - CONT 1.0',
+                   'FLETES 4 PACAS', 'FLETES - CONT 1.0', 'PRESTAMO',
+                   'FLETES [fila 247 de SONIAP]', 'COMISION DE LA OPERACION']) {
+    assert.strictEqual(pacasDeCompra({ tipo: 'venta', clase: 'venta', descripcion: d }),
+      NO_APLICA, d + ' no tiene pacas que contar');
+  }
+});
+
+prueba('una paca que lleva la palabra dentro SIGUE siendo mercancia', () => {
+  // Se mira solo el PRINCIPIO del concepto: buscar la palabra en cualquier
+  // posicion dejaria sin contar pacas de verdad.
+  for (const d of ['MIXTA INVIERNO CON FLETE INCLUIDO', 'BUZO AJUSTADO PREMIUM',
+                   'PANTALON DE INTERES ESPECIAL']) {
+    assert.strictEqual(pacasDeCompra({ tipo: 'venta', clase: 'venta', descripcion: d, cantidad: 3 }),
+      3, d + ' es una paca');
+  }
+});
+
+prueba('los fletes no entran en el total ni como agujero', () => {
+  const t = pacasDeCompras([
+    { tipo: 'venta', clase: 'venta', descripcion: 'MIXTA INVIERNO', cantidad: 2 },
+    { tipo: 'venta', clase: 'venta', descripcion: 'FLETES' },
+    { tipo: 'venta', clase: 'venta', descripcion: 'POLAR AMBAR' },
+  ]);
+  assert.strictEqual(t.pacas, 2);
+  assert.strictEqual(t.noAplica, 1, 'el flete no cuenta como compra sin cantidad');
+  assert.strictEqual(t.sinDato, 1, 'la que si es mercancia y no la trae, si');
+  assert.strictEqual(t.compras, 2, 'y el divisor del pie no incluye el flete');
+});
+
+prueba('sin descripcion se decide solo por la clase, como antes', () => {
+  assert.strictEqual(pacasDeCompra({ tipo: 'venta', clase: 'venta', cantidad: 4 }), 4);
+  assert.strictEqual(pacasDeCompra({ tipo: 'venta', cantidad: 4 }), 4);
+  assert.strictEqual(pacasDeCompra({ tipo: 'venta', clase: 'ajuste' }), NO_APLICA);
+  assert.strictEqual(esMercancia({ tipo: 'venta', clase: 'venta' }), true);
+});
+
 console.log(`\n${malos === 0 ? 'Una cantidad vacía dice por qué está vacía' : malos + ' fallo(s)'}\n`);
 process.exit(malos === 0 ? 0 : 1);

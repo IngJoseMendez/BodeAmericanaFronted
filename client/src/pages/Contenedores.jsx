@@ -34,7 +34,7 @@ import {
   etiquetaEstado, hayEstimadoProveedor, vieneDeEstimacion,
   esServicioPropio, costoServicioEfectivo, costoProveedorEfectivo,
   costoServicioAsignado, claveCombinacion, costosPorCombinacion,
-  costoUnitarioTotalCOP, serviciosPorUnidadGuardados,
+  costoUnitarioTotalCOP, serviciosPorUnidadGuardados, precioMinimoDelContenedor,
 } from '../lib/contenedor';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -753,12 +753,27 @@ function TimelineView({ items, onView, isAdmin = false }) {
                     )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    {isAdmin && parseFloat(cont.costo_unitario) > 0 && (
-                      <div className="text-right hidden sm:block">
-                        <p className="text-[10px] text-muted uppercase tracking-wide">Costo/paca</p>
-                        <p className="text-sm font-mono font-bold text-secondary">{formatCurrency(cont.costo_unitario)}</p>
-                      </div>
-                    )}
+                    {/* La misma cifra que la columna de la vista de tabla: son
+                        la misma lista mirada de dos maneras, y si una enseñara
+                        el costo y la otra el mínimo, el mismo contenedor diría
+                        dos números según cómo se esté mirando. */}
+                    {isAdmin && parseFloat(cont.costo_unitario) > 0 && (() => {
+                      const min = precioMinimoDelContenedor(cont);
+                      return (
+                        <div className="text-right hidden sm:block">
+                          <p className="text-[10px] text-muted uppercase tracking-wide">Precio mínimo</p>
+                          <p className="text-sm font-mono font-bold text-secondary"
+                             title={min.completo
+                               ? `Costo por paca ${formatCurrency(min.costo)} + utilidad fijada ${formatCurrency(min.utilidad)}`
+                               : `Costo por paca ${formatCurrency(min.costo)}. Sin utilidad por unidad fijada.`}>
+                            {formatCurrency(min.valor)}
+                          </p>
+                          {!min.completo && (
+                            <p className="text-[10px] text-warning leading-none">= costo, sin utilidad</p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="flex flex-col items-end gap-1">
                       <StatusBadge estado={cont.estado} />
                       {cont.estado !== 'estimacion' && vieneDeEstimacion(cont) && (
@@ -4065,7 +4080,15 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-primary/3">
-                  {['Número', 'Fecha', 'Unidades', 'Costo Unitario', 'Costo Total', 'Servicios', 'Estado', 'Acciones'].map((h) => (
+                  {/* «Precio Mínimo» donde antes iba «Costo Unitario»: el costo
+                      es lo que ya se pagó y con eso solo no se decide nada; el
+                      mínimo es lo que hay que cobrar para no perder, que es la
+                      cifra con la que se pone un precio. La cuenta es la misma
+                      del modal de Finalizar y vive en un solo sitio
+                      (lib/contenedor.js → precioMinimoDelContenedor). El costo
+                      por paca no se pierde: sigue en el desglose del contenedor
+                      y en el comparador. */}
+                  {['Número', 'Fecha', 'Unidades', 'Precio Mínimo', 'Costo Total', 'Servicios', 'Estado', 'Acciones'].map((h) => (
                     <th key={h} scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider whitespace-nowrap">
                       {/* La columna de acciones iba sin título: el lector de pantalla
                           anunciaba una columna vacía. Ahora tiene nombre, invisible. */}
@@ -4119,14 +4142,24 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       {isAdmin ? (() => {
                         const tasa = parseFloat(cont.tasa_conversion) || 0;
                         const usd = monedaResumen === 'USD' && tasa > 0;
+                        const min = precioMinimoDelContenedor(cont);
                         return (
                           <div className="flex flex-col">
-                            <span className="text-secondary font-semibold">
-                              {formatMoneda(usd ? cont.costo_unitario / tasa : cont.costo_unitario, usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 })}
+                            <span className="text-secondary font-semibold"
+                                  title={min.completo
+                                    ? `Costo por paca ${formatCurrency(min.costo)} + utilidad fijada ${formatCurrency(min.utilidad)}`
+                                    : `Costo por paca ${formatCurrency(min.costo)}. Sin utilidad por unidad fijada, así que el mínimo sólo cubre el costo.`}>
+                              {formatMoneda(usd ? min.valor / tasa : min.valor, usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 })}
                             </span>
-                            {usd && <span className="text-[10px] text-muted">{formatCurrency(cont.costo_unitario)}</span>}
-                            {monedaResumen === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(cont.costo_unitario / tasa, 'USD', { decimales: 2 })}</span>}
+                            {usd && <span className="text-[10px] text-muted">{formatCurrency(min.valor)}</span>}
+                            {monedaResumen === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(min.valor / tasa, 'USD', { decimales: 2 })}</span>}
                             {!usd && monedaResumen === 'USD' && <span className="text-[10px] text-warning" title="Sin tasa de conversión">Falta tasa</span>}
+                            {/* Sin utilidad fijada el mínimo es el costo pelado.
+                                Callarlo haría vender al costo creyendo que se
+                                está ganando lo fijado. */}
+                            {min.valor > 0 && !min.completo && (
+                              <span className="text-[10px] text-warning">= costo, sin utilidad</span>
+                            )}
                           </div>
                         );
                       })() : <span className="text-muted text-xs">—</span>}

@@ -217,6 +217,33 @@ export function costoUnitarioTotalCOP(costoMercanciaUnitarioCOP, { serviciosPorU
 }
 
 /**
+ * EL PRECIO MÍNIMO DE UN CONTENEDOR YA GUARDADO.
+ *
+ * La misma cuenta de arriba —mercancía + servicios + utilidad fijada— pero del
+ * contenedor entero en vez de producto por producto. `costo_unitario` ya trae
+ * los dos primeros sumados (es `costo_total ÷ pacas`, y `costo_total` es
+ * mercancía más servicios), así que lo único que falta es la utilidad.
+ *
+ * POR QUÉ EL LISTADO ENSEÑA ESTO Y NO EL COSTO POR PACA. El costo es lo que ya
+ * se pagó, y con eso solo no se decide nada; el mínimo es lo que hay que cobrar
+ * para no perder, que es la cifra con la que se pone un precio. En el modal de
+ * Finalizar ya era la columna principal, y en la lista no aparecía: había que
+ * abrir cada contenedor para verla.
+ *
+ * Devuelve también `completo`, que es falso cuando el contenedor no tiene
+ * utilidad por unidad fijada. Ahí el «mínimo» sólo cubre el costo, y hay que
+ * decirlo: vendiendo a esa cifra no se gana nada, y un número rotulado
+ * «mínimo» que en realidad es el costo haría fijar precios sin margen sin que
+ * nadie se enterara. El costo y la utilidad viajan aparte para poder
+ * desglosarlo en un title sin repetir la cuenta.
+ */
+export function precioMinimoDelContenedor(contenedor = {}) {
+  const costo = parseFloat(contenedor.costo_unitario) || 0;
+  const utilidad = parseFloat(contenedor.utilidad_unitaria) || 0;
+  return { valor: costo + utilidad, completo: utilidad > 0, costo, utilidad };
+}
+
+/**
  * Los servicios que le tocan a CADA unidad de un contenedor ya guardado.
  *
  * Manda `gastos_unitarios`, que es lo que la pantalla calculó y guardó al

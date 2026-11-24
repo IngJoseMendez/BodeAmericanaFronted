@@ -444,8 +444,20 @@ export default function Dashboard() {
   const disponibles = metricas?.pacas?.disponibles || 0;
   const separadas = metricas?.pacas?.separadas || 0;
   const vendidas = metricas?.pacas?.vendidas || 0;
-  const costoTotal = metricas?.pacas?.costo_total || 0;
-  const valorInventario = metricas?.pacas?.valor_inventario || 0;
+  // EL VALOR DEL INVENTARIO ES EL DE LO QUE ESTÁ EN LA BODEGA. Estas tres
+  // cifras salían de sumar TODAS las pacas, vendidas incluidas, y se pintan
+  // bajo el rótulo «Valor del Inventario · Análisis financiero del stock». Una
+  // paca vendida no es stock, y su ganancia no es potencial: ya está cobrada.
+  // Así que el panel valoraba mercancía que no existe y prometía una ganancia
+  // que ya se había hecho. `_en_bodega` excluye sólo las vendidas: una separada
+  // sigue en la bodega, apartada para una cotización.
+  //
+  // Con `??` y no con `||`: un servidor anterior a este cambio no manda los
+  // campos nuevos, y ahí se cae a los de siempre —el panel enseña la cifra
+  // vieja, no un cero—. Un cero en «Valor en Venta» se leería como un
+  // inventario sin valor, que es peor que una cifra de más.
+  const costoTotal = metricas?.pacas?.costo_en_bodega ?? metricas?.pacas?.costo_total ?? 0;
+  const valorInventario = metricas?.pacas?.valor_en_bodega ?? metricas?.pacas?.valor_inventario ?? 0;
   const ganancia = valorInventario - costoTotal;
 
   // La gráfica de esta misma pantalla lee el importe de la fila como

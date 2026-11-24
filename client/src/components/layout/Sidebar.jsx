@@ -323,7 +323,18 @@ export function Sidebar({ isOpen, onToggle, collapsed, onToggleCollapse }) {
     if (!_countsEnVuelo) {
       _countsEnVuelo = dashboardApi.getMetricas()
         .then(data => guardarContadores({
-          pacas:    data.pacas?.total         || 0,
+          // LAS DISPONIBLES, NO TODAS. Esto venía de `pacas.total`, que cuenta
+          // también las VENDIDAS. Una paca vendida sigue en la tabla —y tiene
+          // que seguir, porque de ahí sale de qué contenedor salió, a cuánto se
+          // vendió y cuánto se ganó— pero ya no está en la bodega. Con 198
+          // disponibles y 22 vendidas el menú decía 220, así que el número de
+          // al lado de «Inventario» no era el inventario.
+          //
+          // Las SEPARADAS tampoco se suman: están físicamente en la bodega pero
+          // ya comprometidas en una cotización, y este número contesta «qué
+          // puedo vender hoy». El desglose de las tres —físico, separadas y
+          // disponibles— está en la propia pantalla y en su Excel.
+          pacas:    data.pacas?.disponibles   || 0,
           clientes: data.clientes?.total      || 0,
           ventas:   data.ventas?.total_ventas || 0,
         }))

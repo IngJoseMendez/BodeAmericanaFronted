@@ -1438,6 +1438,33 @@ export default function Cartera() {
                       <span className="text-gray-500 shrink-0">Total Abonado</span>
                       <span className="text-success text-right break-all">{formatCurrency(c.total_abonado)}</span>
                     </div>
+                    {/* CUÁNTAS PACAS LLEVA, sin tener que entrar a la ficha.
+                        Es la misma cifra que el «Cantidad total» del resumen de
+                        dentro, y la calcula el servidor con la misma regla de
+                        las dos fuentes, así que no pueden discrepar.
+
+                        Y cuando alguna compra no tiene cantidad se dice CUÁNTAS
+                        son, debajo del número. Un total a secas mentiría por
+                        omisión: en los libros hay compras cuya cantidad nunca
+                        viajó, y quien lee «30 pacas» tiene derecho a saber que
+                        se calculó sobre 28 de sus 31 compras. */}
+                    <div className="flex justify-between items-start text-sm gap-2">
+                      <span className="text-gray-500 shrink-0">Cantidad total</span>
+                      <span className="text-right">
+                        <span className="text-primary tabular-nums">
+                          {formatNumero(c.pacas || 0)}
+                          <span className="text-gray-500 ml-1">
+                            {(c.pacas || 0) === 1 ? 'paca' : 'pacas'}
+                          </span>
+                        </span>
+                        {c.compras_sin_cantidad > 0 && (
+                          <span className="block text-[11px] text-muted leading-tight">
+                            {c.compras_sin_cantidad}{' '}
+                            {c.compras_sin_cantidad === 1 ? 'compra' : 'compras'} sin cantidad
+                          </span>
+                        )}
+                      </span>
+                    </div>
                     <div className="flex justify-between items-start pt-2 border-t border-gray-100 gap-2">
                       {/* Quien abonó de más tiene plata a favor, no una deuda
                           en negativo. Con su nombre y en positivo no hay signo

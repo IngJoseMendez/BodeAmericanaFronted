@@ -13,7 +13,7 @@ import {
   costoServicioEfectivo, costoProveedorEfectivo, costoServicioAsignado,
   esServicioPropio, vieneDeEstimacion, hayEstimadoProveedor, etiquetaEstado,
   claveCombinacion, costosPorCombinacion, costoUnitarioTotalCOP,
-  serviciosPorUnidadGuardados,
+  serviciosPorUnidadGuardados, precioMinimoDelContenedor,
 } from '../src/lib/contenedor.js';
 
 let malos = 0;
@@ -248,6 +248,33 @@ grupo('Servicios por unidad de un contenedor guardado');
     serviciosPorUnidadGuardados({ costo_servicios_total: 6000000, total_pacas: 300, total_pacas_recibidas: 200 }).valor, 30000);
   comprobar('sin nada, 0 y no NaN', serviciosPorUnidadGuardados({}).valor, 0);
 }
+
+grupo('El precio minimo de un contenedor ya guardado');
+// Es lo que enseña ahora la columna del listado donde iba el costo por paca.
+// La cuenta tiene que ser la MISMA del modal de Finalizar: costo por paca (que
+// ya lleva mercancia + servicios) mas la utilidad fijada.
+comprobar('costo por paca mas la utilidad fijada',
+  precioMinimoDelContenedor({ costo_unitario: '1000000', utilidad_unitaria: '200000' }).valor, 1200000);
+comprobar('y se declara completo cuando hay utilidad',
+  precioMinimoDelContenedor({ costo_unitario: '1000000', utilidad_unitaria: '200000' }).completo, true);
+comprobar('sin utilidad fijada el minimo es el costo pelado',
+  precioMinimoDelContenedor({ costo_unitario: '1000000' }).valor, 1000000);
+comprobar('y AVISA de que solo cubre el costo',
+  precioMinimoDelContenedor({ costo_unitario: '1000000' }).completo, false);
+comprobar('una utilidad en cero no cuenta como fijada',
+  precioMinimoDelContenedor({ costo_unitario: '500000', utilidad_unitaria: '0' }).completo, false);
+comprobar('un contenedor sin costo todavia da cero, no NaN',
+  precioMinimoDelContenedor({}).valor, 0);
+comprobar('y aguanta basura sin devolver NaN',
+  precioMinimoDelContenedor({ costo_unitario: 'x', utilidad_unitaria: null }).valor, 0);
+comprobar('el costo viaja aparte para poder desglosarlo',
+  precioMinimoDelContenedor({ costo_unitario: '700000', utilidad_unitaria: '50000' }).costo, 700000);
+// La misma cuenta por los dos caminos: si costoUnitarioTotalCOP y esta
+// dejaran de coincidir, la pantalla de Finalizar y el listado dirian dos
+// minimos distintos del mismo contenedor.
+comprobar('coincide con la cuenta por producto del modal de Finalizar',
+  precioMinimoDelContenedor({ costo_unitario: '1300000', utilidad_unitaria: '300000' }).valor,
+  costoUnitarioTotalCOP(1000000, { serviciosPorUnidad: 300000, utilidadPorUnidad: 300000 }));
 
 console.log(malos
   ? `\n✗ ${malos} comprobación(es) fallida(s)`

@@ -127,7 +127,26 @@ export function montonesDeCartera(filas, saldoDe = saldoDeCartera) {
 // que usa el servidor en GET /cartera/pacas, para que las dos cifras cuadren.
 export const NO_APLICA = 'no-aplica';
 
-export const esMercancia = (m) => String(m?.clase || 'venta') === 'venta';
+// ── Y HAY UN FLETE QUE `clase` NO PUEDE DELATAR ─────────────────────────────
+// En los libros viejos hay 106 renglones de FLETES y un PRESTAMO guardados con
+// `clase = 'venta'`, porque son cargos que el cliente DEBE y el saldo se calcula
+// sumando precisamente las líneas de clase 'venta' (ver GET /cartera en
+// src/routes/cartera.js). Reclasificarlos los sacaría de la deuda, así que la
+// clase se queda como está y es aquí donde se reconocen.
+//
+// Se mira SÓLO EL PRINCIPIO del concepto, y por eso: «FLETES», «FLETES $75000
+// C/U», «6 x FLETES», «TOTAL FLETES X 9» son todos fletes, mientras que una
+// referencia de paca empieza por la prenda. Buscar la palabra en cualquier
+// posición convertiría en flete cualquier paca que la llevara en el nombre.
+const NO_MERCANCIA = /^(?:\d+\s*[xX]\s*)?(?:TOTAL\s+)?(FLETES?|DESCUENTO|AJUSTE|PRESTAMO|COMISION|TRANSPORTE|INTERES|GIRO)\b/;
+
+const sinMarca = (s) => String(s || '')
+  .replace(/\s*\[fila .*$/, '')       // «... [fila 247 de SONIAP]»
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .trim().toUpperCase();
+
+export const esMercancia = (m) => String(m?.clase || 'venta') === 'venta'
+  && !NO_MERCANCIA.test(sinMarca(m?.descripcion ?? m?.concepto));
 
 export const pacasDeCompra = (m) => {
   if (!esMercancia(m)) return NO_APLICA;
