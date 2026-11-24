@@ -249,32 +249,63 @@ grupo('Servicios por unidad de un contenedor guardado');
   comprobar('sin nada, 0 y no NaN', serviciosPorUnidadGuardados({}).valor, 0);
 }
 
-grupo('El precio minimo de un contenedor ya guardado');
-// Es lo que enseña ahora la columna del listado donde iba el costo por paca.
-// La cuenta tiene que ser la MISMA del modal de Finalizar: costo por paca (que
-// ya lleva mercancia + servicios) mas la utilidad fijada.
-comprobar('costo por paca mas la utilidad fijada',
-  precioMinimoDelContenedor({ costo_unitario: '1000000', utilidad_unitaria: '200000' }).valor, 1200000);
-comprobar('y se declara completo cuando hay utilidad',
-  precioMinimoDelContenedor({ costo_unitario: '1000000', utilidad_unitaria: '200000' }).completo, true);
-comprobar('sin utilidad fijada el minimo es el costo pelado',
-  precioMinimoDelContenedor({ costo_unitario: '1000000' }).valor, 1000000);
-comprobar('y AVISA de que solo cubre el costo',
-  precioMinimoDelContenedor({ costo_unitario: '1000000' }).completo, false);
-comprobar('una utilidad en cero no cuenta como fijada',
-  precioMinimoDelContenedor({ costo_unitario: '500000', utilidad_unitaria: '0' }).completo, false);
-comprobar('un contenedor sin costo todavia da cero, no NaN',
-  precioMinimoDelContenedor({}).valor, 0);
-comprobar('y aguanta basura sin devolver NaN',
-  precioMinimoDelContenedor({ costo_unitario: 'x', utilidad_unitaria: null }).valor, 0);
-comprobar('el costo viaja aparte para poder desglosarlo',
-  precioMinimoDelContenedor({ costo_unitario: '700000', utilidad_unitaria: '50000' }).costo, 700000);
-// La misma cuenta por los dos caminos: si costoUnitarioTotalCOP y esta
-// dejaran de coincidir, la pantalla de Finalizar y el listado dirian dos
-// minimos distintos del mismo contenedor.
+grupo('El precio minimo de un contenedor: un RANGO, no un promedio');
+// La primera version de esto ensenaba el promedio del contenedor, y un promedio
+// no es el minimo de nada: en C426 el promedio da 989.667 mientras el producto
+// mas caro tiene un minimo de 1.807.546. Poner precio a una paca premium con el
+// promedio la venderia 818.000 por debajo de su costo.
+const CONT = {
+  costo_unitario: '937815', utilidad_unitaria: '0', gastos_unitarios: '0',
+  costo_min_producto: '654615', costo_max_producto: '1545615',
+  productos_distintos: '26',
+};
+comprobar('la punta barata es el producto mas barato',
+  precioMinimoDelContenedor(CONT).desde, 654615);
+comprobar('la punta cara es el producto mas caro',
+  precioMinimoDelContenedor(CONT).hasta, 1545615);
+comprobar('y se declara que ES un rango',
+  precioMinimoDelContenedor(CONT).rango, true);
+comprobar('el promedio NO es ninguna de las dos puntas',
+  precioMinimoDelContenedor(CONT).desde === 937815, false);
+
+// Los servicios por unidad y la utilidad se suman a las DOS puntas, igual que
+// hace el modal de Finalizar producto por producto.
+const CON_EXTRAS = { ...CONT, gastos_unitarios: '50000', utilidad_unitaria: '200000' };
+comprobar('los servicios y la utilidad entran en la punta barata',
+  precioMinimoDelContenedor(CON_EXTRAS).desde, 654615 + 50000 + 200000);
+comprobar('y en la cara',
+  precioMinimoDelContenedor(CON_EXTRAS).hasta, 1545615 + 50000 + 200000);
+comprobar('con utilidad fijada se declara completo',
+  precioMinimoDelContenedor(CON_EXTRAS).completo, true);
+comprobar('sin utilidad fijada AVISA de que solo cubre el costo',
+  precioMinimoDelContenedor(CONT).completo, false);
+
+// La misma cuenta por los dos caminos: si costoUnitarioTotalCOP y esta dejaran
+// de coincidir, la lista y el modal dirian dos minimos del mismo producto.
 comprobar('coincide con la cuenta por producto del modal de Finalizar',
-  precioMinimoDelContenedor({ costo_unitario: '1300000', utilidad_unitaria: '300000' }).valor,
-  costoUnitarioTotalCOP(1000000, { serviciosPorUnidad: 300000, utilidadPorUnidad: 300000 }));
+  precioMinimoDelContenedor(CON_EXTRAS).hasta,
+  costoUnitarioTotalCOP(1545615, { serviciosPorUnidad: 50000, utilidadPorUnidad: 200000 }));
+
+// Un contenedor de un solo producto no tiene rango que ensenar.
+const UNO = { costo_unitario: '902914', costo_min_producto: '902914',
+  costo_max_producto: '902914', productos_distintos: '1' };
+comprobar('un solo producto no es un rango', precioMinimoDelContenedor(UNO).rango, false);
+comprobar('y su cifra es la del producto', precioMinimoDelContenedor(UNO).hasta, 902914);
+// Un peso de diferencia por un redondeo tampoco es un rango.
+comprobar('una diferencia de redondeo no es un rango',
+  precioMinimoDelContenedor({ ...UNO, costo_max_producto: '902914.4' }).rango, false);
+
+// Un servidor anterior a este cambio no manda las puntas: se cae al promedio y
+// lo dice, en vez de ensenar un cero.
+const VIEJO = { costo_unitario: '1000000', utilidad_unitaria: '200000' };
+comprobar('sin las puntas se cae al promedio', precioMinimoDelContenedor(VIEJO).hasta, 1200000);
+comprobar('y se declara que es un promedio', precioMinimoDelContenedor(VIEJO).esPromedio, true);
+comprobar('con las puntas NO es un promedio', precioMinimoDelContenedor(CONT).esPromedio, false);
+
+comprobar('un contenedor vacio da cero, no NaN', precioMinimoDelContenedor({}).hasta, 0);
+comprobar('y aguanta basura sin devolver NaN',
+  precioMinimoDelContenedor({ costo_min_producto: 'x', costo_max_producto: null,
+    costo_unitario: 'y' }).hasta, 0);
 
 console.log(malos
   ? `\n✗ ${malos} comprobación(es) fallida(s)`

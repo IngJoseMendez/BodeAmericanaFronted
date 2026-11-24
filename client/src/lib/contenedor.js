@@ -217,30 +217,55 @@ export function costoUnitarioTotalCOP(costoMercanciaUnitarioCOP, { serviciosPorU
 }
 
 /**
- * EL PRECIO MÍNIMO DE UN CONTENEDOR YA GUARDADO.
+ * EL PRECIO MÍNIMO DE UN CONTENEDOR YA GUARDADO: UN RANGO, NO UNA CIFRA.
  *
- * La misma cuenta de arriba —mercancía + servicios + utilidad fijada— pero del
- * contenedor entero en vez de producto por producto. `costo_unitario` ya trae
- * los dos primeros sumados (es `costo_total ÷ pacas`, y `costo_total` es
- * mercancía más servicios), así que lo único que falta es la utilidad.
+ * La misma cuenta de arriba —mercancía + servicios + utilidad fijada— aplicada
+ * al producto MÁS BARATO y al MÁS CARO del contenedor.
  *
- * POR QUÉ EL LISTADO ENSEÑA ESTO Y NO EL COSTO POR PACA. El costo es lo que ya
- * se pagó, y con eso solo no se decide nada; el mínimo es lo que hay que cobrar
- * para no perder, que es la cifra con la que se pone un precio. En el modal de
- * Finalizar ya era la columna principal, y en la lista no aparecía: había que
- * abrir cada contenedor para verla.
+ * POR QUÉ UN RANGO Y NO EL PROMEDIO. La primera versión de esto enseñaba
+ * `costo_unitario + utilidad`, que es el promedio del contenedor, y un promedio
+ * no es el mínimo de nada. En C426 el promedio da 989.667 mientras el producto
+ * más caro tiene un mínimo de 1.807.546: poner precio a una paca premium con el
+ * promedio la vendería 818.000 POR DEBAJO de su costo. Y encima la lista
+ * parecía contradecir al modal de Finalizar, que sí lo enseña producto por
+ * producto. Medido sobre los 11 contenedores cargados, el producto más caro
+ * está hasta un 83% por encima del promedio.
  *
- * Devuelve también `completo`, que es falso cuando el contenedor no tiene
- * utilidad por unidad fijada. Ahí el «mínimo» sólo cubre el costo, y hay que
- * decirlo: vendiendo a esa cifra no se gana nada, y un número rotulado
- * «mínimo» que en realidad es el costo haría fijar precios sin margen sin que
- * nadie se enterara. El costo y la utilidad viajan aparte para poder
- * desglosarlo en un title sin repetir la cuenta.
+ * El rango no dice el precio de nada concreto, y no pretende: dice «esto va de
+ * aquí a aquí, entra al detalle para el precio de cada producto». Eso es
+ * verdad, y un promedio rotulado «mínimo» no lo es.
+ *
+ * Cuando el contenedor tiene un solo producto —o todos cuestan lo mismo— las
+ * dos puntas coinciden y `rango` es falso: se enseña una cifra sola.
+ *
+ * `completo` es falso cuando el contenedor no tiene utilidad por unidad fijada
+ * (hoy, 10 de 11). Ahí el «mínimo» sólo cubre el costo y hay que decirlo:
+ * vendiendo a esa cifra no se gana nada, y un número rotulado «mínimo» que en
+ * realidad es el costo haría fijar precios sin margen sin que nadie se enterara.
+ *
+ * Si el servidor no manda las puntas —una versión anterior a este cambio— se
+ * cae al promedio y se avisa con `esPromedio`. Enseñar menos, no mal.
  */
 export function precioMinimoDelContenedor(contenedor = {}) {
-  const costo = parseFloat(contenedor.costo_unitario) || 0;
   const utilidad = parseFloat(contenedor.utilidad_unitaria) || 0;
-  return { valor: costo + utilidad, completo: utilidad > 0, costo, utilidad };
+  const servicios = serviciosPorUnidadGuardados(contenedor).valor;
+  const promedio = (parseFloat(contenedor.costo_unitario) || 0) + utilidad;
+
+  const barato = parseFloat(contenedor.costo_min_producto);
+  const caro = parseFloat(contenedor.costo_max_producto);
+  if (!Number.isFinite(barato) || !Number.isFinite(caro)) {
+    return { desde: promedio, hasta: promedio, rango: false, esPromedio: true,
+      completo: utilidad > 0, servicios, utilidad };
+  }
+
+  const desde = costoUnitarioTotalCOP(barato, { serviciosPorUnidad: servicios, utilidadPorUnidad: utilidad });
+  const hasta = costoUnitarioTotalCOP(caro, { serviciosPorUnidad: servicios, utilidadPorUnidad: utilidad });
+  // Un peso de diferencia por un redondeo no es un rango.
+  return {
+    desde, hasta, rango: Math.round(hasta) - Math.round(desde) > 0, esPromedio: false,
+    completo: utilidad > 0, servicios, utilidad,
+    productos: parseInt(contenedor.productos_distintos) || 0,
+  };
 }
 
 /**

@@ -761,12 +761,19 @@ function TimelineView({ items, onView, isAdmin = false }) {
                       const min = precioMinimoDelContenedor(cont);
                       return (
                         <div className="text-right hidden sm:block">
-                          <p className="text-[10px] text-muted uppercase tracking-wide">Precio mínimo</p>
+                          <p className="text-[10px] text-muted uppercase tracking-wide">
+                            Precio mínimo{min.rango ? ' · del más barato al más caro' : ''}
+                          </p>
                           <p className="text-sm font-mono font-bold text-secondary"
-                             title={min.completo
-                               ? `Costo por paca ${formatCurrency(min.costo)} + utilidad fijada ${formatCurrency(min.utilidad)}`
-                               : `Costo por paca ${formatCurrency(min.costo)}. Sin utilidad por unidad fijada.`}>
-                            {formatCurrency(min.valor)}
+                             title={min.esPromedio
+                               ? 'Promedio del contenedor: este servidor todavía no manda el mínimo por producto.'
+                               : `${min.productos} producto(s) distintos. Servicios por paca ${formatCurrency(min.servicios)}`
+                                 + (min.completo
+                                   ? ` + utilidad fijada ${formatCurrency(min.utilidad)}.`
+                                   : '. Sin utilidad por unidad fijada.')}>
+                            {min.rango
+                              ? <>{formatCurrency(min.desde)}<span className="text-muted font-normal"> a </span>{formatCurrency(min.hasta)}</>
+                              : formatCurrency(min.hasta)}
                           </p>
                           {!min.completo && (
                             <p className="text-[10px] text-warning leading-none">= costo, sin utilidad</p>
@@ -4189,21 +4196,36 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                         const tasa = parseFloat(cont.tasa_conversion) || 0;
                         const usd = monedaResumen === 'USD' && tasa > 0;
                         const min = precioMinimoDelContenedor(cont);
+                        const enMoneda = (v) => formatMoneda(usd ? v / tasa : v,
+                          usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 });
+                        const explica = min.esPromedio
+                          ? 'Promedio del contenedor: este servidor todavía no manda el mínimo por producto.'
+                          : `${min.productos} producto(s) distintos. Servicios por paca ${formatCurrency(min.servicios)}`
+                            + (min.completo
+                              ? ` + utilidad fijada ${formatCurrency(min.utilidad)}.`
+                              : '. Sin utilidad por unidad fijada, así que el mínimo sólo cubre el costo.')
+                            + ' El mínimo de cada producto está en el detalle del contenedor.';
                         return (
                           <div className="flex flex-col">
-                            <span className="text-secondary font-semibold"
-                                  title={min.completo
-                                    ? `Costo por paca ${formatCurrency(min.costo)} + utilidad fijada ${formatCurrency(min.utilidad)}`
-                                    : `Costo por paca ${formatCurrency(min.costo)}. Sin utilidad por unidad fijada, así que el mínimo sólo cubre el costo.`}>
-                              {formatMoneda(usd ? min.valor / tasa : min.valor, usd ? 'USD' : 'COP', { decimales: usd ? 2 : 0 })}
+                            {/* UN RANGO, NO UN PROMEDIO. Un promedio no es el
+                                mínimo de nada: en un contenedor con productos
+                                de 654.615 y de 1.545.615, poner precio con el
+                                promedio vendería los caros bajo su costo. */}
+                            <span className="text-secondary font-semibold" title={explica}>
+                              {min.rango
+                                ? <>{enMoneda(min.desde)}<span className="text-muted font-normal"> a </span>{enMoneda(min.hasta)}</>
+                                : enMoneda(min.hasta)}
                             </span>
-                            {usd && <span className="text-[10px] text-muted">{formatCurrency(min.valor)}</span>}
-                            {monedaResumen === 'COP' && tasa > 0 && <span className="text-[10px] text-muted">{formatMoneda(min.valor / tasa, 'USD', { decimales: 2 })}</span>}
+                            {usd && (
+                              <span className="text-[10px] text-muted">
+                                {formatCurrency(min.desde)}{min.rango ? ` a ${formatCurrency(min.hasta)}` : ''}
+                              </span>
+                            )}
                             {!usd && monedaResumen === 'USD' && <span className="text-[10px] text-warning" title="Sin tasa de conversión">Falta tasa</span>}
                             {/* Sin utilidad fijada el mínimo es el costo pelado.
                                 Callarlo haría vender al costo creyendo que se
                                 está ganando lo fijado. */}
-                            {min.valor > 0 && !min.completo && (
+                            {min.hasta > 0 && !min.completo && (
                               <span className="text-[10px] text-warning">= costo, sin utilidad</span>
                             )}
                           </div>
