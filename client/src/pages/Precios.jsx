@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Modal, useToast, useConfirm, CampoMonto, BuscadorLista } from '../components/common';
 import { preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { Plus, Trash2, Edit2, Tag } from 'lucide-react';
+import { Plus, Trash2, Edit2, Tag, Search, X } from 'lucide-react';
 import { formatCOP } from '../lib/money';
 
 import { mensajeDeError } from '../lib/errores';
@@ -19,6 +19,7 @@ export default function Precios() {
   const [editTarget, setEditTarget] = useState(null);
   const [form, setForm]             = useState(emptyForm);
   const [saving, setSaving]         = useState(false);
+  const [busqueda, setBusqueda]     = useState('');
 
   const { addToast } = useToast();
   const confirm = useConfirm();
@@ -34,6 +35,29 @@ export default function Precios() {
     const p = await preciosApi.getAll();
     setPrecios(p);
   };
+
+  // Se busca sobre el texto de la fila TAL COMO SE LEE, incluido el precio ya
+  // formateado: quien busca «1.430.000» lo escribe con puntos, y quien busca
+  // «1430000» no. Las dos formas van al mismo sitio porque se compara contra
+  // las dos. Y sin acentos ni mayusculas, que es como se teclea de prisa.
+  const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim();
+
+  const visibles = useMemo(() => {
+    const q = norm(busqueda);
+    if (!q) return precios;
+    // Cada palabra por separado: «verano prem» encuentra «verano / premium».
+    const palabras = q.split(/\s+/).filter(Boolean);
+    return precios.filter((p) => {
+      const heno = norm([
+        p.categoria, p.calidad,
+        p.precio,                                  // 1430000
+        formatCurrency(p.precio),                   // $ 1.430.000
+        String(p.precio ?? '').replace(/\D/g, ''),  // 143000000 (con decimales)
+      ].join(' '));
+      return palabras.every((w) => heno.includes(w));
+    });
+  }, [precios, busqueda]);
 
   const openCreate = () => {
     setEditTarget(null);
@@ -88,10 +112,48 @@ export default function Precios() {
        dos encabezados de nivel 1 en la misma pantalla. */
     <Layout title="Precios Preestablecidos">
       <div className="space-y-6">
-        <div className="flex justify-between items-center gap-4">
-          <p className="text-sm text-muted">Define precios por combinación de categoría y calidad. Se autocompletarán al finalizar un contenedor.</p>
+        <div className="flex justify-between items-start gap-4 flex-wrap">
+          {/* Lo que de verdad hace esta tabla, dicho entero: es la AUTORIDAD del
+              precio, no un autocompletado del contenedor. La Matriz, las
+              cotizaciones y el inventario lo sacan de aquí buscando por la
+              TEMPORADA de cada referencia: «deportivo» es de verano, así que su
+              precio es el de «verano / premium». */}
+          <p className="text-sm text-muted max-w-xl">
+            Define el precio por <b>temporada y calidad</b>. De aquí lo toman la
+            Matriz, las cotizaciones y el inventario: cada referencia cobra el
+            precio de su temporada, así que <i>deportivo premium</i> vale lo que
+            diga <i>verano premium</i>. Una promoción vigente manda sobre esto.
+          </p>
           <Button variant="secondary" icon={Plus} onClick={openCreate}>Agregar Precio</Button>
         </div>
+
+        {/* ── BUSCADOR ─────────────────────────────────────────────────────
+            Son 15 filas hoy, pero crecen con cada calidad nueva y la tabla no
+            tiene ningún orden que ayude a encontrar algo. Busca por temporada,
+            por calidad y por el precio TAL COMO SE VE: «1.430.000» y «1430000»
+            encuentran lo mismo, porque nadie escribe los puntos igual.
+            Aparece sólo cuando hay filas suficientes para que haga falta: un
+            buscador sobre cuatro líneas es un campo más que estorba. */}
+        {!loading && precios.length > 6 && (
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
+            <input
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por temporada, calidad o precio…"
+              aria-label="Buscar entre los precios preestablecidos"
+              className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+            />
+            {busqueda && (
+              <button type="button" onClick={() => setBusqueda('')}
+                title="Limpiar la búsqueda" aria-label="Limpiar la búsqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+                <X size={15} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
 
         <Card>
           <CardBody className="p-0">
@@ -102,6 +164,24 @@ export default function Precios() {
                 <Tag size={40} className="mx-auto text-muted/40 mb-3" aria-hidden="true" />
                 <p className="text-muted">No hay precios configurados</p>
                 <Button variant="ghost" size="sm" className="mt-3" onClick={openCreate}>Agregar el primero</Button>
+              </div>
+            ) : visibles.length === 0 ? (
+              /* Sin esto la tabla se quedaba con la cabecera y ni una fila, que
+                 se lee como «se perdieron los precios» en vez de «la búsqueda
+                 no encontró nada». Y se ofrece la salida: quitar la búsqueda, o
+                 crear justo lo que se estaba buscando. */
+              <div className="text-center py-14">
+                <Search size={40} className="mx-auto text-muted/40 mb-3" aria-hidden="true" />
+                <p className="text-muted">
+                  Ningún precio coincide con «<b className="text-primary">{busqueda}</b>»
+                </p>
+                <p className="text-xs text-muted/80 mt-1">
+                  Hay {precios.length} precios configurados.
+                </p>
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <Button variant="ghost" size="sm" onClick={() => setBusqueda('')}>Quitar la búsqueda</Button>
+                  <Button variant="secondary" size="sm" icon={Plus} onClick={openCreate}>Agregar precio</Button>
+                </div>
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -115,7 +195,7 @@ export default function Precios() {
                   </tr>
                 </thead>
                 <tbody>
-                  {precios.map((p) => (
+                  {visibles.map((p) => (
                     <tr key={p.id} className="border-b border-border/50 hover:bg-primary/3 transition-colors">
                       <td className="px-5 py-3 font-medium capitalize">{p.categoria}</td>
                       <td className="px-5 py-3 capitalize">{p.calidad}</td>
@@ -137,6 +217,15 @@ export default function Precios() {
                   ))}
                 </tbody>
               </table>
+            )}
+            {/* Cuántas se están viendo de cuántas hay. Con un filtro puesto, una
+                tabla sin este pie se lee como la lista completa. */}
+            {!loading && precios.length > 0 && visibles.length > 0 && (
+              <p className="px-5 py-3 border-t border-border/50 text-xs text-muted">
+                {busqueda
+                  ? `${visibles.length} de ${precios.length} precios`
+                  : `${precios.length} precio${precios.length !== 1 ? 's' : ''} configurado${precios.length !== 1 ? 's' : ''}`}
+              </p>
             )}
           </CardBody>
         </Card>

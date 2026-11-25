@@ -66,8 +66,19 @@ import path from 'node:path';
 //
 // Hacerlos con `Button` dejando los de al lado a pelo daría una fila con dos
 // estilos de botón. La incoherencia se ve; la deuda no.
+//
+// 2026-11-25 · +1 button y +1 input en src/pages (232→233, 112→113): la BARRA
+// DE BÚSQUEDA de Precios. Es el mismo patrón, clase por clase, que las barras
+// que ya existen en Cartera.jsx y Pacas.jsx: un `<input>` con la lupa colocada
+// encima en `absolute` y una `<button>` de limpiar dentro del mismo campo.
+//
+// `Input` no puede hacerlo: envuelve el campo en un div con su etiqueta y su
+// propio relleno, así que no hay dónde posicionar la lupa dentro del borde, y
+// el aspa de limpiar quedaría fuera de la caja. El camino bueno sigue siendo
+// que `Input` acepte un adorno a izquierda y derecha —y entonces se arreglan
+// las tres barras de golpe—, no que esta se haga distinta de las otras dos.
 const TECHO = {
-  'src/pages':      { button: 232, input: 112 },
+  'src/pages':      { button: 233, input: 113 },
   'src/components': { button: 33,  input: 8   },
 };
 

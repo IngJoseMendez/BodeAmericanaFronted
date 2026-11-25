@@ -66,6 +66,17 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// El día de hoy en hora LOCAL, como 'AAAA-MM-DD'. La misma cuenta que
+// lib/fecha.js, repetida aquí para que este fichero no arrastre dependencias:
+// es la única regla de precios y la quiero leíble de un tirón.
+// Con `toISOString()` no: después de las 7 de la tarde en Colombia ya devuelve
+// el día siguiente, y una promoción que vence hoy se apagaría esta tarde.
+const diaDeHoy = () => {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0')].join('-');
+};
+
 /**
  * La temporada —la «categoría» de la tabla de Precios— a la que pertenece una
  * referencia. Null cuando la referencia no está en el catálogo: hay 49 grupos
@@ -90,7 +101,12 @@ export function temporadaDeReferencia(referencia, referencias) {
  *   discrepancia: boolean, esPromocion: boolean, aviso: string|null
  * }}
  */
-export function precioDeVenta({ referencia, calidad, clasificacion } = {}, tablas = {}) {
+export function precioDeVenta({ referencia, calidad, clasificacion } = {}, tablas = {}, hoyISO = null) {
+  // `hoyISO` existe para poder fijar el día en las pruebas. En la pantalla no
+  // se pasa: se usa el de verdad, y con la fecha LOCAL —no `toISOString()`,
+  // que después de las 7 de la tarde en Colombia ya da el día siguiente y
+  // apagaría una promoción que vence hoy.
+  const hoy = hoyISO || diaDeHoy();
   // `lista()` y no un valor por defecto: el defecto sólo entra con `undefined`,
   // y estas tablas llegan en `null` de verdad mientras una carga va en vuelo
   // (`Promise.allSettled` que falló, o el primer render antes del fetch). Con
@@ -132,12 +148,30 @@ export function precioDeVenta({ referencia, calidad, clasificacion } = {}, tabla
   // 1 · PROMOCIÓN. Una promo con clasificación concreta gana a una general, y
   // entre iguales la más alta: quien escribió dos para el mismo producto no
   // dejó dicho cuál, y la más baja regalaría margen sin que nadie lo decidiera.
-  const promo = (promos || [])
+  //
+  // Y TIENE QUE ESTAR VIGENTE. Esto no se comprobaba: la Matriz pedía TODAS las
+  // promociones —`GET /precios-promocion` sin `?activas=true` las devuelve
+  // todas— y se aplicaba cualquiera con precio. En producción hay una de
+  // «mixta verano / supreme» a 1.000.000 con `activo = false`, y son 39 pacas
+  // cuyo precio de catálogo es 1.750.000: se estaban cotizando 750.000 por
+  // debajo cada una. Y otra de «mixta invierno / premium» vencida el 30/09.
+  //
+  // Se comprueba aquí Y se pide filtrado en la Matriz. Las dos cosas: el lib no
+  // puede fiarse de que quien lo llame haya filtrado, porque el día que alguien
+  // le pase la lista entera volvería a aplicar promociones apagadas en silencio.
+  //
+  // Los campos se comprueban SÓLO SI VIENEN: `getActiva` del servidor ya filtra
+  // por fecha y estado, así que una promo que llegue por ahí no trae fechas que
+  // repasar y no puede quedar fuera por no traerlas.
+  const promo = promos
     .filter((p) => norm(p.referencia) === nRef && norm(p.calidad) === nCal
       && (clasificacion
         ? (!p.clasificacion || norm(p.clasificacion) === norm(clasificacion))
         : !p.clasificacion)
-      && num(p.precio_promocional) > 0)
+      && num(p.precio_promocional) > 0
+      && p.activo !== false
+      && !(p.fecha_inicio && String(p.fecha_inicio).slice(0, 10) > hoy)
+      && !(p.fecha_fin && String(p.fecha_fin).slice(0, 10) < hoy))
     .sort((a, b) => {
       const especificidad = (a.clasificacion ? 0 : 1) - (b.clasificacion ? 0 : 1);
       if (especificidad !== 0) return especificidad;

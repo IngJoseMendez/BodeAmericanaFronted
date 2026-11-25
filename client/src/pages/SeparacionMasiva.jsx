@@ -347,7 +347,12 @@ export default function SeparacionMasiva() {
         clientesApi.getAll({ estado: 'activo' }),
         listaPreciosApi.getAll(),
         preciosApi.getAll(),
-        preciosPromocionApi.getAll(),
+        // SÓLO LAS VIGENTES. Sin el filtro llegaban TODAS, apagadas y
+        // vencidas incluidas, y se aplicaba cualquiera con precio: la promo de
+        // «mixta verano / supreme» a 1.000.000 está con activo=false y son 39
+        // pacas cuyo precio de catálogo es 1.750.000. lib/precios.js lo
+        // comprueba también, porque no puede fiarse de quien lo llame.
+        preciosPromocionApi.getAll({ activas: 'true' }),
         transportesApi.getAll(),
         cargarFaltantes(),
         matrizApi.getRepartoAbierto(),

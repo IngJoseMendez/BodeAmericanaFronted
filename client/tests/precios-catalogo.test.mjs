@@ -120,6 +120,64 @@ prueba('entre dos promos iguales gana la MAS ALTA', () => {
   assert.strictEqual(precioDeVenta({ referencia: 'deportivo', calidad: 'premium' }, conPromo).precio, 2100000);
 });
 
+grupo('Una promocion solo manda si esta VIGENTE');
+// Esto no se comprobaba. La Matriz pedia TODAS las promociones -el endpoint las
+// devuelve todas si no se le pasa ?activas=true- y se aplicaba cualquiera con
+// precio. En produccion hay una de «mixta verano / supreme» a 1.000.000 con
+// activo=false, y son 39 pacas cuyo precio de catalogo es 1.750.000.
+const HOY = '2026-11-25';
+const promoDe = (extra) => ({ ...T, promos: [{
+  referencia: 'deportivo', calidad: 'premium', clasificacion: null,
+  precio_promocional: '1500000', activo: true,
+  fecha_inicio: '2026-01-01', fecha_fin: '2099-12-31', ...extra,
+}] });
+
+prueba('vigente: se aplica', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' }, promoDe({}), HOY);
+  assert.strictEqual(r.precio, 1500000);
+  assert.strictEqual(r.origen, ORIGEN_PROMOCION);
+});
+prueba('APAGADA (activo=false): NO se aplica, manda el catalogo', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ activo: false }), HOY);
+  assert.strictEqual(r.precio, 2300000, 'el de verano premium');
+  assert.strictEqual(r.origen, ORIGEN_CATALOGO);
+});
+prueba('VENCIDA ayer: no se aplica', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ fecha_fin: '2026-11-24' }), HOY);
+  assert.strictEqual(r.origen, ORIGEN_CATALOGO);
+});
+prueba('que vence HOY: todavia se aplica', () => {
+  // El ultimo dia cuenta entero: una promo que vence hoy vale hoy.
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ fecha_fin: HOY }), HOY);
+  assert.strictEqual(r.origen, ORIGEN_PROMOCION);
+});
+prueba('que empieza MANANA: todavia no se aplica', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ fecha_inicio: '2026-11-26' }), HOY);
+  assert.strictEqual(r.origen, ORIGEN_CATALOGO);
+});
+prueba('que empieza HOY: ya se aplica', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ fecha_inicio: HOY }), HOY);
+  assert.strictEqual(r.origen, ORIGEN_PROMOCION);
+});
+prueba('sin fechas ni estado se aplica: viene de /activa, que ya filtro', () => {
+  // El servidor devuelve ahi solo las vigentes, asi que una promo sin esos
+  // campos no puede quedar fuera por no traerlos.
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    { ...T, promos: [{ referencia: 'deportivo', calidad: 'premium', clasificacion: null,
+      precio_promocional: '1500000' }] }, HOY);
+  assert.strictEqual(r.origen, ORIGEN_PROMOCION);
+});
+prueba('una fecha con hora (timestamp) tambien se entiende', () => {
+  const r = precioDeVenta({ referencia: 'deportivo', calidad: 'premium' },
+    promoDe({ fecha_fin: '2026-11-24T23:59:59.000Z' }), HOY);
+  assert.strictEqual(r.origen, ORIGEN_CATALOGO, 'se compara solo el dia');
+});
+
 grupo('El inventario es el respaldo, no la autoridad');
 prueba('sin fila en el catalogo se usa el de las pacas, y se dice', () => {
   // mixta verano / supreme existe en el catalogo (1.750.000). Quitemoslo.
