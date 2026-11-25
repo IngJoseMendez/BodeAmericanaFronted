@@ -23,10 +23,36 @@ const TODAY = hoy();
 // pagada por transferencia en pesos, por ejemplo). Se guarda lo que realmente salió
 // del banco —moneda y tasa— y además el equivalente en la moneda de la factura, que
 // es el valor que descuenta el saldo.
-const emptyInline = (monedaFactura = 'USD') => ({
-  monto: '', fecha: TODAY, metodo_pago: 'efectivo', cuenta_banco_id: '', notas: '',
-  moneda: monedaFactura, monedaOtra: '', tasa_cambio: '',
-});
+// ── LA TASA DEL CONTENEDOR VIENE PUESTA ────────────────────────────────────
+//
+// La deuda de un contenedor se guarda en PESOS, convertida con la tasa que se
+// definió al crear el contenedor, y los abonos se descuentan de esa cifra. Así
+// que para cerrar con dólares una deuda anotada a 4.150 hay que usar 4.150: es
+// la ÚNICA tasa con la que pagar la factura entera en dólares deja el saldo en
+// cero. Con otra, pagar los 18.400 dólares completos deja la cuenta debiendo o
+// pagada de más.
+//
+// Hasta ahora había que teclearla en cada pago, de memoria y por contenedor.
+// Ahora viene de `tasa_conversion_original` (o de la del contenedor), y sigue
+// siendo EDITABLE: si un giro concreto se hizo a otra tasa, se corrige. Pero el
+// valor por defecto es el que cuadra, no un campo en blanco.
+const tasaDelContenedor = (c) => {
+  const t = parseFloat(c?.tasa_conversion_original) || parseFloat(c?.contenedor_tasa) || 0;
+  return t > 0 ? t : 0;
+};
+
+const emptyInline = (cuenta = null) => {
+  const monedaFactura = monedaSugerida(cuenta);
+  const necesitaTasa = monedaFactura !== String(cuenta?.moneda || 'USD').toUpperCase();
+  const tasa = necesitaTasa ? tasaDelContenedor(cuenta) : 0;
+  return {
+    monto: '', fecha: TODAY, metodo_pago: 'efectivo', cuenta_banco_id: '', notas: '',
+    moneda: monedaFactura, monedaOtra: '',
+    // Vacío y no un cero cuando no hay tasa que traer: un 0 ahí se guardaría
+    // como una conversión que anula el abono.
+    tasa_cambio: tasa > 0 ? String(tasa) : '',
+  };
+};
 
 // La factura del proveedor viene en su moneda (normalmente USD) pero el saldo se
 // lleva en COP, que es contra lo que se registran los abonos. Se muestran las dos.
@@ -69,6 +95,21 @@ const enDeuda = (c) => {
     abonado: lasTrae ? Number(c.total_abonado_original) : abonadoSaldo,
     saldo: lasTrae ? Number(c.saldo_original) : saldoSaldo,
     facturaSaldo, abonadoSaldo, saldoSaldo,
+    // ── LO PAGADO DE MÁS NO ES UNA DEUDA EN NEGATIVO ──────────────────
+    // Se puede abonar sin deuda pendiente —un anticipo, o un giro redondeado
+    // de más— y eso queda A FAVOR con el proveedor. Va con su propio nombre y
+    // en positivo, igual que en la cartera: un «−1.200 USD» en una columna
+    // rotulada «Pendiente» obliga a interpretar un signo justo cuando se está
+    // decidiendo a quién girar. El servidor las manda ya separadas; el
+    // respaldo es para un servidor anterior a este cambio.
+    porPagar: Math.max(lasTrae
+      ? (c.por_pagar_original != null ? Number(c.por_pagar_original) : Number(c.saldo_original))
+      : saldoSaldo, 0),
+    aFavor: Math.max(lasTrae
+      ? (c.a_favor_original != null ? Number(c.a_favor_original) : -Number(c.saldo_original))
+      : -saldoSaldo, 0),
+    porPagarSaldo: Math.max(saldoSaldo, 0),
+    aFavorSaldo: Math.max(-saldoSaldo, 0),
     // false = la cifra en dólares sale de deshacer una conversión, porque de
     // algún abono no se guardó en qué moneda se pagó. Se dice, no se esconde.
     exacto: c?.saldo_original_exacto !== false,
@@ -198,7 +239,7 @@ export default function CuentasPagar() {
     } else {
       setExpandedId(cuenta.id);
       // La moneda arranca en la de la factura: es el caso normal.
-      setInlineForm(emptyInline(monedaSugerida(cuenta)));
+      setInlineForm(emptyInline(cuenta));
     }
   };
 
@@ -223,6 +264,30 @@ export default function CuentasPagar() {
 
     const equivalente = montoAbono * tasa;
 
+    // ── PAGAR DE MÁS SE PUEDE, PERO SE PREGUNTA ───────────────────────────
+    // Un anticipo al proveedor o un giro redondeado de más son legítimos, y
+    // ahora el servidor los acepta. Pero casi nunca es lo que se quería: lo
+    // normal es haber tecleado un cero de más o la tasa equivocada. Así que se
+    // dice CUÁNTO queda a favor antes de mandarlo, y en la moneda en la que se
+    // está pagando, que es la que la persona tiene en la cabeza.
+    const d = enDeuda(cuenta);
+    const sobra = equivalente - d.porPagarSaldo;
+    if (sobra > 0) {
+      const sobraEnPago = tasa > 0 ? sobra / tasa : sobra;
+      const ok = await confirm({
+        title: d.porPagarSaldo > 0 ? 'El abono es mayor que el saldo' : 'Esta cuenta no tiene saldo pendiente',
+        message: d.porPagarSaldo > 0
+          ? `El saldo pendiente es ${formatMoneda(d.porPagar, d.moneda)} y vas a abonar `
+            + `${formatMoneda(montoAbono, monedaAbono)}.\n\n`
+            + `Quedarían ${formatMoneda(sobraEnPago, monedaAbono)} A FAVOR con ${cuenta.proveedor_nombre}.`
+          : `${cuenta.proveedor_nombre} ya está al día en esta cuenta.\n\n`
+            + `Los ${formatMoneda(montoAbono, monedaAbono)} quedarían A FAVOR, como anticipo.`,
+        confirmText: 'Registrar y dejar a favor',
+        cancelText: 'Volver y corregir',
+      });
+      if (!ok) return;
+    }
+
     try {
       setInlineSubmitting(true);
       await cuentasPagarApi.registrarAbono(cuenta.id, {
@@ -239,7 +304,7 @@ export default function CuentasPagar() {
       });
       addToast(`Abono registrado — ${cuenta.proveedor_nombre}`, 'success');
       setExpandedId(null);
-      setInlineForm(emptyInline(monedaSugerida(cuenta)));
+      setInlineForm(emptyInline(cuenta));
       loadCuentas();
       // Refrescar vista de detalle si estaba abierta
       if (selectedCuenta?.id === cuenta.id) {
@@ -429,15 +494,31 @@ export default function CuentasPagar() {
   const vivas = cuentas.filter(c => c.estado !== 'pagada' && !esDeLegado(c));
   const legadas = cuentas.filter(c => c.estado !== 'pagada' && esDeLegado(c));
 
+  // LO QUE SE DEBE Y LO QUE SE PAGÓ DE MÁS NO SE RESTAN. Netearlos daría «a
+  // MIRTA le debo 17.200» cuando hay una factura de 18.400 sin pagar y un
+  // anticipo de 1.200 en otra cuenta: son dos conversaciones distintas con el
+  // proveedor, y el neto no se puede girar. Tercera cifra, con su nombre.
   const sumaEn = (lista, moneda) => lista
     .map(enDeuda)
     .filter(d => d.moneda === moneda)
-    .reduce((s, d) => s + d.saldo, 0);
+    .reduce((s, d) => s + d.porPagar, 0);
+
+  const aFavorEn = (lista, moneda) => lista
+    .map(enDeuda)
+    .filter(d => d.moneda === moneda)
+    .reduce((s, d) => s + d.aFavor, 0);
 
   const totalPendienteCOP = sumaEn(vivas, 'COP');
   const totalPendienteUSD = sumaEn(vivas, 'USD');
   const totalLegadoCOP    = sumaEn(legadas, 'COP');
   const totalLegadoUSD    = sumaEn(legadas, 'USD');
+  // El saldo a favor se busca en TODAS las cuentas, no solo en las «vivas»:
+  // una cuenta pagada de más queda en estado 'pagada', y filtrarla dejaría el
+  // anticipo invisible, que es justo lo que no puede pasar con plata girada.
+  const aFavorPropias  = cuentas.filter(c => !esDeLegado(c));
+  const aFavorUSD      = aFavorEn(aFavorPropias, 'USD');
+  const aFavorCOP      = aFavorEn(aFavorPropias, 'COP');
+  const cuentasAFavor  = aFavorPropias.filter(c => enDeuda(c).aFavor > 0).length;
   const pagadas = cuentas.filter(c => c.estado === 'pagada').length;
   const pendientes = vivas.length;
   // Cuántas cuentas vivas en dólares llevan alguna cifra aproximada: de algún
@@ -467,7 +548,21 @@ export default function CuentasPagar() {
               ? `${aproximadas} con abonos sin moneda guardada`
               : 'lo que se le debe a los proveedores'} />
           <KpiCard label="Pendiente COP"  value={formatCurrency(totalPendienteCOP)} icon={CreditCard} color="bg-warning/70"  sub="facturas emitidas en pesos" />
-          <KpiCard label="Pagadas"        value={pagadas}    icon={CheckCircle} color="bg-success/70"  sub="completamente liquidadas" />
+          {/* La tercera cifra sólo aparece cuando hay algo a favor: un KPI en
+              cero permanente se vuelve invisible y le quita sitio al que sí
+              cambia. Pero cuando hay plata girada de más, tiene que verse
+              arriba y no dentro de una fila. */}
+          {cuentasAFavor > 0 ? (
+            <KpiCard label="A favor"
+              value={aFavorUSD > 0
+                ? `$${aFavorUSD.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`
+                : formatCurrency(aFavorCOP)}
+              icon={CheckCircle} color="bg-success/70"
+              sub={`anticipado en ${cuentasAFavor} cuenta${cuentasAFavor !== 1 ? 's' : ''}`
+                + (aFavorUSD > 0 && aFavorCOP > 0 ? ` · y ${formatCurrency(aFavorCOP)}` : '')} />
+          ) : (
+            <KpiCard label="Pagadas"      value={pagadas}    icon={CheckCircle} color="bg-success/70"  sub="completamente liquidadas" />
+          )}
           <KpiCard label="Por liquidar"   value={pendientes} icon={Clock}        color="bg-accent/70"   sub="pendientes o parciales" />
         </div>
 
@@ -666,7 +761,12 @@ export default function CuentasPagar() {
                       const d = enDeuda(c);
                       const pendiente = d.saldoSaldo;
                       const isExpanded = expandedId === c.id;
-                      const canAbono = c.estado !== 'pagada';
+                      // SE PUEDE ABONAR SIEMPRE, también a una cuenta ya
+                      // pagada: un anticipo al proveedor antes de que llegue su
+                      // factura es un pago de verdad y tiene que quedar escrito.
+                      // Lo que sobre queda a favor, y la pantalla lo pregunta
+                      // antes de mandarlo.
+                      const canAbono = true;
                       return (
                         <Fragment key={c.id}>
                           <tr
@@ -718,8 +818,14 @@ export default function CuentasPagar() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 font-mono text-sm font-semibold text-warning">
-                              {formatMoneda(d.saldo, d.moneda)}
+                            {/* Pagado de más = A FAVOR, con su nombre y en
+                                positivo. En verde y no en el amarillo de la
+                                deuda: no es algo que haya que girar. */}
+                            <td className={`px-4 py-3 font-mono text-sm font-semibold ${d.aFavor > 0 ? 'text-success' : 'text-warning'}`}>
+                              {d.aFavor > 0 && (
+                                <span className="block text-[10px] font-bold uppercase tracking-wide text-success/80">A favor</span>
+                              )}
+                              {formatMoneda(d.aFavor > 0 ? d.aFavor : d.porPagar, d.moneda)}
                               {/* El asterisco es la única pista de que esa cifra
                                   en dólares sale de deshacer una conversión. */}
                               {d.doble && !d.exacto && (
@@ -727,7 +833,7 @@ export default function CuentasPagar() {
                               )}
                               {d.doble && (
                                 <span className="block text-[11px] font-normal text-muted">
-                                  ≈ {formatCurrency(pendiente, d.monedaSaldo)}
+                                  ≈ {formatCurrency(d.aFavor > 0 ? d.aFavorSaldo : d.porPagarSaldo, d.monedaSaldo)}
                                 </span>
                               )}
                             </td>
@@ -771,9 +877,17 @@ export default function CuentasPagar() {
                                       {d.doble && <p className="text-[11px] font-mono text-muted">≈ {formatCurrency(d.abonadoSaldo, d.monedaSaldo)}</p>}
                                     </div>
                                     <div>
-                                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Saldo pendiente</p>
-                                      <p className="text-lg font-mono font-bold text-warning">{formatMoneda(d.saldo, d.moneda)}</p>
-                                      {d.doble && <p className="text-[11px] font-mono text-muted">≈ {formatCurrency(pendiente, d.monedaSaldo)}</p>}
+                                      <p className="text-[10px] font-bold text-muted uppercase tracking-widest">
+                                        {d.aFavor > 0 ? 'Saldo a favor' : 'Saldo pendiente'}
+                                      </p>
+                                      <p className={`text-lg font-mono font-bold ${d.aFavor > 0 ? 'text-success' : 'text-warning'}`}>
+                                        {formatMoneda(d.aFavor > 0 ? d.aFavor : d.porPagar, d.moneda)}
+                                      </p>
+                                      {d.doble && (
+                                        <p className="text-[11px] font-mono text-muted">
+                                          ≈ {formatCurrency(d.aFavor > 0 ? d.aFavorSaldo : d.porPagarSaldo, d.monedaSaldo)}
+                                        </p>
+                                      )}
                                     </div>
                                     {/* La tasa con la que se convirtió la
                                         factura. Sin ella, las dos cifras de
@@ -806,11 +920,22 @@ export default function CuentasPagar() {
                                       <label className="block text-xs font-medium text-muted mb-1">Moneda del pago</label>
                                       <BuscadorLista
                                         value={inlineForm.moneda}
-                                        onChange={(valorElegido) => setInlineForm({
-                                          ...inlineForm,
-                                          moneda: valorElegido,
-                                          tasa_cambio: valorElegido === (c.moneda || 'USD') ? '' : inlineForm.tasa_cambio,
-                                        })}
+                                        onChange={(valorElegido) => {
+                                          // Pagando en la moneda de la cuenta no hay tasa
+                                          // que pedir. Volviendo a la del proveedor se
+                                          // vuelve a poner la del contenedor, que es la
+                                          // que cuadra; si había una tecleada a mano, se
+                                          // respeta.
+                                          const mismaQueLaCuenta = valorElegido === String(c.moneda || 'USD').toUpperCase();
+                                          const propia = tasaDelContenedor(c);
+                                          setInlineForm({
+                                            ...inlineForm,
+                                            moneda: valorElegido,
+                                            tasa_cambio: mismaQueLaCuenta ? ''
+                                              : (inlineForm.tasa_cambio
+                                                  || (valorElegido === monedaSugerida(c) && propia > 0 ? String(propia) : '')),
+                                          });
+                                        }}
                                         opciones={[
                                           ...MONEDAS.map((m) => ({ value: m.value, label: m.value === 'OTRA' ? m.label : m.value })),
                                         ]}
@@ -836,6 +961,24 @@ export default function CuentasPagar() {
                                           value={inlineForm.tasa_cambio}
                                           onChange={(e) => setInlineForm({ ...inlineForm, tasa_cambio: e.target.value })}
                                           placeholder="Ej: 0.00025" />
+                                        {/* De dónde salió la que viene puesta, y si se
+                                            cambió. Una tasa precargada y sin rótulo se
+                                            usa sin mirarla; dicha, se puede corregir a
+                                            sabiendas. */}
+                                        {tasaDelContenedor(c) > 0 && codigoMoneda(inlineForm) === monedaSugerida(c) && (
+                                          parseMonto(inlineForm.tasa_cambio) === tasaDelContenedor(c) ? (
+                                            <p className="mt-1 text-[10px] text-muted leading-tight">
+                                              La del contenedor{c.contenedor_numero ? ` ${c.contenedor_numero}` : ''}.
+                                              Con ella, pagar la factura entera deja el saldo en cero.
+                                            </p>
+                                          ) : (
+                                            <p className="mt-1 text-[10px] text-warning leading-tight">
+                                              Distinta de la del contenedor
+                                              ({formatMoneda(tasaDelContenedor(c), c.moneda || 'COP')}):
+                                              el saldo no quedará en cero al pagar la factura completa.
+                                            </p>
+                                          )
+                                        )}
                                       </div>
                                     )}
 
@@ -898,14 +1041,23 @@ export default function CuentasPagar() {
                                               Descuenta del saldo:{' '}
                                               <b className="font-mono text-primary">{formatCurrency(eq, c.moneda)}</b>
                                             </span>
+                                            {/* Pasarse ya NO es un error: queda a
+                                                favor del proveedor. Así que la
+                                                cifra de después se rotula por lo
+                                                que es —saldo o a favor— y en
+                                                positivo, en vez de un rojo con un
+                                                número negativo que parece un fallo
+                                                de la pantalla. */}
                                             <span className="text-muted">
-                                              Saldo después:{' '}
-                                              <b className={`font-mono ${pendiente - eq < 0 ? 'text-error' : 'text-success'}`}>
-                                                {formatCurrency(pendiente - eq, c.moneda)}
+                                              {pendiente - eq < 0 ? 'Quedaría a favor:' : 'Saldo después:'}{' '}
+                                              <b className="font-mono text-success">
+                                                {formatCurrency(Math.abs(pendiente - eq), c.moneda)}
                                               </b>
                                             </span>
                                             {pendiente - eq < 0 && (
-                                              <span className="text-error font-semibold">El abono supera el saldo pendiente.</span>
+                                              <span className="text-muted">
+                                                El abono supera el saldo: la diferencia queda como anticipo.
+                                              </span>
                                             )}
                                           </>
                                         )}
