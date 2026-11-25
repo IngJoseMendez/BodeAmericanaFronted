@@ -613,6 +613,28 @@ export default function Cartera() {
       return;
     }
 
+    // ── PASARSE DEL SALDO SE PUEDE, PERO SE PREGUNTA ─────────────────────
+    // Un anticipo o un giro redondeado son legítimos y quedan a favor. Pero lo
+    // normal cuando el abono se pasa es un cero de más, así que se dice CUÁNTO
+    // quedaría a favor antes de mandarlo. Un descuento no entra aquí: ése sigue
+    // topado en el servidor, porque rebajar más de lo que se debe no deja un
+    // anticipo, fabrica un saldo a favor de la nada.
+    const monto = parseMonto(formData.monto);
+    const sobra = saldoCliente !== null ? monto - saldoCliente : 0;
+    if (formData.clase !== 'descuento' && sobra > 0) {
+      const ok = await confirm({
+        title: saldoCliente > 0 ? 'El abono es mayor que la deuda' : 'Este cliente no tiene deuda',
+        message: saldoCliente > 0
+          ? `La deuda es ${formatCurrency(saldoCliente)} y vas a abonar ${formatCurrency(monto)}.\n\n`
+            + `Quedarían ${formatCurrency(sobra)} A FAVOR del cliente.`
+          : `El cliente está al día.\n\n`
+            + `Los ${formatCurrency(monto)} quedarían A FAVOR, como anticipo.`,
+        confirmText: 'Registrar y dejar a favor',
+        cancelText: 'Volver y corregir',
+      });
+      if (!ok) return;
+    }
+
     try {
       setEnviando(true);
       await pagosApi.create({
@@ -2316,18 +2338,36 @@ export default function Cartera() {
               {/* Validación de monto vs saldo */}
               {saldoCliente !== null && formData.monto && parseMonto(formData.monto) > 0 && (() => {
                 const monto = parseMonto(formData.monto);
+                // ── PASARSE DEL SALDO YA NO ES UN ERROR ─────────────────
+                // Se puede abonar sin deuda: una clienta redondea el giro, deja
+                // un anticipo para lo que va a buscar el sábado, o paga antes
+                // de que se le cargue el despacho que ya tiene separado. En los
+                // tres casos la plata ENTRÓ, y el servidor ya lo acepta
+                // (src/routes/pagos.js): lo que sobra queda como saldo a favor.
+                //
+                // Así que estos dos avisos pasan de ROJO y bloqueando a ámbar e
+                // informando. Lo que dicen es CUÁNTO quedaría a favor, que es la
+                // cifra que hay que ver antes de pulsar; el «¿seguro?» va en el
+                // propio envío, porque lo normal cuando se pasa es un cero de
+                // más, no un anticipo.
                 if (saldoCliente <= 0) {
                   return (
-                    <div className="mt-1 flex items-start gap-1.5 text-xs text-error bg-error/5 rounded-lg px-3 py-2">
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-warning bg-warning/5 rounded-lg px-3 py-2">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      <span>Este cliente no tiene deuda pendiente. No se puede registrar un abono.</span>
+                      <span>
+                        Este cliente no tiene deuda pendiente: los {formatCurrency(monto)} quedarían
+                        como <b>saldo a favor</b>.
+                      </span>
                     </div>
                   );
                 } else if (monto > saldoCliente) {
                   return (
-                    <div className="mt-1 flex items-start gap-1.5 text-xs text-error bg-error/5 rounded-lg px-3 py-2">
+                    <div className="mt-1 flex items-start gap-1.5 text-xs text-warning bg-warning/5 rounded-lg px-3 py-2">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      <span>El abono no puede exceder el saldo pendiente ({formatCurrency(saldoCliente)}).</span>
+                      <span>
+                        El abono supera el saldo pendiente ({formatCurrency(saldoCliente)}):
+                        quedarían <b>{formatCurrency(monto - saldoCliente)} a favor</b>.
+                      </span>
                     </div>
                   );
                 } else {
@@ -2468,11 +2508,10 @@ export default function Cartera() {
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button
-              type="submit"
-              variant="secondary"
-              disabled={enviando || (saldoCliente !== null && parseMonto(formData.monto) > saldoCliente)}
-            >
+            {/* Ya no se deshabilita por pasarse del saldo: eso ahora es un
+                abono legítimo que deja saldo a favor. El aviso de arriba dice
+                cuánto quedaría, y el envío lo confirma antes de mandarlo. */}
+            <Button type="submit" variant="secondary" disabled={enviando}>
               {enviando ? 'Registrando…' : 'Registrar Abono'}
             </Button>
           </div>
