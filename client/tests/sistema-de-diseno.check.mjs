@@ -77,8 +77,18 @@ import path from 'node:path';
 // el aspa de limpiar quedaría fuera de la caja. El camino bueno sigue siendo
 // que `Input` acepte un adorno a izquierda y derecha —y entonces se arreglan
 // las tres barras de golpe—, no que esta se haga distinta de las otras dos.
+// 2026-11-25 (2) · +1 button y +1 input más (233→234, 113→114): el BUSCADOR DE
+// LOS PANELES DE PRODUCTOS. Mismo caso que el de Precios, y el mismo patrón que
+// Cartera.jsx y Pacas.jsx: `<input>` con la lupa en `absolute` dentro del borde
+// y el aspa de limpiar dentro del campo. Cuenta UNA vez aunque se pinte cuatro,
+// porque el componente `Panel` es compartido por los cuatro catálogos — que es
+// justo lo que hay que premiar, no penalizar.
+//
+// Ya van cuatro barras de búsqueda con este patrón copiado. El arreglo de
+// verdad es que `Input` acepte un adorno a izquierda y derecha; el día que lo
+// haga, estas cuatro bajan de golpe y el techo con ellas.
 const TECHO = {
-  'src/pages':      { button: 233, input: 113 },
+  'src/pages':      { button: 234, input: 114 },
   'src/components': { button: 33,  input: 8   },
 };
 

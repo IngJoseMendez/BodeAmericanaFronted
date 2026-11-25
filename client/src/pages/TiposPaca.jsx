@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, useToast, useConfirm, BuscadorLista } from '../components/common';
 import { tiposPacaApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes } from 'lucide-react';
+import { Plus, Trash2, Tag, Layers, Star, Sun, Pencil, Check, X, Boxes, Search } from 'lucide-react';
 
 
 import { mensajeDeError } from '../lib/errores';
@@ -132,9 +132,48 @@ function PanelItem({ item, table, onDelete, edicion, temporadas, familias }) {
   );
 }
 
+// ── EL PANEL DE CADA CATÁLOGO ──────────────────────────────────────────────
+//
+// Eran listas sin tope: las 74 referencias se iban hacia abajo hasta donde
+// hiciera falta, así que para llegar al panel de al lado había que bajar media
+// pantalla, y encontrar una referencia concreta era leer 74 nombres de arriba
+// abajo. En tableta, que es donde se usa, peor.
+//
+// Tres cosas, y van DENTRO de este componente porque los cuatro paneles son el
+// mismo: buscador, la lista con SU PROPIO scroll —así la página mide lo mismo
+// con 4 registros que con 400— y un pie que dice cuántas se están viendo.
 function Panel({ title, icon: Icon, count, error, form, loading, items, table, onDelete, onCreate,
                  formState, setFormState, submitting, placeholder, extraFormContent, extraFormContent2,
                  edicion, temporadas, familias }) {
+  const [busqueda, setBusqueda] = useState('');
+  // «Sin categoría» no es un filtro de adorno: una referencia sin temporada no
+  // tiene precio que buscar —el precio se decide por temporada + calidad—, así
+  // que son exactamente las que hay que ir a arreglar. Sólo en el panel que
+  // tiene temporada.
+  const [soloSinTemporada, setSoloSinTemporada] = useState(false);
+  const esDeReferencias = table === 'categorias';
+
+  const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim();
+
+  const visibles = useMemo(() => {
+    let fuera = items || [];
+    if (esDeReferencias && soloSinTemporada) fuera = fuera.filter((i) => !i.temporada_nombre);
+    const q = norm(busqueda);
+    if (!q) return fuera;
+    // Palabra por palabra: «mixta inv» encuentra «mixta invierno».
+    const palabras = q.split(/\s+/).filter(Boolean);
+    return fuera.filter((i) => {
+      const heno = norm([i.nombre, i.temporada_nombre, i.familia_nombre, i.descripcion].join(' '));
+      return palabras.every((w) => heno.includes(w));
+    });
+  }, [items, busqueda, soloSinTemporada, esDeReferencias]);
+
+  const sinTemporada = useMemo(
+    () => (esDeReferencias ? (items || []).filter((i) => !i.temporada_nombre).length : 0),
+    [items, esDeReferencias]
+  );
+  const filtrado = !!busqueda || soloSinTemporada;
 
   return (
   <section className="space-y-4">
@@ -159,10 +198,78 @@ function Panel({ title, icon: Icon, count, error, form, loading, items, table, o
       </CardBody>
     </Card>
     <Card padding={false}>
+      {/* El buscador aparece con más de 8 registros: sobre cuatro líneas es un
+          campo que estorba. Va pegado a la lista, dentro de la tarjeta, para
+          que se vea que filtra ESTA lista y no las cuatro. */}
+      {!loading && items.length > 8 && (
+        <div className="p-3 border-b border-border/50 space-y-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" aria-hidden="true" />
+            <input
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder={`Buscar entre ${items.length} ${title.toLowerCase()}…`}
+              aria-label={`Buscar entre las ${title.toLowerCase()}`}
+              className="w-full pl-9 pr-9 py-2 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30"
+            />
+            {busqueda && (
+              <button type="button" onClick={() => setBusqueda('')}
+                title="Limpiar la búsqueda" aria-label="Limpiar la búsqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors">
+                <X size={14} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          {/* Sin temporada no hay precio de catálogo que buscar, así que estas
+              son las que de verdad hay que ir a completar. Sólo se ofrece si
+              hay alguna: un filtro que siempre da cero no sirve de nada. */}
+          {esDeReferencias && sinTemporada > 0 && (
+            <Button
+              variant={soloSinTemporada ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setSoloSinTemporada((v) => !v)}
+              title="Una referencia sin categoría no tiene precio que buscar: el precio se define por categoría y calidad"
+            >
+              {soloSinTemporada ? '✓ ' : ''}Sin categoría ({sinTemporada})
+            </Button>
+          )}
+        </div>
+      )}
       {loading ? <div className="p-6 text-center text-muted text-sm">Cargando...</div>
         : items.length === 0 ? <div className="p-6 text-center text-muted text-sm">Sin registros</div>
-        : <ul className="divide-y divide-border/50">{items.map(item => <PanelItem key={item.id} item={item} table={table} onDelete={onDelete}
-                          edicion={edicion} temporadas={temporadas} familias={familias} />)}</ul>}
+        : visibles.length === 0 ? (
+          /* Sin esto la tarjeta se queda en blanco, que se lee como «se
+             perdieron los registros» en vez de «el filtro no encontró nada». */
+          <div className="p-6 text-center text-sm">
+            <p className="text-muted">
+              {soloSinTemporada && !busqueda
+                ? 'Todas tienen categoría.'
+                : <>Nada coincide con «<b className="text-primary">{busqueda}</b>».</>}
+            </p>
+            <Button variant="ghost" size="sm" className="mt-2"
+              onClick={() => { setBusqueda(''); setSoloSinTemporada(false); }}>
+              Quitar el filtro
+            </Button>
+          </div>
+        ) : (
+          /* LA LISTA TIENE TECHO Y SU PROPIO SCROLL. Es el arreglo de que las
+             referencias se fueran hacia abajo sin fin: la página mide lo mismo
+             con 4 registros que con 400, y los cuatro paneles se ven a la vez.
+             El alto va en `vh` para que en tableta apaisada no se coma la
+             pantalla y en escritorio aproveche la que hay. */
+          <ul className="divide-y divide-border/50 max-h-[55vh] overflow-y-auto overscroll-contain">
+            {visibles.map(item => <PanelItem key={item.id} item={item} table={table} onDelete={onDelete}
+                          edicion={edicion} temporadas={temporadas} familias={familias} />)}
+          </ul>
+        )}
+      {/* Cuántas se ven de cuántas hay. Una lista filtrada sin este pie se lee
+          como la lista completa. */}
+      {!loading && items.length > 0 && visibles.length > 0 && filtrado && (
+        <p className="px-4 py-2.5 border-t border-border/50 text-xs text-muted">
+          {visibles.length} de {items.length}
+        </p>
+      )}
     </Card>
   </section>
 );
