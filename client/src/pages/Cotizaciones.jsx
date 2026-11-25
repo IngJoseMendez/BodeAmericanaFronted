@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, Badge, useToast, useConfirm, RefLink, SelectorTransporte, CampoMonto, BuscadorLista, FlujoVenta } from '../components/common';
 import { cotizacionesApi, clientesApi, pacasApi, preciosPromocionApi, preciosApi, cuentasApi, listaPreciosApi } from '../services/api';
+// La regla de precios, en un solo sitio para las tres pantallas que la usan.
+import { precioDeVenta } from '../lib/precios';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
@@ -469,32 +471,32 @@ export default function Cotizaciones() {
     //    quedara en 0 sin decir nada.
     if (!calidad) return;
 
-    let precio = null;
-
-    // 2a. Precio del INVENTARIO: el que se fijó al finalizar el contenedor, por
-    //     referencia + calidad. Es el que la gente ve en el contenedor y el que
-    //     espera encontrar aquí, así que manda sobre el preestablecido genérico.
-    const enInventario = listaPrecios.find(
-      l => normTxt(l.referencia) === normTxt(referencia) && normTxt(l.calidad) === normTxt(calidad)
+    // 2. EL PRECIO, con la regla compartida de lib/precios.js.
+    //
+    // Aquí estaba escrita a mano y el orden era el contrario: el precio
+    // guardado en las pacas mandaba sobre el de la tabla de Precios, con este
+    // razonamiento —«es el que la gente ve en el contenedor y el que espera
+    // encontrar aquí»—. Se invierte a propósito: el de las pacas es la foto del
+    // día en que se aprobó su contenedor, y el de Precios es la decisión
+    // vigente. Hoy las dos difieren en 48 de los 125 grupos con stock.
+    //
+    // Y vive en el lib porque la Matriz y el inventario necesitan la MISMA
+    // cuenta: tenerla escrita tres veces es lo que dejó que se separaran.
+    const resuelto = precioDeVenta(
+      { referencia, calidad, clasificacion: null },
+      { promos: [], preestablecidos: precios, listaPrecios, referencias: optsReferencia }
     );
-    const pInv = parseFloat(enInventario?.precio);
-    if (Number.isFinite(pInv) && pInv > 0) precio = pInv;
+    let precio = resuelto.precio;
 
-    // 2b. Precio preestablecido por categoría + calidad (tabla de Precios).
-    if (precio == null && categoria) {
-      const fila = precios.find(
-        p => normTxt(p.categoria) === normTxt(categoria) && normTxt(p.calidad) === normTxt(calidad)
-      );
-      const v = parseFloat(fila?.precio);
-      if (Number.isFinite(v) && v > 0) precio = v;
-
-      if (precio == null) {
-        try {
-          const preset = await preciosApi.buscar({ categoria, calidad });
-          const pv = parseFloat(preset?.precio);
-          if (Number.isFinite(pv) && pv > 0) precio = pv;
-        } catch (_) { /* sin precio configurado */ }
-      }
+    // Respaldo contra el servidor: la tabla de Precios se carga al abrir la
+    // pantalla, y si se añadió un precio desde entonces esta consulta lo
+    // encuentra. No cambia la regla, sólo refresca el escalón del catálogo.
+    if (precio == null && resuelto.categoria) {
+      try {
+        const preset = await preciosApi.buscar({ categoria: resuelto.categoria, calidad });
+        const pv = parseFloat(preset?.precio);
+        if (Number.isFinite(pv) && pv > 0) precio = pv;
+      } catch (_) { /* sin precio configurado */ }
     }
 
     if (!vigente()) return;

@@ -44,6 +44,8 @@ import {
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
 import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../lib/cotizacion';
+// La regla de precios, en un solo sitio para las tres pantallas que la usan.
+import { precioDeVenta } from '../lib/precios';
 import { nuevoLibro, descargar, hojaMatrizClientes } from '../lib/entregables';
 import { parseMonto, formatCOP, formatNumero } from '../lib/money';
 import { hoy, entreFechas } from '../lib/fecha';
@@ -570,57 +572,32 @@ export default function SeparacionMasiva() {
   useEffect(() => { calidadesRef.current = calidadesPorReferencia; }, [calidadesPorReferencia]);
 
   /**
-   * Mismo orden que Cotizaciones.jsx, pero resuelto en memoria:
-   *   1. promoción vigente (referencia + calidad + clasificación)
-   *   2. precio del inventario (referencia + calidad)
-   *   3. precio preestablecido (categoría + calidad)
-   * Todo comparado con normTxt: sin eso el precio "no se pone solo".
+   * El precio de una línea. LA REGLA NO VIVE AQUÍ: está en lib/precios.js, que
+   * la comparten esta pantalla, Cotizaciones y el inventario.
+   *
+   * Estaba escrita aquí, otra vez en Cotizaciones y otra en el modal de aprobar
+   * un contenedor, y las tres se separaron: dos ponían el precio guardado en la
+   * paca por encima del de la tabla de Precios y la tercera no, así que el mismo
+   * producto salía a un precio distinto según desde qué pantalla se mirara.
+   *
+   * Y el orden cambió a propósito: ahora manda el precio de CATÁLOGO —la
+   * temporada de la referencia más la calidad, que es lo que se edita en
+   * Precios— sobre el que tienen guardadas las pacas. El de las pacas es la foto
+   * del día en que se aprobó su contenedor; el del catálogo es la decisión
+   * vigente. El porqué, entero, está en lib/precios.js.
    */
   const resolverPrecio = useCallback((referencia, calidad, clasificacion) => {
-    const { listaPrecios, preestablecidos, promos, referencias } = tablasRef.current;
-    const nRef = normTxt(referencia);
-    const nCal = normTxt(calidad);
-    if (!nRef || !nCal) return { precio: null, esPromocion: false, aviso: null };
-
-    const candidatas = promos
-      .filter((p) =>
-        normTxt(p.referencia) === nRef &&
-        normTxt(p.calidad) === nCal &&
-        (clasificacion
-          ? (!p.clasificacion || normTxt(p.clasificacion) === normTxt(clasificacion))
-          : !p.clasificacion) &&
-        numServidor(p.precio_promocional) > 0
-      )
-      .sort((a, b) => {
-        const especificidad = (a.clasificacion ? 0 : 1) - (b.clasificacion ? 0 : 1);
-        if (especificidad !== 0) return especificidad;
-        return numServidor(b.precio_promocional) - numServidor(a.precio_promocional);
-      });
-    if (candidatas.length) {
-      return { precio: numServidor(candidatas[0].precio_promocional), esPromocion: true, aviso: null };
-    }
-
-    const enInventario = listaPrecios.find(
-      (l) => normTxt(l.referencia) === nRef && normTxt(l.calidad) === nCal
-    );
-    const pInv = numServidor(enInventario?.precio);
-    if (pInv > 0) return { precio: pInv, esPromocion: false, aviso: null };
-
-    const refObj = referencias.find((r) => normTxt(r.nombre) === nRef);
-    const categoria = refObj?.temporada_nombre || null;
-    if (categoria) {
-      const fila = preestablecidos.find(
-        (p) => normTxt(p.categoria) === normTxt(categoria) && normTxt(p.calidad) === nCal
-      );
-      const p = numServidor(fila?.precio);
-      if (p > 0) return { precio: p, esPromocion: false, aviso: null };
-    }
-
-    // No se pudo resolver: se avisa. Poner 0 en silencio sería cotizar gratis.
+    const r = precioDeVenta({ referencia, calidad, clasificacion }, tablasRef.current);
     return {
-      precio: null,
-      esPromocion: false,
-      aviso: `Sin precio para ${referencia} / ${calidad}${categoria ? ` (categoría ${categoria})` : ''}. Escríbelo a mano o revísalo en Lista de Precios.`,
+      precio: r.precio,
+      esPromocion: r.esPromocion,
+      aviso: r.aviso,
+      // Las dos cifras que competían, para poder enseñar la que NO se aplicó:
+      // cambiar un precio en silencio es lo único que no se puede hacer.
+      origen: r.origen,
+      precioCatalogo: r.precioCatalogo,
+      precioInventario: r.precioInventario,
+      discrepancia: r.discrepancia,
     };
   }, []);
 

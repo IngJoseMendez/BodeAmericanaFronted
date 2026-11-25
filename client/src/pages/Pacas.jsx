@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, BuscadorLista } from '../components/common';
-import { pacasApi, lotesApi, reservasApi, clientesApi } from '../services/api';
+import { pacasApi, lotesApi, reservasApi, clientesApi, preciosApi } from '../services/api';
+// La regla de precios, en un solo sitio para las tres pantallas que la usan.
+import { precioDeVenta } from '../lib/precios';
 import { useCatalog } from '../context/CatalogContext';
 // `PACA_ESTADOS` ya no se importa: los estados que se ofrecen salen ahora de
 // /pacas/opciones, o sea de los que de verdad hay en la bodega. La lista fija
@@ -221,6 +223,46 @@ export default function Pacas() {
   const temporadasList = temporadasRaw.map(t => t.nombre);
   const { addToast } = useToast();
   const confirm = useConfirm();
+
+  // ── EL PRECIO QUE SE PROPONE AL CREAR O EDITAR UNA PACA ─────────────────
+  //
+  // La dueña fija los precios por TEMPORADA + CALIDAD en la pantalla de
+  // Precios, y lo que se escoge aquí es una REFERENCIA: «deportivo» es de
+  // verano, así que el precio de «deportivo premium» es el de «verano premium».
+  // Esta pantalla no consultaba esa tabla en absoluto —el precio se teclaba de
+  // memoria—, que es justo lo que se pidió arreglar.
+  //
+  // La regla es la MISMA de la Matriz y de las cotizaciones, y vive en
+  // lib/precios.js: tenerla escrita en cada pantalla es lo que dejó que se
+  // separaran y que el mismo producto saliera a precios distintos.
+  const [preestablecidos, setPreestablecidos] = useState([]);
+  // Se apaga en cuanto alguien escribe el precio a mano: una propuesta que se
+  // reimpone encima de lo tecleado es una pelea con quien está capturando.
+  const precioTocadoRef = useRef(false);
+  useEffect(() => {
+    preciosApi.getAll().then((p) => setPreestablecidos(p || [])).catch(() => {});
+  }, []);
+
+  const precioPropuesto = useMemo(() => {
+    if (!formData.referencia || !formData.calidad) return null;
+    const r = precioDeVenta(
+      { referencia: formData.referencia, calidad: formData.calidad },
+      { promos: [], preestablecidos, listaPrecios: [], referencias: categoriasRaw }
+    );
+    // Sin lista de inventario, `precioDeVenta` sólo puede contestar con el
+    // catálogo. Es lo que se quiere: aquí se está FIJANDO el precio de una
+    // paca, así que proponerle el de otra paca sería dar vueltas en círculo.
+    return r.precio != null || r.aviso ? r : null;
+  }, [formData.referencia, formData.calidad, preestablecidos, categoriasRaw]);
+
+  useEffect(() => {
+    if (precioTocadoRef.current) return;
+    const p = precioPropuesto?.precio;
+    if (p == null) return;
+    setFormData((prev) => (parseMonto(prev.precio_venta) === p
+      ? prev
+      : { ...prev, precio_venta: String(p) }));
+  }, [precioPropuesto]);
   
   // Buscador cliente en modal reserva
   const [busquedaClienteReserva, setBusquedaClienteReserva] = useState('');
@@ -1786,14 +1828,37 @@ export default function Pacas() {
               placeholder="0"
               required
             />
-            <Input
-              label="Precio Venta"
-              type="currency"
-              value={formData.precio_venta}
-              onChange={(e) => setFormData({ ...formData, precio_venta: e.target.value })}
-              placeholder="0"
-              required
-            />
+            <div>
+              <Input
+                label="Precio Venta"
+                type="currency"
+                value={formData.precio_venta}
+                onChange={(e) => {
+                  // Tocarlo a mano apaga la propuesta: a partir de ahí manda lo
+                  // que escriba la persona, aunque luego cambie la calidad.
+                  precioTocadoRef.current = true;
+                  setFormData({ ...formData, precio_venta: e.target.value });
+                }}
+                placeholder="0"
+                required
+              />
+              {/* DE DÓNDE SALE EL PRECIO QUE SE PROPONE. La dueña los fija por
+                  temporada + calidad en la pantalla de Precios, y «deportivo»
+                  es de verano: el precio de «deportivo premium» es el de
+                  «verano premium». Aquí no se buscaba en absoluto y había que
+                  teclearlo de memoria. La regla es la misma de la Matriz y de
+                  las cotizaciones y vive en lib/precios.js. */}
+              {precioPropuesto && (
+                <p className={`mt-1 text-[11px] leading-tight ${precioPropuesto.aviso ? 'text-warning' : 'text-muted'}`}>
+                  {precioPropuesto.aviso || (
+                    <>
+                      Precio de <b>{precioPropuesto.categoria} / {formData.calidad}</b> según Precios
+                      {precioTocadoRef.current ? ' (lo has cambiado a mano)' : ''}
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
           </div>
 
           {!editando && (
