@@ -134,7 +134,6 @@ const generarPDF = (cotizacion) => {
           <h3>Datos de la Cotización</h3>
           <p><span class="bold">Número:</span> ${escapeHtml(cotizacion.numero)}</p>
           <p><span class="bold">Fecha:</span> ${new Date(cotizacion.created_at).toLocaleDateString('es-MX')}</p>
-          <p><span class="bold">Válida hasta:</span> ${new Date(cotizacion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>
           <p>
             <span class="bold">Estado:</span>
             <span class="status status-${escapeHtml(cotizacion.estado)}">${escapeHtml(String(cotizacion.estado ?? '').toUpperCase())}</span>
@@ -145,7 +144,6 @@ const generarPDF = (cotizacion) => {
           <p><span class="bold">Cliente:</span> ${escapeHtml(cotizacion.cliente_nombre || 'N/A')}</p>
           <p><span class="bold">Teléfono:</span> ${escapeHtml(cotizacion.cliente_telefono || 'N/A')}</p>
           <p><span class="bold">Ciudad:</span> ${escapeHtml(cotizacion.cliente_ciudad || 'N/A')}</p>
-          <p><span class="bold">Vendedor:</span> ${escapeHtml(cotizacion.vendedor_nombre || 'N/A')}</p>
         </div>
       </div>
       
