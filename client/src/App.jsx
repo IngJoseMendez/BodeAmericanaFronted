@@ -39,6 +39,11 @@ const Gastos = paginaDiferida(() => import('./pages/Gastos'));
 const Utilidad = paginaDiferida(() => import('./pages/Utilidad'));
 const Entregables = paginaDiferida(() => import('./pages/Entregables'));
 const SeparacionMasiva = paginaDiferida(() => import('./pages/SeparacionMasiva'));
+// La foto de lo YA repartido, juntando varias rondas. Va aparte de la Matriz y
+// no dentro: la Matriz es la sesion de trabajo del dia -se abre, se reparte y
+// se cierra- y esto se consulta despues, casi siempre para decidir la ronda
+// siguiente. Meterlo en el mismo archivo de 2.300 lineas lo habria hecho peor.
+const MatrizRepartido = paginaDiferida(() => import('./pages/MatrizRepartido'));
 const Faltantes = paginaDiferida(() => import('./pages/Faltantes'));
 
 // Pantalla de espera mientras se descarga el código de la página solicitada.
@@ -87,6 +92,7 @@ function RutasAdmin() {
         {/* Separar y cotizar son la misma acción: un vendedor aparta mercancía
             todos los días, así que NO va envuelta en <SoloAdmin>. */}
         <Route path="/separacion-masiva" element={<SeparacionMasiva />} />
+        <Route path="/matriz-repartido" element={<MatrizRepartido />} />
         {/* La Matriz y los Faltantes son la misma tarea en dos momentos: la
             Matriz es la sesión de trabajo del día de reparto, y esta pantalla es
             lo que quedó faltando de ese reparto cuando el cliente llama a

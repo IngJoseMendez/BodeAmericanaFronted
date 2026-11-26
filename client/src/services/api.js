@@ -798,6 +798,20 @@ export const matrizApi = {
     return api.get(`/matriz/faltantes${qs(params)}`);
   },
 
+  // ── LO QUE YA SE REPARTIÓ, JUNTANDO VARIAS RONDAS ───────────────────────
+  //
+  // `getReparto(id)` enseña UNA ronda. Esto enseña todas las de un rango, que
+  // es la pregunta de verdad: «de todo lo que repartí este mes, cuántos
+  // deportivos salieron, de qué calidad y a quién». Con cuatro rondas en un mes
+  // eso eran cuatro pantallas y una suma a mano.
+  //
+  // Devuelve las filas al grano más fino que la vista necesita —referencia ×
+  // calidad × cliente— y el agrupado por FAMILIA lo hace la pantalla con
+  // lib/familias.js: esa inferencia no se escribe dos veces, y menos en SQL.
+  getRepartido(params = {}) {
+    return api.get(`/matriz/repartido${qs(params)}`);
+  },
+
   // Sólo puede haber UN reparto abierto a la vez, así que la pantalla pregunta
   // por él al entrar en lugar de crear uno a ciegas: si la usuaria cerró la
   // pestaña a media captura, esto es lo que le devuelve su matriz tal como la

@@ -118,6 +118,10 @@ const adminNavItems = [
   // y cuando se queda rancio, miente.
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',     key: null,       grupo: 'vender' },
   { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matriz',           key: null,       grupo: 'vender' },
+  // Pegada a la Matriz y antes de Faltantes, porque es el mismo recorrido del
+  // ojo: se reparte (Matriz), se mira lo que salio (Repartido) y se atiende lo
+  // que quedo faltando (Faltantes).
+  { path: '/matriz-repartido',     icon: History,         label: 'Repartido',        key: null,       grupo: 'vender' },
   { path: '/faltantes',            icon: PackageX,        label: 'Faltantes',        key: null,       grupo: 'vender' },
   { path: '/despachos',            icon: Truck,           label: 'Despachos',        key: null,       grupo: 'vender' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',           key: 'ventas',   grupo: 'vender' },

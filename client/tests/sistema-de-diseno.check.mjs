@@ -131,8 +131,36 @@ import path from 'node:path';
 // aquí el argumento de «la incoherencia se ve» no aplica y no hay motivo para
 // bajar a HTML plano. Van dos tandas seguidas en las que el techo de botones no
 // se mueve; el de campos de texto sigue siendo el único sin salida.
+// 2026-11-26 (3) · +3 button y +3 input en src/pages (234→237, 124→127): la
+// pantalla NUEVA de «Lo repartido», la matriz de lo que ya salió por familia y
+// calidad. Es un archivo nuevo entero, así que seis controles es poco; cada uno
+// con su motivo:
+//
+//   · LAS DOS FLECHITAS de desplegar (la familia y la referencia) van dentro de
+//     filas de tabla densas, con `p-1` y un icono de 13-15 px. `Button
+//     size="icono"` obliga a 44×44, que es lo correcto cuando el botón es la
+//     única forma de hacer algo — y aquí no lo es: LA FILA ENTERA abre y cierra,
+//     y mide de sobra. La flecha es la señal de que hay algo debajo y el asa
+//     para el teclado; hacerla de 44 px triplicaría el alto de cada fila de una
+//     tabla que puede tener cuarenta. Llevan `aria-expanded` y su nombre
+//     accesible con la familia dentro.
+//   · EL ASPA DE LIMPIAR del buscador: el quinto caso del mismo patrón que ya
+//     explican las dos notas de arriba (Cartera, Pacas, Precios, Productos).
+//   · LOS TRES CAMPOS son ese mismo buscador —con la lupa en `absolute` dentro
+//     del borde, que es lo que `Input` no deja hacer— y las DOS FECHAS del
+//     rango, que van en línea dentro de una barra de herramientas junto a los
+//     botones de «Este mes / Mes pasado / …». `Input` las envolvería en un div
+//     con su etiqueta encima y rompería esa barra.
+//
+// Y los seis botones de rango SÍ son `Button`, con `aria-pressed`.
+//
+// Van tres tandas seguidas con la misma conclusión, así que ya no es una
+// impresión: lo que falta en el sistema de diseño es un `Input` que acepte
+// adornos a los lados, y un botón de icono DENSO (sin el mínimo de 44 px) para
+// dentro de una fila de tabla cuyo área pulsable es la fila. Con esas dos
+// piezas, estas cinco barras de búsqueda y estas flechitas bajan de golpe.
 const TECHO = {
-  'src/pages':      { button: 234, input: 124 },
+  'src/pages':      { button: 237, input: 127 },
   'src/components': { button: 33,  input: 8   },
 };
 

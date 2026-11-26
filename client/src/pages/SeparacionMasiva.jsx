@@ -35,6 +35,8 @@
 // cantidades repartidas y pasarlo por la `totalesFila` de siempre.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { History } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { useToast, useConfirm, Modal, FlujoVenta } from '../components/common';
 import {
@@ -2179,6 +2181,18 @@ export default function SeparacionMasiva() {
          en medio, pie abajo— el pie es una barra de verdad y no puede tapar
          nada. */
       pantallaCompleta
+      /* ── LA SALIDA HACIA LA FOTO DE LO YA REPARTIDO ──────────────────
+         Esta pantalla se vacia al cerrar la ronda: lo que se reparti hoy
+         deja de verse aqui en cuanto se termina. La pregunta de despues
+         -«de todo lo que reparti este mes, cuantos deportivos salieron y a
+         quien»- vive en /matriz-repartido, y el sitio donde a alguien se le
+         ocurre hacersela es justo aqui, al acabar de repartir. */
+      actions={(
+        <Link to="/matriz-repartido"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-primary hover:bg-primary/5 transition-colors min-h-11">
+          <History size={14} aria-hidden="true" /> Lo repartido
+        </Link>
+      )}
     >
       {/* LAS DOS FASES SE MONTAN A LA VEZ. La que no está activa se oculta con
           `hidden`, NO se desmonta: desmontar y remontar cientos de <tbody> con
