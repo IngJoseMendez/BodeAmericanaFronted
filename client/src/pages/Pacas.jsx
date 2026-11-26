@@ -10,7 +10,7 @@ import { useCatalog } from '../context/CatalogContext';
 // ofrecía los seis estados posibles del sistema aunque cuatro de ellos no
 // tuvieran ni una paca, y elegir uno de esos dejaba la tabla vacía sin decir
 // que nunca iba a tener nada.
-import { Plus, Search, Edit2, Trash2, Hash, Grid, List, ChevronRight, ChevronLeft, Package, Eye, Link, Download, Calendar, User, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Hash, Grid, List, ChevronRight, ChevronLeft, Package, Boxes, Eye, Link, Download, Calendar, User, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 // El mínimo por línea sale del mismo helper que las hojas de Excel y el PDF:
 // tres sitios calculándolo por su cuenta es como acaban enseñando cifras
@@ -1210,6 +1210,29 @@ export default function Pacas() {
     return Object.values(acc).sort((a, b) => b.fisico - a.fisico);
   }, [inventarioAgrupado]);
 
+  // EL TOTAL, QUE ANTES HABÍA QUE SUMAR A OJO. Las tarjetas de arriba dicen
+  // cuánto hay de verano y cuánto de invierno, pero la primera pregunta
+  // —cuántas pacas hay en la bodega y cuántas están ya apartadas— no estaba en
+  // ninguna parte: había que sumar las tarjetas de cabeza, y con «sin
+  // categoría» en medio esa suma se hace mal.
+  //
+  // Se calcula sobre LO MISMO que las tarjetas de categoría, así que es su suma
+  // exacta por construcción: no hay manera de que el total y sus partes
+  // discrepen.
+  const totalInventario = useMemo(() => resumenCategorias.reduce((a, r) => ({
+    fisico:      a.fisico      + r.fisico,
+    separadas:   a.separadas   + r.separadas,
+    disponibles: a.disponibles + r.disponibles,
+    despachadas: a.despachadas + r.despachadas,
+  }), { fisico: 0, separadas: 0, disponibles: 0, despachadas: 0 }), [resumenCategorias]);
+
+  // Y NO SE LLAMA «TOTAL» CUANDO NO LO ES. El inventario agrupado lo filtra el
+  // servidor, así que con un filtro puesto estos números son los de lo
+  // filtrado, no los de la bodega entera. Llamarlo «Inventario total» ahí sería
+  // justo lo que esta pantalla no hace: enseñar un número que no es el que dice
+  // ser.
+  const hayFiltro = filtrosPuestos.length > 0 || !!debouncedSearch;
+
   // LA PANTALLA YA NO FILTRA NADA. El servidor aplica los siete, «sin
   // categoría» incluido, así que la tabla, la vista Lista y los dos Excel
   // vuelven a salir de la misma consulta. Esto era el último sitio donde el
@@ -1232,6 +1255,70 @@ export default function Pacas() {
             lleva dentro los cuatro números: con solo "Filtrar por categoría X"
             el lector de pantalla perdía los datos que sí ve quien mira. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* ── EL TOTAL VA PRIMERO ────────────────────────────────────
+              Se lee antes que sus partes, igual que en la cartera: cuánto hay
+              en la bodega y cuánto está apartado, y luego el desglose por
+              temporada.
+
+              ES PULSABLE Y QUITA LOS FILTROS. En una fila de tarjetas que
+              filtran al tocarlas, una que no hiciera nada es una trampa en
+              tableta: se toca y no pasa nada. Lo que tiene sentido que haga el
+              total es lo contrario de filtrar —verlo todo—, así que eso hace.
+              Se marca `aria-pressed` cuando no hay ningún filtro, que es
+              exactamente cuando está "activa". */}
+          <Card
+            hover
+            className={`cursor-pointer bg-secondary/5 border-secondary/30 transition-[color,background-color,border-color,box-shadow,opacity,transform] focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${!hayFiltro ? 'ring-2 ring-secondary' : ''}`}
+            onClick={limpiarFiltrosPaca}
+            role="button"
+            tabIndex={0}
+            aria-pressed={!hayFiltro}
+            aria-label={`${hayFiltro ? 'Quitar los filtros. Total de lo filtrado' : 'Inventario total'}:`
+              + ` ${totalInventario.fisico} físicas en bodega, ${totalInventario.separadas} separadas,`
+              + ` ${totalInventario.disponibles} disponibles, ${totalInventario.despachadas} ya despachadas`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                limpiarFiltrosPaca();
+              }
+            }}
+          >
+            <CardBody className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Boxes className="w-4 h-4 text-secondary flex-shrink-0" aria-hidden="true" />
+                <span className="font-semibold text-sm break-words leading-tight">
+                  {hayFiltro ? 'Total de lo filtrado' : 'Inventario total'}
+                </span>
+              </div>
+              {/* Los mismos cuatro números y en el mismo orden que las tarjetas
+                  de temporada: Físico = Sep + Disp, y las despachadas al final
+                  porque ya no están en la bodega. */}
+              <div className="grid grid-cols-4 gap-1 text-xs">
+                <div>
+                  <p className="text-muted">Físicas</p>
+                  <p className="font-bold text-primary tabular-nums">{totalInventario.fisico}</p>
+                </div>
+                <div>
+                  <p className="text-muted">Sep</p>
+                  <p className="font-bold text-warning tabular-nums">{totalInventario.separadas}</p>
+                </div>
+                <div>
+                  <p className="text-muted">Disp</p>
+                  <p className="font-bold text-emerald-600 tabular-nums">{totalInventario.disponibles}</p>
+                </div>
+                <div>
+                  <p className="text-muted/70">Desp</p>
+                  <p className="font-semibold text-muted tabular-nums">{totalInventario.despachadas}</p>
+                </div>
+              </div>
+              {hayFiltro && (
+                <p className="text-[11px] text-muted mt-2 leading-tight">
+                  Hay filtros puestos: esto es el total de lo que se está
+                  viendo. Toca aquí para ver la bodega entera.
+                </p>
+              )}
+            </CardBody>
+          </Card>
           {resumenCategorias.map((r) => {
             const activa = filtroCategoria === r.categoria;
             // `r.categoria` puede ser el centinela `__vacio__`, que es lo que
