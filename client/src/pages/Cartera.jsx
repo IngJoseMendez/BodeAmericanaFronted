@@ -5,7 +5,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { etiquetaTipoCliente } from '../types';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Select, Badge, Modal, useToast, useConfirm, RefLink, CampoMonto, BuscadorLista } from '../components/common';
-import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, bancosApi, matrizApi } from '../services/api';
+import { api, qs, carteraApi, clientesApi, pagosApi, cuentasApi, bancosApi, metodosPagoApi, matrizApi } from '../services/api';
 import { TRANSACCIONES, etiquetaTransaccion, transaccionTieneDestino, etiquetaClaseMovimiento } from '../types';
 import ExcelJS from 'exceljs';
 import html2pdf from 'html2pdf.js';
@@ -286,6 +286,14 @@ export default function Cartera() {
   // catálogo de la base y no una lista escrita aquí, así que se puede añadir
   // una entidad nueva desde la pantalla de Cuentas sin esperar un despliegue.
   const [entidades, setEntidades] = useState([]);
+  // ── EL MÉTODO TAMBIÉN SALIÓ DEL CÓDIGO ────────────────────────────────────
+  //
+  // `TRANSACCIONES` era una lista fija y se queda como RESPALDO: si el catálogo
+  // no contesta, la cartera tiene que seguir dejando registrar un abono.
+  // Pasó a catálogo cuando se vio que había dos listas fijas distintas —esta y
+  // la de cuentas por pagar— y que la otra estaba mal: no ofrecía «giro», que
+  // es justo como se le paga a un proveedor. Se administra en Cuentas.
+  const [metodos, setMetodos] = useState(null);
   const [clienteSearch, setClienteSearch] = useState('');
   const [showClienteList, setShowClienteList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -339,7 +347,30 @@ export default function Cartera() {
   useEffect(() => {
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
     bancosApi.getAll().then(setEntidades).catch(() => {});
+    // `ambito: 'cobrar'`: aquí entra plata, así que no se ofrecen las formas que
+    // sólo sirven para pagar —aquí no se reciben cheques, pero sí se giran—.
+    metodosPagoApi.getAll({ ambito: 'cobrar' }).then(setMetodos).catch(() => {});
   }, []);
+
+  // La lista y la regla, del catálogo si contestó y del respaldo si no.
+  // `tiene_destino` viaja en la fila porque preguntar «¿se llama efectivo?»
+  // deja de valer en cuanto la lista la administra la dueña: un método nuevo
+  // que tampoco pase por el banco no se llamaría así.
+  const metodosDisponibles = (metodos && metodos.length)
+    ? metodos.map((m) => ({ value: m.nombre, label: m.etiqueta, tiene_destino: m.tiene_destino }))
+    : TRANSACCIONES;
+
+  const metodoTieneDestino = (valor) => {
+    const fila = metodosDisponibles.find((m) => m.value === valor);
+    return fila ? fila.tiene_destino !== false : transaccionTieneDestino(valor);
+  };
+
+  // El rótulo del catálogo si lo conoce; si no, el de la lista fija; si
+  // tampoco, el valor tal cual. Un método viejo se enseña como está, nunca se
+  // esconde ni se cambia por otro.
+  const etiquetaMetodo = (valor) =>
+    metodosDisponibles.find((m) => m.value === valor)?.label
+      || etiquetaTransaccion(valor);
 
   // Al cambiar la fecha de corte se recarga la cartera con esa foto.
   // Con el corte vacío (montaje inicial) trae el saldo de hoy, como siempre.
@@ -646,9 +677,9 @@ export default function Cartera() {
         // guardar un renglón que se contradice («Efectivo en Bancolombia»).
         // El servidor lo vuelve a comprobar por su cuenta; esto es para que la
         // pantalla no mande algo que luego se descarte sin avisar.
-        banco_id: transaccionTieneDestino(formData.metodo_pago) && formData.banco_id
+        banco_id: metodoTieneDestino(formData.metodo_pago) && formData.banco_id
           ? parseInt(formData.banco_id) : null,
-        cuenta_id: transaccionTieneDestino(formData.metodo_pago) && formData.cuenta_id
+        cuenta_id: metodoTieneDestino(formData.metodo_pago) && formData.cuenta_id
           ? parseInt(formData.cuenta_id) : null,
         cotizacion_id: formData.cotizacion_id ? parseInt(formData.cotizacion_id) : null,
         referencia: formData.referencia,
@@ -715,9 +746,9 @@ export default function Cartera() {
         // Van SIEMPRE las dos, aunque estén vacías: el servidor distingue «no
         // vino en el cuerpo» de «vino vacía», y es lo que permite pasar un
         // abono de consignación a efectivo y que la entidad se borre de verdad.
-        banco_id: transaccionTieneDestino(editandoAbono.metodo_pago) && editandoAbono.banco_id
+        banco_id: metodoTieneDestino(editandoAbono.metodo_pago) && editandoAbono.banco_id
           ? parseInt(editandoAbono.banco_id) : null,
-        cuenta_id: transaccionTieneDestino(editandoAbono.metodo_pago) && editandoAbono.cuenta_id
+        cuenta_id: metodoTieneDestino(editandoAbono.metodo_pago) && editandoAbono.cuenta_id
           ? parseInt(editandoAbono.cuenta_id) : null,
         cotizacion_id: editandoAbono.cotizacion_id || null,
         referencia: editandoAbono.referencia,
@@ -2040,8 +2071,8 @@ export default function Cartera() {
                                 onChange={(valorElegido) => setEditandoAbono((a) => ({
                                   ...a,
                                   metodo_pago: valorElegido,
-                                  banco_id:  transaccionTieneDestino(valorElegido) ? a.banco_id  : '',
-                                  cuenta_id: transaccionTieneDestino(valorElegido) ? a.cuenta_id : '',
+                                  banco_id:  metodoTieneDestino(valorElegido) ? a.banco_id  : '',
+                                  cuenta_id: metodoTieneDestino(valorElegido) ? a.cuenta_id : '',
                                 }))}
                                 /* Si lo guardado no está en la lista -un método
                                    de los viejos, como 'cheque'- se añade como
@@ -2049,9 +2080,9 @@ export default function Cartera() {
                                    una lista que no puede mostrar el valor que
                                    tiene delante lo borraría al guardar. */
                                 opciones={[
-                                  ...TRANSACCIONES,
+                                  ...metodosDisponibles,
                                   ...(editandoAbono.metodo_pago
-                                    && !TRANSACCIONES.some((t) => t.value === editandoAbono.metodo_pago)
+                                    && !metodosDisponibles.some((t) => t.value === editandoAbono.metodo_pago)
                                     ? [{ value: editandoAbono.metodo_pago,
                                          label: editandoAbono.metodo_pago + ' (como estaba)' }]
                                     : []),
@@ -2059,7 +2090,7 @@ export default function Cartera() {
                                 className="px-2 py-1 rounded border border-secondary/40 text-sm w-full"
                                 aria-label="Transacción"
                               />
-                              {transaccionTieneDestino(editandoAbono.metodo_pago) ? (
+                              {metodoTieneDestino(editandoAbono.metodo_pago) ? (
                                 <>
                                   <BuscadorLista
                                     value={editandoAbono.banco_id ? String(editandoAbono.banco_id) : ''}
@@ -2143,7 +2174,7 @@ export default function Cartera() {
                                 por dónde y a quién. Un guion donde no se sabe,
                                 nunca un valor inventado. */}
                             <span className="block text-primary">
-                              {etiquetaTransaccion(m.metodo_pago) || '-'}
+                              {etiquetaMetodo(m.metodo_pago) || '-'}
                             </span>
                             {m.banco_nombre && (
                               <span className="block text-[11px]">{m.banco_nombre}</span>
@@ -2435,15 +2466,15 @@ export default function Cartera() {
                 setFormData((f) => ({
                   ...f,
                   metodo_pago: nueva,
-                  banco_id:  transaccionTieneDestino(nueva) ? f.banco_id  : '',
-                  cuenta_id: transaccionTieneDestino(nueva) ? f.cuenta_id : '',
+                  banco_id:  metodoTieneDestino(nueva) ? f.banco_id  : '',
+                  cuenta_id: metodoTieneDestino(nueva) ? f.cuenta_id : '',
                 }));
               }}
-              options={TRANSACCIONES}
+              options={metodosDisponibles}
             />
           )}
 
-          {formData.clase !== 'descuento' && transaccionTieneDestino(formData.metodo_pago) && (
+          {formData.clase !== 'descuento' && metodoTieneDestino(formData.metodo_pago) && (
             <div>
             {/* El camino de salida cuando lo que necesita no está en la lista.
                 Sin esto se queda parada: está a medio registrar un abono, la

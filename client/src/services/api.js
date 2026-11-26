@@ -670,6 +670,21 @@ export const cuentasApi = {
   delete(id) { return api.delete(`/cuentas/${id}`); },
 };
 
+// ── LOS MÉTODOS DE PAGO, QUE ERAN DOS LISTAS FIJAS ──────────────────────────
+//
+// `ambito` es 'cobrar' o 'pagar': no todas las formas valen en los dos
+// sentidos, y sin el filtro la cartera ofrecería «cheque» al cobrar. Sin
+// `ambito` vienen todos los activos; con `todos: true` también los
+// desactivados, que es lo que necesita la pantalla que los administra.
+export const metodosPagoApi = {
+  getAll(params = {}) {
+    return api.get(`/metodos-pago${qs(params)}`);
+  },
+  create(data) { return api.post('/metodos-pago', data); },
+  update(id, data) { return api.put(`/metodos-pago/${id}`, data); },
+  delete(id) { return api.delete(`/metodos-pago/${id}`); },
+};
+
 export const bancosApi = {
   getAll(params = {}) {
     return api.get(`/bancos${qs(params)}`);

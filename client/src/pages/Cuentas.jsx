@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Input, Modal, useToast, useConfirm, BuscadorLista } from '../components/common';
-import { cuentasApi, bancosApi } from '../services/api';
-import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, Check, X, RotateCcw } from 'lucide-react';
+import { cuentasApi, bancosApi, metodosPagoApi } from '../services/api';
+import { Wallet, Plus, Trash2, Pencil, Landmark, Building2, CreditCard, Check, X, RotateCcw } from 'lucide-react';
 
 import { mensajeDeError } from '../lib/errores';
 // Tipos base. La lista se amplía sola con cualquier tipo que ya se haya usado,
@@ -32,6 +32,24 @@ export default function Cuentas() {
   const [nuevoBanco, setNuevoBanco] = useState('');
   const [editBanco, setEditBanco] = useState(null); // { id, nombre }
 
+  // ── GESTOR DE LOS MÉTODOS DE PAGO ─────────────────────────────────────────
+  //
+  // Esta lista era FIJA y estaba escrita en el código, por una decisión escrita
+  // («es un tipo y no algo que crezca»). Se volvió catálogo cuando se vio que
+  // había DOS listas fijas distintas y que la de pagar estaba mal: la cartera
+  // decía efectivo / consignación / transferencia / giro —lo que de verdad pasa
+  // aquí— y cuentas por pagar se quedó con la genérica vieja, así que para
+  // GIRARLE a un proveedor no se podía elegir «giro».
+  //
+  // Vive en ESTA pantalla y no en una propia porque es la misma pregunta que ya
+  // contesta: por dónde entra y sale la plata. Al lado de las entidades y las
+  // cuentas, que es lo que se elige junto con el método.
+  const [metodos, setMetodos] = useState([]);
+  const [metodosOpen, setMetodosOpen] = useState(false);
+  const [nuevoMetodo, setNuevoMetodo] = useState('');
+  // { id, etiqueta, tiene_destino, para_cobrar, para_pagar }
+  const [editMetodo, setEditMetodo] = useState(null);
+
   const { addToast } = useToast();
   const confirm = useConfirm();
 
@@ -51,14 +69,17 @@ export default function Cuentas() {
     try {
       setLoading(true);
       // allSettled: si el catálogo de bancos falla, las cuentas se siguen viendo.
-      const [c, b] = await Promise.allSettled([
+      const [c, b, m] = await Promise.allSettled([
         cuentasApi.getAll({ todas: 'true' }),
         // todos=true trae también los bancos desactivados: antes desaparecían de la
         // lista y no había forma de volver a activarlos desde la pantalla.
         bancosApi.getAll({ todos: 'true' }),
+        // Y los métodos igual: los desactivados hay que poder volver a activar.
+        metodosPagoApi.getAll({ todos: 'true' }),
       ]);
       setCuentas(c.status === 'fulfilled' && Array.isArray(c.value) ? c.value : []);
       setBancos(b.status === 'fulfilled' && Array.isArray(b.value) ? b.value : []);
+      setMetodos(m.status === 'fulfilled' && Array.isArray(m.value) ? m.value : []);
       if (c.status === 'rejected') addToast(c.reason?.message || 'Error cargando cuentas', 'error');
     } finally {
       setLoading(false);
@@ -73,6 +94,13 @@ export default function Cuentas() {
   ]));
 
   const bancosActivos = bancos.filter(b => b.activo !== false);
+  const metodosActivos = metodos.filter(m => m.activo !== false);
+  // Los desactivados al final, igual que los bancos y las cuentas: una lista
+  // donde lo que ya no sirve estorba entre lo que sirve se lee peor cada vez
+  // que crece.
+  const metodosOrdenados = [...metodos].sort(
+    (a, b) => Number(a.activo === false) - Number(b.activo === false)
+  );
   // En el selector solo se ofrecen bancos activos, salvo el que ya tenga puesto la
   // cuenta que se está editando: si se ocultara, el select quedaría vacío y al
   // guardar se borraría el banco de una cuenta que sí lo tenía.
@@ -218,6 +246,83 @@ export default function Cuentas() {
     }
   };
 
+  // ── Catálogo de métodos de pago ──────────────────────────────────
+  //
+  // Sólo se teclea el NOMBRE. El valor que queda guardado en los movimientos lo
+  // deriva el servidor («Consignación» → «consignacion»): pedirlo dos veces es
+  // pedir que un día no coincidan.
+  const crearMetodo = async (e) => {
+    e?.preventDefault();
+    const etiqueta = nuevoMetodo.trim();
+    if (!etiqueta) return;
+    try {
+      await metodosPagoApi.create({ etiqueta });
+      addToast(`"${etiqueta}" agregado`, 'success');
+      setNuevoMetodo('');
+      load();
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    }
+  };
+
+  const guardarMetodo = async () => {
+    const etiqueta = editMetodo?.etiqueta.trim();
+    if (!etiqueta) return;
+    const repetido = metodos.some(
+      (m) => m.id !== editMetodo.id && (m.etiqueta || '').trim().toLowerCase() === etiqueta.toLowerCase()
+    );
+    if (repetido) { addToast(`Ya hay un método llamado "${etiqueta}"`, 'error'); return; }
+    if (!editMetodo.para_cobrar && !editMetodo.para_pagar) {
+      addToast('Marca al menos «para cobrar» o «para pagar», o no se podrá elegir en ninguna pantalla', 'error');
+      return;
+    }
+    try {
+      await metodosPagoApi.update(editMetodo.id, {
+        etiqueta,
+        tiene_destino: editMetodo.tiene_destino,
+        para_cobrar: editMetodo.para_cobrar,
+        para_pagar: editMetodo.para_pagar,
+      });
+      addToast('Método actualizado', 'success');
+      setEditMetodo(null);
+      load();
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    }
+  };
+
+  const reactivarMetodo = async (m) => {
+    try {
+      await metodosPagoApi.update(m.id, { activo: true });
+      addToast(`"${m.etiqueta}" vuelve a estar disponible`, 'success');
+      load();
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    }
+  };
+
+  const borrarMetodo = async (m) => {
+    const usos = (m.usos_cartera || 0) + (m.usos_pagos || 0);
+    const ok = await confirm({
+      title: usos ? '¿Desactivar método?' : '¿Eliminar método?',
+      message: usos
+        ? `"${m.etiqueta}" lo usan ${usos} movimiento(s) ya registrados, así que se`
+          + ' desactivará en vez de borrarse: no se ofrecerá para nuevos, y los viejos'
+          + ' seguirán diciendo lo que decían el día que se registraron.'
+        : `Se eliminará "${m.etiqueta}" de la lista. No lo usa ningún movimiento.`,
+      confirmText: usos ? 'Desactivar' : 'Eliminar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await metodosPagoApi.delete(m.id);
+      addToast(usos ? 'Método desactivado' : 'Método eliminado', 'success');
+      load();
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    }
+  };
+
   const borrarBanco = async (b) => {
     const enUso = b.cuentas_asociadas > 0;
     const ok = await confirm({
@@ -255,6 +360,12 @@ export default function Cuentas() {
                 buscar. «bancos» se queda de apoyo para reconocerlo. */}
             <Button variant="outline" onClick={() => setBancosOpen(true)}>
               <Building2 size={16} className="mr-1" /> Entidades ({bancosActivos.length})
+            </Button>
+            {/* Al lado de Entidades porque es la misma pregunta: por dónde entra
+                y sale la plata. El método se elige junto con la entidad y la
+                cuenta, así que se administra en el mismo sitio. */}
+            <Button variant="outline" onClick={() => setMetodosOpen(true)}>
+              <CreditCard size={16} className="mr-1" /> Métodos ({metodosActivos.length})
             </Button>
             <Button onClick={openCreate}><Plus size={16} className="mr-1" /> Nueva cuenta</Button>
           </div>
@@ -475,6 +586,145 @@ export default function Cuentas() {
 
           <div className="flex justify-end">
             <Button variant="ghost" onClick={() => { setBancosOpen(false); setEditBanco(null); }}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Catálogo de métodos de pago ──────────────────────────── */}
+      <Modal isOpen={metodosOpen} onClose={() => { setMetodosOpen(false); setEditMetodo(null); }}
+             title="Métodos de pago">
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Cómo se mueve la plata: efectivo, consignación, transferencia, giro. Esta es la
+            lista que aparece como <strong>Método</strong> al registrar un abono de un cliente
+            y al pagarle a un proveedor. Antes estaba fija en el código, y estaban
+            <strong> dos listas distintas</strong>: al pagarle a un proveedor no se podía
+            elegir <strong>giro</strong>, que es justo como se le paga.
+          </p>
+
+          <form onSubmit={crearMetodo} className="flex gap-2">
+            <input type="text" value={nuevoMetodo} onChange={(e) => setNuevoMetodo(e.target.value)}
+              aria-label="Nombre del método nuevo"
+              placeholder="Ej: Giro, Nequi, Cheque…"
+              className="flex-1 px-3 py-2 rounded-xl border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30" />
+            <Button type="submit" disabled={!nuevoMetodo.trim()}>
+              <Plus size={15} className="mr-1" /> Agregar
+            </Button>
+          </form>
+
+          <div className="max-h-80 overflow-y-auto rounded-xl border border-border divide-y divide-border/60">
+            {metodos.length === 0 ? (
+              <p className="text-sm text-muted text-center py-6">Sin métodos en la lista</p>
+            ) : metodosOrdenados.map((m) => {
+              const usos = (m.usos_cartera || 0) + (m.usos_pagos || 0);
+              return (
+              <div key={m.id}
+                className={`px-3 py-2 ${m.activo === false ? 'bg-primary/[0.03]' : ''}`}>
+                {editMetodo?.id === m.id ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={editMetodo.etiqueta} autoFocus
+                        aria-label="Nombre del método"
+                        onChange={(e) => setEditMetodo({ ...editMetodo, etiqueta: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarMetodo(); } }}
+                        className="flex-1 px-2 py-1 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-secondary/40" />
+                      <Button variant="ghost" size="icono" className="rounded-lg text-success hover:bg-success/10"
+                        onClick={guardarMetodo} title="Guardar" aria-label="Guardar el método">
+                        <Check size={15} />
+                      </Button>
+                      <Button variant="ghost" size="icono" className="rounded-lg text-muted hover:bg-primary/5"
+                        onClick={() => setEditMetodo(null)} title="Cancelar" aria-label="Cancelar">
+                        <X size={15} />
+                      </Button>
+                    </div>
+                    {/* ── LAS TRES COSAS QUE EL MÉTODO DECIDE ──────────────
+                        No son adorno. «Lleva entidad y cuenta» es la regla que
+                        antes estaba escrita en el código como «¿se llama
+                        efectivo?», y eso deja de valer en cuanto la lista la
+                        administras tú: un método nuevo que tampoco pase por el
+                        banco no se va a llamar así.
+                        Y el ámbito evita que la cartera ofrezca «cheque» al
+                        cobrar: aquí no se reciben, pero sí se giran. */}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-primary">
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer min-h-11">
+                        <input type="checkbox" checked={!!editMetodo.tiene_destino}
+                          onChange={(e) => setEditMetodo({ ...editMetodo, tiene_destino: e.target.checked })}
+                          className="w-4 h-4 rounded border-border text-secondary focus:ring-2 focus:ring-secondary/40" />
+                        Lleva entidad y cuenta
+                      </label>
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer min-h-11">
+                        <input type="checkbox" checked={!!editMetodo.para_cobrar}
+                          onChange={(e) => setEditMetodo({ ...editMetodo, para_cobrar: e.target.checked })}
+                          className="w-4 h-4 rounded border-border text-secondary focus:ring-2 focus:ring-secondary/40" />
+                        Para cobrar
+                      </label>
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer min-h-11">
+                        <input type="checkbox" checked={!!editMetodo.para_pagar}
+                          onChange={(e) => setEditMetodo({ ...editMetodo, para_pagar: e.target.checked })}
+                          className="w-4 h-4 rounded border-border text-secondary focus:ring-2 focus:ring-secondary/40" />
+                        Para pagar
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`flex-1 min-w-0 text-sm ${m.activo === false ? 'text-muted' : 'text-primary'}`}>
+                      {m.etiqueta}
+                      {/* Para qué sirve y si lleva destino, a la vista: son lo
+                          que decide dónde aparece y qué campos habilita. */}
+                      <span className="ml-2 text-[10px] text-muted">
+                        {[m.para_cobrar && 'cobrar', m.para_pagar && 'pagar'].filter(Boolean).join(' · ')}
+                        {!m.tiene_destino && ' · sin entidad'}
+                      </span>
+                      {usos > 0 && (
+                        <span className="ml-2 text-[10px] text-muted bg-primary/5 px-1.5 py-0.5 rounded-full">
+                          {usos} uso{usos !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {m.activo === false && (
+                        <span className="ml-2 text-[10px] text-error">(fuera de la lista)</span>
+                      )}
+                    </span>
+                    <Button variant="ghost" size="icono" className="rounded-lg text-muted hover:text-primary"
+                      onClick={() => setEditMetodo({
+                        id: m.id, etiqueta: m.etiqueta,
+                        tiene_destino: m.tiene_destino, para_cobrar: m.para_cobrar, para_pagar: m.para_pagar,
+                      })}
+                      title="Editar" aria-label={`Editar el método ${m.etiqueta}`}>
+                      <Pencil size={14} />
+                    </Button>
+                    {m.activo === false ? (
+                      <Button variant="ghost" size="icono" className="rounded-lg text-muted hover:text-success hover:bg-success/10"
+                        onClick={() => reactivarMetodo(m)}
+                        title="Volver a usarlo" aria-label={`Volver a usar ${m.etiqueta}`}>
+                        <RotateCcw size={14} />
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="icono" className="rounded-lg text-muted hover:text-error hover:bg-error/5"
+                        onClick={() => borrarMetodo(m)}
+                        title="Quitar" aria-label={`Quitar ${m.etiqueta}`}>
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              );
+            })}
+          </div>
+
+          <p className="text-xs text-muted leading-relaxed">
+            El nombre que se escribe es el que se lee; lo que queda guardado en cada
+            movimiento lo deriva el sistema («Consignación» → <code>consignacion</code>), para
+            que no se tecleen dos veces y un día no coincidan. Un método que ya usen
+            movimientos registrados no se borra: queda fuera de la lista y los viejos siguen
+            diciendo lo que decían.
+          </p>
+
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={() => { setMetodosOpen(false); setEditMetodo(null); }}>
               Cerrar
             </Button>
           </div>

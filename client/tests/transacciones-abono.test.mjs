@@ -10,6 +10,18 @@
 // para que la pantalla y el servidor no puedan discrepar: si cada uno la
 // decidiera por su cuenta, el día que cambie una de las dos se guardarían
 // abonos con entidad en unos sitios y sin ella en otros.
+//
+// 2026-11-26 · LA LISTA PASÓ A SER UN CATÁLOGO que la dueña administra, y con
+// ella la regla: cada método guarda en su fila si lleva entidad y cuenta
+// (`tiene_destino`). Preguntar «¿se llama efectivo?» dejó de valer en cuanto la
+// lista crece —un método nuevo que tampoco pase por el banco no se llamaría
+// así—.
+//
+// `transaccionTieneDestino` SIGUE SIENDO LA REGLA y por eso se sigue probando
+// aquí: es lo que la pantalla usa cuando el catálogo no contesta o no conoce el
+// método guardado. Lo que cambió es el nombre con el que la pantalla la
+// consulta, `metodoTieneDestino`, que mira primero la fila y cae en esta
+// función después. Las dos comprobaciones de abajo apuntan a ese nombre.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,7 +86,7 @@ prueba('la pantalla no manda entidad ni cuenta cuando no hay destino', () => {
   const cartera = fs.readFileSync(
     path.join(process.cwd(), 'src', 'pages', 'Cartera.jsx'), 'utf8');
   // Las dos salidas (crear y corregir) tienen que pasar por la misma funcion.
-  const guardas = (cartera.match(/transaccionTieneDestino\([^)]*\) && \w+\.(banco_id|cuenta_id)/g) || []).length;
+  const guardas = (cartera.match(/metodoTieneDestino\([^)]*\) && \w+\.(banco_id|cuenta_id)/g) || []).length;
   assert.equal(guardas, 4,
     'crear y corregir, por entidad y por cuenta: cuatro guardas (encontre ' + guardas + ')');
 });
@@ -84,7 +96,7 @@ prueba('al pasar a efectivo los dos campos se VACIAN, no se esconden', () => {
     path.join(process.cwd(), 'src', 'pages', 'Cartera.jsx'), 'utf8');
   // Un campo escondido que conserva lo que tenia es la forma mas silenciosa de
   // guardar un dato que nadie eligio.
-  const limpiezas = (cartera.match(/transaccionTieneDestino\(\w+\) \? \w+\.(banco_id|cuenta_id)\s*:\s*''/g) || []).length;
+  const limpiezas = (cartera.match(/metodoTieneDestino\(\w+\) \? \w+\.(banco_id|cuenta_id)\s*:\s*''/g) || []).length;
   assert.ok(limpiezas >= 4,
     'el formulario y la fila de edicion tienen que vaciar los dos (encontre ' + limpiezas + ')');
 });

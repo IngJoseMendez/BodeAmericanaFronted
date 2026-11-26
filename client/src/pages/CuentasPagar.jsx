@@ -2,7 +2,7 @@
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
-import { cuentasPagarApi, contenedoresApi, cuentasApi, bancosApi } from '../services/api';
+import { cuentasPagarApi, contenedoresApi, cuentasApi, bancosApi, metodosPagoApi } from '../services/api';
 // Qué métodos tienen destino se pregunta en un solo sitio: el efectivo no tiene
 // entidad ni cuenta —es plata que salió en la mano—, los demás sí. Es la misma
 // función que usa la cartera y la misma regla que aplica el servidor, para que
@@ -24,15 +24,34 @@ const formatDate = formatFecha;
 
 const TODAY = hoy();
 
-// Los métodos de pago, en un solo sitio. Estaban escritos dentro del formulario
-// de abonar, y al poder además CORREGIR un abono harían falta dos listas: dos
-// listas de lo mismo acaban siendo dos listas distintas, y entonces un método
-// que se puede elegir al registrar no se puede elegir al corregir.
-const METODOS_PAGO = [
-  { value: 'efectivo', label: 'Efectivo' },
-  { value: 'transferencia', label: 'Transferencia' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'otro', label: 'Otro' },
+// ── LOS MÉTODOS DE PAGO YA SON UN CATÁLOGO ──────────────────────────────────
+//
+// Esta lista era FIJA y estaba escrita aquí dentro. Dos problemas, y el segundo
+// es el que la condenó:
+//
+//   · al poder además CORREGIR un abono harían falta dos copias de la lista en
+//     la misma pantalla, y dos listas de lo mismo acaban siendo dos listas
+//     distintas;
+//   · era la lista GENÉRICA VIEJA. La cartera ya se había corregido a efectivo
+//     / consignación / transferencia / giro —lo que de verdad pasa aquí: 287
+//     consignaciones y 130 giros— y ésta se quedó con «cheque» y «otro». Para
+//     GIRARLE a un proveedor no se podía elegir giro, que es justo como se le
+//     paga. Una lista fija sólo está bien mientras alguien la mantenga.
+//
+// Ahora viene de /metodos-pago, se administra en «Cuentas y entidades» y cada
+// método guarda si lleva entidad y cuenta (`tiene_destino`).
+//
+// ESTO QUEDA COMO RESPALDO, no como la lista. Si el catálogo no contesta —un
+// servidor viejo, la red— la pantalla tiene que seguir dejando abonar: pagarle
+// a un proveedor no puede depender de que cargue un catálogo. Son los métodos
+// que la base siembra, así que coinciden con lo que hay al otro lado.
+const METODOS_RESPALDO = [
+  { value: 'efectivo', label: 'Efectivo', tiene_destino: false },
+  { value: 'consignacion', label: 'Consignación', tiene_destino: true },
+  { value: 'transferencia', label: 'Transferencia', tiene_destino: true },
+  { value: 'giro', label: 'Giro', tiene_destino: true },
+  { value: 'cheque', label: 'Cheque', tiene_destino: true },
+  { value: 'otro', label: 'Otro', tiene_destino: true },
 ];
 
 // El abono puede pagarse en una moneda distinta a la de la factura (factura en USD
@@ -193,6 +212,10 @@ export default function CuentasPagar() {
   const [contenedores, setContenedores] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
   const [entidades, setEntidades] = useState([]);
+  // null = todavía no contestó el catálogo. Se distingue de [] a propósito: con
+  // una lista vacía de verdad hay que caer al respaldo, pero mientras no
+  // contesta no hay que decidir nada.
+  const [metodos, setMetodos] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -239,7 +262,28 @@ export default function CuentasPagar() {
     // tiene— y la misma cuenta recibe por varias, así que la entidad del pago
     // se elige, no se deduce de la cuenta.
     bancosApi.getAll().then(setEntidades).catch(() => {});
+    // `ambito: 'pagar'`: aquí se le paga a un proveedor, así que no se ofrecen
+    // las formas que sólo sirven para cobrar.
+    metodosPagoApi.getAll({ ambito: 'pagar' }).then(setMetodos).catch(() => {});
   }, []);
+
+  // ── EL MÉTODO: LA LISTA Y LA REGLA, EN UN SOLO SITIO ──────────────────────
+  //
+  // `tiene_destino` viaja en la fila del catálogo porque preguntar «¿se llama
+  // efectivo?» deja de valer en cuanto la lista la administra la dueña: un
+  // método nuevo que tampoco pase por el banco no se llamaría así.
+  //
+  // Mientras el catálogo no contesta —o si no contesta nunca— se usa el
+  // respaldo, y la regla cae en `transaccionTieneDestino`, la misma función que
+  // usa la cartera. La pantalla nunca se queda sin poder abonar.
+  const metodosDisponibles = (metodos && metodos.length)
+    ? metodos.map((m) => ({ value: m.nombre, label: m.etiqueta, tiene_destino: m.tiene_destino }))
+    : METODOS_RESPALDO;
+
+  const metodoTieneDestino = (valor) => {
+    const fila = metodosDisponibles.find((m) => m.value === valor);
+    return fila ? fila.tiene_destino !== false : transaccionTieneDestino(valor);
+  };
 
   // Deep-link: ?contenedor=<id> pre-filtra las CxP de ese contenedor (trazabilidad)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -335,9 +379,9 @@ export default function CuentasPagar() {
         metodo_pago: inlineForm.metodo_pago,
         // En efectivo van las dos en null, aunque hubiera quedado algo escrito
         // de antes de cambiar el método. La misma regla la aplica el servidor.
-        cuenta_banco_id: transaccionTieneDestino(inlineForm.metodo_pago) && inlineForm.cuenta_banco_id
+        cuenta_banco_id: metodoTieneDestino(inlineForm.metodo_pago) && inlineForm.cuenta_banco_id
           ? Number(inlineForm.cuenta_banco_id) : null,
-        banco_id: transaccionTieneDestino(inlineForm.metodo_pago) && inlineForm.banco_id
+        banco_id: metodoTieneDestino(inlineForm.metodo_pago) && inlineForm.banco_id
           ? Number(inlineForm.banco_id) : null,
         notas: inlineForm.notas || null,
         // Constancia de lo que realmente se pagó.
@@ -534,9 +578,9 @@ export default function CuentasPagar() {
         // Las dos van SIEMPRE en el cuerpo, incluso vacías: el servidor
         // distingue «no vino» de «vino vacía» para que se puedan quitar —pasar
         // un abono a efectivo es quitarle las dos—.
-        cuenta_banco_id: transaccionTieneDestino(abonoForm.metodo_pago) && abonoForm.cuenta_banco_id
+        cuenta_banco_id: metodoTieneDestino(abonoForm.metodo_pago) && abonoForm.cuenta_banco_id
           ? Number(abonoForm.cuenta_banco_id) : null,
-        banco_id: transaccionTieneDestino(abonoForm.metodo_pago) && abonoForm.banco_id
+        banco_id: metodoTieneDestino(abonoForm.metodo_pago) && abonoForm.banco_id
           ? Number(abonoForm.banco_id) : null,
         notas: abonoForm.notas || null,
         moneda_pago: monedaAbono,
@@ -1258,10 +1302,10 @@ export default function CuentasPagar() {
                                           // vacían aquí para que no se queden escritas en
                                           // la pantalla diciendo algo que no se va a
                                           // guardar.
-                                          banco_id: transaccionTieneDestino(valorElegido) ? inlineForm.banco_id : '',
-                                          cuenta_banco_id: transaccionTieneDestino(valorElegido) ? inlineForm.cuenta_banco_id : '',
+                                          banco_id: metodoTieneDestino(valorElegido) ? inlineForm.banco_id : '',
+                                          cuenta_banco_id: metodoTieneDestino(valorElegido) ? inlineForm.cuenta_banco_id : '',
                                         })}
-                                        opciones={METODOS_PAGO}
+                                        opciones={metodosDisponibles}
                                         className={inpSm}
                                       />
                                     </div>
@@ -1274,35 +1318,48 @@ export default function CuentasPagar() {
                                         era lo único que la cartera guardaba y esta
                                         pantalla no.
 
-                                        En efectivo no se pintan: no hay entidad que
-                                        elegir. */}
-                                    {transaccionTieneDestino(inlineForm.metodo_pago) && (
-                                      <>
-                                        <div>
-                                          <label className="block text-xs font-medium text-muted mb-1">Entidad</label>
-                                          <BuscadorLista
-                                            value={inlineForm.banco_id}
-                                            onChange={(valorElegido) => setInlineForm({ ...inlineForm, banco_id: valorElegido })}
-                                            opcionVacia="— Sin entidad —"
-                                            placeholder="— Sin entidad —"
-                                            opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
-                                            className={inpSm}
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
-                                          <BuscadorLista
-                                            value={inlineForm.cuenta_banco_id}
-                                            onChange={(valorElegido) => setInlineForm({ ...inlineForm, cuenta_banco_id: valorElegido })}
-                                            opcionVacia="— Sin cuenta —"
-                                            placeholder="— Sin cuenta —"
-                                            opciones={[
-                                              ...cuentasBanco.map((cu) => ({ value: cu.id, label: `${cu.banco ? `${cu.banco} — $${cu.nombre}` : cu.nombre}` })),
-                                            ]}
-                                            className={inpSm}
-                                          />
-                                        </div>
-                                      </>
+                                        SE PINTAN SIEMPRE, TAMBIÉN EN EFECTIVO. Al principio
+                                        se escondían cuando el método no las admitía, y el
+                                        resultado fue el peor posible: el método arranca en
+                                        «Efectivo», así que al abrir el formulario no había
+                                        ningún campo de Entidad y parecía que no existía
+                                        —la dueña lo reportó así, «no lo metiste»—. Un campo
+                                        que aparece y desaparece mientras se llena un
+                                        formulario tampoco se aprende.
+                                        Ahora se ven apagados y con el motivo escrito, que
+                                        es la misma línea que esta pantalla sigue en todo lo
+                                        demás: explicar, no esconder. */}
+                                    <div>
+                                      <label className="block text-xs font-medium text-muted mb-1">Entidad</label>
+                                      <BuscadorLista
+                                        value={inlineForm.banco_id}
+                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, banco_id: valorElegido })}
+                                        opcionVacia="— Sin entidad —"
+                                        placeholder={metodoTieneDestino(inlineForm.metodo_pago) ? '— Sin entidad —' : 'No aplica'}
+                                        disabled={!metodoTieneDestino(inlineForm.metodo_pago)}
+                                        opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
+                                        className={inpSm}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
+                                      <BuscadorLista
+                                        value={inlineForm.cuenta_banco_id}
+                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, cuenta_banco_id: valorElegido })}
+                                        opcionVacia="— Sin cuenta —"
+                                        placeholder={metodoTieneDestino(inlineForm.metodo_pago) ? '— Sin cuenta —' : 'No aplica'}
+                                        disabled={!metodoTieneDestino(inlineForm.metodo_pago)}
+                                        opciones={[
+                                          ...cuentasBanco.map((cu) => ({ value: cu.id, label: `${cu.banco ? `${cu.banco} — $${cu.nombre}` : cu.nombre}` })),
+                                        ]}
+                                        className={inpSm}
+                                      />
+                                    </div>
+                                    {!metodoTieneDestino(inlineForm.metodo_pago) && (
+                                      <p className="col-span-2 md:col-span-3 text-[11px] text-muted leading-tight -mt-1">
+                                        El <b>{inlineForm.metodo_pago || 'efectivo'}</b> no tiene entidad ni cuenta:
+                                        es plata que sale en la mano. Elige otro método y se habilitan.
+                                      </p>
                                     )}
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Fecha</label>
@@ -1750,10 +1807,10 @@ export default function CuentasPagar() {
                     ...abonoForm,
                     metodo_pago: valorElegido,
                     // Pasarlo a efectivo le quita la entidad y la cuenta.
-                    banco_id: transaccionTieneDestino(valorElegido) ? abonoForm.banco_id : '',
-                    cuenta_banco_id: transaccionTieneDestino(valorElegido) ? abonoForm.cuenta_banco_id : '',
+                    banco_id: metodoTieneDestino(valorElegido) ? abonoForm.banco_id : '',
+                    cuenta_banco_id: metodoTieneDestino(valorElegido) ? abonoForm.cuenta_banco_id : '',
                   })}
-                  opciones={METODOS_PAGO}
+                  opciones={metodosDisponibles}
                   className={inp}
                 />
               </div>
@@ -1765,33 +1822,40 @@ export default function CuentasPagar() {
               </div>
             </div>
 
-            {/* Los mismos dos campos que al registrarlo, y con la misma regla:
-                en efectivo no hay entidad ni cuenta que elegir. */}
-            {transaccionTieneDestino(abonoForm.metodo_pago) && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={lbl}>Entidad</label>
-                  <BuscadorLista
-                    value={abonoForm.banco_id}
-                    onChange={(valorElegido) => setAbonoForm({ ...abonoForm, banco_id: valorElegido })}
-                    opcionVacia="— Sin entidad —"
-                    placeholder="— Sin entidad —"
-                    opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
-                    className={inp}
-                  />
-                </div>
-                <div>
-                  <label className={lbl}>Cuenta de banco</label>
-                  <BuscadorLista
-                    value={abonoForm.cuenta_banco_id}
-                    onChange={(valorElegido) => setAbonoForm({ ...abonoForm, cuenta_banco_id: valorElegido })}
-                    opcionVacia="— Sin cuenta —"
-                    placeholder="— Sin cuenta —"
-                    opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre }))}
-                    className={inp}
-                  />
-                </div>
+            {/* Los mismos dos campos que al registrarlo, siempre visibles y por
+                el mismo motivo: un campo que se esconde según el método parece
+                un campo que no existe. */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={lbl}>Entidad</label>
+                <BuscadorLista
+                  value={abonoForm.banco_id}
+                  onChange={(valorElegido) => setAbonoForm({ ...abonoForm, banco_id: valorElegido })}
+                  opcionVacia="— Sin entidad —"
+                  placeholder={metodoTieneDestino(abonoForm.metodo_pago) ? '— Sin entidad —' : 'No aplica'}
+                  disabled={!metodoTieneDestino(abonoForm.metodo_pago)}
+                  opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
+                  className={inp}
+                />
               </div>
+              <div>
+                <label className={lbl}>Cuenta de banco</label>
+                <BuscadorLista
+                  value={abonoForm.cuenta_banco_id}
+                  onChange={(valorElegido) => setAbonoForm({ ...abonoForm, cuenta_banco_id: valorElegido })}
+                  opcionVacia="— Sin cuenta —"
+                  placeholder={metodoTieneDestino(abonoForm.metodo_pago) ? '— Sin cuenta —' : 'No aplica'}
+                  disabled={!metodoTieneDestino(abonoForm.metodo_pago)}
+                  opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre }))}
+                  className={inp}
+                />
+              </div>
+            </div>
+            {!metodoTieneDestino(abonoForm.metodo_pago) && (
+              <p className="text-[11px] text-muted leading-tight -mt-2">
+                El <b>{abonoForm.metodo_pago || 'efectivo'}</b> no tiene entidad ni cuenta.
+                Elige otro método y se habilitan.
+              </p>
             )}
 
             <div>

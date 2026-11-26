@@ -109,8 +109,30 @@ import path from 'node:path';
 // el camino que pide el comentario de arriba —que lo nuevo nazca usando
 // Button— sí funciona para los botones de icono desde que existe `size="icono"`;
 // lo que sigue sin tener salida es el campo de texto.
+// 2026-11-26 (2) · +5 input en src/pages (119→124) y otra vez CERO button: el
+// gestor de los MÉTODOS DE PAGO en Cuentas.jsx. Son el campo del método nuevo,
+// el de renombrarlo, y las tres casillas de «lleva entidad y cuenta», «para
+// cobrar» y «para pagar».
+//
+// Es un CLON del gestor de entidades que está cien líneas más arriba en el
+// mismo archivo —mismo modal, mismo `<form>` de una línea con su botón
+// «Agregar», misma lista con renombrado en el sitio— y usa sus mismas clases
+// escritas a mano. `Input` envuelve el campo en un div con su etiqueta y su
+// `px-4 py-3`: el campo de agregar un método saldría más alto y más redondeado
+// que el de agregar una entidad, en la misma pantalla y haciendo lo mismo.
+//
+// Las TRES CASILLAS no tienen alternativa en el sistema de diseño: `Input` no
+// hace un checkbox. Van dentro de un `<label>` con `min-h-11`, que es la zona
+// tocable que `Input` traería puesta.
+//
+// Y los cuatro botones de cada fila (guardar, cancelar, editar, quitar o
+// reactivar) se hicieron con `Button size="icono"` aunque sus hermanos de
+// arriba sean HTML plano: con tres clases de `className` se ven igual, así que
+// aquí el argumento de «la incoherencia se ve» no aplica y no hay motivo para
+// bajar a HTML plano. Van dos tandas seguidas en las que el techo de botones no
+// se mueve; el de campos de texto sigue siendo el único sin salida.
 const TECHO = {
-  'src/pages':      { button: 234, input: 119 },
+  'src/pages':      { button: 234, input: 124 },
   'src/components': { button: 33,  input: 8   },
 };
 
