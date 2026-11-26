@@ -87,8 +87,30 @@ import path from 'node:path';
 // Ya van cuatro barras de búsqueda con este patrón copiado. El arreglo de
 // verdad es que `Input` acepte un adorno a izquierda y derecha; el día que lo
 // haga, estas cuatro bajan de golpe y el techo con ellas.
+//
+// 2026-11-26 · +5 input en src/pages (114→119) y CERO button, los cinco en
+// CuentasPagar.jsx: los dos formularios nuevos para poder CORREGIR una cuenta
+// por pagar y un abono ya registrado (proveedor, notas; y el código de moneda,
+// la fecha y las notas del abono).
+//
+// Son HERMANOS del formulario de «Nueva Cuenta por Pagar», que está en el mismo
+// archivo y a cuarenta líneas: las mismas clases `inp` y `lbl`, el mismo
+// `<label>` encima y el mismo ancho. `Input` envuelve el campo en un div con su
+// propia etiqueta y su `px-4 py-3`, así que el de editar saldría con otro
+// relleno y otro redondeo que el de crear, y son la MISMA cuenta vista dos
+// veces: tenían que verse igual. Es el caso que este archivo ya llama «la
+// incoherencia se ve, la deuda no».
+//
+// Y los BOTONES no subieron, que es lo que de verdad mide esto: los cuatro
+// nuevos —editar la cuenta en la fila, editar la cuenta en el historial, y
+// corregir y borrar cada abono— se hicieron con `Button size="icono"`, que trae
+// los 44 px tocables y el anillo de foco puestos. Dos de ellos van al lado de
+// `<button>` a pelo y se ven igual con un `className` de tres clases. O sea que
+// el camino que pide el comentario de arriba —que lo nuevo nazca usando
+// Button— sí funciona para los botones de icono desde que existe `size="icono"`;
+// lo que sigue sin tener salida es el campo de texto.
 const TECHO = {
-  'src/pages':      { button: 234, input: 114 },
+  'src/pages':      { button: 234, input: 119 },
   'src/components': { button: 33,  input: 8   },
 };
 

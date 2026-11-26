@@ -618,6 +618,11 @@ export const cuentasPagarApi = {
   create(data) { return api.post('/cuentas-pagar', data); },
   update(id, data) { return api.put(`/cuentas-pagar/${id}`, data); },
   registrarAbono(id, data) { return api.post(`/cuentas-pagar/${id}/abonos`, data); },
+  // Corregir y borrar un abono ya registrado: el metodo de pago mal elegido, la
+  // fecha de ayer, el cero de mas, el abono tecleado dos veces. Lo abonado y el
+  // estado de la cuenta los vuelve a calcular el servidor sumando los abonos.
+  editarAbono(id, abonoId, data) { return api.put(`/cuentas-pagar/${id}/abonos/${abonoId}`, data); },
+  borrarAbono(id, abonoId) { return api.delete(`/cuentas-pagar/${id}/abonos/${abonoId}`); },
   delete(id) { return api.delete(`/cuentas-pagar/${id}`); },
 };
 

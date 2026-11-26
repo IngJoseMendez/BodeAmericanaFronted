@@ -4,7 +4,7 @@ import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
 import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
 import {
-  CreditCard, Plus, Eye, Trash2, DollarSign, Clock, CheckCircle,
+  CreditCard, Plus, Eye, Edit2, Trash2, DollarSign, Clock, CheckCircle,
   Search, Package2, ChevronDown, ChevronRight, Download,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -18,6 +18,17 @@ const formatCurrency = (value, moneda = 'USD') => formatMoneda(value, moneda, { 
 const formatDate = formatFecha;
 
 const TODAY = hoy();
+
+// Los métodos de pago, en un solo sitio. Estaban escritos dentro del formulario
+// de abonar, y al poder además CORREGIR un abono harían falta dos listas: dos
+// listas de lo mismo acaban siendo dos listas distintas, y entonces un método
+// que se puede elegir al registrar no se puede elegir al corregir.
+const METODOS_PAGO = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'otro', label: 'Otro' },
+];
 
 // El abono puede pagarse en una moneda distinta a la de la factura (factura en USD
 // pagada por transferencia en pesos, por ejemplo). Se guarda lo que realmente salió
@@ -195,6 +206,19 @@ export default function CuentasPagar() {
   const [createForm, setCreateForm] = useState({ proveedor_nombre: '', total_factura: '', moneda: 'USD', notas: '' });
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
+  // Editar la cuenta. `editCuenta` es la cuenta entera y no solo su id: el
+  // formulario necesita saber si nació de un contenedor para enseñar lo que de
+  // verdad se puede cambiar.
+  const [editCuenta, setEditCuenta] = useState(null);
+  const [editForm, setEditForm] = useState({ proveedor_nombre: '', total_factura: '', moneda: 'USD', notas: '' });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // Corregir un abono ya registrado. Lleva la cuenta además del abono porque la
+  // moneda de la factura y la tasa del contenedor salen de ella.
+  const [abonoEdit, setAbonoEdit] = useState(null);
+  const [abonoForm, setAbonoForm] = useState(emptyInline());
+  const [abonoSubmitting, setAbonoSubmitting] = useState(false);
+
   const { addToast } = useToast();
   const confirm = useConfirm();
 
@@ -346,6 +370,187 @@ export default function CuentasPagar() {
       addToast(mensajeDeError(err), 'error');
     } finally {
       setCreateSubmitting(false);
+    }
+  };
+
+  // ── EDITAR LA CUENTA ────────────────────────────────────────────────────
+  //
+  // LO QUE SE PUEDE CAMBIAR DEPENDE DE DE DÓNDE SALIÓ. Una cuenta manual se
+  // teclea entera, así que se corrige entera. Una cuenta de un contenedor tiene
+  // el proveedor y el importe CALCULADOS de las líneas de ese contenedor, y el
+  // servidor los vuelve a escribir cada vez que se guarda: aquí solo se tocan
+  // las notas, y el formulario lo dice en lugar de ofrecer campos que no
+  // durarían. La regla también está en el servidor
+  // (PUT /cuentas-pagar/:id en src/routes/cuentas-pagar.js), que es quien manda.
+  const openEdit = (cuenta) => {
+    setEditCuenta(cuenta);
+    setEditForm({
+      proveedor_nombre: cuenta.proveedor_nombre || '',
+      // El importe se edita en la moneda en la que está GUARDADO (`total_factura`),
+      // que en una cuenta manual es la misma que la del proveedor.
+      total_factura: cuenta.total_factura != null ? String(cuenta.total_factura) : '',
+      moneda: String(cuenta.moneda || 'USD').toUpperCase(),
+      notas: cuenta.notas || '',
+    });
+  };
+
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    if (!editCuenta) return;
+    const deContenedor = editCuenta.contenedor_id != null;
+    if (!deContenedor) {
+      if (!editForm.proveedor_nombre.trim()) {
+        addToast('Escribe el nombre del proveedor', 'error');
+        return;
+      }
+      if (!(parseMonto(editForm.total_factura) > 0)) {
+        addToast('El total de la factura debe ser mayor a 0', 'error');
+        return;
+      }
+    }
+    try {
+      setEditSubmitting(true);
+      // En una cuenta de contenedor se manda SOLO las notas: cualquier otro
+      // campo, aunque llegara igual, el servidor lo rechaza.
+      await cuentasPagarApi.update(editCuenta.id, deContenedor
+        ? { notas: editForm.notas || null }
+        : {
+          proveedor_nombre: editForm.proveedor_nombre.trim(),
+          total_factura: parseMonto(editForm.total_factura),
+          moneda: editForm.moneda,
+          notas: editForm.notas || null,
+        });
+      addToast('Cuenta actualizada', 'success');
+      setEditCuenta(null);
+      loadCuentas();
+      if (selectedCuenta?.id === editCuenta.id) {
+        setSelectedCuenta(await cuentasPagarApi.getOne(editCuenta.id));
+      }
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  // ── CORREGIR UN ABONO ───────────────────────────────────────────────────
+  //
+  // Se edita lo que SALIÓ DEL BANCO —importe, moneda y tasa—, igual que al
+  // registrarlo, y de ahí sale lo que descuenta de la factura. Si se editara
+  // directamente el equivalente, el abono guardaría un giro de 5.000 dólares
+  // descontando una cifra en pesos que no cuadra con esa tasa.
+  const openAbonoEdit = (cuenta, abono) => {
+    const monedaFactura = String(cuenta.moneda || 'USD').toUpperCase();
+    const monedaPago = String(abono.moneda_pago || monedaFactura).toUpperCase();
+    const esConocida = MONEDAS.some((m) => m.value === monedaPago);
+    setAbonoEdit({ cuenta, abono });
+    setAbonoForm({
+      // Lo que salió del banco. Si de un abono viejo no se guardó, se cae a lo
+      // que descontó, que es lo que el sistema asumía entonces.
+      monto: String(abono.monto_pagado ?? abono.monto ?? ''),
+      fecha: abono.fecha ? String(abono.fecha).slice(0, 10) : TODAY,
+      metodo_pago: abono.metodo_pago || 'efectivo',
+      cuenta_banco_id: abono.cuenta_banco_id ? String(abono.cuenta_banco_id) : '',
+      notas: abono.notas || '',
+      moneda: esConocida ? monedaPago : 'OTRA',
+      monedaOtra: esConocida ? '' : monedaPago,
+      tasa_cambio: monedaPago === monedaFactura ? ''
+        : (abono.tasa_cambio != null ? String(abono.tasa_cambio) : ''),
+    });
+  };
+
+  const handleAbonoEdit = async () => {
+    if (!abonoEdit) return;
+    const { cuenta, abono } = abonoEdit;
+    const monedaFactura = String(cuenta.moneda || 'USD').toUpperCase();
+    const monedaAbono = codigoMoneda(abonoForm);
+    const montoAbono = parseMonto(abonoForm.monto);
+
+    if (montoAbono <= 0) {
+      addToast('El monto debe ser mayor a 0', 'error');
+      return;
+    }
+    if (abonoForm.moneda === 'OTRA' && !abonoForm.monedaOtra.trim()) {
+      addToast('Escribe el código de la moneda (ej: BRL, GBP)', 'error');
+      return;
+    }
+    const tasa = monedaAbono === monedaFactura ? 1 : parseMonto(abonoForm.tasa_cambio);
+    if (tasa <= 0) {
+      addToast(`Escribe la tasa: a cuántos ${monedaFactura} equivale 1 ${monedaAbono}`, 'error');
+      return;
+    }
+    const equivalente = montoAbono * tasa;
+
+    // ── SUBIR UN ABONO PUEDE DEJAR LA CUENTA PAGADA DE MÁS ────────────────
+    // Lo mismo que al registrarlo, y por lo mismo: es legítimo pero casi nunca
+    // es lo que se quería. Se compara contra el saldo SIN este abono, que es
+    // contra lo que de verdad va a quedar.
+    // `saldoSaldo` es la resta con signo —negativa si ya estaba pagada de más—,
+    // así que devolverle lo que este abono descontó da el saldo que habría sin
+    // él. Con `porPagar`, que ya viene recortado a cero, una cuenta pagada de
+    // más daría un saldo demasiado alto y no avisaría de nada.
+    const d = enDeuda(cuenta);
+    const saldoSinEste = d.saldoSaldo + (parseFloat(abono.monto) || 0);
+    const sobra = equivalente - saldoSinEste;
+    if (sobra > 0) {
+      const ok = await confirm({
+        title: saldoSinEste > 0 ? 'El abono quedaría mayor que el saldo' : 'Esta cuenta no tiene saldo pendiente',
+        message: `Sin este abono, a ${cuenta.proveedor_nombre} se le debe `
+          + `${formatMoneda(Math.max(saldoSinEste, 0), monedaFactura)}.\n\n`
+          + `Con ${formatMoneda(equivalente, monedaFactura)} quedarían `
+          + `${formatMoneda(sobra, monedaFactura)} A FAVOR.`,
+        confirmText: 'Guardar y dejar a favor',
+        cancelText: 'Volver y corregir',
+      });
+      if (!ok) return;
+    }
+
+    try {
+      setAbonoSubmitting(true);
+      await cuentasPagarApi.editarAbono(cuenta.id, abono.id, {
+        monto: equivalente,
+        fecha: abonoForm.fecha,
+        metodo_pago: abonoForm.metodo_pago,
+        cuenta_banco_id: abonoForm.cuenta_banco_id ? Number(abonoForm.cuenta_banco_id) : null,
+        notas: abonoForm.notas || null,
+        moneda_pago: monedaAbono,
+        monto_pagado: montoAbono,
+        tasa_cambio: tasa,
+      });
+      addToast('Abono corregido', 'success');
+      setAbonoEdit(null);
+      loadCuentas();
+      setSelectedCuenta(await cuentasPagarApi.getOne(cuenta.id));
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
+    } finally {
+      setAbonoSubmitting(false);
+    }
+  };
+
+  const handleAbonoDelete = async (cuenta, abono) => {
+    const monedaPago = String(abono.moneda_pago || cuenta.moneda || 'USD').toUpperCase();
+    const ok = await confirm({
+      title: '¿Borrar este abono?',
+      // Qué abono es, con las dos cifras y el método: en una lista de ocho
+      // abonos parecidos, «¿seguro?» no basta para saber cuál se va a ir.
+      message: `${formatMoneda(abono.monto_pagado ?? abono.monto, monedaPago)} del `
+        + `${formatDate(abono.fecha)}`
+        + `${abono.metodo_pago ? ` por ${abono.metodo_pago}` : ''}, de ${cuenta.proveedor_nombre}.\n\n`
+        + `La deuda subirá ${formatMoneda(abono.monto, cuenta.moneda)}. `
+        + 'No se puede deshacer: queda escrito en la auditoría y nada más.',
+      confirmText: 'Borrar el abono',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await cuentasPagarApi.borrarAbono(cuenta.id, abono.id);
+      addToast('Abono borrado', 'success');
+      loadCuentas();
+      setSelectedCuenta(await cuentasPagarApi.getOne(cuenta.id));
+    } catch (err) {
+      addToast(mensajeDeError(err), 'error');
     }
   };
 
@@ -845,6 +1050,19 @@ export default function CuentasPagar() {
                                   title="Ver historial" aria-label="Ver historial">
                                   <Eye size={15} />
                                 </button>
+                                {/* `Button size="icono"` y no un <button> a pelo
+                                    como sus dos hermanos: trae puestos los 44 px
+                                    de zona tocable y el anillo de foco, y con
+                                    estas clases se ve igual que ellos. Es el
+                                    camino que pide el trinquete del sistema de
+                                    diseño —que lo nuevo nazca usando Button— sin
+                                    que la fila quede con dos estilos. */}
+                                <Button variant="ghost" size="icono"
+                                  className="rounded-lg text-muted hover:text-primary"
+                                  onClick={() => openEdit(c)}
+                                  title="Editar cuenta" aria-label={`Editar la cuenta ${c.numero}`}>
+                                  <Edit2 size={15} />
+                                </Button>
                                 <button onClick={() => handleDelete(c)}
                                   className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-error hover:bg-error/10 transition-colors"
                                   disabled={parseFloat(c.total_abonado) > 0}
@@ -987,12 +1205,7 @@ export default function CuentasPagar() {
                                       <BuscadorLista
                                         value={inlineForm.metodo_pago}
                                         onChange={(valorElegido) => setInlineForm({ ...inlineForm, metodo_pago: valorElegido })}
-                                        opciones={[
-                                          { value: 'efectivo', label: 'Efectivo' },
-                                          { value: 'transferencia', label: 'Transferencia' },
-                                          { value: 'cheque', label: 'Cheque' },
-                                          { value: 'otro', label: 'Otro' },
-                                        ]}
+                                        opciones={METODOS_PAGO}
                                         className={inpSm}
                                       />
                                     </div>
@@ -1107,6 +1320,14 @@ export default function CuentasPagar() {
                 <RefLink to="/contenedores" id={selectedCuenta.contenedor_id} title="Ver contenedor"
                   className="text-xs bg-secondary/10 px-2 py-0.5 rounded-full">Contenedor {selectedCuenta.contenedor_numero}</RefLink>
               )}
+              {/* Editar desde aquí también: al mirar el historial es cuando se
+                  ve que el proveedor está mal escrito o que la factura no era
+                  esa, y volver a la tabla a buscar la fila para pulsar el lápiz
+                  es el paso que hace que no se corrija. */}
+              <Button variant="ghost" size="sm" icon={Edit2} className="ml-auto"
+                onClick={() => openEdit(selectedCuenta)}>
+                Editar cuenta
+              </Button>
             </div>
 
             {/* Las tres cifras, en la moneda en la que se debe arriba y en
@@ -1155,8 +1376,13 @@ export default function CuentasPagar() {
                 <p className="text-sm text-muted text-center py-4">Sin abonos registrados</p>
               ) : (
                 <div className="rounded-xl border border-border/60 overflow-hidden divide-y divide-border/30">
-                  {selectedCuenta.abonos.map((ab, i) => (
-                    <div key={i} className="flex items-center justify-between px-4 py-3 hover:bg-primary/3">
+                  {/* `key` por id del abono y no por posición: desde que se
+                      pueden borrar y corregir, el índice deja de identificar la
+                      fila —al borrar el primero, React reutilizaría su nodo
+                      para el segundo— y lo que se ve puede no ser lo que se
+                      toca. */}
+                  {selectedCuenta.abonos.map((ab) => (
+                    <div key={ab.id} className="flex items-center justify-between px-4 py-3 hover:bg-primary/3">
                       <div>
                         <p className="text-sm font-semibold text-primary">{formatCurrency(ab.monto, selectedCuenta.moneda)}</p>
                         {/* Si se pagó en otra moneda, se deja constancia de lo que salió del banco */}
@@ -1175,7 +1401,29 @@ export default function CuentasPagar() {
                         </p>
                         {ab.notas && <p className="text-xs text-muted/70 italic">{ab.notas}</p>}
                       </div>
-                      <CheckCircle size={16} className="text-success flex-shrink-0" />
+                      {/* ── CORREGIR Y BORRAR, AL LADO DE CADA ABONO ──────────
+                          Antes cada abono era solo una palomita verde: una vez
+                          registrado, el método mal elegido, la fecha de ayer o
+                          el cero de más se quedaban dentro, y el único arreglo
+                          era registrar otro abono en contra —que deja la
+                          mentira escrita y una fila falsa al lado—. */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <CheckCircle size={16} className="text-success" aria-hidden="true" />
+                        <Button variant="ghost" size="icono"
+                          className="rounded-lg text-muted hover:text-primary"
+                          onClick={() => openAbonoEdit(selectedCuenta, ab)}
+                          title="Corregir este abono"
+                          aria-label={`Corregir el abono de ${formatDate(ab.fecha)}`}>
+                          <Edit2 size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icono"
+                          className="rounded-lg text-muted hover:text-error hover:bg-error/10"
+                          onClick={() => handleAbonoDelete(selectedCuenta, ab)}
+                          title="Borrar este abono"
+                          aria-label={`Borrar el abono de ${formatDate(ab.fecha)}`}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1228,6 +1476,226 @@ export default function CuentasPagar() {
           </div>
         </form>
       </Modal>
+
+      {/* ── Modal: EDITAR LA CUENTA ──────────────────────────────────────
+          Mismos campos y mismas clases que el de crear, que está justo arriba:
+          son la misma cuenta vista dos veces y tenían que verse igual. */}
+      {editCuenta && (
+        <Modal isOpen onClose={() => setEditCuenta(null)}
+               title={`Editar ${editCuenta.numero}`} size="sm">
+          <form onSubmit={handleEdit} className="space-y-4">
+            {editCuenta.contenedor_id != null ? (
+              /* LA CUENTA DE UN CONTENEDOR NO SE EDITA AQUÍ, y se dice por qué
+                 en lugar de enseñar campos apagados: su proveedor y su importe
+                 los calcula el contenedor de sus líneas y los vuelve a escribir
+                 cada vez que se guarda, así que un cambio hecho aquí
+                 desaparecería sin avisar. */
+              <div className="rounded-xl border border-secondary/30 bg-secondary/5 px-4 py-3 space-y-2">
+                <p className="text-sm text-primary leading-relaxed">
+                  Esta cuenta la genera el contenedor
+                  {editCuenta.contenedor_numero ? ` ${editCuenta.contenedor_numero}` : ''}:
+                  el <b>proveedor</b> y el <b>total de la factura</b> salen de sus líneas y se
+                  vuelven a calcular cada vez que ese contenedor se guarda. Se corrigen allí.
+                </p>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
+                  <span>Proveedor: <b className="text-primary">{editCuenta.proveedor_nombre}</b></span>
+                  <span>Factura: <b className="text-primary">{formatMoneda(editCuenta.total_factura, editCuenta.moneda)}</b></span>
+                </div>
+                <RefLink to="/contenedores" id={editCuenta.contenedor_id} title="Ver contenedor"
+                  className="text-xs font-semibold text-secondary">
+                  Abrir el contenedor
+                </RefLink>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className={lbl} htmlFor="cxp-edit-proveedor">Proveedor *</label>
+                  <input id="cxp-edit-proveedor" type="text" className={inp} required
+                    value={editForm.proveedor_nombre}
+                    onChange={(e) => setEditForm({ ...editForm, proveedor_nombre: e.target.value })}
+                    placeholder="Nombre del proveedor" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={lbl} htmlFor="cxp-edit-total">Total Factura *</label>
+                    <CampoMonto id="cxp-edit-total" className={`${inp} tabular-nums`} required
+                      value={editForm.total_factura}
+                      onChange={(e) => setEditForm({ ...editForm, total_factura: e.target.value })}
+                      placeholder="0" />
+                    {/* Bajar la factura por debajo de lo ya abonado deja la
+                        cuenta pagada —y con saldo a favor—; subirla la reabre.
+                        Se dice antes de guardar, no después. */}
+                    {parseFloat(editCuenta.total_abonado) > 0 && (
+                      <p className="mt-1 text-[11px] text-muted leading-tight">
+                        Ya tiene {formatMoneda(editCuenta.total_abonado, editCuenta.moneda)} abonados.
+                        {parseMonto(editForm.total_factura) > 0
+                          && parseMonto(editForm.total_factura) < parseFloat(editCuenta.total_abonado)
+                          ? ' Con este importe la cuenta queda PAGADA y con saldo a favor.'
+                          : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className={lbl}>Moneda</label>
+                    <BuscadorLista
+                      value={editForm.moneda}
+                      onChange={(valorElegido) => setEditForm({ ...editForm, moneda: valorElegido })}
+                      opciones={[
+                        { value: 'USD', label: 'USD' },
+                        { value: 'COP', label: 'COP' },
+                      ]}
+                      className={inp}
+                    />
+                    {/* Con abonos dentro la moneda no se puede cambiar: cada uno
+                        guarda en qué moneda se pagó y su tasa contra esta
+                        factura, así que el rótulo nuevo cambiaría en silencio lo
+                        que esos abonos querían decir. El servidor lo niega
+                        también; esto es para no intentarlo. */}
+                    {parseFloat(editCuenta.total_abonado) > 0 && (
+                      <p className="mt-1 text-[11px] text-warning leading-tight">
+                        No se puede cambiar: ya hay abonos registrados contra esta factura.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+            <div>
+              <label className={lbl} htmlFor="cxp-edit-notas">Notas</label>
+              <input id="cxp-edit-notas" type="text" className={inp} value={editForm.notas}
+                onChange={(e) => setEditForm({ ...editForm, notas: e.target.value })}
+                placeholder="Observaciones..." />
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <Button type="button" variant="ghost" onClick={() => setEditCuenta(null)}>Cancelar</Button>
+              <Button type="submit" variant="secondary" disabled={editSubmitting}>
+                {editSubmitting ? 'Guardando...' : 'Guardar cambios'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ── Modal: CORREGIR UN ABONO ─────────────────────────────────────
+          Los mismos campos que el formulario de abonar de la fila expandida, y
+          en el mismo orden: es el mismo abono, una vez al registrarlo y otra al
+          corregirlo. */}
+      {abonoEdit && (() => {
+        const c = abonoEdit.cuenta;
+        const monedaFactura = String(c.moneda || 'USD').toUpperCase();
+        const mismaMoneda = codigoMoneda(abonoForm) === monedaFactura;
+        const equivalente = equivalenteFactura(abonoForm, monedaFactura);
+        return (
+        <Modal isOpen onClose={() => setAbonoEdit(null)} title="Corregir abono" size="sm">
+          <div className="space-y-4">
+            <p className="text-xs text-muted leading-relaxed">
+              {c.numero} · {c.proveedor_nombre} · registrado el {formatDate(abonoEdit.abono.fecha)}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={lbl} htmlFor="ab-edit-monto">Monto pagado *</label>
+                <CampoMonto id="ab-edit-monto" className={`${inp} tabular-nums`}
+                  value={abonoForm.monto}
+                  onChange={(e) => setAbonoForm({ ...abonoForm, monto: e.target.value })}
+                  placeholder="0" />
+              </div>
+              <div>
+                <label className={lbl}>Moneda del pago</label>
+                <BuscadorLista
+                  value={abonoForm.moneda}
+                  onChange={(valorElegido) => setAbonoForm({
+                    ...abonoForm,
+                    moneda: valorElegido,
+                    // Al volver a la moneda de la factura la tasa deja de tener
+                    // sentido: se vacía en vez de quedarse puesta de antes.
+                    tasa_cambio: valorElegido === monedaFactura ? '' : abonoForm.tasa_cambio,
+                  })}
+                  opciones={MONEDAS.map((m) => ({ value: m.value, label: m.value === 'OTRA' ? m.label : m.value }))}
+                  className={inp}
+                />
+                {abonoForm.moneda === 'OTRA' && (
+                  <input type="text" maxLength={8} className={`${inp} mt-2 uppercase`}
+                    value={abonoForm.monedaOtra}
+                    onChange={(e) => setAbonoForm({ ...abonoForm, monedaOtra: e.target.value.toUpperCase() })}
+                    placeholder="Ej: BRL" />
+                )}
+              </div>
+            </div>
+
+            {!mismaMoneda && (
+              <div>
+                <label className={lbl} htmlFor="ab-edit-tasa">
+                  Tasa <span className="text-muted/70 font-normal">1 {codigoMoneda(abonoForm)} = ? {monedaFactura}</span>
+                </label>
+                <CampoMonto id="ab-edit-tasa" decimales={6} className={`${inp} tabular-nums`}
+                  value={abonoForm.tasa_cambio}
+                  onChange={(e) => setAbonoForm({ ...abonoForm, tasa_cambio: e.target.value })}
+                  placeholder="Ej: 4150" />
+              </div>
+            )}
+
+            {/* CUÁNTO VA A DESCONTAR DE LA FACTURA, antes de guardar. Es la
+                cifra que mueve el saldo, y si no se enseña hay que confiar en
+                una multiplicación hecha a ciegas. */}
+            <div className="rounded-xl border border-border/60 bg-primary/[0.03] px-4 py-2.5">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Descuenta de la factura</p>
+              <p className="text-sm font-mono font-bold text-primary">
+                {equivalente > 0 ? formatMoneda(equivalente, monedaFactura) : '—'}
+              </p>
+              <p className="text-[11px] text-muted leading-tight mt-0.5">
+                Antes descontaba {formatMoneda(abonoEdit.abono.monto, monedaFactura)}.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={lbl}>Método *</label>
+                <BuscadorLista
+                  value={abonoForm.metodo_pago}
+                  onChange={(valorElegido) => setAbonoForm({ ...abonoForm, metodo_pago: valorElegido })}
+                  opciones={METODOS_PAGO}
+                  className={inp}
+                />
+              </div>
+              <div>
+                <label className={lbl} htmlFor="ab-edit-fecha">Fecha</label>
+                <input id="ab-edit-fecha" type="date" className={inp}
+                  value={abonoForm.fecha}
+                  onChange={(e) => setAbonoForm({ ...abonoForm, fecha: e.target.value })} />
+              </div>
+            </div>
+
+            <div>
+              <label className={lbl}>Cuenta de banco</label>
+              <BuscadorLista
+                value={abonoForm.cuenta_banco_id}
+                onChange={(valorElegido) => setAbonoForm({ ...abonoForm, cuenta_banco_id: valorElegido })}
+                opcionVacia="— Sin cuenta —"
+                placeholder="— Sin cuenta —"
+                opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre }))}
+                className={inp}
+              />
+            </div>
+
+            <div>
+              <label className={lbl} htmlFor="ab-edit-notas">Notas</label>
+              <input id="ab-edit-notas" type="text" className={inp} value={abonoForm.notas}
+                onChange={(e) => setAbonoForm({ ...abonoForm, notas: e.target.value })}
+                placeholder="Observaciones..." />
+            </div>
+
+            <div className="flex gap-2 justify-end pt-1">
+              <Button type="button" variant="ghost" onClick={() => setAbonoEdit(null)}>Cancelar</Button>
+              <Button type="button" variant="secondary" disabled={abonoSubmitting}
+                onClick={handleAbonoEdit}>
+                {abonoSubmitting ? 'Guardando...' : 'Guardar cambios'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+        );
+      })()}
     </Layout>
   );
 }
