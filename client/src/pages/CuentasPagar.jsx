@@ -2,7 +2,12 @@
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { Card, CardBody, Button, Modal, useToast, useConfirm, TableSkeleton, EmptyState, RefLink, CampoMonto, BuscadorLista } from '../components/common';
-import { cuentasPagarApi, contenedoresApi, cuentasApi } from '../services/api';
+import { cuentasPagarApi, contenedoresApi, cuentasApi, bancosApi } from '../services/api';
+// Qué métodos tienen destino se pregunta en un solo sitio: el efectivo no tiene
+// entidad ni cuenta —es plata que salió en la mano—, los demás sí. Es la misma
+// función que usa la cartera y la misma regla que aplica el servidor, para que
+// las tres no puedan discrepar.
+import { transaccionTieneDestino } from '../types';
 import {
   CreditCard, Plus, Eye, Edit2, Trash2, DollarSign, Clock, CheckCircle,
   Search, Package2, ChevronDown, ChevronRight, Download,
@@ -57,7 +62,10 @@ const emptyInline = (cuenta = null) => {
   const necesitaTasa = monedaFactura !== String(cuenta?.moneda || 'USD').toUpperCase();
   const tasa = necesitaTasa ? tasaDelContenedor(cuenta) : 0;
   return {
-    monto: '', fecha: TODAY, metodo_pago: 'efectivo', cuenta_banco_id: '', notas: '',
+    monto: '', fecha: TODAY, metodo_pago: 'efectivo',
+    // La entidad y la cuenta nacen vacías porque el método nace en 'efectivo',
+    // que no tiene ni una ni otra.
+    banco_id: '', cuenta_banco_id: '', notas: '',
     moneda: monedaFactura, monedaOtra: '',
     // Vacío y no un cero cuando no hay tasa que traer: un 0 ahí se guardaría
     // como una conversión que anula el abono.
@@ -184,6 +192,7 @@ export default function CuentasPagar() {
   const [cuentas, setCuentas] = useState([]);
   const [contenedores, setContenedores] = useState([]);
   const [cuentasBanco, setCuentasBanco] = useState([]);
+  const [entidades, setEntidades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -225,6 +234,11 @@ export default function CuentasPagar() {
   useEffect(() => {
     contenedoresApi.getAll().then(setContenedores).catch(() => {});
     cuentasApi.getAll().then(setCuentasBanco).catch(() => {});
+    // Las ENTIDADES (el catálogo de bancos). Van aparte de las cuentas a
+    // propósito: una cuenta puede no tener entidad asignada —hoy sólo 1 de 6 la
+    // tiene— y la misma cuenta recibe por varias, así que la entidad del pago
+    // se elige, no se deduce de la cuenta.
+    bancosApi.getAll().then(setEntidades).catch(() => {});
   }, []);
 
   // Deep-link: ?contenedor=<id> pre-filtra las CxP de ese contenedor (trazabilidad)
@@ -319,7 +333,12 @@ export default function CuentasPagar() {
         monto: equivalente,
         fecha: inlineForm.fecha,
         metodo_pago: inlineForm.metodo_pago,
-        cuenta_banco_id: inlineForm.cuenta_banco_id ? Number(inlineForm.cuenta_banco_id) : null,
+        // En efectivo van las dos en null, aunque hubiera quedado algo escrito
+        // de antes de cambiar el método. La misma regla la aplica el servidor.
+        cuenta_banco_id: transaccionTieneDestino(inlineForm.metodo_pago) && inlineForm.cuenta_banco_id
+          ? Number(inlineForm.cuenta_banco_id) : null,
+        banco_id: transaccionTieneDestino(inlineForm.metodo_pago) && inlineForm.banco_id
+          ? Number(inlineForm.banco_id) : null,
         notas: inlineForm.notas || null,
         // Constancia de lo que realmente se pagó.
         moneda_pago: monedaAbono,
@@ -450,6 +469,7 @@ export default function CuentasPagar() {
       monto: String(abono.monto_pagado ?? abono.monto ?? ''),
       fecha: abono.fecha ? String(abono.fecha).slice(0, 10) : TODAY,
       metodo_pago: abono.metodo_pago || 'efectivo',
+      banco_id: abono.banco_id ? String(abono.banco_id) : '',
       cuenta_banco_id: abono.cuenta_banco_id ? String(abono.cuenta_banco_id) : '',
       notas: abono.notas || '',
       moneda: esConocida ? monedaPago : 'OTRA',
@@ -511,7 +531,13 @@ export default function CuentasPagar() {
         monto: equivalente,
         fecha: abonoForm.fecha,
         metodo_pago: abonoForm.metodo_pago,
-        cuenta_banco_id: abonoForm.cuenta_banco_id ? Number(abonoForm.cuenta_banco_id) : null,
+        // Las dos van SIEMPRE en el cuerpo, incluso vacías: el servidor
+        // distingue «no vino» de «vino vacía» para que se puedan quitar —pasar
+        // un abono a efectivo es quitarle las dos—.
+        cuenta_banco_id: transaccionTieneDestino(abonoForm.metodo_pago) && abonoForm.cuenta_banco_id
+          ? Number(abonoForm.cuenta_banco_id) : null,
+        banco_id: transaccionTieneDestino(abonoForm.metodo_pago) && abonoForm.banco_id
+          ? Number(abonoForm.banco_id) : null,
         notas: abonoForm.notas || null,
         moneda_pago: monedaAbono,
         monto_pagado: montoAbono,
@@ -974,14 +1000,33 @@ export default function CuentasPagar() {
                       const canAbono = true;
                       return (
                         <Fragment key={c.id}>
+                          {/* ── SE ABRE TOCANDO LA FILA, NO LA FLECHITA ────────
+                              La flecha es de 15 px con 4 de relleno: en tableta
+                              y sin ratón hay que acertarle, y mientras se falla
+                              el dedo cae sobre el nombre del proveedor —que es
+                              lo que uno cree que está tocando—. Ahora la fila
+                              entera abre y cierra, y la flecha se queda como
+                              señal de que hay algo debajo (y como el control que
+                              se alcanza con el teclado).
+
+                              La última celda, la de los botones, PARA el clic:
+                              sin eso, pulsar el lápiz o la papelera abría además
+                              el formulario de abonar debajo. */}
                           <tr
-                            className={`border-b border-border/40 transition-colors ${isExpanded ? 'bg-secondary/5' : 'hover:bg-primary/3'}`}>
+                            onClick={() => canAbono && toggleExpand(c)}
+                            className={`border-b border-border/40 transition-colors ${canAbono ? 'cursor-pointer' : ''} ${isExpanded ? 'bg-secondary/5' : 'hover:bg-primary/3'}`}>
                             {/* Chevron toggle */}
                             <td className="w-8 pl-3 py-3">
                               {canAbono && (
-                                <button onClick={() => toggleExpand(c)}
+                                /* stopPropagation obligatorio: sin él el clic
+                                   llega también a la fila y toggleExpand corre
+                                   dos veces, o sea que la flecha no haría
+                                   nada. */
+                                <button onClick={(e) => { e.stopPropagation(); toggleExpand(c); }}
                                   className="p-1 rounded-lg text-muted hover:text-secondary hover:bg-secondary/10 transition-colors"
-                                  title={isExpanded ? 'Cerrar' : 'Registrar abono'}>
+                                  aria-expanded={isExpanded}
+                                  title={isExpanded ? 'Cerrar' : 'Registrar abono'}
+                                  aria-label={`${isExpanded ? 'Cerrar' : 'Registrar abono a'} ${c.proveedor_nombre}`}>
                                   {isExpanded
                                     ? <ChevronDown size={15} className="text-secondary" />
                                     : <ChevronRight size={15} />}
@@ -1043,7 +1088,7 @@ export default function CuentasPagar() {
                               )}
                             </td>
                             <td className="px-4 py-3"><EstadoBadge estado={c.estado} /></td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-2 justify-end">
                                 <button onClick={() => openView(c)}
                                   className="p-2.5 inline-flex min-w-11 min-h-11 items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-primary/5 transition-colors"
@@ -1204,24 +1249,61 @@ export default function CuentasPagar() {
                                       <label className="block text-xs font-medium text-muted mb-1">Método</label>
                                       <BuscadorLista
                                         value={inlineForm.metodo_pago}
-                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, metodo_pago: valorElegido })}
+                                        onChange={(valorElegido) => setInlineForm({
+                                          ...inlineForm,
+                                          metodo_pago: valorElegido,
+                                          // Al pasar a efectivo se van la entidad y la
+                                          // cuenta: «Efectivo en Bancolombia» no significa
+                                          // nada, y el servidor las descartaría igual. Se
+                                          // vacían aquí para que no se queden escritas en
+                                          // la pantalla diciendo algo que no se va a
+                                          // guardar.
+                                          banco_id: transaccionTieneDestino(valorElegido) ? inlineForm.banco_id : '',
+                                          cuenta_banco_id: transaccionTieneDestino(valorElegido) ? inlineForm.cuenta_banco_id : '',
+                                        })}
                                         opciones={METODOS_PAGO}
                                         className={inpSm}
                                       />
                                     </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
-                                      <BuscadorLista
-                                        value={inlineForm.cuenta_banco_id}
-                                        onChange={(valorElegido) => setInlineForm({ ...inlineForm, cuenta_banco_id: valorElegido })}
-                                        opcionVacia="— Sin cuenta —"
-                                        placeholder="— Sin cuenta —"
-                                        opciones={[
-                                          ...cuentasBanco.map((cu) => ({ value: cu.id, label: `${cu.banco ? `${cu.banco} — $${cu.nombre}` : cu.nombre}` })),
-                                        ]}
-                                        className={inpSm}
-                                      />
-                                    </div>
+                                    {/* ── ENTIDAD Y CUENTA: POR DÓNDE SALIÓ LA PLATA ────
+                                        La entidad se ELIGE, no se deduce de la cuenta: una
+                                        cuenta puede no tener entidad asignada, y la misma
+                                        cuenta paga por varias («Caro en Bancolombia» y
+                                        «Caro por Western» son la misma cuenta). Es lo que
+                                        se busca primero al cuadrar contra el extracto, y
+                                        era lo único que la cartera guardaba y esta
+                                        pantalla no.
+
+                                        En efectivo no se pintan: no hay entidad que
+                                        elegir. */}
+                                    {transaccionTieneDestino(inlineForm.metodo_pago) && (
+                                      <>
+                                        <div>
+                                          <label className="block text-xs font-medium text-muted mb-1">Entidad</label>
+                                          <BuscadorLista
+                                            value={inlineForm.banco_id}
+                                            onChange={(valorElegido) => setInlineForm({ ...inlineForm, banco_id: valorElegido })}
+                                            opcionVacia="— Sin entidad —"
+                                            placeholder="— Sin entidad —"
+                                            opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
+                                            className={inpSm}
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-muted mb-1">Cuenta</label>
+                                          <BuscadorLista
+                                            value={inlineForm.cuenta_banco_id}
+                                            onChange={(valorElegido) => setInlineForm({ ...inlineForm, cuenta_banco_id: valorElegido })}
+                                            opcionVacia="— Sin cuenta —"
+                                            placeholder="— Sin cuenta —"
+                                            opciones={[
+                                              ...cuentasBanco.map((cu) => ({ value: cu.id, label: `${cu.banco ? `${cu.banco} — $${cu.nombre}` : cu.nombre}` })),
+                                            ]}
+                                            className={inpSm}
+                                          />
+                                        </div>
+                                      </>
+                                    )}
                                     <div>
                                       <label className="block text-xs font-medium text-muted mb-1">Fecha</label>
                                       <input type="date" className={inpSm}
@@ -1394,10 +1476,21 @@ export default function CuentasPagar() {
                         )}
                         <p className="text-xs text-muted">
                           {formatDate(ab.fecha)}{ab.metodo_pago ? ` · ${ab.metodo_pago}` : ''}
+                          {/* LA ENTIDAD DEL ABONO, que es por dónde salió la
+                              plata. Va antes que la cuenta porque es lo que se
+                              busca primero al cuadrar contra un extracto. */}
+                          {ab.banco_nombre && <> · <span className="font-medium text-primary">{ab.banco_nombre}</span></>}
                           {ab.cuenta_banco_nombre && (
                             <> · <RefLink to="/cuentas" id={ab.cuenta_banco_id} title="Ver cuenta" icon={false}>{ab.cuenta_banco_nombre}</RefLink></>
                           )}
-                          {ab.cuenta_banco_banco && <span className="text-muted/70"> ({ab.cuenta_banco_banco})</span>}
+                          {/* La entidad a la que pertenece la CUENTA, que es
+                              otra cosa. Sólo si el abono no trae la suya: en
+                              los registrados antes de que se guardara la
+                              entidad es la única pista que hay, y repetirla al
+                              lado de la propia sería ruido. */}
+                          {!ab.banco_nombre && ab.cuenta_banco_banco && (
+                            <span className="text-muted/70"> ({ab.cuenta_banco_banco})</span>
+                          )}
                         </p>
                         {ab.notas && <p className="text-xs text-muted/70 italic">{ab.notas}</p>}
                       </div>
@@ -1653,7 +1746,13 @@ export default function CuentasPagar() {
                 <label className={lbl}>Método *</label>
                 <BuscadorLista
                   value={abonoForm.metodo_pago}
-                  onChange={(valorElegido) => setAbonoForm({ ...abonoForm, metodo_pago: valorElegido })}
+                  onChange={(valorElegido) => setAbonoForm({
+                    ...abonoForm,
+                    metodo_pago: valorElegido,
+                    // Pasarlo a efectivo le quita la entidad y la cuenta.
+                    banco_id: transaccionTieneDestino(valorElegido) ? abonoForm.banco_id : '',
+                    cuenta_banco_id: transaccionTieneDestino(valorElegido) ? abonoForm.cuenta_banco_id : '',
+                  })}
                   opciones={METODOS_PAGO}
                   className={inp}
                 />
@@ -1666,17 +1765,34 @@ export default function CuentasPagar() {
               </div>
             </div>
 
-            <div>
-              <label className={lbl}>Cuenta de banco</label>
-              <BuscadorLista
-                value={abonoForm.cuenta_banco_id}
-                onChange={(valorElegido) => setAbonoForm({ ...abonoForm, cuenta_banco_id: valorElegido })}
-                opcionVacia="— Sin cuenta —"
-                placeholder="— Sin cuenta —"
-                opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre }))}
-                className={inp}
-              />
-            </div>
+            {/* Los mismos dos campos que al registrarlo, y con la misma regla:
+                en efectivo no hay entidad ni cuenta que elegir. */}
+            {transaccionTieneDestino(abonoForm.metodo_pago) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Entidad</label>
+                  <BuscadorLista
+                    value={abonoForm.banco_id}
+                    onChange={(valorElegido) => setAbonoForm({ ...abonoForm, banco_id: valorElegido })}
+                    opcionVacia="— Sin entidad —"
+                    placeholder="— Sin entidad —"
+                    opciones={entidades.map((b) => ({ value: b.id, label: b.nombre }))}
+                    className={inp}
+                  />
+                </div>
+                <div>
+                  <label className={lbl}>Cuenta de banco</label>
+                  <BuscadorLista
+                    value={abonoForm.cuenta_banco_id}
+                    onChange={(valorElegido) => setAbonoForm({ ...abonoForm, cuenta_banco_id: valorElegido })}
+                    opcionVacia="— Sin cuenta —"
+                    placeholder="— Sin cuenta —"
+                    opciones={cuentasBanco.map((cu) => ({ value: cu.id, label: cu.banco ? `${cu.banco} — ${cu.nombre}` : cu.nombre }))}
+                    className={inp}
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className={lbl} htmlFor="ab-edit-notas">Notas</label>
