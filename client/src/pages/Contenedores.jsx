@@ -4636,6 +4636,75 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                   </button>
                 </div>
                 <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {/* ── CONTENEDOR DE LEGADO ──────────────────────────────
+                      Mercancía HEREDADA: llegó, se vendió y se repartió antes de
+                      que existiera el sistema, y se teclea ahora solo para
+                      dejarla escrita —de quién vino, qué traía y qué costó—.
+
+                      Un legado NO suma al inventario y NO genera cuentas por
+                      pagar, y las dos cosas son por el mismo motivo: su
+                      mercancía ya está contada en el inventario (entró al
+                      cuadrar las pacas contra la hoja de la dueña) y sus
+                      facturas se pagaron hace tiempo, fuera del sistema.
+                      Cargarlas otra vez duplicaría pacas y deuda.
+
+                      VA PRIMERO, Y ANTES ESTABA AL FINAL, debajo de Notas. Esto
+                      no es un detalle más del contenedor: decide qué va a hacer
+                      el sistema con todo lo que se escriba debajo —si creará
+                      pacas y cuentas por pagar o no—. Al final se contestaba
+                      después de teclear los proveedores y las cantidades, que
+                      es justo al revés de como se decide.
+
+                      Solo al CREAR. Volver legado un contenedor que ya emitió
+                      sus cuentas por pagar es otra operación —hay que decidir
+                      qué pasa con esas cuentas y con sus abonos— y la hace un
+                      script que deja respaldo: src/scripts/contenedor-a-legado.js.
+
+                      En ESTIMACIÓN no se ofrece: una estimación es mercancía que
+                      todavía no ha llegado, lo contrario exacto de un legado. */}
+                  {!editMode && !modoEstimacion && (
+                  <div className="col-span-2 md:col-span-3">
+                    <div className={`rounded-xl border px-4 py-3 transition-colors ${
+                      formData.legado
+                        ? 'border-gray-400/60 bg-gray-500/[0.06]'
+                        : 'border-border bg-surface'}`}>
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          role="switch"
+                          id="cont-legado"
+                          aria-checked={!!formData.legado}
+                          onClick={() => editarForm('legado', !formData.legado)}
+                          /* 44 px de alto de zona tocable: esto se usa en
+                             tableta sin ratón, y un interruptor de 20 px no se
+                             acierta con el dedo. */
+                          className={`relative inline-flex items-center flex-shrink-0 mt-0.5 w-12 h-7 rounded-full
+                                      transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/40
+                                      ${formData.legado ? 'bg-gray-500' : 'bg-border'}`}
+                        >
+                          <span className={`inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform
+                                            ${formData.legado ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                        <label htmlFor="cont-legado" className="min-w-0 cursor-pointer">
+                          <span className="block text-sm font-semibold text-primary">Contenedor de legado</span>
+                          <span className="block text-xs text-muted mt-0.5 leading-relaxed">
+                            Mercancía heredada, que llegó <b>antes del sistema</b>. Se guarda entera
+                            para consulta y trazabilidad, pero <b>no suma al inventario</b> y
+                            <b> no genera cuentas por pagar</b>: sus pacas ya están contadas y sus
+                            facturas ya se pagaron.
+                          </span>
+                        </label>
+                      </div>
+                      {formData.legado && (
+                        <p className="mt-2.5 pt-2.5 border-t border-gray-400/30 text-xs text-primary leading-relaxed">
+                          Al guardar queda en estado <b>Legado</b>. Podrás seguir corrigiéndolo
+                          —se captura a ratos, como cualquier otro— pero <b>no se podrá finalizar</b>,
+                          que es el paso que crearía sus pacas por segunda vez.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  )}
                   <div className="col-span-2">
                     <label htmlFor="cont-numero" className={lbl}>Número</label>
                     <input id="cont-numero" type="text" className={inp} placeholder="C526"
@@ -4960,68 +5029,6 @@ Si sales sin guardar se pierde y hay que volver a contarlo.`,
                       value={formData.notas} onChange={(e) => editarForm('notas', e.target.value)} />
                   </div>
 
-                  {/* ── CONTENEDOR DE LEGADO ──────────────────────────────
-                      Mercancía HEREDADA: llegó, se vendió y se repartió antes de
-                      que existiera el sistema, y se teclea ahora solo para
-                      dejarla escrita —de quién vino, qué traía y qué costó—.
-
-                      Un legado NO suma al inventario y NO genera cuentas por
-                      pagar, y las dos cosas son por el mismo motivo: su
-                      mercancía ya está contada en el inventario (entró al
-                      cuadrar las pacas contra la hoja de la dueña) y sus
-                      facturas se pagaron hace tiempo, fuera del sistema.
-                      Cargarlas otra vez duplicaría pacas y deuda.
-
-                      Solo al CREAR. Volver legado un contenedor que ya emitió
-                      sus cuentas por pagar es otra operación —hay que decidir
-                      qué pasa con esas cuentas y con sus abonos— y la hace un
-                      script que deja respaldo: src/scripts/contenedor-a-legado.js.
-
-                      En ESTIMACIÓN no se ofrece: una estimación es mercancía que
-                      todavía no ha llegado, lo contrario exacto de un legado. */}
-                  {!editMode && !modoEstimacion && (
-                  <div className="col-span-2 md:col-span-3">
-                    <div className={`rounded-xl border px-4 py-3 transition-colors ${
-                      formData.legado
-                        ? 'border-gray-400/60 bg-gray-500/[0.06]'
-                        : 'border-border bg-surface'}`}>
-                      <div className="flex items-start gap-3">
-                        <button
-                          type="button"
-                          role="switch"
-                          id="cont-legado"
-                          aria-checked={!!formData.legado}
-                          onClick={() => editarForm('legado', !formData.legado)}
-                          /* 44 px de alto de zona tocable: esto se usa en
-                             tableta sin ratón, y un interruptor de 20 px no se
-                             acierta con el dedo. */
-                          className={`relative inline-flex items-center flex-shrink-0 mt-0.5 w-12 h-7 rounded-full
-                                      transition-colors focus:outline-none focus:ring-2 focus:ring-secondary/40
-                                      ${formData.legado ? 'bg-gray-500' : 'bg-border'}`}
-                        >
-                          <span className={`inline-block w-5 h-5 rounded-full bg-white shadow transform transition-transform
-                                            ${formData.legado ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                        <label htmlFor="cont-legado" className="min-w-0 cursor-pointer">
-                          <span className="block text-sm font-semibold text-primary">Contenedor de legado</span>
-                          <span className="block text-xs text-muted mt-0.5 leading-relaxed">
-                            Mercancía heredada, que llegó <b>antes del sistema</b>. Se guarda entera
-                            para consulta y trazabilidad, pero <b>no suma al inventario</b> y
-                            <b> no genera cuentas por pagar</b>: sus pacas ya están contadas y sus
-                            facturas ya se pagaron.
-                          </span>
-                        </label>
-                      </div>
-                      {formData.legado && (
-                        <p className="mt-2.5 pt-2.5 border-t border-gray-400/30 text-xs text-primary leading-relaxed">
-                          Al guardar queda en estado <b>Legado</b>. Podrás seguir corrigiéndolo
-                          —se captura a ratos, como cualquier otro— pero <b>no se podrá finalizar</b>,
-                          que es el paso que crearía sus pacas por segunda vez.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  )}
                 </div>
               </div>
 
