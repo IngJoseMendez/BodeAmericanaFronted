@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { Card, CardBody, Button, useToast, useConfirm, CampoMonto, BuscadorLista } from '../components/common';
+import { Card, CardBody, Button, useToast, useConfirm, CampoMonto, BuscadorLista, Buscador, EmptyState } from '../components/common';
 import { preciosPromocionApi, preciosApi } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
-import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, Trash2, Edit2, Percent, AlertTriangle, ArrowDown, ArrowUp, SearchX } from 'lucide-react';
 import { hoy, formatFecha, entreFechas } from '../lib/fecha';
 import { formatCOP } from '../lib/money';
+import { filtrarPromociones } from '../lib/promociones';
 
 import { mensajeDeError } from '../lib/errores';
 const formatCurrency = formatCOP;
@@ -22,6 +23,25 @@ const emptyForm = { referencia: '', calidad: '', clasificacion: '', precio_promo
 // mayúsculas y acentos según quién los haya dado de alta.
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
+// ── LA BÚSQUEDA SOBREVIVE A UNA RECARGA ───────────────────────────────────
+//
+// Es la convención de la casa: Cartera, Contenedores, Cotizaciones, Cuentas,
+// Despachos, Faltantes, Inventario y la Matriz guardan sus filtros. En
+// sessionStorage y no en localStorage, también por convención y con su motivo
+// escrito en Inventario: un filtro es de la sesión de trabajo de hoy, no una
+// preferencia para siempre. Al cerrar el navegador se va.
+//
+// Lo que hace que esto no acabe en «se me perdieron las promociones» es el
+// contador de al lado («12 de 55») y la X siempre visible: una lista filtrada
+// que no dice que lo está es una trampa, se guarde o no.
+const CLAVE_BUSQUEDA = 'promociones.busqueda.v1';
+
+const leerBusqueda = () => {
+  try { return sessionStorage.getItem(CLAVE_BUSQUEDA) || ''; }
+  catch { return ''; }   // ventana privada o permisos de sitio: se busca sin memoria
+};
+
+
 export default function PreciosPromocion() {
   const [promos, setPromos] = useState([]);
   const [precios, setPrecios] = useState([]);
@@ -32,6 +52,9 @@ export default function PreciosPromocion() {
   const [form, setForm]             = useState(emptyForm);
   const [filtroCat, setFiltroCat]   = useState('');
   const [saving, setSaving]         = useState(false);
+  // Se arranca con lo que hubiera en la sesión, leído UNA vez: con `useState`
+  // a secas, `leerBusqueda()` se ejecutaría en cada render para nada.
+  const [busqueda, setBusqueda]     = useState(leerBusqueda);
 
   const { addToast } = useToast();
   const confirm = useConfirm();
@@ -47,10 +70,21 @@ export default function PreciosPromocion() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    try { sessionStorage.setItem(CLAVE_BUSQUEDA, busqueda); }
+    catch { /* sin memoria de sesion se sigue buscando igual */ }
+  }, [busqueda]);
+
   const reload = async () => {
     const p = await preciosPromocionApi.getAll();
     setPromos(p);
   };
+
+  // Lo que se ensena. La regla de QUE se busca -y que no- vive en
+  // lib/promociones.js, con su motivo escrito y con pruebas: desde una pantalla
+  // .jsx no se puede comprobar nada, porque las pruebas son node pelado.
+  const promosVisibles = useMemo(() => filtrarPromociones(promos, busqueda), [promos, busqueda]);
+  const filtrando = busqueda.trim() !== '';
 
   // El precio normal vive en la tabla de Precios, indexado por CATEGORÍA + calidad,
   // mientras que la promoción va por REFERENCIA + calidad. El puente entre ambos es
@@ -153,6 +187,33 @@ export default function PreciosPromocion() {
           <Button variant="secondary" icon={Plus} onClick={openCreate}>Agregar Promoción</Button>
         </div>
 
+        {/* ── LA BÚSQUEDA ──────────────────────────────────────────────────────
+            Sólo aparece cuando hay promociones: un buscador encima de una lista
+            vacía no tiene nada que buscar y lo único que hace es empujar hacia
+            abajo el botón de crear la primera.
+
+            EL CONTADOR VA AL LADO, SIEMPRE. Es lo que evita el «se me perdieron
+            las promociones»: con la búsqueda puesta dice «12 de 55», así que el
+            número que falta está explicado en la misma línea. Y es `aria-live`
+            para que con lector de pantalla se oiga el resultado al escribir, que
+            si no la lista cambia en silencio. */}
+        {!loading && promos.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Buscador
+              value={busqueda}
+              onChange={setBusqueda}
+              aria-label="Buscar una promoción por referencia, calidad o clasificación"
+              placeholder="Buscar: mixta invierno, premium, dama…"
+              envoltorio="flex-1 min-w-[240px] max-w-xl"
+            />
+            <p className="text-xs text-muted tabular-nums" aria-live="polite">
+              {filtrando
+                ? `${promosVisibles.length} de ${promos.length} promocion(es)`
+                : `${promos.length} promocion(es)`}
+            </p>
+          </div>
+        )}
+
         <Card>
           <CardBody className="p-0">
             {loading ? (
@@ -163,6 +224,19 @@ export default function PreciosPromocion() {
                 <p className="text-muted">No hay promociones configuradas</p>
                 <Button variant="ghost" size="sm" className="mt-3" onClick={openCreate}>Agregar la primera</Button>
               </div>
+            ) : promosVisibles.length === 0 ? (
+              /* NO ES EL MISMO VACÍO QUE EL DE ARRIBA, y confundirlos es el
+                 error clásico: «No hay promociones configuradas» con 55
+                 guardadas y un filtro puesto es una pantalla que miente. Aquí
+                 hay promociones; lo que no hay es ninguna que coincida, así que
+                 se dice lo que se buscó y la salida es quitar la búsqueda, no
+                 crear otra promoción. */
+              <EmptyState
+                icon={SearchX}
+                title={`Ninguna promoción coincide con «${busqueda.trim()}»`}
+                description="Se busca por referencia, calidad y clasificación. Las palabras pueden ir en cualquier orden, y no importan las mayúsculas ni las tildes."
+                action={{ label: 'Quitar la búsqueda', onClick: () => setBusqueda('') }}
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -181,7 +255,7 @@ export default function PreciosPromocion() {
                     </tr>
                   </thead>
                   <tbody>
-                    {promos.map((p) => {
+                    {promosVisibles.map((p) => {
                       const activa = isActive(p);
                       const { normal, diff, pct } = comparar(p.referencia, p.calidad, p.precio_promocional);
                       return (

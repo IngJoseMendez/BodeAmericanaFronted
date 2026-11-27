@@ -12,5 +12,6 @@ export { RefLink } from './RefLink';
 export { PreviewProvider, usePreview } from './PreviewProvider';
 export { SelectorTransporte } from './SelectorTransporte';
 export { BuscadorLista } from './BuscadorLista';
+export { Buscador } from './Buscador';
 export { CampoMonto } from './CampoMonto';
 export { FlujoVenta } from './FlujoVenta';

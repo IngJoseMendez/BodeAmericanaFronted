@@ -159,9 +159,37 @@ import path from 'node:path';
 // adornos a los lados, y un botón de icono DENSO (sin el mínimo de 44 px) para
 // dentro de una fila de tabla cuyo área pulsable es la fila. Con esas dos
 // piezas, estas cinco barras de búsqueda y estas flechitas bajan de golpe.
+//
+// 2026-11-27 · +1 button y +1 input en src/components (33→34, 8→9), y CERO en
+// src/pages: nace `common/Buscador.jsx`, la barra de búsqueda de la casa.
+//
+// ESTE ES EL AUMENTO QUE ESTE ARCHIVO LLEVA CINCO TANDAS PIDIENDO, pagado en el
+// sitio donde se paga una vez. Arriba está escrito tres veces que lo que falta
+// es que el sistema absorba este patrón y que «el día que lo haga, estas cuatro
+// bajan de golpe»; esto es ese día. La barra nueva de Promociones NO añadió
+// nada a src/pages, que es la columna que de verdad mide la deuda.
+//
+// Se hizo como componente propio y no como un adorno de `Input` porque no es un
+// campo de texto con una lupa pegada: es un control con comportamiento —Escape
+// limpia, el aspa aparece sólo con texto y mide 44 px, el corrector del móvil
+// va apagado para que no cambie «jogger» por una palabra del diccionario— y eso
+// no cabe en un parámetro de adorno sin que `Input` cargue con todo.
+//
+// Los dos controles a pelo que trae son irreductibles: el `<input>` es el campo
+// (es lo que `Input` haría por dentro, sólo que aquí la lupa va DENTRO del
+// borde en `absolute`, que es justo lo que `Input` no permite) y el `<button>`
+// es el aspa de limpiar, que vive dentro de la caja del campo y por tanto no
+// puede ser un `Button` con su propio relleno.
+//
+// LO QUE QUEDA PENDIENTE, Y AHORA SÍ SE PUEDE: las cinco barras copiadas
+// —Cartera, Pacas, Precios, el Panel de productos, Repartido y la Fase 1 de la
+// Matriz— pasan a `<Buscador>` y entonces src/pages BAJA de 237/127. No se hizo
+// en la misma tanda a propósito: cambiar seis pantallas que la dueña todavía no
+// ha visto funcionando, el mismo día que se les toca el buscador, es meter seis
+// riesgos para cobrar una cifra.
 const TECHO = {
   'src/pages':      { button: 237, input: 127 },
-  'src/components': { button: 33,  input: 8   },
+  'src/components': { button: 34,  input: 9   },
 };
 
 // Los comentarios no son código. Esta comprobación saltó la primera vez por un
