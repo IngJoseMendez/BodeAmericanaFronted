@@ -107,7 +107,20 @@ const ROTULOS = {
   referencia:    ['Referencia', 'Ref.'],
   calidad:       ['Calidad', 'Cal.'],
   fisico:        ['Físico', 'Fis.'],
-  separadas:     ['Separadas', 'Sep.'],
+  // ── «COMPROMETIDAS» Y NO «SEPARADAS» ──────────────────────────────
+  //
+  // Esta columna NO cuenta las separadas. Cuenta tres estados a la vez
+  // -separada + vendida-sin-despachar + reservada, en routes/pacas.js- y se
+  // hizo asi para que cuadre la resta que esta pantalla invita a hacer:
+  // FISICO = esta columna + DISPONIBLES.
+  //
+  // El numero siempre estuvo bien; la palabra era la que mentia, y costo una
+  // pregunta real: «por que mis 26 pacas vendidas salen como separadas?».
+  // «Comprometidas» es lo que de verdad significa: apartadas para alguien, ya
+  // sea por una cotizacion, por una reserva o porque ya se vendieron y aun no
+  // han salido de la bodega. El desglose de quien tiene cada una esta a un
+  // toque, en el modal de la propia celda.
+  separadas:     ['Comprometidas', 'Comp.'],
   disponibles:   ['Disponibles', 'Disp.'],
   despachadas:   ['Despachadas', 'Desp.'],
   precioHoy:     ['Precio hoy', 'Precio'],
@@ -767,7 +780,7 @@ export default function Pacas() {
         // DESPACHADAS en medio, la unica columna que NO participa en la resta
         // partia justo las tres que si lo hacen.
         { header: 'Físico',         key: 'fisico',         width: 10 },
-        { header: 'Separadas',      key: 'separadas',      width: 11 },
+        { header: 'Comprometidas',  key: 'separadas',      width: 14 },
         { header: 'Disponibles',    key: 'disponibles',    width: 12 },
         { header: 'Despachadas',    key: 'despachadas',    width: 12 },
         // «Costo Unit.» es el prorrateo del contenedor y sale IGUAL en todas
@@ -923,7 +936,7 @@ export default function Pacas() {
         // Separadas y Despachadas iban al reves que en los otros dos sitios:
         // quien comparara un PDF impreso con la pantalla leia el numero
         // equivocado y nada lo advertia.
-        head: [['Contenedor', 'Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Físico', 'Separadas', 'Disponibles', 'Despachadas', 'Precio hoy', 'Valor disp.']],
+        head: [['Contenedor', 'Proveedor', 'Clasificación', 'Referencia', 'Calidad', 'Físico', 'Comprometidas', 'Disponibles', 'Despachadas', 'Precio hoy', 'Valor disp.']],
         body: agrupado.map(r => {
           const d = parseInt(r.disponibles) || 0;
           const e = precioHoy(r);
@@ -1034,7 +1047,13 @@ export default function Pacas() {
     return Number.isFinite(n) ? formatCurrency(n) : '';
   };
 
-  // ── Excel de separadas, con una hoja por cliente ──────────────────
+  // ── Excel de lo comprometido, con una hoja por cliente ────────────
+  //
+  // Incluye las separadas, las reservadas y las VENDIDAS SIN DESPACHAR, que es
+  // lo mismo que cuenta la columna «Comprometidas» del inventario. Se llamaba
+  // «separadas» en el boton, en las hojas y en el nombre del archivo, y eso era
+  // la misma palabra equivocada: cada fila trae su estado, asi que el papel
+  // dice la verdad; lo que habia que arreglar era el titulo.
   // Cada cliente ve solo lo suyo, agrupado por referencia y calidad, que es como
   // la bodega lo alista. La primera hoja resume cuánto tiene apartado cada uno.
   const exportarSeparadasPorCliente = async () => {
@@ -1044,12 +1063,12 @@ export default function Pacas() {
       // esta funcion nunca lo encendia, asi que en tableta un doble toque
       // generaba dos libros y dos descargas.
       setExporting(true);
-      addToast('Generando Excel de separadas…', 'info');
+      addToast('Generando Excel de lo comprometido…', 'info');
       const rows = await pacasApi.getComprometidas({});
       const separadas = (Array.isArray(rows) ? rows : []).filter(r => r.estado !== 'despachada');
 
       if (!separadas.length) {
-        addToast('No hay unidades separadas en este momento', 'warning');
+        addToast('No hay unidades comprometidas en este momento', 'warning');
         return;
       }
 
@@ -1084,7 +1103,7 @@ export default function Pacas() {
       t.alignment = { horizontal: 'center', vertical: 'middle' };
       wr.getRow(1).height = 28;
 
-      ['Cliente', 'Separadas', 'Cotizaciones'].forEach((h, i) => {
+      ['Cliente', 'Comprometidas', 'Cotizaciones'].forEach((h, i) => {
         const c = wr.getCell(3, i + 1);
         c.value = h;
         c.font = { bold: true, size: 10, color: { argb: WHITE } };
@@ -1185,8 +1204,8 @@ export default function Pacas() {
       });
 
       const buffer = await wb.xlsx.writeBuffer();
-      descargarExcel(buffer, `Separadas_por_cliente_${hoy()}.xlsx`);
-      addToast(`${separadas.length} unidades separadas de ${clientes.length} cliente(s)`, 'success');
+      descargarExcel(buffer, `Comprometidas_por_cliente_${hoy()}.xlsx`);
+      addToast(`${separadas.length} unidades comprometidas de ${clientes.length} cliente(s)`, 'success');
     } catch (err) {
       addToast(mensajeDeError(err, 'generar el Excel'), 'error');
     } finally {
@@ -1201,10 +1220,15 @@ export default function Pacas() {
     const acc = {};
     for (const row of inventarioAgrupado) {
       const key = (row.categoria || '').trim() || SIN_DATO;
-      if (!acc[key]) acc[key] = { categoria: key, fisico: 0, disponibles: 0, separadas: 0, despachadas: 0 };
+      if (!acc[key]) acc[key] = { categoria: key, fisico: 0, disponibles: 0, separadas: 0, vendidas: 0, despachadas: 0 };
       acc[key].fisico      += parseInt(row.fisico) || 0;
       acc[key].disponibles += parseInt(row.disponibles) || 0;
       acc[key].separadas   += parseInt(row.separadas) || 0;
+      // Las VENDIDAS van aparte y el servidor ya las manda sueltas. No se
+      // pintan como una quinta columna -no caben en la tableta- pero se
+      // necesitan para poder decir cuantas de las comprometidas ya estan
+      // vendidas, que es justo lo que no se podia saber desde aqui.
+      acc[key].vendidas    += parseInt(row.vendidas) || 0;
       acc[key].despachadas += parseInt(row.despachadas) || 0;
     }
     return Object.values(acc).sort((a, b) => b.fisico - a.fisico);
@@ -1222,9 +1246,10 @@ export default function Pacas() {
   const totalInventario = useMemo(() => resumenCategorias.reduce((a, r) => ({
     fisico:      a.fisico      + r.fisico,
     separadas:   a.separadas   + r.separadas,
+    vendidas:    a.vendidas    + r.vendidas,
     disponibles: a.disponibles + r.disponibles,
     despachadas: a.despachadas + r.despachadas,
-  }), { fisico: 0, separadas: 0, disponibles: 0, despachadas: 0 }), [resumenCategorias]);
+  }), { fisico: 0, separadas: 0, vendidas: 0, disponibles: 0, despachadas: 0 }), [resumenCategorias]);
 
   // Y NO SE LLAMA «TOTAL» CUANDO NO LO ES. El inventario agrupado lo filtra el
   // servidor, así que con un filtro puesto estos números son los de lo
@@ -1274,8 +1299,9 @@ export default function Pacas() {
             tabIndex={0}
             aria-pressed={!hayFiltro}
             aria-label={`${hayFiltro ? 'Quitar los filtros. Total de lo filtrado' : 'Inventario total'}:`
-              + ` ${totalInventario.fisico} físicas en bodega, ${totalInventario.separadas} separadas,`
-              + ` ${totalInventario.disponibles} disponibles, ${totalInventario.despachadas} ya despachadas`}
+              + ` ${totalInventario.fisico} físicas en bodega, ${totalInventario.separadas} comprometidas`
+              + (totalInventario.vendidas > 0 ? ` (de ellas ${totalInventario.vendidas} ya vendidas sin despachar)` : '')
+              + `, ${totalInventario.disponibles} disponibles, ${totalInventario.despachadas} ya despachadas`}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -1299,7 +1325,7 @@ export default function Pacas() {
                   <p className="font-bold text-primary tabular-nums">{totalInventario.fisico}</p>
                 </div>
                 <div>
-                  <p className="text-muted">Sep</p>
+                  <p className="text-muted">Comp</p>
                   <p className="font-bold text-warning tabular-nums">{totalInventario.separadas}</p>
                 </div>
                 <div>
@@ -1335,7 +1361,7 @@ export default function Pacas() {
                 role="button"
                 tabIndex={0}
                 aria-pressed={activa}
-                aria-label={`Filtrar por ${nombre}: ${r.fisico} en bodega, ${r.separadas} separadas, ${r.disponibles} disponibles, ${r.despachadas} ya despachadas`}
+                aria-label={`Filtrar por ${nombre}: ${r.fisico} en bodega, ${r.separadas} comprometidas${r.vendidas > 0 ? ` (${r.vendidas} ya vendidas sin despachar)` : ''}, ${r.disponibles} disponibles, ${r.despachadas} ya despachadas`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -1366,7 +1392,7 @@ export default function Pacas() {
                       <p className="font-bold text-primary tabular-nums">{r.fisico}</p>
                     </div>
                     <div>
-                      <p className="text-muted">Sep</p>
+                      <p className="text-muted">Comp</p>
                       <p className="font-bold text-warning tabular-nums">{r.separadas}</p>
                     </div>
                     <div>
@@ -1556,7 +1582,7 @@ export default function Pacas() {
             </Button>
             <Button onClick={exportarSeparadasPorCliente} variant="outline" disabled={exporting}
               title="Excel con una hoja por cliente: qué tiene apartado cada uno">
-              <Download size={16} className="mr-1" /> Separadas x cliente
+              <Download size={16} className="mr-1" /> Comprometidas x cliente
             </Button>
             <Button onClick={() => { resetForm(); setModalOpen(true); }} variant="secondary">
               <Plus size={16} /> Nueva Unidad
@@ -1663,8 +1689,8 @@ export default function Pacas() {
                           {row.separadas > 0 ? (
                             <button type="button" onClick={() => verComprometidas(row)}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-warning/10 text-warning font-semibold underline underline-offset-2 decoration-warning/40 hover:bg-warning/20"
-                              aria-label={`Ver por quién están separadas las ${row.separadas} unidades de ${row.clasificacion} ${row.referencia}`}
-                              title="Ver por quién están separadas">
+                              aria-label={`Ver para quién están las ${row.separadas} unidades comprometidas de ${row.clasificacion} ${row.referencia}`}
+                              title="Ver para quién están, y cuáles ya se vendieron">
                               {row.separadas}
                             </button>
                           ) : row.separadas}
@@ -2203,15 +2229,18 @@ export default function Pacas() {
         </div>
       </Modal>
 
-      {/* Modal: por quién están separadas las pacas de un grupo */}
+      {/* Modal: para quién están las pacas comprometidas de un grupo. Cada
+          paca lleva su ESTADO escrito y la vendida va en otro color: es aqui
+          donde se ve, una por una, cual esta apartada para una cotizacion y
+          cual ya se vendio. */}
       <Modal isOpen={!!comprometidas} onClose={() => setComprometidas(null)}
-        title={comprometidas ? `Separadas · ${comprometidas.label}` : ''} size="lg">
+        title={comprometidas ? `Comprometidas · ${comprometidas.label}` : ''} size="lg">
         {comprometidas && (
           <div className="space-y-3">
             {comprometidas.loading ? (
               <p className="text-center text-muted py-8 text-sm">Cargando…</p>
             ) : comprometidas.rows.length === 0 ? (
-              <p className="text-center text-muted py-8 text-sm">No hay pacas separadas en este grupo.</p>
+              <p className="text-center text-muted py-8 text-sm">No hay pacas comprometidas en este grupo.</p>
             ) : (
               <>
                 <p className="text-xs text-muted">{comprometidas.rows.length} paca(s) comprometida(s). Agrupadas por cliente / cotización:</p>
