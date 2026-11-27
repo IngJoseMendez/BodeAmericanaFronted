@@ -375,10 +375,16 @@ export default function MatrizRepartido() {
             {exportando ? 'Generando…' : 'Excel'}
           </Button>
           {/* De vuelta a repartir: esta pantalla se mira DESPUÉS de una ronda, y
-              casi siempre para decidir la siguiente. */}
+              casi siempre para decidir la siguiente.
+
+              ES UN BOTÓN Y NO UN ENLACE DE TEXTO, y eso cambió al quitar
+              «Repartido» del menú lateral: desde que la única puerta de entrada
+              es el botón de la Matriz, ésta es también la única salida, y en
+              tableta un texto de 12 px sin altura propia no es un blanco que se
+              pueda tocar. Lleva `min-h-11` (44 px) como el de ida. */}
           <Link to="/separacion-masiva"
-            className="text-xs font-semibold text-secondary hover:underline underline-offset-2 px-2">
-            Ir a la Matriz
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs font-semibold text-primary hover:bg-primary/5 transition-colors min-h-11">
+            <LayoutGrid size={14} aria-hidden="true" /> Ir a la Matriz
           </Link>
         </div>
 

@@ -118,10 +118,23 @@ const adminNavItems = [
   // y cuando se queda rancio, miente.
   { path: '/cotizaciones',         icon: FileSignature,   label: 'Cotizaciones',     key: null,       grupo: 'vender' },
   { path: '/separacion-masiva',    icon: LayoutGrid,      label: 'Matriz',           key: null,       grupo: 'vender' },
-  // Pegada a la Matriz y antes de Faltantes, porque es el mismo recorrido del
-  // ojo: se reparte (Matriz), se mira lo que salio (Repartido) y se atiende lo
-  // que quedo faltando (Faltantes).
-  { path: '/matriz-repartido',     icon: History,         label: 'Repartido',        key: null,       grupo: 'vender' },
+  // LO REPARTIDO NO ESTA EN ESTE MENU, Y ES A PROPOSITO.
+  //
+  // Estuvo aqui, entre Matriz y Faltantes, con el argumento del recorrido del
+  // ojo: se reparte, se mira lo que salio, se atiende lo que falto. Pero la
+  // dueña lo leyo como lo que parecia desde el menu -un modulo mas- y pidio que
+  // se llegara desde la Matriz con un boton.
+  //
+  // Tiene razon y no es solo cuestion de gusto: no es un sitio donde se
+  // trabaje, es la respuesta a una pregunta que se hace ESTANDO en la Matriz
+  // («de todo lo que repartí este mes, cuantos deportivos salieron»). El boton
+  // vive en la cabecera de la Matriz, que es justo donde aparece la pregunta.
+  //
+  // La pantalla sigue siendo una ruta aparte (/matriz-repartido, con carga
+  // diferida): meterla dentro de SeparacionMasiva.jsx seria una tercera fase en
+  // un archivo de 2.300 lineas que ya se descarga entero al abrir la Matriz, y
+  // esto se consulta despues, no mientras se reparte. Lo que se quito es la
+  // entrada del menu, no la pantalla.
   { path: '/faltantes',            icon: PackageX,        label: 'Faltantes',        key: null,       grupo: 'vender' },
   { path: '/despachos',            icon: Truck,           label: 'Despachos',        key: null,       grupo: 'vender' },
   { path: '/ventas',               icon: ShoppingCart,    label: 'Ventas',           key: 'ventas',   grupo: 'vender' },
