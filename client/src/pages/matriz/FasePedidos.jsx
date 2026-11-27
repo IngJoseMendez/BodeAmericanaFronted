@@ -27,11 +27,11 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardBody, Button, EmptyState, SelectorTransporte, CampoMonto, BuscadorLista } from '../../components/common';
-import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../../lib/cotizacion';
+import { cantidadDe, precioDe, itemCompleto, totalesFila, tasaDeFila } from '../../lib/cotizacion';
 import {
   normTxt, claveStock, quedanPorCalidad, textoExistencia, textoQuedanReferencia,
 } from '../../lib/matriz';
-import { parseMonto, formatCOP, formatNumero } from '../../lib/money';
+import { formatCOP, formatNumero } from '../../lib/money';
 import {
   RAYA_CABECERA, campo, entregaDeCliente, itemTieneAlgo, faltaEnItem, porCargar, textoSobreprecio,
 } from './comun';
@@ -39,6 +39,7 @@ import PanelExistencias from './PanelExistencias';
 import {
   Users, Search, Plus, ArrowRight, Trash2, FileSpreadsheet, RotateCcw,
   AlertTriangle, AlertCircle, Info, Package, Truck, ExternalLink, CheckCircle,
+  DollarSign,
 } from 'lucide-react';
 
 // El panel de existencias se recuerda abierto o cerrado, pero SÓLO en pantalla
@@ -86,7 +87,7 @@ const CHIP = 'inline-flex items-center gap-1 text-xs leading-tight px-2 py-0.5 r
 // array de avisos mientras su contenido no cambie).
 // ─────────────────────────────────────────────────────────────────────────────
 const FilaCliente = memo(function FilaCliente({
-  cliente, fila, avisos, problemas, transporteGlobal, transportes,
+  cliente, fila, avisos, problemas, transportes,
   opcionesReferencia, opcionesSinStock, calidadesPorReferencia, calidadesCatalogo,
   leerExistencias, productoResaltado,
   faltante, deshabilitado, resaltado,
@@ -95,9 +96,8 @@ const FilaCliente = memo(function FilaCliente({
 }) {
   const uid = useId();
   const items = fila?.items || [];
-  const totales = totalesFila(fila, transporteGlobal);
+  const totales = totalesFila(fila);
   const hayProblema = Boolean(problemas?.length);
-  const transporteHeredado = Number(transporteGlobal) || 0;
   const tipoDescuento = fila?.tipo_descuento || 'valor_fijo';
   const tieneItems = items.length > 0;
 
@@ -134,7 +134,13 @@ const FilaCliente = memo(function FilaCliente({
     (entrega.incompleto ? ' · OJO: el destino registrado está a medias, lo que falta se despacha en blanco' : '') +
     (Number(cliente.descuento) > 0
       ? ` · descuento pactado ${formatCOP(Number(cliente.descuento))}/paca`
-      : '');
+      : '') +
+    // La moneda de este cliente, dicha con palabras y no con un número suelto:
+    // es la diferencia entre un PDF con columna de dólares y uno sin ella, y se
+    // decide aquí mismo con la casilla de la tasa.
+    (tasaDeFila(fila)
+      ? ` · en pesos y dólares a ${formatNumero(tasaDeFila(fila), { maxDecimales: 2 })}`
+      : ' · sólo en pesos');
 
   // Es un ELEMENTO reutilizado, no un componente declarado aquí dentro: un
   // componente definido dentro de otro es un tipo nuevo en cada render, React
@@ -782,9 +788,9 @@ const FilaCliente = memo(function FilaCliente({
                     value={fila?.transporte_unitario || ''}
                     disabled={deshabilitado}
                     aria-label={`Transporte por paca de ${cliente.nombre}`}
-                    title="Déjalo vacío para usar el transporte de arriba"
+                    title={`Transporte por paca de ${cliente.nombre}. Vacío es sin transporte.`}
                     onChange={(e) => onCampo(cliente.id, 'transporte_unitario', e.target.value)}
-                    placeholder={transporteHeredado > 0 ? `${formatNumero(transporteHeredado)} (arriba)` : 'Transporte'}
+                    placeholder="Transporte"
                     className={campo(false, 'w-28 px-2 tabular-nums')}
                   />
                   <label htmlFor={`${uid}-tipotrans`} className="sr-only">Tipo de transporte</label>
@@ -802,6 +808,40 @@ const FilaCliente = memo(function FilaCliente({
                     onChange={(v) => onCampo(cliente.id, 'tipo_transporte', v)}
                     placeholder="Tipo…"
                     className={campo(false, 'w-32 px-2')}
+                  />
+                </div>
+
+                {/* ── LA TASA DE ESTE CLIENTE ────────────────────────────────
+                    Estaba arriba, una para toda la ronda, y con eso no había
+                    forma de tener a la vez clientes en pesos y clientes en
+                    pesos y dólares: la matriz entera salía en una moneda.
+
+                    VACÍO NO ES UN OLVIDO, ES LA RESPUESTA: sin tasa, la
+                    cotización se guarda con tasa NULL y el PDF sale sin columna
+                    de dólares. Por eso el marcador de posición dice «Sólo
+                    pesos» en vez de un ejemplo de cifra —un «Ej: 4.000» invita
+                    a rellenarlo— y por eso no lleva asterisco ni validación.
+
+                    El rótulo visible es el signo del dólar y el nombre entero
+                    va en el `aria-label` y en el `title`: en una fila que ya
+                    lleva descuento, tipo, transporte y tipo de transporte, un
+                    quinto rótulo escrito no cabe en la tableta. */}
+                <div className="flex items-center gap-1">
+                  <DollarSign size={13} className="text-muted flex-shrink-0" aria-hidden="true" />
+                  <label htmlFor={`${uid}-tasa`} className="sr-only">Tasa del dólar</label>
+                  <CampoMonto
+                    id={`${uid}-tasa`}
+                    value={fila?.tasa || ''}
+                    disabled={deshabilitado}
+                    aria-label={`Tasa del dólar de ${cliente.nombre}`}
+                    title={
+                      tasaDeFila(fila)
+                        ? `${cliente.nombre} factura en pesos y dólares a ${formatNumero(tasaDeFila(fila), { maxDecimales: 2 })}`
+                        : `Déjala vacía si ${cliente.nombre} factura sólo en pesos. Con tasa, su cotización lleva también la columna en dólares.`
+                    }
+                    onChange={(e) => onCampo(cliente.id, 'tasa', e.target.value)}
+                    placeholder="Sólo pesos"
+                    className={campo(false, 'w-28 px-2 tabular-nums')}
                   />
                 </div>
               </div>
@@ -854,24 +894,18 @@ const FasePedidos = memo(function FasePedidos({
   // pasaba lo prometido, que es la forma cara de romperse en esta pantalla.
   oculto, clienteResaltado,
   cargando, clientes, clientesVisibles, filas, avisos, problemas, problemasSueltos,
-  transportes, transporteGlobalNum,
+  transportes,
   opcionesReferencia, opcionesSinStock, calidadesPorReferencia, calidadesCatalogo,
   leerExistencias, existencias,
   faltantes, selloFaltantes, clientesConFaltante, unidadesFaltantes,
   enviando, cruzando, impedimento, resumen, conflictos, avisoCarga,
   borradorRecuperado, ultimoEnvio, generandoMatriz, estadoGuardado,
-  tasa, transporteGlobal, validezDias, buscar, soloConItems, soloConFaltante,
-  datosGlobalesFaltan = [], sacudida = 0,
-  onTasa, onTransporte, onValidez, onBuscar, onSoloConItems, onSoloConFaltante,
+  validezDias, buscar, soloConItems, soloConFaltante,
+  onValidez, onBuscar, onSoloConItems, onSoloConFaltante,
   onCampo, onItemCampo, onAgregarItem, onQuitarItem, onCatalogo,
   onCargarFaltante, onCargarTodoFaltante, onRespetarPrecio,
   onDescartarBorrador, onRepartir, onDescargarMatriz,
 }) {
-  // Ids FIJOS y no useId: el orquestador enfoca el primero que falte con
-  // getElementById cuando se intenta pasar al reparto sin llenarlos, y para eso
-  // tiene que saber como se llaman.
-  const idTasa = 'matriz-tasa';
-  const idTransporte = 'matriz-transporte';
   const idValidez = useId();
   const idBuscar = useId();
   const idSoloConItems = useId();
@@ -882,19 +916,6 @@ const FasePedidos = memo(function FasePedidos({
   // tanto NUNCA cambia de identidad— tiene contenido nuevo. Sin él, cargar los
   // faltantes o abonarlos después de repartir no repintaría ni un chip.
   void selloFaltantes;
-
-  // Un campo global sin llenar se pinta en rojo y, al intentar saltarselo, se
-  // sacude. La clave con `sacudida` remonta el nodo para que la animacion vuelva
-  // a correr en el segundo intento.
-  const faltaTasa = datosGlobalesFaltan.includes('tasa');
-  const faltaTransporte = datosGlobalesFaltan.includes('transporte');
-  const claseCampo = (falta) => [
-    'w-full px-3 py-2 rounded-xl border bg-surface text-sm tabular-nums',
-    'focus:outline-none focus:ring-2',
-    falta
-      ? 'border-error focus:ring-error/30'
-      : 'border-border focus:ring-secondary/30',
-  ].join(' ');
 
   // ── El panel de existencias ───────────────────────────────────────────────
   // El estado vive AQUÍ y no en el orquestador: abrirlo, cerrarlo o tocar un
@@ -965,53 +986,19 @@ const FasePedidos = memo(function FasePedidos({
   return (
     <>
       <div className={`flex flex-col flex-1 min-h-0 ${oculto ? 'hidden' : ''}`}>
-        {/* ── Barra pegajosa: lo que vale para TODAS las filas ────────────── */}
+        {/* ── Barra pegajosa ───────────────────────────────────────────────
+            AQUÍ YA NO ESTÁN LA TASA NI EL TRANSPORTE. Estaban los dos, con
+            asterisco y obligatorios, y valían para la ronda entera. Ahora van
+            en la línea de cada cliente, junto a su descuento, porque es ahí
+            donde significan algo: hay clientes que compran en pesos y clientes
+            que compran en pesos y dólares, y con una tasa única la matriz
+            entera salía en una sola moneda.
+
+            Lo que queda es lo que de verdad es común: la VALIDEZ del documento
+            —un plazo, igual para todos— y los filtros, que no son datos del
+            negocio sino de la vista. */}
         <div className="flex-shrink-0 px-4 sm:px-6 py-3 bg-cream border-b border-border/60">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="w-32" key={`tasa-${sacudida}`}>
-              <label htmlFor={idTasa} className="block text-xs font-medium text-muted mb-1">
-                Tasa del dólar <span className="text-error" aria-hidden="true">*</span>
-              </label>
-              <CampoMonto
-                id={idTasa}
-                value={tasa}
-                onChange={(e) => onTasa(e.target.value)}
-                placeholder="Ej: 4.000"
-                required
-                aria-invalid={faltaTasa}
-                aria-describedby={faltaTasa ? `${idTasa}-falta` : undefined}
-                className={`${claseCampo(faltaTasa)} ${faltaTasa && sacudida ? 'animate-sacudir' : ''}`}
-              />
-              {faltaTasa && (
-                <p id={`${idTasa}-falta`} className="mt-1 flex items-start gap-1 text-[11px] text-error leading-tight">
-                  <AlertCircle size={12} className="mt-px flex-shrink-0" aria-hidden="true" />
-                  Escríbela, aunque sea 0
-                </p>
-              )}
-            </div>
-
-            <div className="w-40" key={`transporte-${sacudida}`}>
-              <label htmlFor={idTransporte} className="block text-xs font-medium text-muted mb-1">
-                Transporte por paca <span className="text-error" aria-hidden="true">*</span>
-              </label>
-              <CampoMonto
-                id={idTransporte}
-                value={transporteGlobal}
-                onChange={(e) => onTransporte(e.target.value)}
-                placeholder="Ej: 2.000"
-                required
-                aria-invalid={faltaTransporte}
-                aria-describedby={faltaTransporte ? `${idTransporte}-falta` : undefined}
-                className={`${claseCampo(faltaTransporte)} ${faltaTransporte && sacudida ? 'animate-sacudir' : ''}`}
-              />
-              {faltaTransporte && (
-                <p id={`${idTransporte}-falta`} className="mt-1 flex items-start gap-1 text-[11px] text-error leading-tight">
-                  <AlertCircle size={12} className="mt-px flex-shrink-0" aria-hidden="true" />
-                  Escríbelo, aunque sea 0
-                </p>
-              )}
-            </div>
-
             <div className="w-28">
               <label htmlFor={idValidez} className="block text-xs font-medium text-muted mb-1">
                 Validez (días)
@@ -1352,7 +1339,6 @@ const FasePedidos = memo(function FasePedidos({
                     fila={filas[c.id]}
                     avisos={avisos[c.id]}
                     problemas={problemas[String(c.id)]}
-                    transporteGlobal={transporteGlobalNum}
                     transportes={transportes}
                     opcionesReferencia={opcionesReferencia}
                     opcionesSinStock={opcionesSinStock}

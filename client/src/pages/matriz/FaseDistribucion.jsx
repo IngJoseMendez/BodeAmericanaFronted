@@ -159,7 +159,8 @@ function FranjaFamilia({ referencia, hermanas, deshabilitado, onVolver }) {
 // ni un array recreado en el render del padre. Por eso allí los memos del dinero
 // (`preciosPorAsignacion`, `descuentosPorCliente`, `totalesReparto`) devuelven el
 // objeto anterior mientras se está en la Fase 1, y por eso `crearCotizaciones` lee
-// `filas`, la tasa, el transporte y la validez de sus refs espejo en vez de
+// `filas` -que ya lleva dentro el flete y la tasa de cada cliente- y la
+// validez de sus refs espejo en vez de
 // llevarlos en las dependencias del useCallback: cualquiera de ellos en las
 // dependencias devuelve el problema entero sin que nada se vea roto.
 const FaseDistribucion = memo(function FaseDistribucion({

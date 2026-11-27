@@ -45,7 +45,7 @@ import {
 } from '../services/api';
 import { useCatalog } from '../context/CatalogContext';
 import { useAuth } from '../context/AuthContext';
-import { cantidadDe, precioDe, itemCompleto, totalesFila } from '../lib/cotizacion';
+import { cantidadDe, precioDe, itemCompleto, totalesFila, tasaDeFila } from '../lib/cotizacion';
 // La regla de precios, en un solo sitio para las tres pantallas que la usan.
 import { precioDeVenta } from '../lib/precios';
 import { nuevoLibro, descargar, hojaMatrizClientes } from '../lib/entregables';
@@ -117,30 +117,27 @@ export default function SeparacionMasiva() {
   const [cargando, setCargando] = useState(true);
   const [avisoCarga, setAvisoCarga] = useState(null);
 
-  // Datos globales: la dueña fue explícita en que la tasa y el transporte se
-  // ponen UNA vez arriba y valen para todas las filas.
-  const [tasa, setTasa] = useState('');
-  const [transporteGlobal, setTransporteGlobal] = useState('');
-  const [validezDias, setValidezDias] = useState('15');
-
-  // CAMPOS GLOBALES OBLIGATORIOS. La tasa y el transporte valen para TODA la
-  // ronda y de ellos salen los dolares y el flete de cada cotizacion. Dejarlos
-  // en blanco no daba error: el codigo los leia como 0 y la tasa acababa
-  // guardada como 1, que es lo que hacia que el PDF sacara el total en dolares
-  // igual que el total en pesos. Se piden escritos, aunque sea un cero: un cero
-  // tecleado es una decision, un vacio es un olvido, y hasta ahora se veian
-  // igual.
+  // ── LA TASA Y EL FLETE SON DE CADA CLIENTE, NO DE LA RONDA ────────────────
   //
-  // `sacudida` es un contador y no un booleano a proposito: si se intenta pasar
-  // dos veces seguidas, subirlo vuelve a montar la animacion. Con un booleano
-  // la segunda vez no se movia nada y parecia que el boton se habia roto.
-  const [sacudida, setSacudida] = useState(0);
-  const datosGlobalesFaltan = useMemo(() => {
-    const faltan = [];
-    if (String(tasa).trim() === '') faltan.push('tasa');
-    if (String(transporteGlobal).trim() === '') faltan.push('transporte');
-    return faltan;
-  }, [tasa, transporteGlobal]);
+  // Aquí arriba vivían los dos, y el comentario de entonces decía que la dueña
+  // había sido explícita en ponerlos UNA vez para toda la matriz. Lo cambió, y
+  // el motivo deja el dato mejor de como estaba, así que esto NO se vuelve a
+  // subir a la barra:
+  //
+  //   Hay clientes que compran en pesos y clientes que compran en pesos y
+  //   dolares. Con una tasa unica no habia forma de distinguirlos: la ronda
+  //   entera salia con la misma moneda. Ahora la ausencia de tasa SIGNIFICA
+  //   algo —este cliente factura en pesos— y escribirla significa lo otro.
+  //   Un campo vacio dejo de ser un olvido y paso a ser una respuesta.
+  //
+  // Por eso tampoco hay ya validacion de "escribela aunque sea 0": pedir un
+  // cero obligatorio era justo lo que borraba esa diferencia. Y el flete se va
+  // con ella por coherencia, que ademas es la verdad del negocio: cada cliente
+  // queda donde queda y paga su propio acarreo.
+  //
+  // Lo unico que sigue siendo de la ronda es la VALIDEZ: es un plazo del
+  // documento, igual para todos, y no cambia de cliente a cliente.
+  const [validezDias, setValidezDias] = useState('15');
 
   const [buscar, setBuscar] = useState('');
   const [soloConItems, setSoloConItems] = useState(false);
@@ -229,7 +226,7 @@ export default function SeparacionMasiva() {
   // y para el autoguardado con retardo, que se ejecuta cuando el render que lo
   // programó ya pasó.
   const filasRef = useRef({});
-  const datosRef = useRef({ tasa: '', transporteGlobal: '', validezDias: '15' });
+  const datosRef = useRef({ validezDias: '15' });
   // El reparto tecleado, también en un espejo. Es lo que permite que
   // `prepararReparto` —y con él `irAlReparto`, que se lo pasa a la Fase 1— NO
   // dependan de `asignado`: si dependieran, su identidad cambiaría con cada
@@ -259,7 +256,7 @@ export default function SeparacionMasiva() {
   useEffect(() => { filasRef.current = filas; }, [filas]);
   useEffect(() => { asignadoRef.current = asignado; }, [asignado]);
   useEffect(() => { sinFaltanteRef.current = sinFaltante; }, [sinFaltante]);
-  useEffect(() => { datosRef.current = { tasa, transporteGlobal, validezDias }; }, [tasa, transporteGlobal, validezDias]);
+  useEffect(() => { datosRef.current = { validezDias }; }, [validezDias]);
 
   const cargarStock = useCallback(async (respaldo) => {
     // Una sola petición para todo el stock. Cotizaciones pregunta por cada fila;
@@ -402,12 +399,11 @@ export default function SeparacionMasiva() {
       if (repartoAbierto?.id) {
         repartoRef.current.id = repartoAbierto.id;
         repartoRef.current.numero = repartoAbierto.numero || null;
-        if (repartoAbierto.tasa != null && numServidor(repartoAbierto.tasa) > 0) {
-          setTasa(formatNumero(numServidor(repartoAbierto.tasa), { maxDecimales: 2 }));
-        }
-        if (numServidor(repartoAbierto.transporte_unitario) > 0) {
-          setTransporteGlobal(formatNumero(numServidor(repartoAbierto.transporte_unitario), { maxDecimales: 2 }));
-        }
+        // La tasa y el flete que trae la cabecera NO se leen: son de rondas
+        // viejas, cuando eran de la ronda entera, y volcarlos en los campos de
+        // hoy le pondria tasa a todo el mundo —justo lo que distingue al
+        // cliente que factura en pesos del que factura en dolares—. Lo de cada
+        // cliente lo recupera el borrador unas lineas mas abajo.
         if (numServidor(repartoAbierto.validez_dias) > 0) setValidezDias(String(repartoAbierto.validez_dias));
       } else if (rAbierto.status === 'rejected') {
         // No hay reparto en el servidor y no se pudo ni preguntar: se trabaja en
@@ -619,9 +615,8 @@ export default function SeparacionMasiva() {
     if (repartoRef.current.creando) return repartoRef.current.creando;
     const promesa = (async () => {
       const d = datosRef.current;
+      // Sin tasa ni flete: la ronda ya no los tiene, los tiene cada cliente.
       const r = await matrizApi.crearReparto({
-        tasa: parseMonto(d.tasa),
-        transporte_unitario: parseMonto(d.transporteGlobal),
         validez_dias: Math.max(1, Math.round(parseMonto(d.validezDias)) || 15),
       });
       const id = r?.reparto?.id ?? null;
@@ -1076,8 +1071,6 @@ export default function SeparacionMasiva() {
     return salida;
   }, [filas, pedidoPorClave, stockPorClave, calidadesPorReferencia]);
 
-  const transporteGlobalNum = parseMonto(transporteGlobal);
-
   const resumen = useMemo(() => {
     let numClientes = 0;
     let unidades = 0;
@@ -1085,14 +1078,14 @@ export default function SeparacionMasiva() {
     let lineasIncompletas = 0;
     for (const fila of Object.values(filas)) {
       lineasIncompletas += fila.items.filter((it) => itemTieneAlgo(it) && !itemCompleto(it)).length;
-      const t = totalesFila(fila, transporteGlobalNum);
+      const t = totalesFila(fila);
       if (!t.validos.length) continue;
       numClientes += 1;
       unidades += t.unidades;
       total += t.total;
     }
     return { numClientes, unidades, total, lineasIncompletas };
-  }, [filas, transporteGlobalNum]);
+  }, [filas]);
 
   // QUEDAN DOS MOTIVOS, Y NINGUNO ES EL STOCK. Antes, pedir entre todos más
   // pacas de las que hay apagaba el botón, y la única salida era borrarle el
@@ -1172,10 +1165,10 @@ export default function SeparacionMasiva() {
     // `sinFaltante` entra en la cuenta: si no, el pie y el rótulo del botón
     // prometerían anotar faltantes que ella acaba de apagar con la casilla, y
     // el servidor escribiría menos de los que la pantalla dijo.
-    const t = totalesDeReparto(filas, asignado, transporteGlobalNum, sinFaltante);
+    const t = totalesDeReparto(filas, asignado, sinFaltante);
     cacheTotales.current = t;
     return t;
-  }, [filas, asignado, transporteGlobalNum, fase, sinFaltante]);
+  }, [filas, asignado, fase, sinFaltante]);
 
   // ── Manejadores de la Fase 2 ──────────────────────────────────────────────
   const productosRef = useRef(SIN_PRODUCTOS);
@@ -1493,24 +1486,11 @@ export default function SeparacionMasiva() {
     if (cruzando || enviando) return;
     if (impedimento) { addToast(impedimento, 'error'); return; }
 
-    // Aqui se corta, y no al crear las cotizaciones: en la Fase 2 ya no se ven
-    // estos campos y el aviso llegaria cuando no hay donde arreglarlo.
-    if (datosGlobalesFaltan.length) {
-      setSacudida((n) => n + 1);
-      addToast(
-        datosGlobalesFaltan.length === 2
-          ? 'Falta la tasa del dolar y el transporte por paca. Escribelos arriba, aunque sea en cero.'
-          : datosGlobalesFaltan[0] === 'tasa'
-            ? 'Falta la tasa del dolar. Escribela arriba, aunque sea en cero.'
-            : 'Falta el transporte por paca. Escribelo arriba, aunque sea en cero.',
-        'error',
-      );
-      document.getElementById(
-        datosGlobalesFaltan[0] === 'tasa' ? 'matriz-tasa' : 'matriz-transporte',
-      )?.focus();
-      return;
-    }
-
+    // AQUI YA NO SE EXIGE NADA GLOBAL. Antes se cortaba el paso si faltaba la
+    // tasa o el flete de la barra, con sacudida y foco al campo. Los dos son
+    // ahora de cada cliente, y un cliente sin tasa es un cliente que factura en
+    // pesos: pedirla obligatoria borraria justo esa diferencia.
+    //
     // Las líneas a medias no bloquean, pero SÍ se avisan, y con los nombres:
     // un número sin nombre no es accionable y esa línea puede hacer desaparecer
     // un producto entero del reparto.
@@ -1553,8 +1533,6 @@ export default function SeparacionMasiva() {
         const id = await asegurarReparto();
         if (!id) throw new Error('No se pudo abrir el reparto en el servidor');
         const cuerpo = {
-          tasa: parseMonto(tasa),
-          transporte_unitario: transporteGlobalNum,
           validez_dias: Math.max(1, Math.round(parseMonto(validezDias)) || 15),
           clientes: Object.keys(filasRef.current)
             .map((clienteId) => ({ cliente_id: Number(clienteId) || clienteId, lineas: lineasDeCliente(clienteId) }))
@@ -1600,7 +1578,7 @@ export default function SeparacionMasiva() {
   }, [
     cruzando, enviando, impedimento, addToast, confirm, resumen.lineasIncompletas,
     cargarStock, asegurarReparto, lineasDeCliente, enriquecer, productosLocales, prepararReparto,
-    tasa, transporteGlobalNum, validezDias, datosGlobalesFaltan,
+    validezDias,
   ]);
 
   const volverAPedidos = useCallback(async (clienteId) => {
@@ -1742,10 +1720,12 @@ export default function SeparacionMasiva() {
     if (restauradoRef.current && Object.keys(filasRef.current).length) return undefined;
     const guardado = leerBorrador(claveBorrador(usuario?.id));
     if (tieneAlgo(guardado)) {
+      // La tasa y el flete de cada cliente viajan DENTRO de `filas`, así que se
+      // recuperan con ellas. Un borrador viejo traía además `tasa` y
+      // `transporte_global` de la barra; no se leen: volcarlos pondría tasa a
+      // todos los clientes de la ronda nueva, incluidos los que facturan en
+      // pesos. Se quedan en el borrador viejo sin hacer daño.
       setFilas(guardado.filas);
-      // Los datos de arriba sólo se pisan si el borrador traía algo escrito.
-      if (guardado.tasa) setTasa(guardado.tasa);
-      if (guardado.transporte_global) setTransporteGlobal(guardado.transporte_global);
       if (guardado.validez_dias) setValidezDias(guardado.validez_dias);
 
       const cuantos = Object.keys(guardado.filas).length;
@@ -1773,8 +1753,6 @@ export default function SeparacionMasiva() {
       v: 1,
       guardado_en: new Date().toISOString(),
       filas,
-      tasa,
-      transporte_global: transporteGlobal,
       validez_dias: validezDias,
     };
     fotoRef.current = foto;
@@ -1785,7 +1763,7 @@ export default function SeparacionMasiva() {
       else olvidarBorrador(clave);
     }, 1000);
     return () => clearTimeout(t);
-  }, [filas, tasa, transporteGlobal, validezDias, usuario?.id]);
+  }, [filas, validezDias, usuario?.id]);
 
   // ── Borrador (3/3): y también al cerrar ─────────────────────────────────
   // beforeunload cubre el cierre y el F5; la limpieza del efecto cubre el otro
@@ -1923,13 +1901,11 @@ export default function SeparacionMasiva() {
       const datos = datosRef.current;
       const proyeccion = proyectarFilas(filasRef.current, asignado);
       const validez = Math.max(1, Math.round(parseMonto(datos.validezDias)) || 15);
-      const tasaNum = parseMonto(datos.tasa);
-      const transporteNum = parseMonto(datos.transporteGlobal);
 
       const metaDeCliente = (cliente) => {
         const fila = proyeccion[cliente.id] || proyeccion[String(cliente.id)];
         if (!fila) return null;
-        const cuentas = totalesFila(fila, transporteNum);
+        const cuentas = totalesFila(fila);
         const entrega = entregaDeCliente(cliente);
         return { cuentas, entrega, fila };
       };
@@ -1970,6 +1946,9 @@ export default function SeparacionMasiva() {
             descuento: m.cuentas.descuento,
             tipo_descuento: m.fila.tipo_descuento || 'valor_fijo',
             transporte_unitario: m.cuentas.transporteUnitario,
+            // La tasa de ESTE cliente, o null si factura en pesos. Va aquí
+            // dentro y no arriba: arriba volvería a ser la de toda la ronda.
+            tasa: tasaDeFila(m.fila),
             tipo_transporte: m.fila.tipo_transporte?.trim() || null,
             destinatario: m.entrega.destinatario || null,
             direccion_entrega: m.entrega.direccion_entrega || null,
@@ -1979,12 +1958,8 @@ export default function SeparacionMasiva() {
         }
 
         const r = await matrizApi.repartir(repartoRef.current.id, {
-          // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
-          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
-          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
-          // cotizaciones que habia en produccion estaban asi.
-          tasa: tasaNum > 0 ? tasaNum : null,
-          transporte_unitario: transporteNum,
+          // Sin `tasa` ni `transporte_unitario` en la raíz: cada cotización usa
+          // los de su cliente, que viajan en `clientes_meta`.
           validez_dias: validez,
           asignaciones,
           cierres_faltante: cierres,
@@ -2025,11 +2000,7 @@ export default function SeparacionMasiva() {
             cliente_id: cliente.id,
             vendedor_id: usuario?.id ?? null,
             validez_dias: validez,
-            // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
-          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
-          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
-          // cotizaciones que habia en produccion estaban asi.
-          tasa: tasaNum > 0 ? tasaNum : null,
+            tasa: tasaDeFila(m.fila),
             notas: null,
             descuento: m.cuentas.descuento,
             tipo_descuento: m.fila.tipo_descuento || 'valor_fijo',
@@ -2050,15 +2021,15 @@ export default function SeparacionMasiva() {
           });
         }
         if (!cotizaciones.length) { addToast('No hay nada que crear: no le repartiste nada a nadie.', 'error'); return; }
+        // SIN `tasa` NI `transporte_unitario` GLOBALES, a proposito. /masiva los
+        // usa como red cuando la cotizacion no trae los suyos
+        // (`oGlobal(fila.tasa, tasa)`), y esa red es justo lo que hay que
+        // quitar: con ella, el cliente que factura en pesos heredaria la tasa
+        // de la ronda y su PDF saldria en dolares. Cada cotizacion de arriba ya
+        // lleva la suya.
         const respuesta = await cotizacionesApi.crearMasiva({
           vendedor_id: usuario?.id ?? null,
           validez_dias: validez,
-          // null y NO 1. Un 1 aqui significaba "un peso vale un dolar": la
-          // cotizacion se guardaba con tasa 1 y el PDF sacaba la columna
-          // "Subtotal USD" con la misma cifra que la de pesos. Las cinco
-          // cotizaciones que habia en produccion estaban asi.
-          tasa: tasaNum > 0 ? tasaNum : null,
-          transporte_unitario: transporteNum,
           cotizaciones,
         });
         const creadas = Array.isArray(respuesta?.creadas) ? respuesta.creadas
@@ -2129,8 +2100,8 @@ export default function SeparacionMasiva() {
     // `onCrear` baja a la Fase 2, que no se desmonta al volver a los pedidos, así
     // que cada dependencia que cambie mientras ella teclea en la Fase 1 le tira
     // el memo y repinta la fase entera —barra, cinta, cabecera, pie y los veinte
-    // productos— en cada pulsación. Por eso NO están aquí `filas`, `tasa`,
-    // `transporteGlobal` ni `validezDias`, que cambian con cada letra: se leen de
+    // productos— en cada pulsación. Por eso NO están aquí `filas` ni
+    // `validezDias`, que cambian con cada letra: se leen de
     // `filasRef` y `datosRef` DENTRO de la función, en el momento del clic, que
     // además es cuando de verdad importan. `asignado` sí está, y no molesta:
     // sólo cambia tecleando en la Fase 2, que es justo cuando la Fase 2 tiene
@@ -2210,7 +2181,6 @@ export default function SeparacionMasiva() {
         problemas={problemas}
         problemasSueltos={problemasSueltos}
         transportes={transportes}
-        transporteGlobalNum={transporteGlobalNum}
         opcionesReferencia={opcionesReferencia}
         opcionesSinStock={opcionesSinStock}
         calidadesPorReferencia={calidadesPorReferencia}
@@ -2231,16 +2201,10 @@ export default function SeparacionMasiva() {
         ultimoEnvio={ultimoEnvio}
         generandoMatriz={generandoMatriz}
         estadoGuardado={estadoGuardado}
-        tasa={tasa}
-        transporteGlobal={transporteGlobal}
         validezDias={validezDias}
         buscar={buscar}
         soloConItems={soloConItems}
         soloConFaltante={soloConFaltante}
-        datosGlobalesFaltan={datosGlobalesFaltan}
-        sacudida={sacudida}
-        onTasa={setTasa}
-        onTransporte={setTransporteGlobal}
         onValidez={setValidezDias}
         onBuscar={setBuscar}
         onSoloConItems={setSoloConItems}

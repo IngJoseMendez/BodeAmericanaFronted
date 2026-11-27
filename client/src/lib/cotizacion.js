@@ -36,13 +36,38 @@ export const precioConDescuento = (precio, descuentoRaw, tipoDescuento) => {
 };
 
 /**
+ * La tasa del dólar de UN cliente, o null si factura sólo en pesos.
+ *
+ * ESTA FUNCIÓN ES LA QUE DECIDE LA MONEDA DEL DOCUMENTO, y por eso vive aquí
+ * con el resto de las reglas de plata y no dentro de una pantalla.
+ *
+ * Hay clientes que compran en pesos y clientes que compran en pesos y dólares.
+ * Lo único que los distingue es si su casilla de tasa está escrita, así que el
+ * VACÍO ES UNA RESPUESTA y no un olvido: devuelve null, el servidor lo guarda
+ * como NULL y el PDF sale sin columna de dólares.
+ *
+ * Y devuelve null —no 1, y no 0— con todo lo que no sea una tasa de verdad. Un
+ * 1 aquí significaba «un peso vale un dólar»: la cotización se guardaba con
+ * tasa 1 y el PDF sacaba «Subtotal USD» con la misma cifra que la de pesos. Las
+ * cinco cotizaciones que había en producción estaban así.
+ *
+ * El corte en «mayor que 1» es EL MISMO que el del servidor (`tasaOnada`, en
+ * routes/cotizaciones.js). A propósito: si la pantalla aceptara una tasa que el
+ * servidor descarta, el total que ella ve y el que se guarda saldrían de dos
+ * monedas distintas.
+ */
+export const tasaDeFila = (fila) => {
+  const n = parseMonto(fila?.tasa);
+  return Number.isFinite(n) && n > 1 ? n : null;
+};
+
+/**
  * Todo lo que hay que enseñar (y enviar) de un cliente, calculado en un solo
  * sitio: subtotal, unidades, descuento, transporte y total.
  *
- * @param fila              { items, descuento, tipo_descuento, transporte_unitario }
- * @param transporteGlobal  el valor de la barra superior, que la fila puede pisar
+ * @param fila  { items, descuento, tipo_descuento, transporte_unitario }
  */
-export function totalesFila(fila, transporteGlobal) {
+export function totalesFila(fila) {
   const validos = (fila?.items || []).filter(itemCompleto);
   const subtotal = validos.reduce((s, i) => s + cantidadDe(i) * precioDe(i), 0);
   const unidades = validos.reduce((s, i) => s + cantidadDe(i), 0);
@@ -57,11 +82,14 @@ export function totalesFila(fila, transporteGlobal) {
       0
     );
 
-  // El transporte de la fila pisa al global sólo si la usuaria escribió algo:
-  // un 0 escrito a propósito ("este cliente recoge en bodega") tiene que valer 0,
-  // pero una celda vacía hereda el global.
-  const propio = String(fila?.transporte_unitario ?? '').trim();
-  const transporteUnitario = propio === '' ? (Number(transporteGlobal) || 0) : parseMonto(propio);
+  // EL TRANSPORTE ES EL DE LA FILA, Y YA NO HAY GLOBAL AL QUE CAER.
+  //
+  // Había uno en la barra de la Matriz y esta función resolvía la herencia: una
+  // celda vacía tomaba el de arriba y un 0 escrito a mano valía 0 ("este
+  // cliente recoge en bodega"). La dueña bajó el flete —y la tasa— a cada
+  // cliente, así que no queda nada que heredar: vacío es sin transporte, que es
+  // lo mismo que el 0 que antes había que escribir para decirlo.
+  const transporteUnitario = parseMonto(fila?.transporte_unitario);
   const transporteTotal = transporteUnitario * unidades;
 
   return {

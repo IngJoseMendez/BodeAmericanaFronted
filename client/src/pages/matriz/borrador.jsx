@@ -76,6 +76,11 @@ export const saneaFilas = (bruto) => {
       tipo_descuento: fila.tipo_descuento === 'porcentaje' ? 'porcentaje' : 'valor_fijo',
       transporte_unitario: texto(fila.transporte_unitario),
       tipo_transporte: texto(fila.tipo_transporte),
+      // Se sanea como TEXTO y no con `entero`: la tasa lleva decimales
+      // (4.012,50) y pasarla por un redondeo le comería los centavos. Un
+      // borrador anterior a este cambio no la trae y sale vacía, que es lo
+      // correcto: sin tasa, el cliente factura en pesos.
+      tasa: texto(fila.tasa),
     };
   }
   return out;

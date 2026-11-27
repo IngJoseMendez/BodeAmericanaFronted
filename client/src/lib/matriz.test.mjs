@@ -291,7 +291,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
         { referencia: 'SHORTS', calidad: 'supreme', cantidad: '4', precio: '1.900.000' },
         { referencia: 'JEANS CLÁSICO', calidad: 'primera', cantidad: '6', precio: '1.600.000' },
       ],
-      descuento: '50.000', tipo_descuento: 'valor_fijo', transporte_unitario: '',
+      descuento: '50.000', tipo_descuento: 'valor_fijo', transporte_unitario: '35.000',
     },
   };
   const asignado = new Map([
@@ -305,7 +305,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
   comprobar('las cantidades son las repartidas', p[7].items.map((i) => i.cantidad), [5, 6]);
   comprobar('el descuento del cliente viaja con la fila', p[7].descuento, '50.000');
 
-  const t = totalesDeReparto(filas, asignado, 35000);
+  const t = totalesDeReparto(filas, asignado);
   const maria = t.clientes.get(7);
   comprobar('MARIA · 11/18', [maria.repartidas, maria.pedidas], [11, 18]);
   comprobar('le quedan faltando 7', maria.faltando, 7);
@@ -331,7 +331,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
   const asignado = new Map([[claveAsignacion(3, 'JEANS', 'primera'), 5]]);
   const p = proyectarFilas(filas, asignado);
   comprobar('el cupo se gasta de arriba abajo', p[3].items.map((i) => i.cantidad), [3, 2]);
-  const t = totalesDeReparto(filas, asignado, 35000);
+  const t = totalesDeReparto(filas, asignado);
   comprobar('no se cobran 10 pacas donde se apartaron 5', t.clientes.get(3).repartidas, 5);
 }
 {
@@ -343,7 +343,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
       descuento: '', tipo_descuento: 'valor_fijo', transporte_unitario: '',
     },
   };
-  const t = totalesDeReparto(filas, new Map(), 35000);
+  const t = totalesDeReparto(filas, new Map());
   comprobar('el cliente en cero sigue en la cinta', t.clientes.has(9), true);
   comprobar('con nombre en el pie', t.clientesSinNada, 1);
   comprobar('y sin transporte que cobrarle', t.total, 0);
@@ -366,12 +366,12 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
     [claveAsignacion(4, 'SHORTS', 'supreme'), 0],
   ]);
 
-  const conTodo = totalesDeReparto(filas, asignado, 0);
+  const conTodo = totalesDeReparto(filas, asignado);
   comprobar('sin descartar nada, le faltan 3 + 4', conTodo.faltando, 7);
 
   // La dueña apaga la línea de SHORTS: pidió 4 «a ver si suena la flauta».
   const apagadas = new Set([claveAsignacion(4, 'SHORTS', 'supreme')]);
-  const conCasilla = totalesDeReparto(filas, asignado, 0, apagadas);
+  const conCasilla = totalesDeReparto(filas, asignado, apagadas);
   comprobar('la línea apagada deja de contar', conCasilla.faltando, 3);
   comprobar('y el cliente sigue contando por la otra', conCasilla.clientesConFaltante, 1);
   comprobar('lo repartido no se toca', conCasilla.unidades, 5);
@@ -382,7 +382,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
     claveAsignacion(4, 'MIXTA INVIERNO', 'premium'),
     claveAsignacion(4, 'SHORTS', 'supreme'),
   ]);
-  const ninguna = totalesDeReparto(filas, asignado, 0, todas);
+  const ninguna = totalesDeReparto(filas, asignado, todas);
   comprobar('apagadas las dos, no queda faltando nada', ninguna.faltando, 0);
   comprobar('y ningún cliente con faltante', ninguna.clientesConFaltante, 0);
 
@@ -390,7 +390,7 @@ grupo('el dinero — una sola aritmética, la de cotizacion.js');
   // guarda como Set, pero el borrador de localStorage lo serializa a arreglo.
   comprobar(
     'acepta un arreglo en vez de un Set',
-    totalesDeReparto(filas, asignado, 0, [claveAsignacion(4, 'SHORTS', 'supreme')]).faltando,
+    totalesDeReparto(filas, asignado, [claveAsignacion(4, 'SHORTS', 'supreme')]).faltando,
     3,
   );
 }

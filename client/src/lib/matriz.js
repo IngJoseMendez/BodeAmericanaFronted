@@ -477,7 +477,8 @@ export function reconciliarReparto(asignaciones, productos) {
  * de cotizacion.js, que es la misma que usan la cotización normal y la Fase 1.
  * Replicarla aquí obligaría a reproducir tres reglas sutiles —el descuento como
  * monto por paca multiplicado por unidades y topado por ítem, el transporte de
- * fila que pisa al global solo si el string no está vacío, y los ítems con
+ * fila, que desde que la tasa y el flete son de cada cliente ya no hereda de
+ * ninguna barra, y los ítems con
  * `esPromocion` excluidos del descuento— y la primera que se olvidara cobraría
  * distinto en la fila y en el total. Ya pasó una vez y el total cobraba de
  * menos; el propio cotizacion.js lo documenta en su cabecera.
@@ -570,13 +571,12 @@ export function proyectarFilas(filas, asignado) {
  *
  * @param {object} filas   el estado de la Fase 1
  * @param {Map<string, number>|object} asignado  claveAsignacion → cantidad
- * @param {number|string} transporteGlobal  el de la barra, que la fila puede pisar
  * @param {Set<string>} [sinFaltante]  las líneas apagadas con «esto no queda debiendo»
  * @returns {{ clientes: Map<*, object>, numClientes:number, unidades:number,
  *             pedidas:number, faltando:number, clientesConFaltante:number,
  *             clientesSinNada:number, total:number }}
  */
-export function totalesDeReparto(filas, asignado, transporteGlobal, sinFaltante) {
+export function totalesDeReparto(filas, asignado, sinFaltante) {
   const fuente = filas && typeof filas === 'object' ? filas : {};
   const proyeccion = proyectarFilas(fuente, asignado);
 
@@ -592,7 +592,7 @@ export function totalesDeReparto(filas, asignado, transporteGlobal, sinFaltante)
   for (const [clienteId, fila] of Object.entries(fuente)) {
     const lineas = lineasRepartidas(clienteId, fila, asignado);
     const pedidasCliente = lineas.reduce((s, l) => s + l.pedida, 0);
-    const t = totalesFila(proyeccion[clienteId] || { items: [] }, transporteGlobal);
+    const t = totalesFila(proyeccion[clienteId] || { items: [] });
 
     // El faltante se cuenta LÍNEA A LÍNEA y no como resta del total del cliente,
     // porque ella puede apagar el de una línea suelta con la casilla «esto no

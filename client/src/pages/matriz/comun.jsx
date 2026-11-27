@@ -76,12 +76,18 @@ export const descuentoPactado = (cliente) => {
 // Al elegir cliente, Cotizaciones mete solo su descuento pactado (pesos por
 // paca, valor fijo). Sin esto la vía masiva cobraba precio pleno a TODOS los
 // clientes que tienen descuento negociado, en silencio y por cada cotización.
+// `tasa` nace VACÍA y eso no es un hueco por llenar: significa «este cliente
+// factura en pesos», que es el caso de la mayoría. La casilla sólo se escribe
+// en los clientes que compran en pesos y dólares, y entonces su cotización sale
+// con la columna en dólares. No se hereda de ninguna barra ni de la ronda: ésa
+// era justo la mezcla que hacía imposible tener las dos monedas a la vez.
 export const filaVacia = (cliente) => ({
   items: [itemVacio()],
   descuento: descuentoPactado(cliente),
   tipo_descuento: 'valor_fijo',
   transporte_unitario: '',
   tipo_transporte: '',
+  tasa: '',
 });
 
 export const itemTieneAlgo = (it) => Boolean(it?.referencia || it?.calidad) || precioDe(it) > 0;
