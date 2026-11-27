@@ -41,14 +41,24 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-function InventoryPieChart({ disponibles, separadas, vendidas }) {
+// ── LA TORTA DEL INVENTARIO NO LLEVA LAS VENDIDAS ───────────────────────────
+//
+// Tenía tres porciones —Disponibles, Separadas, Vendidas— bajo el rótulo
+// «Estado del Inventario», y una paca vendida no es inventario: ya tiene dueño.
+// En producción esa porción se comía el 4% del círculo y, peor, invitaba a leer
+// el total del círculo como «lo que tengo».
+//
+// Y sólo se pintan los estados que DE VERDAD tienen pacas, igual que las
+// columnas de Repartido son las calidades que de verdad salieron: una porción
+// en cero no informa de nada y mete una entrada muerta en la leyenda.
+function InventoryPieChart({ disponibles, separadas, reservadas }) {
   const data = [
     { name: 'Disponibles', value: disponibles || 0, color: CHART_COLORS.success },
     { name: 'Separadas', value: separadas || 0, color: CHART_COLORS.warning },
-    { name: 'Vendidas', value: vendidas || 0, color: CHART_COLORS.accent },
-  ];
+    { name: 'Reservadas', value: reservadas || 0, color: CHART_COLORS.accent },
+  ].filter((d) => d.value > 0);
 
-  if (data.every(d => d.value === 0)) {
+  if (!data.length) {
     return (
       <div className="h-[200px] flex items-center justify-center text-muted">
         No hay datos de inventario
@@ -440,17 +450,38 @@ export default function Dashboard() {
     );
   }
 
-  const totalPacas = metricas?.pacas?.total || 0;
   const disponibles = metricas?.pacas?.disponibles || 0;
   const separadas = metricas?.pacas?.separadas || 0;
+  const reservadas = metricas?.pacas?.reservadas || 0;
   const vendidas = metricas?.pacas?.vendidas || 0;
+
+  // ── EL CONTEO DEL INVENTARIO NO CUENTA LAS VENDIDAS ───────────────────────
+  //
+  // La tarjeta decía «Total Pacas» y pintaba `pacas.total`, que es COUNT(*):
+  // todas las pacas que han existido, vendidas y despachadas incluidas. En
+  // producción eso daba 604 cuando de verdad hay 578 para vender, y leído en un
+  // panel de resumen significa «tengo 604 pacas», que es falso: 26 ya tienen
+  // dueño. La parte del DINERO de este panel ya estaba corregida; el conteo se
+  // había quedado atrás.
+  //
+  // `en_bodega` son las que siguen siendo suyas y están en el suelo:
+  // disponibles + apartadas (separadas y reservadas). Fuera quedan las vendidas
+  // y las despachadas.
+  //
+  // El respaldo es `disponibles + separadas + reservadas` y NO `total`: si el
+  // servidor es anterior a este cambio y no manda `en_bodega`, caer en `total`
+  // devolvería justo el número equivocado. Se reconstruye con los campos que
+  // siempre han venido, que dan la misma cifra.
+  const enBodega = metricas?.pacas?.en_bodega ?? (disponibles + separadas + reservadas);
+  const apartadas = separadas + reservadas;
+
   // EL VALOR DEL INVENTARIO ES EL DE LO QUE ESTÁ EN LA BODEGA. Estas tres
   // cifras salían de sumar TODAS las pacas, vendidas incluidas, y se pintan
   // bajo el rótulo «Valor del Inventario · Análisis financiero del stock». Una
   // paca vendida no es stock, y su ganancia no es potencial: ya está cobrada.
   // Así que el panel valoraba mercancía que no existe y prometía una ganancia
-  // que ya se había hecho. `_en_bodega` excluye sólo las vendidas: una separada
-  // sigue en la bodega, apartada para una cotización.
+  // que ya se había hecho. `_en_bodega` excluye las vendidas y las despachadas:
+  // una separada sigue en la bodega, apartada para una cotización.
   //
   // Con `??` y no con `||`: un servidor anterior a este cambio no manda los
   // campos nuevos, y ahí se cae a los de siempre —el panel enseña la cifra
@@ -479,11 +510,17 @@ export default function Dashboard() {
       <div className="space-y-6">
         <section aria-label="Métricas principales">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* «En bodega» y no «Total»: el rótulo tiene que decir qué se está
+                contando, porque es lo que separa 578 de 604. El subtexto da el
+                desglose sólo cuando hay algo apartado; con todo disponible,
+                «578 disponibles» debajo de un 578 es ruido. */}
             <MetricCard
               icon={Package}
-              label="Total Pacas"
-              value={totalPacas.toLocaleString('es-CO')}
-              subtext={`${disponibles} disponibles`}
+              label="Pacas en bodega"
+              value={enBodega.toLocaleString('es-CO')}
+              subtext={apartadas > 0
+                ? `${disponibles} disponibles · ${apartadas} apartadas`
+                : 'todas disponibles'}
               color="secondary"
               delay={0}
             />
@@ -602,10 +639,22 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <CardTitle>Estado del Inventario</CardTitle>
-                  <CardDescription>Distribución por estado</CardDescription>
+                  <CardDescription>Lo que está en la bodega</CardDescription>
                 </div>
               </div>
-              <InventoryPieChart disponibles={disponibles} separadas={separadas} vendidas={vendidas} />
+              <InventoryPieChart disponibles={disponibles} separadas={separadas} reservadas={reservadas} />
+              {/* LAS VENDIDAS SE DICEN, PERO FUERA DEL CÍRCULO, y sólo si
+                  todavía están aquí. No son inventario —ya tienen dueño— pero
+                  una paca vendida y sin despachar sí está en el suelo ocupando
+                  sitio y esperando salir, y callarlo del todo escondería que hay
+                  mercancía por entregar. Está en una línea aparte justamente
+                  para que no se sume a lo de arriba. */}
+              {vendidas > 0 && (
+                <p className="mt-3 pt-3 border-t border-border/50 text-xs text-muted">
+                  Además hay <span className="font-semibold text-foreground tabular-nums">{vendidas}</span>
+                  {' '}paca(s) vendidas sin despachar. Ya tienen dueño, así que no cuentan como inventario.
+                </p>
+              )}
             </CardBody>
           </Card>
 
